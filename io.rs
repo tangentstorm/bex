@@ -4,7 +4,10 @@ use std::io::BufReader;
 use std::io::prelude::*;
 use std::collections::HashMap;
 
+
+// these functions treat typed slices as raw bytes, making them easier to read/write
 // https://stackoverflow.com/questions/28127165/how-to-convert-struct-to-u8
+
 unsafe fn to_u8s<T: Sized>(p: &T) -> &[u8] {
   ::std::slice::from_raw_parts(
     (p as *const T) as *const u8,
@@ -21,7 +24,7 @@ unsafe fn u8s_to_slice<T: Sized>(p: &[u8]) -> &[T] {
     (p.as_ptr()) as *const T,
     p.len() / ::std::mem::size_of::<T>()) }
 
-
+
 /// write the vector, as bytes, to a file at the specified path.
 pub fn put<T:Sized>(path:&str, v:&Vec<T>) -> ::std::io::Result<()> {
   let mut f = File::create(path)?;
