@@ -1,6 +1,8 @@
-/// binary io for typed vectors
+/// binary io for hashmap<String,NID> and typed vectors
 use std::fs::File;
+use std::io::BufReader;
 use std::io::prelude::*;
+use std::collections::HashMap;
 
 // https://stackoverflow.com/questions/28127165/how-to-convert-struct-to-u8
 unsafe fn to_u8s<T: Sized>(p: &T) -> &[u8] {
@@ -32,3 +34,20 @@ pub fn get<T:Sized+Clone>(path:&str) -> ::std::io::Result<Vec<T>> {
   f.read_to_end(&mut uv).expect("couldn't read file");
   let s:&[T] = unsafe { u8s_to_slice(&uv.as_slice())};
   Ok(s.to_vec()) }
+
+
+/// save a hashmap
+pub fn put_map(path:&str, m:&HashMap<String,usize>) -> ::std::io::Result<()> {
+  let mut f = File::create(path)?;
+  for (k,v) in m.iter() { writeln!(&mut f, "{},{}", k, v)? }
+  Ok(())}
+
+/// load a hashmap
+pub fn get_map(path:&str) -> ::std::io::Result<HashMap<String,usize>> {
+  let mut m = HashMap::new();
+  let f = File::open(path)?; let r = BufReader::new(&f);
+  for line in r.lines() {
+    let line = line.unwrap();
+    let v:Vec<&str> = line.split(',').collect();
+    m.insert(v[0].to_string(), v[1].parse::<usize>().unwrap()); }
+  Ok(m)}
