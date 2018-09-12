@@ -43,14 +43,17 @@ pub trait TBase {
 
 pub struct Base {
   pub bits: Vec<Op>,               // all known bits (simplified)     TODO: make private
-  hash: HashMap<Op, NID>,      // expression cache (simple+complex)
   pub tags: HashMap<String, NID>,       // support for naming/tagging bits.  TODO: make private
+  hash: HashMap<Op, NID>,      // expression cache (simple+complex)
   vars: Vec<NID>,                   // quick index of Var(n) in bits
   subs: Vec<SUB>,                   // list of substitution dicts
   subc: Vec<HashMap<NID,NID>>       // cache of substiution results
 }
 
+type VarMaskFn = fn(&Base,VID)->u64;
+
 impl Base {
+
   fn new()->Base {
     Base{bits: vec![Op::O, Op::I],
          hash: HashMap::new(),
@@ -58,8 +61,51 @@ impl Base {
          vars: vec![],
          subs: vec![],
          subc: vec![]}}
-  fn len(&self)->usize { self.bits.len() }}
 
+  fn len(&self)->usize { self.bits.len() }
+
+  /// given a function that maps input bits to 64-bit masks, color each node
+  /// in the base according to its inputs (thus tracking the spread of influence
+  /// of up to 64 bits (or groups of bits).
+  ///
+  /// while we're at it, calculate the cost of each bit, where constants have cost 0,
+  /// inputs have a cost of 1, and everything else is 1 + max(cost of input bits)
+  /// (TOOD: break masks_and_costs into two functions)
+  pub fn masks_and_costs(&self, vm:VarMaskFn)->(Vec<u64>, Vec<u32>) {
+    use std::cmp::max;
+    let mut masks = vec![];
+    let mut costs = vec![];
+    for (i,&bit) in self.bits.iter().enumerate() {
+      let (mask, cost) = {
+        let mc = |x,y| {
+          let m = masks[x] | masks[y];
+          (m, if m < 32 { 1 } else { max(costs[x], costs[y]) + 1 })};
+        match bit {
+          Op::I | Op::O => (0, 0),
+          Op::Var(v)    => (vm(self, v), 1),
+          Op::Not(x)    => mc(x,0),
+          Op::And(x,y)  => mc(x,y),
+          Op::Xor(x,y)  => mc(x,y),
+          Op::Or (x,y)  => mc(x,y),
+          _ => { println!("TODO: cost({}: {:?})", i, bit); (!0, 0) }}};
+      masks.push(mask);
+      costs.push(cost)}
+    (masks, costs)}
+
+  /// construct a new Base with only the nodes necessary to define the given nodes.
+  /// this new base will be ordered by cost, with cheaper nodes having lower numbers.
+  pub fn repack(&self, keep:Vec<NID>) -> (Base, Vec<NID>) {
+    let nids = keep;
+    let r = Base{bits:self.bits.clone(),
+                 hash: HashMap::new(),
+                 tags: HashMap::new(),
+                 vars: vec![],
+                 subs: vec![],
+                 subc: vec![]};
+  (r, nids) }
+
+} // end impl Base
+
 impl Index<NID> for Base {
   type Output = Op;
   fn index(&self, index:NID) -> &Self::Output { &self.bits[index] } }
