@@ -6,7 +6,7 @@ use bex::*;
 
 
 // TBit : for use outside the Base, by types such as X32, below.
-trait TBit
+pub trait TBit
   : Sized + Clone
   + std::ops::Not<Output=Self>
   + std::ops::BitAnd<Self,Output=Self>
