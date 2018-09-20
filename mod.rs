@@ -92,17 +92,42 @@ impl Base {
       costs.push(cost)}
     (masks, costs)}
 
+  // this calculates *all* references
+  pub fn reftable(&self) -> Vec<Vec<NID>> {
+    let bits = &self.bits;
+    let mut res:Vec<Vec<NID>> = vec![vec![]; bits.len()];
+    for n in 0..bits.len() {
+      let mut f = |x:NID| res[x].push(n);
+      match bits[n] {
+        Op::O | Op::I | Op::Var(_) => {}
+        Op::Not(x) => { f(x); }
+        Op::And(x,y) => { f(x); f(y); }
+        Op::Xor(x,y) => { f(x); f(y); }
+        Op::Or(x,y)  => { f(x); f(y); }
+        Op::Ch(x,y,z)  => { f(x); f(y); f(z); }
+        Op::Mj(x,y,z)  => { f(x); f(y); f(z); } } }
+    res }
+
   /// construct a new Base with only the nodes necessary to define the given nodes.
   /// this new base will be ordered by cost, with cheaper nodes having lower numbers.
   pub fn repack(&self, keep:Vec<NID>) -> (Base, Vec<NID>) {
     let nids = keep;
-    let r = Base{bits:self.bits.clone(),
-                 hash: HashMap::new(),
-                 tags: HashMap::new(),
-                 vars: vec![],
-                 subs: vec![],
-                 subc: vec![]};
-  (r, nids) }
+    let res = Base{bits:self.bits.clone(),
+                   hash: HashMap::new(),
+                   tags: HashMap::new(),
+                   vars: vec![],
+                   subs: vec![],
+                   subc: vec![]};
+
+    let r = self.reftable();
+    let (_,c) = self.masks_and_costs(|ref base, nid| 0);
+
+    // expiration (higest of cost of a referring bit)
+    // this tells us how log we need to keep a reference to the bit.
+    let maxcost = |rs: &Vec<NID>|-> u32 { rs.iter().map(|r| c[*r]).max().unwrap_or(0) };
+    let e:Vec<u32> = r.iter().map(maxcost).collect();
+
+  (res, nids) }
 
 } // end impl Base
 
