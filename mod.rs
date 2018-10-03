@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::ops::Index;
 extern crate std;
+pub mod apl;
 pub mod x32;
 pub mod io;
 
@@ -126,6 +127,9 @@ impl Base {
     // this tells us how log we need to keep a reference to the bit.
     let maxcost = |rs: &Vec<NID>|-> u32 { rs.iter().map(|r| c[*r]).max().unwrap_or(0) };
     let e:Vec<u32> = r.iter().map(maxcost).collect();
+
+    let p = apl::gradeup(&e); // p[new idx] = old idx
+    let q = apl::gradeup(&p); // p[old idx] = new idx
 
   (res, nids) }
 
