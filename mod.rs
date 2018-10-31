@@ -93,7 +93,7 @@ impl Base {
       costs.push(cost)}
     (masks, costs)}
 
-  // this calculates *all* references
+  /// this returns a raggod 2d vector of direct references for each bit in the base
   pub fn reftable(&self) -> Vec<Vec<NID>> {
     let bits = &self.bits;
     let mut res:Vec<Vec<NID>> = vec![vec![]; bits.len()];
@@ -101,18 +101,33 @@ impl Base {
       let mut f = |x:NID| res[x].push(n);
       match bits[n] {
         Op::O | Op::I | Op::Var(_) => {}
-        Op::Not(x) => { f(x); }
-        Op::And(x,y) => { f(x); f(y); }
-        Op::Xor(x,y) => { f(x); f(y); }
-        Op::Or(x,y)  => { f(x); f(y); }
-        Op::Ch(x,y,z)  => { f(x); f(y); f(z); }
-        Op::Mj(x,y,z)  => { f(x); f(y); f(z); } } }
+        Op::Not(x)    => { f(x); }
+        Op::And(x,y)  => { f(x); f(y); }
+        Op::Xor(x,y)  => { f(x); f(y); }
+        Op::Or(x,y)   => { f(x); f(y); }
+        Op::Ch(x,y,z) => { f(x); f(y); f(z); }
+        Op::Mj(x,y,z) => { f(x); f(y); f(z); } } }
     res }
+
+  /// this is part of the garbage collection system. keep is the top level nid to keep.
+  /// seen gets marked true for every nid that is a dependency of keep.
+  fn markdeps(&self, keep:NID, seen:&mut Vec<bool>) {
+    if !seen[keep] {
+      seen[keep] = true;
+      let mut f = |x:&NID| { self.markdeps(*x, seen) };
+      match &self.bits[keep] {
+        Op::O | Op::I | Op::Var(_) => { }
+        Op::Not(x)    => { f(x); }
+        Op::And(x,y)  => { f(x); f(y); }
+        Op::Xor(x,y)  => { f(x); f(y); }
+        Op::Or(x,y)   => { f(x); f(y); }
+        Op::Ch(x,y,z) => { f(x); f(y); f(z); }
+        Op::Mj(x,y,z) => { f(x); f(y); f(z); } } } }
+
 
   /// construct a new Base with only the nodes necessary to define the given nodes.
   /// this new base will be ordered by cost, with cheaper nodes having lower numbers.
   pub fn repack(&self, keep:Vec<NID>) -> (Base, Vec<NID>) {
-    let nids = keep;
     let res = Base{bits:self.bits.clone(),
                    hash: HashMap::new(),
                    tags: HashMap::new(),
@@ -120,16 +135,30 @@ impl Base {
                    subs: vec![],
                    subc: vec![]};
 
+    // garbage collection: mark dependencies of the bits we want to keep
+    let mut deps = vec!(false;self.bits.len());
+    for nid in keep { self.markdeps(nid, &mut deps) }
+
+    // r:reftable (ragged list of references)
     let r = self.reftable();
     let (_,c) = self.masks_and_costs(|ref base, nid| 0);
 
-    // expiration (higest of cost of a referring bit)
+    // e:expiration (higest of cost of a referring bit)
     // this tells us how log we need to keep a reference to the bit.
-    let maxcost = |rs: &Vec<NID>|-> u32 { rs.iter().map(|r| c[*r]).max().unwrap_or(0) };
+    let maxcost = |rs: &Vec<NID>|-> u32 {
+      rs.iter()                  // start with all the references for the bit
+        .filter(|r| deps[**r])   // narrow to the ones left after garbage collection
+        .map(|r| c[*r])          // find the cost of each of those
+        .max().unwrap_or(0) };   // return the max cost, defaulting to 0
     let e:Vec<u32> = r.iter().map(maxcost).collect();
 
+    let mut z = 0; for (i,&mc) in e.iter().enumerate() { if mc==0 { z+=1 }}
+    println!("{} of the {} nodes can be removed.", z, r.len());
+    std::process::exit(0);
     let p = apl::gradeup(&e); // p[new idx] = old idx
     let q = apl::gradeup(&p); // p[old idx] = new idx
+
+    let nids = keep; // TODO: this is wrong. just a placeholder for type checking
 
   (res, nids) }
 
