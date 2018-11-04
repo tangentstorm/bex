@@ -92,7 +92,7 @@ pub trait TBit32<T:TBit> : Sized {
 #[derive(Clone,PartialEq)]
 pub struct BB32{pub bits:Vec<BaseBit>}
 
-thread_local!{ pub static GBASE:BaseRef = Rc::new(RefCell::new(Base::new())); }
+thread_local!{ pub static GBASE:BaseRef = Rc::new(RefCell::new(Base::empty())); }
 pub fn gbase_ref()->BaseRef {
   GBASE.with(|gb| gb.clone()) }
 

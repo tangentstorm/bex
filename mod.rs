@@ -15,6 +15,8 @@ pub type NID = usize;
 type SID = usize; // canned substition
 type SUB = HashMap<VID,NID>;
 
+pub const GONE:usize = 1<<63;
+
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord)]
 pub enum Op {
   O, I, Var(VID), Not(NID), And(NID,NID), Or(NID,NID), Xor(NID,NID),
@@ -42,6 +44,7 @@ pub trait TBase {
 
 // a concrete implemetation:
 
+// !! TODO: move subs/subc into external structure
 pub struct Base {
   pub bits: Vec<Op>,               // all known bits (simplified)     TODO: make private
   pub tags: HashMap<String, NID>,       // support for naming/tagging bits.  TODO: make private
@@ -55,13 +58,15 @@ type VarMaskFn = fn(&Base,VID)->u64;
 
 impl Base {
 
-  fn new()->Base {
-    Base{bits: vec![Op::O, Op::I],
+  fn new(bits:Vec<Op>, tags:HashMap<String, NID>)->Base {
+    Base{bits: bits,
+         tags: tags,
          hash: HashMap::new(),
-         tags: HashMap::new(),
          vars: vec![],
          subs: vec![],
          subc: vec![]}}
+
+  fn empty()->Base { Base::new(vec![Op::O, Op::I], HashMap::new()) }
 
   fn len(&self)->usize { self.bits.len() }
 
@@ -123,78 +128,50 @@ impl Base {
         Op::Or(x,y)   => { f(x); f(y); }
         Op::Ch(x,y,z) => { f(x); f(y); f(z); }
         Op::Mj(x,y,z) => { f(x); f(y); f(z); } } } }
-
 
-  /// construct a new Base with only the nodes necessary to define the given nodes.
-  /// the relative order of the bits is preserved.
+  /// Construct a copy of the base, with the selected nodes in the given order.
+  /// The nodes will be re-numbered according to their position in the vector.
+  /// NOTE: if the `oldnids` parameter is not a proper permutation vector, it is
+  /// possible to create an invalid Base. In particular, if the vector is shorter
+  /// than the number of bits in self, then unaccounted-for bits will be discarded
+  /// in the result. This is intentional, as this function is used by the garbage
+  /// collector, but if a node whose nid is in `oldnids` references a node that
+  /// is not in `oldnids`, the resulting generated node will reference GONE (2^64).
+  pub fn permute(&self, oldnids:Vec<NID>)->Base {
+    let newnid = {
+      let mut result = vec![GONE; self.bits.len()];
+      for (i,&n) in oldnids.iter().enumerate() { result[n] = i; }
+      result };
+    let newbits = oldnids.iter().map(|&old| {
+      match self.bits[old] {
+        Op::O | Op::I | Op::Var(_) => self.bits[old], // nid might change, but vid won't.
+        Op::Not(x)    => Op::Not(newnid[x]),
+        Op::And(x,y)  => Op::And(newnid[x], newnid[y]),
+        Op::Xor(x,y)  => Op::Xor(newnid[x], newnid[y]),
+        Op::Or(x,y)   => Op::Or(newnid[x], newnid[y]),
+        Op::Ch(x,y,z) => Op::Ch(newnid[x], newnid[y], newnid[z]),
+        Op::Mj(x,y,z) => Op::Mj(newnid[x], newnid[y], newnid[z]) }})
+      .collect();
+    let mut newtags = HashMap::new();
+    for (key, &val) in &self.tags {
+      if newnid[val] != GONE { newtags.insert(key.clone(), newnid[val]); }}
+
+    Base::new(newbits, newtags) }
+
+  /// Construct a new Base with only the nodes necessary to define the given nodes.
+  /// The relative order of the bits is preserved.
   pub fn repack(&self, keep:Vec<NID>) -> (Base, Vec<NID>) {
 
     // garbage collection: mark dependencies of the bits we want to keep
     let mut deps = vec!(false;self.bits.len());
     for &nid in keep.iter() { self.markdeps(nid, &mut deps) }
 
-    const GONE:usize = 1<<63;
-    let mut newnum = vec![GONE; self.bits.len()];
-    let mut oldnum:Vec<usize> = vec![];
+    let mut newnids = vec![GONE; self.bits.len()];
+    let mut oldnids:Vec<usize> = vec![];
     for (i, bit) in self.bits.iter().enumerate() {
-      if deps[i] { newnum[i]=oldnum.len(); oldnum.push(i as usize); }}
+      if deps[i] { newnids[i]=oldnids.len(); oldnids.push(i as usize); }}
 
-    let mut newbits = vec![];
-    for &old in oldnum.iter() {
-      newbits.push(match self.bits[old] {
-        Op::O | Op::I | Op::Var(_) => self.bits[old], // nid might change, but vid won't.
-        Op::Not(x)    => Op::Not(newnum[x]),
-        Op::And(x,y)  => Op::And(newnum[x], newnum[y]),
-        Op::Xor(x,y)  => Op::Xor(newnum[x], newnum[y]),
-        Op::Or(x,y)   => Op::Or(newnum[x], newnum[y]),
-        Op::Ch(x,y,z) => Op::Ch(newnum[x], newnum[y], newnum[z]),
-        Op::Mj(x,y,z) => Op::Mj(newnum[x], newnum[y], newnum[z]) }); }
-
-    let mut newtags = HashMap::new();
-    for (key, &val) in &self.tags {
-      if newnum[val] != GONE { newtags.insert(key.clone(), newnum[val]); }}
-
-    // !! TODO: move subs/subc into external structure
-    let res = Base{bits:newbits,
-                   hash: HashMap::new(),
-                   tags: newtags,
-                   vars: vec![],  // TODO: fix this
-                   subs: vec![],
-                   subc: vec![]};
-
-    return (res, keep.iter().map(|&i| newnum[i]).collect()); }
-
-
-  // TODO: new function
-  // construct a new baase with the bits re-ordered by cost,
-  // this new base will be ordered by cost, with cheaper nodes having lower numbers.
-
-/*
-    // r:reftable (ragged list of references)
-    let r = self.reftable();
-    let (_,c) = self.masks_and_costs(|ref base, nid| 0);
-
-    // e:expiration (higest of cost of a referring bit)
-    // this tells us how log we need to keep a reference to the bit.
-    let maxcost = |rs: &Vec<NID>|-> u32 {
-      rs.iter()                  // start with all the references for the bit
-        .filter(|r| deps[**r])   // narrow to the ones left after garbage collection
-        .map(|r| c[*r])          // find the cost of each of those
-        .max().unwrap_or(0) };   // return the max cost, defaulting to 0
-    let e:Vec<u32> = r.iter().map(maxcost).collect();
-
-    let mut z = 0; for (i,&mc) in e.iter().enumerate() { if mc==0 { z+=1 }}
-    println!("{} of the {} nodes can be removed.", z, r.len());
-    std::process::exit(0);
-
-
-    let p = apl::gradeup(&e); // p[new idx] = old idx
-    let q = apl::gradeup(&p); // p[old idx] = new idx
-
-    let nids = keep; // TODO: this is wrong. just a placeholder for type checking
-
-  (res, nids) }
-*/
+    return (self.permute(oldnids), keep.iter().map(|&i| newnids[i]).collect()); }
 
 } // end impl Base
 
@@ -208,7 +185,7 @@ impl std::fmt::Debug for Base {
 
 #[test]
 fn base_basics(){
-  let mut b = Base::new();
+  let mut b = Base::empty();
   assert_eq!(b.len(), 2);
 
   // constants
@@ -227,7 +204,7 @@ fn base_basics(){
 
 #[test]
 fn base_vars(){
-  let mut b = Base::new(); let n = b.len();
+  let mut b = Base::empty(); let n = b.len();
   let x0 = b.var(0); let x02 = b.var(0); let x1 = b.var(1);
   assert!(x0 == n, "var() should create a node. expected {}, got {}", n, x0);
   assert!(x0 == x02, "var(0) should always return the same nid.");
@@ -238,7 +215,7 @@ fn base_vars(){
 
 #[test]
 fn base_when(){
-  let mut b = Base::new(); let x0 = b.var(0);
+  let mut b = Base::empty(); let x0 = b.var(0);
   assert!(b[x0] == Op::Var(0), "expect var(0) to return nid for Var(0)");
   assert!(b.when(0,0,x0)==  0, "x0 when x0 == 0 should be O");
   assert!(b.when(0,1,x0)==  1, "x0 when x0 == 1 should be I");
