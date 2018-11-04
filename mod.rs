@@ -150,9 +150,14 @@ impl Base {
         Op::Ch(x,y,z) => Op::Ch(newnum[x], newnum[y], newnum[z]),
         Op::Mj(x,y,z) => Op::Mj(newnum[x], newnum[y], newnum[z]) }); }
 
+    let mut newtags = HashMap::new();
+    for (key, &val) in &self.tags {
+      if newnum[val] != GONE { newtags.insert(key.clone(), newnum[val]); }}
+
+    // !! TODO: move subs/subc into external structure
     let res = Base{bits:newbits,
                    hash: HashMap::new(),
-                   tags: HashMap::new(), // TODO: fix this
+                   tags: newtags,
                    vars: vec![],  // TODO: fix this
                    subs: vec![],
                    subc: vec![]};
@@ -160,8 +165,8 @@ impl Base {
     return (res, keep.iter().map(|&i| newnum[i]).collect()); }
 
 
-  // TODO: new function that does the renumbering
-  // construct a new base with the bits re-ordered by cost,
+  // TODO: new function
+  // construct a new baase with the bits re-ordered by cost,
   // this new base will be ordered by cost, with cheaper nodes having lower numbers.
 
 /*
