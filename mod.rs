@@ -126,19 +126,45 @@ impl Base {
 
 
   /// construct a new Base with only the nodes necessary to define the given nodes.
-  /// this new base will be ordered by cost, with cheaper nodes having lower numbers.
+  /// the relative order of the bits is preserved.
   pub fn repack(&self, keep:Vec<NID>) -> (Base, Vec<NID>) {
-    let res = Base{bits:self.bits.clone(),
-                   hash: HashMap::new(),
-                   tags: HashMap::new(),
-                   vars: vec![],
-                   subs: vec![],
-                   subc: vec![]};
 
     // garbage collection: mark dependencies of the bits we want to keep
     let mut deps = vec!(false;self.bits.len());
-    for nid in keep { self.markdeps(nid, &mut deps) }
+    for &nid in keep.iter() { self.markdeps(nid, &mut deps) }
 
+    const GONE:usize = 1<<63;
+    let mut newnum = vec![GONE; self.bits.len()];
+    let mut oldnum:Vec<usize> = vec![];
+    for (i, bit) in self.bits.iter().enumerate() {
+      if deps[i] { newnum[i]=oldnum.len(); oldnum.push(i as usize); }}
+
+    let mut newbits = vec![];
+    for &old in oldnum.iter() {
+      newbits.push(match self.bits[old] {
+        Op::O | Op::I | Op::Var(_) => self.bits[old], // nid might change, but vid won't.
+        Op::Not(x)    => Op::Not(newnum[x]),
+        Op::And(x,y)  => Op::And(newnum[x], newnum[y]),
+        Op::Xor(x,y)  => Op::Xor(newnum[x], newnum[y]),
+        Op::Or(x,y)   => Op::Or(newnum[x], newnum[y]),
+        Op::Ch(x,y,z) => Op::Ch(newnum[x], newnum[y], newnum[z]),
+        Op::Mj(x,y,z) => Op::Mj(newnum[x], newnum[y], newnum[z]) }); }
+
+    let res = Base{bits:newbits,
+                   hash: HashMap::new(),
+                   tags: HashMap::new(), // TODO: fix this
+                   vars: vec![],  // TODO: fix this
+                   subs: vec![],
+                   subc: vec![]};
+
+    return (res, keep.iter().map(|&i| newnum[i]).collect()); }
+
+
+  // TODO: new function that does the renumbering
+  // construct a new base with the bits re-ordered by cost,
+  // this new base will be ordered by cost, with cheaper nodes having lower numbers.
+
+/*
     // r:reftable (ragged list of references)
     let r = self.reftable();
     let (_,c) = self.masks_and_costs(|ref base, nid| 0);
@@ -155,12 +181,15 @@ impl Base {
     let mut z = 0; for (i,&mc) in e.iter().enumerate() { if mc==0 { z+=1 }}
     println!("{} of the {} nodes can be removed.", z, r.len());
     std::process::exit(0);
+
+
     let p = apl::gradeup(&e); // p[new idx] = old idx
     let q = apl::gradeup(&p); // p[old idx] = new idx
 
     let nids = keep; // TODO: this is wrong. just a placeholder for type checking
 
   (res, nids) }
+*/
 
 } // end impl Base
 
