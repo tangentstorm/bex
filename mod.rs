@@ -27,7 +27,7 @@ pub trait TBase {
   fn i(&self)->NID;
   fn var(&mut self, v:VID)->NID;
   fn def(&mut self, s:String, i:u32)->NID;
-  fn tag(&mut self, n:NID, s:String);
+  fn tag(&mut self, n:NID, s:String)->NID;
   fn not(&mut self, x:NID)->NID;
   fn and(&mut self, x:NID, y:NID)->NID;
   fn xor(&mut self, x:NID, y:NID)->NID;
@@ -269,12 +269,11 @@ impl TBase for Base {
 
   fn def(&mut self, s:String, i:u32)->NID {
     let next = self.vars.len();
-    let n = self.var(next);
-    self.tag(n,format!("{}{}", s, i).to_string());
-    n }
+    let nid = self.var(next);
+    self.tag(nid, format!("{}{}", s, i).to_string()) }
 
-  fn tag(&mut self, n:NID, s:String) {
-    self.tags.insert(s, n); }
+  fn tag(&mut self, n:NID, s:String)->NID {
+    self.tags.insert(s, n); n }
 
   fn not(&mut self, x:NID)->NID {
     match self[x] {

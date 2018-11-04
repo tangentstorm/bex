@@ -100,7 +100,7 @@ pub fn gbase_var(v:VID)->BaseBit {
   GBASE.with(|gb| {
     let vn = gb.borrow_mut().var(v); BaseBit{base:gb.clone(), n:vn }}) }
 
-pub fn gbase_tag(n:NID, s:String) {
+pub fn gbase_tag(n:NID, s:String)->NID {
   GBASE.with(|gb| gb.borrow_mut().tag(n,s) )}
 
 pub fn gbase_def(s:String, i:u32)->BaseBit {
