@@ -58,7 +58,7 @@ type VarMaskFn = fn(&Base,VID)->u64;
 
 impl Base {
 
-  fn new(bits:Vec<Op>, tags:HashMap<String, NID>)->Base {
+  pub fn new(bits:Vec<Op>, tags:HashMap<String, NID>)->Base {
     Base{bits: bits,
          tags: tags,
          hash: HashMap::new(),
@@ -66,7 +66,7 @@ impl Base {
          subs: vec![],
          subc: vec![]}}
 
-  fn empty()->Base { Base::new(vec![Op::O, Op::I], HashMap::new()) }
+  pub fn empty()->Base { Base::new(vec![Op::O, Op::I], HashMap::new()) }
 
   fn len(&self)->usize { self.bits.len() }
 
