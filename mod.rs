@@ -6,6 +6,7 @@ extern crate std;
 pub mod apl;
 pub mod x32;
 pub mod io;
+pub mod bdd;
 
 
 
