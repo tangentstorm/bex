@@ -1,8 +1,9 @@
 /// = bex::x32 : treating arrays of bitrefs as u32/i32.
 
+extern crate std;
 use std::cell::RefCell;
 use std::rc::Rc;
-use bex::*;
+use base::{Base, TBase, NID, VID, SID};
 
 
 // TBit : for use outside the Base, by types such as X32, below.

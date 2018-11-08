@@ -6,7 +6,7 @@ use std::process::Command;      // for creating and viewing digarams
 use std::fs::File;
 use std::cmp::max;
 use std::io::Write;
-use bex;
+use io;
 
 #[derive(Debug, Serialize)]
 pub struct BDDBase {
@@ -231,7 +231,7 @@ impl BDDBase {
 
 
   pub fn save(&self, path:&str)->::std::io::Result<()> {
-    return bex::io::put(path, &self.bits) }
+    return io::put(path, &self.bits) }
 
 
   pub fn swap(&mut self, n:NID, x:VID, y:VID)-> NID {

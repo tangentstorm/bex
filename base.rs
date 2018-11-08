@@ -1,19 +1,14 @@
 /// bex: a boolean expression library for rust
-
 use std::collections::HashMap;
 use std::ops::Index;
-extern crate std;
-pub mod apl;
-pub mod x32;
-pub mod io;
-pub mod bdd;
+use std::fmt::Formatter;
 
 
 
 // abstract bits and bit base types (trait TBase)
 pub type VID = usize;
 pub type NID = usize;
-type SID = usize; // canned substition
+pub type SID = usize; // canned substition
 type SUB = HashMap<VID,NID>;
 
 pub const GONE:usize = 1<<63;
@@ -180,8 +175,8 @@ impl Index<NID> for Base {
   type Output = Op;
   fn index(&self, index:NID) -> &Self::Output { &self.bits[index] } }
 
-impl std::fmt::Debug for Base {
-  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl ::std::fmt::Debug for Base {
+  fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
     write!(f,"Base[{}]", self.bits.len()) } }
 
 #[test]
