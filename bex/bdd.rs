@@ -8,14 +8,14 @@ use std::cmp::max;
 use std::io::Write;
 use bex;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct BDDBase {
   nvars: usize,
   bits: Vec<BDD>,
   pub deep: Vec<NID>,              // the deepest nid touched by each node
   memo: HashMap<BDD,NID>}
 
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize)]
 pub struct BDD{ i:VID, t:NID, e:NID } // if|then|else
 
 pub type NID = usize;
@@ -230,7 +230,8 @@ impl BDDBase {
             else { Norm::Tup(f,g,h) }}}}}}
 
 
-  pub fn save(&self, path:&str)->::std::io::Result<()> { return bex::io::put(path, &self.bits) }
+  pub fn save(&self, path:&str)->::std::io::Result<()> {
+    return bex::io::put(path, &self.bits) }
 
 
   pub fn swap(&mut self, n:NID, x:VID, y:VID)-> NID {
