@@ -235,12 +235,12 @@ impl BDDBase {
     let s = bincode::serialize(&self).unwrap();
     return io::put(path, &s) }
 
-  pub fn fromPath(path:&str)->::std::io::Result<(BDDBase)> {
+  pub fn from_path(path:&str)->::std::io::Result<(BDDBase)> {
     let s = io::get(path)?;
     return Ok(bincode::deserialize(&s).unwrap()); }
 
   pub fn load(&mut self, path:&str)->::std::io::Result<()> {
-    let other = BDDBase::fromPath(path)?;
+    let other = BDDBase::from_path(path)?;
     self.nvars = other.nvars;
     self.bits = other.bits;
     self.deep = other.deep;
@@ -303,9 +303,6 @@ impl BDDBase {
   assert_eq!(x,      base.when_hi(3,x))}
 
 
-fn gen_norms() {
-//  each = map(toNid, [bdd.o, bdd.l, a, ~a, b, ~b, c, ~c])
-}
 
 pub fn print_nid(x:NID){ match x {
   I=>print!("I"), O=>print!("O"),

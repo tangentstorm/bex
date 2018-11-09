@@ -1,7 +1,6 @@
 /// bex: a boolean expression library for rust
 use std::collections::HashMap;
 use std::ops::Index;
-use std::fmt::Formatter;
 
 
 
@@ -30,8 +29,8 @@ pub trait TBase {
   fn and(&mut self, x:NID, y:NID)->NID;
   fn xor(&mut self, x:NID, y:NID)->NID;
   fn or(&mut self, x:NID, y:NID)->NID;
-  fn mj(&mut self, x:NID, y:NID, z:NID)->NID;
-  fn ch(&mut self, x:NID, y:NID, z:NID)->NID;
+  #[cfg(todo)] fn mj(&mut self, x:NID, y:NID, z:NID)->NID;
+  #[cfg(todo)] fn ch(&mut self, x:NID, y:NID, z:NID)->NID;
   fn when(&mut self, v:VID, val:NID, nid:NID)->NID;
   fn sid(&mut self, kv:SUB) -> SID;
   fn sub(&mut self, x:NID, s:SID)->NID; // set many inputs at once
@@ -64,7 +63,6 @@ impl Base {
 
   pub fn empty()->Base { Base::new(vec![Op::O, Op::I], HashMap::new()) }
 
-  fn len(&self)->usize { self.bits.len() }
 
   /// given a function that maps input bits to 64-bit masks, color each node
   /// in the base according to its inputs (thus tracking the spread of influence
@@ -164,7 +162,7 @@ impl Base {
 
     let mut newnids = vec![GONE; self.bits.len()];
     let mut oldnids:Vec<usize> = vec![];
-    for (i, bit) in self.bits.iter().enumerate() {
+    for i in 0..self.bits.len() {
       if deps[i] { newnids[i]=oldnids.len(); oldnids.push(i as usize); }}
 
     return (self.permute(oldnids), keep.iter().map(|&i| newnids[i]).collect()); }
@@ -220,6 +218,7 @@ fn base_when(){
 
 
 fn order<T:PartialOrd>(x:T, y:T)->(T,T) { if x < y { (x,y) } else { (y,x) }}
+#[cfg(todo)] // this works, but only used by Ch and Mj
 fn order3<T:Ord+Clone>(x:T, y:T, z:T)->(T,T,T) {
   let mut res = [x,y,z];
   res.sort();
@@ -274,7 +273,7 @@ impl TBase for Base {
            match (self[lo], self[hi]) {
              (Op::O, _) => hi,
              (Op::I, _) => self.not(hi),
-             (Op::Var(v), Op::Not(n)) if n==lo => self.i(),
+             (Op::Var(_), Op::Not(n)) if n==lo => self.i(),
              _ => self.nid(Op::Xor(lo,hi)) }}}
 
   fn or(&mut self, x:NID, y:NID)->NID {
@@ -283,17 +282,19 @@ impl TBase for Base {
            match (self[lo], self[hi]) {
              (Op::O, _) => hi,
              (Op::I, _) => self.i(),
-             (Op::Var(v), Op::Not(n)) if n==lo => self.i(),
+             (Op::Var(_), Op::Not(n)) if n==lo => self.i(),
              (Op::Not(m), Op::Not(n)) => {
                let a = self.and(m,n); self.not(a)},
              _ => self.nid(Op::Or(lo,hi)) }}}
 
 
 
+  #[cfg(todo)]
   fn mj(&mut self, x:NID, y:NID, z:NID)->NID {
     let (a,b,c) = order3(x,y,z);
     self.nid(Op::Mj(x,y,z)) }
 
+  #[cfg(todo)]
   fn ch(&mut self, x:NID, y:NID, z:NID)->NID { self.o() }
 
 

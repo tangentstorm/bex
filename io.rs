@@ -8,11 +8,6 @@ use std::collections::HashMap;
 // these functions treat typed slices as raw bytes, making them easier to read/write
 // https://stackoverflow.com/questions/28127165/how-to-convert-struct-to-u8
 
-unsafe fn to_u8s<T: Sized>(p: &T) -> &[u8] {
-  ::std::slice::from_raw_parts(
-    (p as *const T) as *const u8,
-    ::std::mem::size_of::<T>()) }
-
 // adapted from the above, to deal with a slice:
 unsafe fn slice_to_u8s<T: Sized>(p: &[T]) -> &[u8] {
   ::std::slice::from_raw_parts(
