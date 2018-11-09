@@ -6,16 +6,17 @@ use std::process::Command;      // for creating and viewing digarams
 use std::fs::File;
 use std::cmp::max;
 use std::io::Write;
+use bincode;
 use io;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BDDBase {
   nvars: usize,
   bits: Vec<BDD>,
   pub deep: Vec<NID>,              // the deepest nid touched by each node
   memo: HashMap<BDD,NID>}
 
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct BDD{ i:VID, t:NID, e:NID } // if|then|else
 
 pub type NID = usize;
@@ -231,7 +232,20 @@ impl BDDBase {
 
 
   pub fn save(&self, path:&str)->::std::io::Result<()> {
-    return io::put(path, &self.bits) }
+    let s = bincode::serialize(&self).unwrap();
+    return io::put(path, &s) }
+
+  pub fn fromPath(path:&str)->::std::io::Result<(BDDBase)> {
+    let s = io::get(path)?;
+    return Ok(bincode::deserialize(&s).unwrap()); }
+
+  pub fn load(&mut self, path:&str)->::std::io::Result<()> {
+    let other = BDDBase::fromPath(path)?;
+    self.nvars = other.nvars;
+    self.bits = other.bits;
+    self.deep = other.deep;
+    self.memo = other.memo;
+    Ok(()) }
 
 
   pub fn swap(&mut self, n:NID, x:VID, y:VID)-> NID {
