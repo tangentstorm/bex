@@ -94,10 +94,13 @@ impl BDDBase {
     self.walk(n, &mut |n,_,_,e| w!("  {}->{};", fmt(n), fmt(e)));
     w!("}}"); }
 
+  pub fn save_dot(&self, n:NID, path:&str) {
+    let mut s = String::new(); self.dot(n, &mut s);
+    let mut txt = File::create(path).expect("couldn't create dot file");
+    txt.write_all(s.as_bytes()).expect("failet to write text to dot file"); }
+
   pub fn show(&self, n:NID) {
-    let mut str = String::new(); self.dot(n, &mut str);
-    let mut txt = File::create("+bdd.dot").expect("couldn't create dot file");
-    txt.write_all(str.as_bytes()).expect("failet to write text to dot file");
+    self.save_dot(n, "+bdd.dot");
     let out = Command::new("dot").args(&["-Tpng","+bdd.dot"])
       .output().expect("failed to run 'dot' command");
     let mut png = File::create("+bdd.png").expect("couldn't create png");
