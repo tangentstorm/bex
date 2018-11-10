@@ -56,7 +56,7 @@ impl BDDBase {
     let bdd = self.bdd(n);
     (bdd.v, bdd.hi, bdd.lo) }
 
-  pub fn deep(&self, n:NID)->NID { self.deep[pos(n)] }
+  pub fn deepest_var(&self, n:NID)->NID { self.deep[pos(n)] }
 
   /// walk node recursively, without revisiting shared nodes
   pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,NID,NID,NID) {
