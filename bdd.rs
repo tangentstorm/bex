@@ -17,7 +17,7 @@ pub struct BDDBase {
   memo: HashMap<BDD,NID>}
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct BDD{ i:VID, t:NID, e:NID } // if|then|else
+pub struct BDD{ v:VID, hi:NID, lo:NID } // if|then|else
 
 pub type NID = usize;
 pub type VID = usize;
@@ -41,20 +41,20 @@ impl BDDBase {
 
   pub fn new(nvars:usize)->BDDBase {
     // the vars are 1-indexed, because node 0 is ⊥ (false)
-    let mut bits = vec![BDD{i:I,t:O,e:I}]; // node 0 is ⊥
+    let mut bits = vec![BDD{v:I,hi:O,lo:I}]; // node 0 is ⊥
     let mut deep = vec![I];
-    for i in 1..nvars+1 { bits.push(BDD{i:i, t:I, e: O}); deep.push(i); }
+    for i in 1..nvars+1 { bits.push(BDD{v:i, hi:I, lo: O}); deep.push(i); }
     BDDBase{nvars:nvars, bits:bits, deep:deep, memo:HashMap::new()}}
 
   pub fn nvars(&self)->usize { self.nvars }
 
   pub fn bdd(&self, n:NID)->BDD {
-    if inv(n) { let b=self.bdd(not(n)); BDD{i:b.i, t:not(b.t), e:not(b.e)} }
+    if inv(n) { let b=self.bdd(not(n)); BDD{v:b.v, hi:not(b.hi), lo:not(b.lo)} }
     else { self.bits[n] }}
 
   pub fn tup(&self, n:NID)->(VID,NID,NID) {
     let bdd = self.bdd(n);
-    (bdd.i, bdd.t, bdd.e) }
+    (bdd.v, bdd.hi, bdd.lo) }
 
   pub fn deep(&self, n:NID)->NID { self.deep[pos(n)] }
 
@@ -180,7 +180,7 @@ impl BDDBase {
     if th == el { th } else { self.nid(v,th,el) }}
 
   fn nid(&mut self, f:NID, g:NID, h:NID)->NID {
-    let bdd = BDD{i:f,t:g,e:h};
+    let bdd = BDD{v:f,hi:g,lo:h};
     match self.memo.get(&bdd) {
       Some(&n) => n,
       None => {
