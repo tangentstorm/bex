@@ -14,6 +14,7 @@ pub struct BDDBase {
   nvars: usize,
   bits: Vec<BDD>,
   pub deep: Vec<NID>,              // the deepest nid touched by each node
+  pub tags: HashMap<String, NID>,
   memo: HashMap<BDD,NID>}
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
@@ -44,9 +45,12 @@ impl BDDBase {
     let mut bits = vec![BDD{v:I,hi:O,lo:I}]; // node 0 is ⊥
     let mut deep = vec![I];
     for i in 1..nvars+1 { bits.push(BDD{v:i, hi:I, lo: O}); deep.push(i); }
-    BDDBase{nvars:nvars, bits:bits, deep:deep, memo:HashMap::new()}}
+    BDDBase{nvars:nvars, bits:bits, deep:deep, memo:HashMap::new(),tags:HashMap::new()}}
 
   pub fn nvars(&self)->usize { self.nvars }
+
+  pub fn tag(&mut self, s:String, n:NID) { self.tags.insert(s, n); }
+  pub fn get(&self, s:&String)->Option<NID> { Some(*self.tags.get(s)?) }
 
   pub fn bdd(&self, n:NID)->BDD {
     if inv(n) { let b=self.bdd(not(n)); BDD{v:b.v, hi:not(b.hi), lo:not(b.lo)} }
@@ -248,6 +252,7 @@ impl BDDBase {
     self.bits = other.bits;
     self.deep = other.deep;
     self.memo = other.memo;
+    self.tags = other.tags;
     Ok(()) }
 
 
