@@ -53,7 +53,7 @@ impl BDDBase {
   pub fn get(&self, s:&String)->Option<NID> { Some(*self.tags.get(s)?) }
 
   pub fn bdd(&self, n:NID)->BDD {
-    if inv(n) { let b=self.bdd(not(n)); BDD{v:b.v, hi:not(b.hi), lo:not(b.lo)} }
+    if inv(n) { let mut b=self.bits[not(n)].clone(); b.hi=not(b.hi); b.lo=not(b.lo); b }
     else { self.bits[n] }}
 
   pub fn tup(&self, n:NID)->(VID,NID,NID) {
