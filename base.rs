@@ -180,7 +180,7 @@ impl ::std::fmt::Debug for Base {
 #[test]
 fn base_basics(){
   let mut b = Base::empty();
-  assert_eq!(b.len(), 2);
+  assert_eq!(b.bits.len(), 2);
 
   // constants
   assert!(0==b.o(), "o");      assert!(1==b.i(), "i");
@@ -198,7 +198,7 @@ fn base_basics(){
 
 #[test]
 fn base_vars(){
-  let mut b = Base::empty(); let n = b.len();
+  let mut b = Base::empty(); let n = b.bits.len();
   let x0 = b.var(0); let x02 = b.var(0); let x1 = b.var(1);
   assert!(x0 == n, "var() should create a node. expected {}, got {}", n, x0);
   assert!(x0 == x02, "var(0) should always return the same nid.");
