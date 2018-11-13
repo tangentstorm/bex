@@ -6,6 +6,7 @@ use std::process::Command;      // for creating and viewing digarams
 use std::fs::File;
 use std::cmp::max;
 use std::io::Write;
+use fnv::FnvHashMap;
 use bincode;
 use io;
 
@@ -15,7 +16,7 @@ pub struct BDDBase {
   bits: Vec<BDD>,
   pub deep: Vec<NID>,              // the deepest nid touched by each node
   pub tags: HashMap<String, NID>,
-  memo: HashMap<BDD,NID>}
+  memo: FnvHashMap<BDD,NID>}
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct BDD{ v:VID, hi:NID, lo:NID } // if|then|else
@@ -45,7 +46,7 @@ impl BDDBase {
     let mut bits = vec![BDD{v:I,hi:O,lo:I}]; // node 0 is ⊥
     let mut deep = vec![I];
     for i in 1..nvars+1 { bits.push(BDD{v:i, hi:I, lo: O}); deep.push(i); }
-    BDDBase{nvars:nvars, bits:bits, deep:deep, memo:HashMap::new(),tags:HashMap::new()}}
+    BDDBase{nvars:nvars, bits:bits, deep:deep, memo:FnvHashMap::default(),tags:HashMap::new()}}
 
   pub fn nvars(&self)->usize { self.nvars }
 
