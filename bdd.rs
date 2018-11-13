@@ -202,40 +202,46 @@ impl BDDBase {
   /// choose normal form for writing this node. Algorithm based on:
   /// "Efficient Implementation of a BDD Package"
   /// http://www.cs.cmu.edu/~emc/15817-f08/bryant-bdd-1991.pdf
-  pub fn norm(&self, f:NID, g:NID, h:NID)->Norm {
-    let (nf,ng,nh,pf,pg,ph) = (not(f), not(g), not(h), pos(f), pos(g), pos(h));
-    match (f,g,h) {
-      (I, g, _)          => Norm::Nid(g),
-      (O, _, h)          => Norm::Nid(h),
-      (_, g, h) if g==h  => Norm::Nid(g),
-      (f, I, O)          => Norm::Nid(f),
-      (_, O, I)          => Norm::Nid(nf),
-      (f, g, O) if g==f  => Norm::Nid(f),
-      (f, g, I) if g==f  => Norm::Nid(I),
-      (f, g, h) if g==f  => self.norm(f,I,h),
-      (f, g, h) if g==nf => self.norm(f,O,h),
-      (f, g, h) if h==f  => self.norm(f,g,O),
-      (f, g, h) if h==nf => self.norm(f,g,I),
+  pub fn norm(&self, f0:NID, g0:NID, h0:NID)->Norm {
+    let mut f = f0; let mut g = g0; let mut h = h0;
+    // rustc doesn't do tail call optimization, so we'll do it ourselves.
+    macro_rules! bounce { ($x:expr,$y:expr,$z:expr) => {{
+      // !! NB. can't set f,g,h directly because we might end up with e.g. `f=g;g=f;`
+      let xx=$x; let yy=$y; let zz=$z;  f=xx; g=yy; h=zz; }}}
+    loop {
+      let (nf,ng,nh,pf,pg,ph) = (not(f), not(g), not(h), pos(f), pos(g), pos(h));
+      match (f,g,h) {
+      (I, g, _)          => return Norm::Nid(g),
+      (O, _, h)          => return Norm::Nid(h),
+      (_, g, h) if g==h  => return Norm::Nid(g),
+      (f, I, O)          => return Norm::Nid(f),
+      (_, O, I)          => return Norm::Nid(nf),
+      (f, g, O) if g==f  => return Norm::Nid(f),
+      (f, g, I) if g==f  => return Norm::Nid(I),
+      (f, g, h) if g==f  => bounce!(f,I,h),
+      (f, g, h) if g==nf => bounce!(f,O,h),
+      (f, g, h) if h==f  => bounce!(f,g,O),
+      (f, g, h) if h==nf => bounce!(f,g,I),
       _otherwise         => {
         let (fv,_ft,_fe) = self.tup(f);
         let (gv,_gt,_ge) = self.tup(g);
         let (hv,_ht,_he) = self.tup(h);
         let cmp = |x0,x1, y0,y1| (x0<y0) || ((x0==y0) && (x1<y1));
         match (g,h) {
-          (I,h) if cmp(hv,ph, fv,pf) => self.norm(h,I,f),
-          (g,O) if cmp(gv,pg, fv,pf) => self.norm(g,f,O),
-          (_,I) if cmp(gv,pg, fv,pf) => self.norm(ng,nf,I),
-          (O,_) if cmp(hv,ph, fv,pf) => self.norm(nh,O,nf),
-          (g,x) if cmp(gv,pg, fv,pf) && x==ng => self.norm(g,f,nf),
+          (I,h) if cmp(hv,ph, fv,pf) => bounce!(h,I,f),
+          (g,O) if cmp(gv,pg, fv,pf) => bounce!(g,f,O),
+          (_,I) if cmp(gv,pg, fv,pf) => bounce!(ng,nf,I),
+          (O,_) if cmp(hv,ph, fv,pf) => bounce!(nh,O,nf),
+          (g,x) if cmp(gv,pg, fv,pf) && x==ng => bounce!(g,f,nf),
           _otherwise => {
             // choose form where first 2 slots are NOT inverted:
             // from { (f,g,h), (¬f,h,g), ¬(f,¬g,¬h), ¬(¬f,¬g,¬h) }
-            if inv(f) { self.norm(nf,h,g) }
+            if inv(f) { bounce!(nf,h,g) }
             else if inv(g) { match self.norm(f,ng,nh) {
-              Norm::Nid(x) => Norm::Nid(not(x)),
-              Norm::Not(x,y,z) => Norm::Tup(x,y,z),
-              Norm::Tup(x,y,z) => Norm::Not(x,y,z)}}
-            else { Norm::Tup(f,g,h) }}}}}}
+              Norm::Nid(x) => return Norm::Nid(not(x)),
+              Norm::Not(x,y,z) => return Norm::Tup(x,y,z),
+              Norm::Tup(x,y,z) => return Norm::Not(x,y,z)}}
+            else { return Norm::Tup(f,g,h) }}}}}}}
 
 
   pub fn save(&self, path:&str)->::std::io::Result<()> {
