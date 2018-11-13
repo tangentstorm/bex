@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::process::Command;      // for creating and viewing digarams
 use std::fs::File;
-use std::cmp::max;
+use std::cmp::{max,Ordering};
 use std::io::Write;
 use fnv::FnvHashMap;
 use bincode;
@@ -134,23 +134,23 @@ impl BDDBase {
     // !! this check for I is redundant since I > everything. maybe remove and then
     // match on yv.cmp(x) or vice-versa?
     // !! should x always be a vid here? and if not, shouldn't i look at (xv,xt,xe)??
-    if        yv == I { y }       // y is constant, so no change
-    else if   yv == x { yt }      // x ∧ if(x,th,_) → th
-    else if   yv > x  { y }       // y independent of x, so no change.
-    else { // yv < x              // y depends on x, so recurse.
-      let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
-      print!("yv<x -> "); print_tup((yv,th, el)); println!("");
-      self.ite(yv, th, el) }}
+    match yv.cmp(&x) {
+      Ordering::Greater => y,  // y independent of x, so no change. includes yv = I
+      Ordering::Equal => yt,   // x ∧ if(x,th,_) → th
+      Ordering::Less => {      // y may depend on x, so recurse.
+        let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
+        self.ite(yv, th, el) }}}
 
   /// nid of y when x is lo
   pub fn when_lo(&mut self, x:NID, y:NID)->NID {
     let (yv, yt, ye) = self.tup(y);
-    if        yv == I { y }       // y constant, so no change
-    else if   yv == x { ye }      // ¬x ∧ if(x,_,el) → el
-    else if   yv > x  { y }       // y independent of x, so no change.
-    else { // yv < x              // y depends on x, so recurse.
-      let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
-      self.ite(yv, th, el) }}
+    match yv.cmp(&x) {
+      Ordering::Greater => y,  // y independent of x, so no change. includes yv = I
+      Ordering::Equal   => ye, // ¬x ∧ if(x,_,el) → el
+      Ordering::Less    => {   // y may depend on x, so recurse.
+        let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
+        self.ite(yv, th, el) }}}
+
 
   /// is n the nid of a variable?
   pub fn is_var(&self, n:NID)->bool {
@@ -179,15 +179,16 @@ impl BDDBase {
   // private helpers for building nodes
 
   fn build(&mut self, f:NID, g:NID, h:NID)->NID {
-    let ((fv,_,_), (gv,_,_), (hv,_,_)) = (self.tup(f), self.tup(g), self.tup(h));
-    let v = min(fv, min(gv,hv));
-    let th = {
+    // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
+    // (though... there really isn't much to do here...)
+    let v = min(self.bits[pos(f)].v, min(self.bits[pos(g)].v, self.bits[pos(h)].v));
+    let hi = { // when_xx and ite are both mutable borrows, so need temp storage
       let (i,t,e) = (self.when_hi(v,f), self.when_hi(v,g), self.when_hi(v,h));
       self.ite(i,t,e) };
-    let el = {
+    let lo = {
       let (i,t,e) = (self.when_lo(v,f), self.when_lo(v,g), self.when_lo(v,h));
       self.ite(i,t,e) };
-    if th == el { th } else { self.nid(v,th,el) }}
+    if hi == lo {hi} else { self.nid(v,hi,lo) }}
 
   fn nid(&mut self, f:NID, g:NID, h:NID)->NID {
     let bdd = BDD{v:f,hi:g,lo:h};
