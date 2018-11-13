@@ -130,6 +130,9 @@ impl BDDBase {
   /// nid of y when x is high
   pub fn when_hi(&mut self, x:NID, y:NID)->NID {
     let (yv, yt, ye) = self.tup(y);
+    // !! this check for I is redundant since I > everything. maybe remove and then
+    // match on yv.cmp(x) or vice-versa?
+    // !! should x always be a vid here? and if not, shouldn't i look at (xv,xt,xe)??
     if        yv == I { y }       // y is constant, so no change
     else if   yv == x { yt }      // x ∧ if(x,th,_) → th
     else if   yv > x  { y }       // y independent of x, so no change.
@@ -175,8 +178,7 @@ impl BDDBase {
   // private helpers for building nodes
 
   fn build(&mut self, f:NID, g:NID, h:NID)->NID {
-    let ((fv,_,_), (gv,_,_), (hv,_,_))
-      = (self.tup(f), self.tup(g), self.tup(h));
+    let ((fv,_,_), (gv,_,_), (hv,_,_)) = (self.tup(f), self.tup(g), self.tup(h));
     let v = min(fv, min(gv,hv));
     let th = {
       let (i,t,e) = (self.when_hi(v,f), self.when_hi(v,g), self.when_hi(v,h));
