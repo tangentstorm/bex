@@ -213,39 +213,40 @@ impl BDDBase {
       // !! NB. can't set f,g,h directly because we might end up with e.g. `f=g;g=f;`
       let xx=$x; let yy=$y; let zz=$z;  f=xx; g=yy; h=zz; }}}
     loop {
-      let (nf,ng,nh,pf,pg,ph) = (not(f), not(g), not(h), pos(f), pos(g), pos(h));
+      let nf = not(f);
       match (f,g,h) {
-      (I, g, _)          => return Norm::Nid(g),
-      (O, _, h)          => return Norm::Nid(h),
-      (_, g, h) if g==h  => return Norm::Nid(g),
-      (f, I, O)          => return Norm::Nid(f),
+      (I, _, _)          => return Norm::Nid(g),
+      (O, _, _)          => return Norm::Nid(h),
+      (_, I, O)          => return Norm::Nid(f),
       (_, O, I)          => return Norm::Nid(nf),
-      (f, g, O) if g==f  => return Norm::Nid(f),
-      (f, g, I) if g==f  => return Norm::Nid(I),
-      (f, g, h) if g==f  => bounce!(f,I,h),
-      (f, g, h) if g==nf => bounce!(f,O,h),
-      (f, g, h) if h==f  => bounce!(f,g,O),
-      (f, g, h) if h==nf => bounce!(f,g,I),
-      _otherwise         => {
-        let (fv,_ft,_fe) = self.tup(f);
-        let (gv,_gt,_ge) = self.tup(g);
-        let (hv,_ht,_he) = self.tup(h);
-        let cmp = |x0,x1, y0,y1| (x0<y0) || ((x0==y0) && (x1<y1));
-        match (g,h) {
-          (I,h) if cmp(hv,ph, fv,pf) => bounce!(h,I,f),
-          (g,O) if cmp(gv,pg, fv,pf) => bounce!(g,f,O),
-          (_,I) if cmp(gv,pg, fv,pf) => bounce!(ng,nf,I),
-          (O,_) if cmp(hv,ph, fv,pf) => bounce!(nh,O,nf),
-          (g,x) if cmp(gv,pg, fv,pf) && x==ng => bounce!(g,f,nf),
-          _otherwise => {
-            // choose form where first 2 slots are NOT inverted:
-            // from { (f,g,h), (¬f,h,g), ¬(f,¬g,¬h), ¬(¬f,¬g,¬h) }
-            if inv(f) { bounce!(nf,h,g) }
-            else if inv(g) { match self.norm(f,ng,nh) {
-              Norm::Nid(x) => return Norm::Nid(not(x)),
-              Norm::Not(x,y,z) => return Norm::Tup(x,y,z),
-              Norm::Tup(x,y,z) => return Norm::Not(x,y,z)}}
-            else { return Norm::Tup(f,g,h) }}}}}}}
+      (_, _, O) if g==f  => return Norm::Nid(f),
+      (_, _, I) if g==f  => return Norm::Nid(I),
+      _otherwise => {
+        if      g==h  { return Norm::Nid(g) }
+        else if g==f  { g=I } // bounce!(f,I,h)
+        else if g==nf { g=O } // bounce!(f,O,h)
+        else if h==f  { h=O } // bounce!(f,g,O)
+        else if h==nf { h=I } // bounce!(f,g,I)
+        else {
+          let (pf, pg, ph) = (pos(f), pos(g), pos(h));
+          let (fv, gv, hv) = (self.bits[pf].v, self.bits[pg].v, self.bits[ph].v);
+          macro_rules! cmp { ($x0:expr,$x1:expr) => { (($x0<fv) || (($x0==fv) && ($x1<pf))) }}
+          match (g,h) {
+            (I,_) if cmp!(hv,ph) => bounce!(h,I,f),
+            (O,_) if cmp!(hv,ph) => bounce!(not(h),O,nf),
+            (_,O) if cmp!(gv,pg) => bounce!(g,f,O),
+            (_,I) if cmp!(gv,pg) => bounce!(not(g),nf,I),
+            _otherwise => {
+              let ng = not(g);
+              if (h==ng) && cmp!(gv,pg) { bounce!(g,f,nf) }
+              // choose form where first 2 slots are NOT inverted:
+              // from { (f,g,h), (¬f,h,g), ¬(f,¬g,¬h), ¬(¬f,¬g,¬h) }
+              else if inv(f) { bounce!(nf,h,g) }
+              else if inv(g) { return match self.norm(f,ng,not(h)) {
+                Norm::Nid(x) => Norm::Nid(not(x)),
+                Norm::Not(x,y,z) => Norm::Tup(x,y,z),
+                Norm::Tup(x,y,z) => Norm::Not(x,y,z)}}
+              else { return Norm::Tup(f,g,h) }}}}}}}}
 
 
   pub fn save(&self, path:&str)->::std::io::Result<()> {
