@@ -122,6 +122,7 @@ impl BDDBase {
   pub fn  gt(&mut self, x:NID, y:NID)->NID { self.ite(x, not(y), O) }
   pub fn  lt(&mut self, x:NID, y:NID)->NID { self.ite(x, O, y) }
 
+  #[inline]
   pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
     match self.norm(f,g,h) {
       Norm::Nid(x) => x,
@@ -129,6 +130,7 @@ impl BDDBase {
       Norm::Not(x,y,z) => not(self.build(x,y,z)) }}
 
   /// nid of y when x is high
+  #[inline]
   pub fn when_hi(&mut self, x:NID, y:NID)->NID {
     let (yv, yt, ye) = self.tup(y);
     // !! this check for I is redundant since I > everything. maybe remove and then
@@ -142,6 +144,7 @@ impl BDDBase {
         self.ite(yv, th, el) }}}
 
   /// nid of y when x is lo
+  #[inline]
   pub fn when_lo(&mut self, x:NID, y:NID)->NID {
     let (yv, yt, ye) = self.tup(y);
     match yv.cmp(&x) {
@@ -158,7 +161,8 @@ impl BDDBase {
 
   /// is it possible x depends on y?
   /// the goal here is to avoid exploring a subgraph if we don't have to.
-  pub fn might_depend(&mut self, x:NID, y:NID)->bool {  // -- TODO --
+  #[inline]
+  pub fn might_depend(&mut self, x:NID, y:NID)->bool {
     let (v,_,_) = self.tup(x);
     if self.is_var(x) { x==y }
     else if y > self.deep[pos(x)] { false }
@@ -177,7 +181,7 @@ impl BDDBase {
     else { z }}
 
   // private helpers for building nodes
-
+  #[inline]
   fn build(&mut self, f:NID, g:NID, h:NID)->NID {
     // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
     // (though... there really isn't much to do here...)
