@@ -17,3 +17,5 @@ where T: std::cmp::Ord {
   let mut ixs:Vec<(usize,&T)> = xs.iter().enumerate().collect();
   ixs.sort_by_key(|ix|ix.1); ixs.iter().map(|ix|ix.0).collect()}
 
+pub fn at<'a,T:Clone>(xs:&'a Vec<T>, ys:&'a Vec<usize>) -> Vec<T> {
+  ys.iter().map(|&i| xs[i].clone()).collect() }
