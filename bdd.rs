@@ -20,14 +20,14 @@ pub struct BDDBase {
   pub tags: HashMap<String, NID>,
   memo: FnvHashMap<BDD,NID> }
 
-#[derive(PartialEq, Eq, Hash, Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct BDD{ pub v:VID, pub hi:NID, pub lo:NID } // if|then|else
 
 pub type VID = u32;
 pub type IDX = u32;
 
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash, Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct NID { var: VID, idx: IDX }
 pub const INV:VID = 1<<31;  // is inverted
 pub const VAR:VID = 1<<30;  // is variable
@@ -97,13 +97,12 @@ impl BDDBase {
       if is_inv(n) { BDD{v:var(n), lo:I, hi:O }}
       else { BDD{v:var(n), lo:O, hi:I } }}
     else if is_inv(n) {
-      let mut b=self.bits[idx(n)].clone(); b.hi=not(b.hi); b.lo=not(b.lo); b }
+      let mut b=self.bits[idx(n)]; b.hi=not(b.hi); b.lo=not(b.lo); b }
     else { self.bits[idx(n)] }}
 
   #[inline]
   pub fn tup(&self, n:NID)->(VID,NID,NID) {
-    let bdd = self.bdd(n);
-    (bdd.v, bdd.hi, bdd.lo) }
+    let bdd = self.bdd(n); (bdd.v, bdd.hi, bdd.lo) }
 
   /// walk node recursively, without revisiting shared nodes
   pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
@@ -174,11 +173,8 @@ impl BDDBase {
 
   /// nid of y when x is high
   #[inline]
-  pub fn when_hi(&mut self, x:NID, y:NID)->NID {
-    // !! this check for I is redundant since I > everything. maybe remove and then
-    // match on yv.cmp(x) or vice-versa?
-    // !! should x always be a vid here? and if not, shouldn't i look at (xv,xt,xe)??
-    match var(y).cmp(&var(x)) {
+  pub fn when_hi(&mut self, x:VID, y:NID)->NID {
+    match var(y).cmp(&x) {
       Ordering::Greater => y,  // y independent of x, so no change. includes yv = I
       Ordering::Equal => { let(_,yt,_)=self.tup(y); yt } // x ∧ if(x,th,_) → th
       Ordering::Less => {      // y may depend on x, so recurse.
@@ -188,8 +184,8 @@ impl BDDBase {
 
   /// nid of y when x is lo
   #[inline]
-  pub fn when_lo(&mut self, x:NID, y:NID)->NID {
-    match var(y).cmp(&var(x)) {
+  pub fn when_lo(&mut self, x:VID, y:NID)->NID {
+    match var(y).cmp(&x) {
       Ordering::Greater => y,  // y independent of x, so no change. includes yv = I
       Ordering::Equal   => { let(_,_,ye)=self.tup(y); ye }, // ¬x ∧ if(x,_,el) → el
       Ordering::Less    => {   // y may depend on x, so recurse.
@@ -204,13 +200,12 @@ impl BDDBase {
   /// is it possible x depends on y?
   /// the goal here is to avoid exploring a subgraph if we don't have to.
   #[inline]
-  pub fn might_depend(&mut self, x:NID, y:NID)->bool {
-    if is_var(x) { var(x)==var(y) }
-    else { var(x) <= var(y) }}
+  fn might_depend(&mut self, x:NID, y:VID)->bool {
+    if is_var(x) { var(x)==y } else { var(x) <= y }}
 
   /// replace var x with y in z
   pub fn replace(&mut self, x:VID, y:NID, z:NID)->NID {
-    if self.might_depend(z, nv(x)) {
+    if self.might_depend(z, x) {
       let (zv,zt,ze) = self.tup(z);
       if x==zv { self.ite(y, zt, ze) }
       else {
@@ -222,12 +217,12 @@ impl BDDBase {
   // private helpers for building nodes
   fn build(&mut self, f:NID, g:NID, h:NID)->NID {
     // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
-    let v = min(var(f), min(var(g), var(h))); let n = nv(v);
+    let v = min(var(f), min(var(g), var(h)));
     let hi = { // when_xx and ite are both mutable borrows, so need temp storage
-      let (i,t,e) = (self.when_hi(n,f), self.when_hi(n,g), self.when_hi(n,h));
+      let (i,t,e) = (self.when_hi(v,f), self.when_hi(v,g), self.when_hi(v,h));
       self.ite(i,t,e) };
     let lo = {
-      let (i,t,e) = (self.when_lo(n,f), self.when_lo(n,g), self.when_lo(n,h));
+      let (i,t,e) = (self.when_lo(v,f), self.when_lo(v,g), self.when_lo(v,h));
       self.ite(i,t,e) };
     if hi == lo {hi} else { self.nid(v,hi,lo) }}
 
@@ -316,9 +311,9 @@ impl BDDBase {
         :   \    :  \                 :   \    :   \
         ll   lh  hl  hh               ll   hl  lh   hh
      */
-    let (xlo, xhi) = (self.when_lo(nv(x),n), self.when_hi(nv(x),n));
-    let (xlo_ylo, xlo_yhi) = (self.when_lo(nv(y),xlo), self.when_hi(nv(y),xlo));
-    let (xhi_ylo, xhi_yhi) = (self.when_lo(nv(y),xhi), self.when_hi(nv(y),xhi));
+    let (xlo, xhi) = (self.when_lo(x,n), self.when_hi(x,n));
+    let (xlo_ylo, xlo_yhi) = (self.when_lo(y,xlo), self.when_hi(y,xlo));
+    let (xhi_ylo, xhi_yhi) = (self.when_lo(y,xhi), self.when_hi(y,xhi));
     let lo = self.ite(nv(y), xlo_ylo, xhi_ylo);
     let hi = self.ite(nv(y), xlo_yhi, xhi_yhi);
     self.ite(nv(x), lo, hi) }
@@ -338,30 +333,30 @@ impl BDDBase {
   assert_eq!((1,I,O), base.tup(v1));
   assert_eq!((2,I,O), base.tup(v2));
   assert_eq!((3,I,O), base.tup(v3));
-  assert_eq!(I, base.when_hi(v3,v3));
-  assert_eq!(O, base.when_lo(v3,v3))}
+  assert_eq!(I, base.when_hi(3,v3));
+  assert_eq!(O, base.when_lo(3,v3))}
 
 #[test] fn test_and() {
   let mut base = BDDBase::new(3);
-  let (v1, v2, v3) = (nv(1), nv(2), nv(3));
+  let (v1, v2) = (nv(1), nv(2));
   let a = base.and(v1, v2);
-  assert_eq!(O,  base.when_lo(v1,a));
-  assert_eq!(v2, base.when_hi(v1,a));
-  assert_eq!(O,  base.when_lo(v2,a));
-  assert_eq!(v1, base.when_hi(v2,a));
-  assert_eq!(a,  base.when_hi(v3,a));
-  assert_eq!(a,  base.when_lo(v3,a))}
+  assert_eq!(O,  base.when_lo(1,a));
+  assert_eq!(v2, base.when_hi(1,a));
+  assert_eq!(O,  base.when_lo(2,a));
+  assert_eq!(v1, base.when_hi(2,a));
+  assert_eq!(a,  base.when_hi(3,a));
+  assert_eq!(a,  base.when_lo(3,a))}
 
 #[test] fn test_xor() {
   let mut base = BDDBase::new(3);
-  let (v1, v2, v3) = (nv(1), nv(2), nv(3));
+  let (v1, v2) = (nv(1), nv(2));
   let x = base.xor(v1, v2);
-  assert_eq!(v2,      base.when_lo(v1,x));
-  assert_eq!(not(v2), base.when_hi(v1,x));
-  assert_eq!(nv(1),   base.when_lo(v2,x));
-  assert_eq!(not(v1), base.when_hi(v2,x));
-  assert_eq!(x,       base.when_lo(v3,x));
-  assert_eq!(x,       base.when_hi(v3,x))}
+  assert_eq!(v2,      base.when_lo(1,x));
+  assert_eq!(not(v2), base.when_hi(1,x));
+  assert_eq!(v1,      base.when_lo(2,x));
+  assert_eq!(not(v1), base.when_hi(2,x));
+  assert_eq!(x,       base.when_lo(3,x));
+  assert_eq!(x,       base.when_hi(3,x))}
 
 
 
