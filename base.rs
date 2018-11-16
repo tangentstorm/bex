@@ -42,6 +42,7 @@ pub trait TBase {
 // !! TODO: move subs/subc into external structure
 pub struct Base {
   pub bits: Vec<Op>,               // all known bits (simplified)     TODO: make private
+  pub nvars: usize,
   pub tags: HashMap<String, NID>,       // support for naming/tagging bits.  TODO: make private
   hash: HashMap<Op, NID>,      // expression cache (simple+complex)
   vars: Vec<NID>,                   // quick index of Var(n) in bits
@@ -53,15 +54,17 @@ type VarMaskFn = fn(&Base,VID)->u64;
 
 impl Base {
 
-  pub fn new(bits:Vec<Op>, tags:HashMap<String, NID>)->Base {
+
+  pub fn new(bits:Vec<Op>, tags:HashMap<String, NID>, nvars:usize)->Base {
     Base{bits: bits,
+         nvars:nvars,
          tags: tags,
          hash: HashMap::new(),
          vars: vec![],
          subs: vec![],
          subc: vec![]}}
 
-  pub fn empty()->Base { Base::new(vec![Op::O, Op::I], HashMap::new()) }
+  pub fn empty()->Base { Base::new(vec![Op::O, Op::I], HashMap::new(), 0) }
 
 
   /// given a function that maps input bits to 64-bit masks, color each node
@@ -131,7 +134,7 @@ impl Base {
   /// in the result. This is intentional, as this function is used by the garbage
   /// collector, but if a node whose nid is in `oldnids` references a node that
   /// is not in `oldnids`, the resulting generated node will reference GONE (2^64).
-  pub fn permute(&self, oldnids:Vec<NID>)->Base {
+  pub fn permute(&self, oldnids:&Vec<NID>)->Base {
     let newnid = {
       let mut result = vec![GONE; self.bits.len()];
       for (i,&n) in oldnids.iter().enumerate() { result[n] = i; }
@@ -150,7 +153,7 @@ impl Base {
     for (key, &val) in &self.tags {
       if newnid[val] != GONE { newtags.insert(key.clone(), newnid[val]); }}
 
-    Base::new(newbits, newtags) }
+    Base::new(newbits, newtags, self.nvars) }
 
   /// Construct a new Base with only the nodes necessary to define the given nodes.
   /// The relative order of the bits is preserved.
@@ -165,7 +168,7 @@ impl Base {
     for i in 0..self.bits.len() {
       if deps[i] { newnids[i]=oldnids.len(); oldnids.push(i as usize); }}
 
-    return (self.permute(oldnids), keep.iter().map(|&i| newnids[i]).collect()); }
+    return (self.permute(&oldnids), keep.iter().map(|&i| newnids[i]).collect()); }
 
 } // end impl Base
 
@@ -232,9 +235,10 @@ impl TBase for Base {
   fn var(&mut self, v:VID)->NID {
     let bits = &mut self.bits;
     let vars = &mut self.vars;
-    let known = vars.len();
+    let known = self.nvars;
     if v >= known {
       for i in known .. v+1 {
+        self.nvars += 1;
         vars.push(bits.len());
         bits.push(Op::Var(i)) }}
     vars[v] }
@@ -353,4 +357,3 @@ impl TBase for Base {
         n }}}
 
 } // impl TBase for Base
-
