@@ -19,7 +19,7 @@ pub struct BDDBase {
   memo: FnvHashMap<BDD,NID>}
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct BDD{ v:VID, hi:NID, lo:NID } // if|then|else
+pub struct BDD{ pub v:VID, pub hi:NID, pub lo:NID } // if|then|else
 
 pub type NID = usize;
 pub type VID = usize;
