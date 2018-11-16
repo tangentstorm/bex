@@ -15,10 +15,9 @@ use io;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BDDBase {
-  nvars: usize,
-  bits: Vec<BDD>,
+  nvars: usize,  bits: Vec<BDD>,
   pub tags: HashMap<String, NID>,
-  memo: FnvHashMap<BDD,NID> }
+  memo: Vec<FnvHashMap<BDD,NID>> }
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct BDD{ pub v:VID, pub hi:NID, pub lo:NID } // if|then|else
@@ -50,24 +49,6 @@ impl fmt::Display for NID {
       if is_var(*self) { write!(f, "x{}", var(*self)) }
       else { write!(f, "@[x{}:{}]", var(*self), self.idx) } }}}
 
-
-// old implementation where everything is in 1 64-bit number
-// maybe more efficient, but i didn't get it to compile...
-// i figure making the fields type-safe first will help me get the code right.
-/*
-pub const O:usize = 0;
-pub const I:usize = 1 << 63;  // invert, also the 'true' nid.
-pub const V:usize = 1 << 62;  // bit indicating virtual NID for variables
-pub const MASK44:usize = 0x0fFFffFFffFF; // 44 1 bits. this is max index per variable.
-pub fn not(x:NID)->NID { x ^ I }         // 'not' bit is the most significant bit 0=not(1)
-pub fn pos(x:NID)->NID { x &!I }         // positive (strip 'not' bit)
-pub fn inv(x:NID)->bool { I==x&I }       // is not bit set? (or 'is x inverted?')
-pub fn idx(x:NID)->usize { x & MASK44 }  // limit ourselves to 44 bit indices
-pub fn var(x:NID)->VID { pos(x) >> 40 }  // the remaining 18 bits represent variables
-pub fn nvi(var:VID,idx:IDX) -> NID { (var << 40) + idx }
-pub fn nv(v:VID) -> NID { v | V }
- */
-
 /// Enum to represent a normalized form of a given f,g,h triple
 #[derive(Debug)]
 pub enum Norm {
@@ -82,7 +63,7 @@ impl BDDBase {
     // the vars are 1-indexed, because node 0 is ⊥ (false)
     let bits = vec![BDD{v:T,hi:O,lo:I}]; // node 0 is ⊥
     BDDBase{nvars:nvars, bits:bits,
-            memo:FnvHashMap::default(),
+            memo:(0..nvars).map(|_| FnvHashMap::default()).collect(),
             tags:HashMap::new()}}
 
   pub fn nvars(&self)->usize { self.nvars }
@@ -229,11 +210,11 @@ impl BDDBase {
   /// this function takes the final form of the triple
   fn nid(&mut self, v:VID, hi:NID, lo:NID)->NID {
     let bdd = BDD{v:v,hi:hi,lo:lo};
-    match self.memo.get(&bdd) {
+    match self.memo[v as usize].get(&bdd) {
       Some(&n) => n,
       None => {
         let res = NID { var:v, idx:self.bits.len() as IDX};
-        self.memo.insert(bdd, res);
+        self.memo[v as usize].insert(bdd, res);
         self.bits.push(bdd);
         res }}}
 
@@ -242,14 +223,12 @@ impl BDDBase {
   /// "Efficient Implementation of a BDD Package"
   /// http://www.cs.cmu.edu/~emc/15817-f08/bryant-bdd-1991.pdf
   pub fn norm(&self, f0:NID, g0:NID, h0:NID)->Norm {
-    // println!("norm(f:{}, g:{}, h:{}) h=O? {}", f0,g0,h0, h0==O);
     let mut f = f0; let mut g = g0; let mut h = h0;
     // rustc doesn't do tail call optimization, so we'll do it ourselves.
     macro_rules! bounce { ($x:expr,$y:expr,$z:expr) => {{
       // !! NB. can't set f,g,h directly because we might end up with e.g. `f=g;g=f;`
       let xx=$x; let yy=$y; let zz=$z;  f=xx; g=yy; h=zz; }}}
-    loop {
-      match (f,g,h) {
+    loop { match (f,g,h) {
       (I, _, _)          => return Norm::Nid(g),
       (O, _, _)          => return Norm::Nid(h),
       (_, I, O)          => return Norm::Nid(f),
