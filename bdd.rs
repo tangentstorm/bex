@@ -104,7 +104,6 @@ impl BDDBase {
     macro_rules! w {
       ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap() }}
 
-    // TODO: integrate with print_nid
     let fmt = |x| match x {
       I=>"I".to_string(), O=>"O".to_string(),
       _ if is_inv(x) => format!("not{}", not(x)),
@@ -181,7 +180,7 @@ impl BDDBase {
   /// is it possible x depends on y?
   /// the goal here is to avoid exploring a subgraph if we don't have to.
   #[inline]
-  fn might_depend(&mut self, x:NID, y:VID)->bool {
+  pub fn might_depend(&mut self, x:NID, y:VID)->bool {
     if is_var(x) { var(x)==y } else { var(x) <= y }}
 
   /// replace var x with y in z
@@ -205,18 +204,15 @@ impl BDDBase {
     let lo = {
       let (i,t,e) = (self.when_lo(v,f), self.when_lo(v,g), self.when_lo(v,h));
       self.ite(i,t,e) };
-    if hi == lo {hi} else { self.nid(v,hi,lo) }}
-
-  /// this function takes the final form of the triple
-  fn nid(&mut self, v:VID, hi:NID, lo:NID)->NID {
-    let bdd = BDD{v:v,hi:hi,lo:lo};
-    match self.memo[v as usize].get(&bdd) {
-      Some(&n) => n,
-      None => {
-        let res = NID { var:v, idx:self.bits.len() as IDX};
-        self.memo[v as usize].insert(bdd, res);
-        self.bits.push(bdd);
-        res }}}
+    if hi == lo {hi} else {
+      let bdd = BDD{v:v,hi:hi,lo:lo};
+      match self.memo[v as usize].get(&bdd) {
+        Some(&n) => n,
+        None => {
+          let res = NID { var:v, idx:self.bits.len() as IDX};
+          self.memo[v as usize].insert(bdd, res);
+          self.bits.push(bdd);
+          res }}}}
 
 
   /// choose normal form for writing this node. Algorithm based on:
@@ -336,13 +332,3 @@ impl BDDBase {
   assert_eq!(not(v1), base.when_hi(2,x));
   assert_eq!(x,       base.when_lo(3,x));
   assert_eq!(x,       base.when_hi(3,x))}
-
-
-
-pub fn print_nid(x:NID){ match x {
-  I=>print!("I"), O=>print!("O"),
-  _ if is_inv(x) => print!("-{}", not(x)), _=> print!("{}", x)}}
-
-pub fn print_tup(n:(NID,NID,NID)){
-  print!("("); print_nid(n.0); print!(", "); print_nid(n.1);
-  print!(", "); print_nid(n.2); println!(")")}
