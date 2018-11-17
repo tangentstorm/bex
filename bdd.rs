@@ -1,4 +1,4 @@
-// module for efficient implementation of binary decision diagrams
+/// A module for efficient implementation of binary decision diagrams.
 use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -12,21 +12,22 @@ use bincode;
 use io;
 
 // core data types
+
+/// A VID uniquely identifies an input variable in the BDD.
 pub type VID = u32;
+
+/// An IDX is an index into a vector.
 pub type IDX = u32;
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BDDBase {
-  nvars: usize,  bits: Vec<BDD>,
-  pub tags: HashMap<String, NID>,
-  /// variable-specific memoization. These record (v,lo,hi) lookups.
-  vmemo: Vec<FnvHashMap<(NID, NID),NID>>,
-  /// arbitrary memoization. These record (f,g,h) lookups.
-  xmemo: FnvHashMap<NID, FnvHashMap<(NID, NID), NID>> }
-
+/// A BDDNode is a triple consisting of a VID, which references an input variable,
+/// and high and low branches, each pointing at other nodes in the BDD. The
+/// associated variable's value determines which branch to take.
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct BDD{ pub v:VID, pub hi:NID, pub lo:NID } // if|then|else
+pub struct BDDNode { pub v:VID, pub hi:NID, pub lo:NID } // if|then|else
 
+/// A NID represents a node in the BDD. Here they contain information about
+/// the branching variable so that it's easier to break up the BDD
+/// into slices based on the branching variable of the nodes.
 #[repr(C)]
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct NID { var: VID, idx: IDX }
@@ -48,20 +49,36 @@ impl fmt::Display for NID {
     else { if is_inv(*self) { write!(f, "¬")?; }
            if is_var(*self) { write!(f, "x{}", var(*self)) }
            else { write!(f, "@[x{}:{}]", var(*self), self.idx) } }}}
-
-/// Enum to represent a normalized form of a given f,g,h triple
+
+/// A Norm is an enum to represent a normalized form of a given f,g,h triple
 #[derive(Debug)]
-pub enum Norm {
+enum Norm {
   Nid(NID),
   Tup(NID, NID, NID),
   Not(NID, NID, NID)}
+
+
+/// A BDD Base contains any number of BDD structures, and various caches
+/// related to calculating nodes.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BDDBase {
+  nvars: usize,
+  // nbits:usize,
+  bits: Vec<BDDNode>,
+  pub tags: HashMap<String, NID>,
+  /// variable-specific memoization. These record (v,lo,hi) lookups.
+  vmemo: Vec<FnvHashMap<(NID, NID),NID>>,
+  /// arbitrary memoization. These record (f,g,h) lookups.
+  xmemo: FnvHashMap<NID, FnvHashMap<(NID, NID), NID>> }
+
+
 
 
 impl BDDBase {
 
   pub fn new(nvars:usize)->BDDBase {
     // the vars are 1-indexed, because node 0 is ⊥ (false)
-    let bits = vec![BDD{v:T,hi:O,lo:I}]; // node 0 is ⊥
+    let bits = vec![BDDNode{v:T,hi:O,lo:I}]; // node 0 is ⊥
     BDDBase{nvars:nvars, bits:bits,
             vmemo:(0..nvars).map(|_| FnvHashMap::default()).collect(),
             xmemo:FnvHashMap::default(),
@@ -73,11 +90,11 @@ impl BDDBase {
   pub fn get(&self, s:&String)->Option<NID> { Some(*self.tags.get(s)?) }
 
   #[inline]
-  pub fn bdd(&self, n:NID)->BDD {
+  pub fn bdd(&self, n:NID)->BDDNode {
     // bdd for var x still has huge number for the v
     if is_var(n) {
-      if is_inv(n) { BDD{v:var(n), lo:I, hi:O }}
-      else { BDD{v:var(n), lo:O, hi:I } }}
+      if is_inv(n) { BDDNode{v:var(n), lo:I, hi:O }}
+      else { BDDNode{v:var(n), lo:O, hi:I } }}
     else if is_inv(n) {
       let mut b=self.bits[idx(n)]; b.hi=not(b.hi); b.lo=not(b.lo); b }
     else { self.bits[idx(n)] }}
@@ -225,7 +242,7 @@ impl BDDBase {
               None => {
                 let res = NID { var:v, idx:self.bits.len() as IDX};
                 self.vmemo[v as usize].insert(hilo, res);
-                self.bits.push(BDD{v:v, hi:hi, lo:lo});
+                self.bits.push(BDDNode{v:v, hi:hi, lo:lo});
                 res }}}};
         if !is_var(f) { // now add the triple to the generalized memo store
           let mut hm = self.xmemo.entry(f).or_insert_with(|| FnvHashMap::default());
