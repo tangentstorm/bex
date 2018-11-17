@@ -17,7 +17,10 @@ use io;
 pub struct BDDBase {
   nvars: usize,  bits: Vec<BDD>,
   pub tags: HashMap<String, NID>,
-  memo: Vec<FnvHashMap<BDD,NID>> }
+  /// variable-specific memoization. These record (v,lo,hi) lookups.
+  vmemo: Vec<FnvHashMap<(NID, NID),NID>>,
+  /// arbitrary memoization. These record (f,g,h) lookups.
+  xmemo: FnvHashMap<NID, FnvHashMap<(NID, NID), NID>> }
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct BDD{ pub v:VID, pub hi:NID, pub lo:NID } // if|then|else
@@ -63,7 +66,8 @@ impl BDDBase {
     // the vars are 1-indexed, because node 0 is ⊥ (false)
     let bits = vec![BDD{v:T,hi:O,lo:I}]; // node 0 is ⊥
     BDDBase{nvars:nvars, bits:bits,
-            memo:(0..nvars).map(|_| FnvHashMap::default()).collect(),
+            vmemo:(0..nvars).map(|_| FnvHashMap::default()).collect(),
+            xmemo:FnvHashMap::default(),
             tags:HashMap::new()}}
 
   pub fn nvars(&self)->usize { self.nvars }
@@ -135,21 +139,13 @@ impl BDDBase {
       .spawn().expect("failed to launch firefox"); }
 
 
-  // public node builders
+  // public node constructors
 
   pub fn and(&mut self, x:NID, y:NID)->NID { self.ite(x,  y, O) }
   pub fn xor(&mut self, x:NID, y:NID)->NID { self.ite(x, not(y), y) }
   pub fn  or(&mut self, x:NID, y:NID)->NID { self.ite(x, I, y) }
   pub fn  gt(&mut self, x:NID, y:NID)->NID { self.ite(x, not(y), O) }
   pub fn  lt(&mut self, x:NID, y:NID)->NID { self.ite(x, O, y) }
-
-  #[inline]
-  pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
-    // println!("ite({},{},{})", f,g,h);
-    match self.norm(f,g,h) {
-      Norm::Nid(x) => x,
-      Norm::Tup(x,y,z) => self.build(x,y,z),
-      Norm::Not(x,y,z) => not(self.build(x,y,z)) }}
 
   /// nid of y when x is high
   #[inline]
@@ -194,26 +190,51 @@ impl BDDBase {
         self.ite(nv(zv), th, el) }}
     else { z }}
 
-  // private helpers for building nodes
-  fn build(&mut self, f:NID, g:NID, h:NID)->NID {
-    // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
-    let v = min(var(f), min(var(g), var(h)));
-    let hi = { // when_xx and ite are both mutable borrows, so need temp storage
-      let (i,t,e) = (self.when_hi(v,f), self.when_hi(v,g), self.when_hi(v,h));
-      self.ite(i,t,e) };
-    let lo = {
-      let (i,t,e) = (self.when_lo(v,f), self.when_lo(v,g), self.when_lo(v,h));
-      self.ite(i,t,e) };
-    if hi == lo {hi} else {
-      let bdd = BDD{v:v,hi:hi,lo:lo};
-      match self.memo[v as usize].get(&bdd) {
-        Some(&n) => n,
-        None => {
-          let res = NID { var:v, idx:self.bits.len() as IDX};
-          self.memo[v as usize].insert(bdd, res);
-          self.bits.push(bdd);
-          res }}}}
+// all-purpose node creation/lookup
 
+  #[inline]
+  pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
+    // println!("ite({},{},{})", f,g,h);
+    let norm = self.norm(f,g,h);
+    match norm {
+      Norm::Nid(x) => x,
+      Norm::Tup(x,y,z) => self.ite_norm(x,y,z),
+      Norm::Not(x,y,z) => not(self.ite_norm(x,y,z)) }}
+
+  #[inline] /// load the memoized NID if it exists
+  fn get_norm_memo<'a>(&'a self, f:NID, g:NID, h:NID) -> Option<&'a NID> {
+    if is_var(f) { self.vmemo[var(f) as usize].get(&(g,h)) }
+    else { self.xmemo.get(&f).map_or(None, |fmemo| fmemo.get(&(g,h))) }}
+
+  #[inline]
+  fn ite_norm(&mut self, f:NID, g:NID, h:NID)->NID {
+    // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
+    // this should only bec called from ite() on pre-normalized triples
+    match self.get_norm_memo(f, g, h) {
+      Some(&n) => n,
+      None => {
+        let new_nid = {
+          let v = min(var(f), min(var(g), var(h)));
+          let hi = { // when_xx and ite are both mutable borrows, so need temp storage
+            let (i,t,e) = (self.when_hi(v,f), self.when_hi(v,g), self.when_hi(v,h));
+            self.ite(i,t,e) };
+          let lo = {
+            let (i,t,e) = (self.when_lo(v,f), self.when_lo(v,g), self.when_lo(v,h));
+            self.ite(i,t,e) };
+          if hi == lo {hi} else {
+            let hilo = (hi,lo);
+            match self.vmemo[v as usize].get(&hilo) {
+              Some(&n) => n,
+              None => {
+                let res = NID { var:v, idx:self.bits.len() as IDX};
+                self.vmemo[v as usize].insert(hilo, res);
+                self.bits.push(BDD{v:v, hi:hi, lo:lo});
+                res }}}};
+        // now add the triple to the generalized memo store
+        if !is_var(f) {
+          let mut hm = self.xmemo.entry(f).or_insert_with(|| FnvHashMap::default());
+          hm.insert((g,h), new_nid); }
+        new_nid }}}
 
   /// choose normal form for writing this node. Algorithm based on:
   /// "Efficient Implementation of a BDD Package"
@@ -272,7 +293,8 @@ impl BDDBase {
     let other = BDDBase::from_path(path)?;
     self.nvars = other.nvars;
     self.bits = other.bits;
-    self.memo = other.memo;
+    self.vmemo = other.vmemo;
+    self.xmemo = other.xmemo;
     self.tags = other.tags;
     Ok(()) }
 
@@ -296,7 +318,7 @@ impl BDDBase {
   pub fn node_count(&self, n:NID)->usize {
     let mut c = 0; self.walk(n, &mut |_,_,_,_| c+=1); c }
 
-} // BDDBase
+} // end impl BDDBase
 
 
 #[test] fn test_base() {
