@@ -12,6 +12,8 @@ use bincode;
 use io;
 
 // core data types
+pub type VID = u32;
+pub type IDX = u32;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BDDBase {
@@ -25,15 +27,12 @@ pub struct BDDBase {
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct BDD{ pub v:VID, pub hi:NID, pub lo:NID } // if|then|else
 
-pub type VID = u32;
-pub type IDX = u32;
-
 #[repr(C)]
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct NID { var: VID, idx: IDX }
-pub const INV:VID = 1<<31;  // is inverted
-pub const VAR:VID = 1<<30;  // is variable
-pub const T:VID = 1<<29;  // T: max VID (hack so O/I nodes show up at bottom)
+pub const INV:VID = 1<<31;  // is inverted?
+pub const VAR:VID = 1<<30;  // is variable?
+pub const T:VID = 1<<29;    // T: max VID (hack so O/I nodes show up at bottom)
 pub const O:NID = NID{ var:T,     idx:0 };
 pub const I:NID = NID{ var:T|INV, idx:0 };
 #[inline(always)] pub fn is_var(x:NID)->bool { (x.var & VAR) != 0 }
@@ -43,14 +42,12 @@ pub const I:NID = NID{ var:T|INV, idx:0 };
 #[inline(always)] pub fn not(x:NID)->NID { NID { var:x.var^INV, idx:x.idx } }
 #[inline(always)] pub fn nv(v:VID)->NID { NID { var:v|VAR, idx:0 } }
 #[inline(always)] pub fn nvi(v:VID,i:IDX)->NID { NID { var:v, idx:i } }
-
 impl fmt::Display for NID {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     if self.var == T { if is_inv(*self) { write!(f, "I") } else { write!(f, "O") } }
-    else {
-      if is_inv(*self) { write!(f, "¬")?; }
-      if is_var(*self) { write!(f, "x{}", var(*self)) }
-      else { write!(f, "@[x{}:{}]", var(*self), self.idx) } }}}
+    else { if is_inv(*self) { write!(f, "¬")?; }
+           if is_var(*self) { write!(f, "x{}", var(*self)) }
+           else { write!(f, "@[x{}:{}]", var(*self), self.idx) } }}}
 
 /// Enum to represent a normalized form of a given f,g,h triple
 #[derive(Debug)]
@@ -230,8 +227,7 @@ impl BDDBase {
                 self.vmemo[v as usize].insert(hilo, res);
                 self.bits.push(BDD{v:v, hi:hi, lo:lo});
                 res }}}};
-        // now add the triple to the generalized memo store
-        if !is_var(f) {
+        if !is_var(f) { // now add the triple to the generalized memo store
           let mut hm = self.xmemo.entry(f).or_insert_with(|| FnvHashMap::default());
           hm.insert((g,h), new_nid); }
         new_nid }}}
