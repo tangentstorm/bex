@@ -52,7 +52,7 @@ impl fmt::Display for NID {
 
 /// A Norm is an enum to represent a normalized form of a given f,g,h triple
 #[derive(Debug)]
-enum Norm {
+pub enum Norm {
   Nid(NID),
   Tup(NID, NID, NID),
   Not(NID, NID, NID)}
