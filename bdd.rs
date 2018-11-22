@@ -68,8 +68,10 @@ pub struct BDDBase {
   pub tags: HashMap<String, NID>,
   /// variable-specific memoization. These record (v,lo,hi) lookups.
   vmemo: Vec<FnvHashMap<(NID, NID),NID>>,
-  /// arbitrary memoization. These record (f,g,h) lookups.
-  xmemo: FnvHashMap<NID, FnvHashMap<(NID, NID), NID>> }
+  /// arbitrary memoization. These record normalized (f,g,h) lookups,
+  /// and are indexed at three layers: v,f,(g h); where v is the
+  /// branching variable.
+  xmemo: Vec<FnvHashMap<NID, FnvHashMap<(NID,NID), NID>>> }
 
 
 
@@ -81,7 +83,7 @@ impl BDDBase {
     let bits = vec![BDDNode{v:T,hi:O,lo:I}]; // node 0 is ⊥
     BDDBase{nvars:nvars, bits:bits,
             vmemo:(0..nvars).map(|_| FnvHashMap::default()).collect(),
-            xmemo:FnvHashMap::default(),
+            xmemo:(0..nvars).map(|_| FnvHashMap::default()).collect(),
             tags:HashMap::new()}}
 
   pub fn nvars(&self)->usize { self.nvars }
@@ -218,7 +220,7 @@ impl BDDBase {
   #[inline] /// load the memoized NID if it exists
   fn get_norm_memo<'a>(&'a self, f:NID, g:NID, h:NID) -> Option<&'a NID> {
     if is_var(f) { self.vmemo[var(f) as usize].get(&(g,h)) }
-    else { self.xmemo.get(&f).map_or(None, |fmemo| fmemo.get(&(g,h))) }}
+    else { self.xmemo[var(f) as usize].get(&f).map_or(None, |fmemo| fmemo.get(&(g,h))) }}
 
   #[inline]
   fn ite_norm(&mut self, f:NID, g:NID, h:NID)->NID {
@@ -245,7 +247,8 @@ impl BDDBase {
                 self.bits.push(BDDNode{v:v, hi:hi, lo:lo});
                 res }}}};
         if !is_var(f) { // now add the triple to the generalized memo store
-          let mut hm = self.xmemo.entry(f).or_insert_with(|| FnvHashMap::default());
+          let mut hm = self.xmemo[var(f) as usize].entry(f)
+            .or_insert_with(|| FnvHashMap::default());
           hm.insert((g,h), new_nid); }
         new_nid }}}
 
