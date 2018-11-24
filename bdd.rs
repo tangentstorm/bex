@@ -206,8 +206,7 @@ impl BDDBase {
 
 // all-purpose node creation/lookup
 
-  #[inline]
-  pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
+  #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
     // println!("ite({},{},{})", f,g,h);
     let norm = self.norm(f,g,h);
     match norm {
@@ -215,13 +214,12 @@ impl BDDBase {
       Norm::Tup(x,y,z) => self.ite_norm(x,y,z),
       Norm::Not(x,y,z) => not(self.ite_norm(x,y,z)) }}
 
-  #[inline] /// load the memoized NID if it exists
-  fn get_norm_memo<'a>(&'a self, v:VID, f:NID, g:NID, h:NID) -> Option<&'a NID> {
+  /// load the memoized NID if it exists
+  #[inline] fn get_norm_memo<'a>(&'a self, v:VID, f:NID, g:NID, h:NID) -> Option<&'a NID> {
     if is_var(f) { self.vmemo[var(f) as usize].get(&(g,h)) }
     else { self.xmemo[v as usize].get(&f).map_or(None, |fmemo| fmemo.get(&(g,h))) }}
 
-  #[inline]
-  fn ite_norm(&mut self, f:NID, g:NID, h:NID)->NID {
+  #[inline] fn ite_norm(&mut self, f:NID, g:NID, h:NID)->NID {
     // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
     // this should only bec called from ite() on pre-normalized triples
     let v = min(var(f), min(var(g), var(h)));
@@ -229,12 +227,12 @@ impl BDDBase {
       Some(&n) => n,
       None => {
         let new_nid = {
-          let hi = { // when_xx and ite are both mutable borrows, so need temp storage
-            let (i,t,e) = (self.when_hi(v,f), self.when_hi(v,g), self.when_hi(v,h));
-            self.ite(i,t,e) };
-          let lo = {
-            let (i,t,e) = (self.when_lo(v,f), self.when_lo(v,g), self.when_lo(v,h));
-            self.ite(i,t,e) };
+          macro_rules! branch { ($meth:ident) => {{
+            let i = self.$meth(v,f);
+            if (i.var&T)==T {
+              if (i.var&INV)==INV { self.$meth(v,g) } else { self.$meth(v,h) }}
+            else { let (t,e) = (self.$meth(v,g), self.$meth(v,h)); self.ite(i,t,e) }}}}
+          let (hi,lo) = (branch!(when_hi), branch!(when_lo));
           if hi == lo {hi} else {
             let hilo = (hi,lo);
             match self.vmemo[v as usize].get(&hilo) {
