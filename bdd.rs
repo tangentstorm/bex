@@ -164,23 +164,21 @@ impl BDDBase {
   pub fn  lt(&mut self, x:NID, y:NID)->NID { self.ite(x, O, y) }
 
   /// nid of y when x is high
-  #[inline]
-  pub fn when_hi(&mut self, x:VID, y:NID)->NID {
+  #[inline] pub fn when_hi(&mut self, x:VID, y:NID)->NID {
     match var(y).cmp(&x) {
       Ordering::Greater => y,  // y independent of x, so no change. includes yv = I
-      Ordering::Equal => { let(_,yt,_)=self.tup(y); yt } // x ∧ if(x,th,_) → th
+      Ordering::Equal => self.tup(y).1, // x ∧ if(x,th,_) → th
       Ordering::Less => {      // y may depend on x, so recurse.
         let (yv, yt, ye) = self.tup(y);
         let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
         self.ite(nv(yv), th, el) }}}
 
   /// nid of y when x is lo
-  #[inline]
-  pub fn when_lo(&mut self, x:VID, y:NID)->NID {
+  #[inline] pub fn when_lo(&mut self, x:VID, y:NID)->NID {
     match var(y).cmp(&x) {
       Ordering::Greater => y,  // y independent of x, so no change. includes yv = I
-      Ordering::Equal   => { let(_,_,ye)=self.tup(y); ye }, // ¬x ∧ if(x,_,el) → el
-      Ordering::Less    => {   // y may depend on x, so recurse.
+      Ordering::Equal => self.tup(y).2, // ¬x ∧ if(x,_,el) → el
+      Ordering::Less => {   // y may depend on x, so recurse.
         let (yv, yt, ye) = self.tup(y);
         let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
         self.ite(nv(yv), th, el) }}}
