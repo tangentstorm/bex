@@ -216,19 +216,19 @@ impl BDDBase {
       Norm::Not(x,y,z) => not(self.ite_norm(x,y,z)) }}
 
   #[inline] /// load the memoized NID if it exists
-  fn get_norm_memo<'a>(&'a self, f:NID, g:NID, h:NID) -> Option<&'a NID> {
+  fn get_norm_memo<'a>(&'a self, v:VID, f:NID, g:NID, h:NID) -> Option<&'a NID> {
     if is_var(f) { self.vmemo[var(f) as usize].get(&(g,h)) }
-    else { self.xmemo[var(f) as usize].get(&f).map_or(None, |fmemo| fmemo.get(&(g,h))) }}
+    else { self.xmemo[v as usize].get(&f).map_or(None, |fmemo| fmemo.get(&(g,h))) }}
 
   #[inline]
   fn ite_norm(&mut self, f:NID, g:NID, h:NID)->NID {
     // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
     // this should only bec called from ite() on pre-normalized triples
-    match self.get_norm_memo(f, g, h) {
+    let v = min(var(f), min(var(g), var(h)));
+    match self.get_norm_memo(v, f, g, h) {
       Some(&n) => n,
       None => {
         let new_nid = {
-          let v = min(var(f), min(var(g), var(h)));
           let hi = { // when_xx and ite are both mutable borrows, so need temp storage
             let (i,t,e) = (self.when_hi(v,f), self.when_hi(v,g), self.when_hi(v,h));
             self.ite(i,t,e) };
@@ -245,7 +245,7 @@ impl BDDBase {
                 self.bits.push(BDDNode{v:v, hi:hi, lo:lo});
                 res }}}};
         if !is_var(f) { // now add the triple to the generalized memo store
-          let mut hm = self.xmemo[var(f) as usize].entry(f)
+          let mut hm = self.xmemo[v as usize].entry(f)
             .or_insert_with(|| FnvHashMap::default());
           hm.insert((g,h), new_nid); }
         new_nid }}}
