@@ -15,7 +15,6 @@ use io;
 
 /// A VID uniquely identifies an input variable in the BDD.
 pub type VID = u32;
-
 /// An IDX is an index into a vector.
 pub type IDX = u32;
 
@@ -28,27 +27,34 @@ pub struct BDDNode { pub v:VID, pub hi:NID, pub lo:NID } // if|then|else
 /// A NID represents a node in the BDD. Here they contain information about
 /// the branching variable so that it's easier to break up the BDD
 /// into slices based on the branching variable of the nodes.
-#[repr(C)]
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct NID { var: VID, idx: IDX }
-pub const INV:VID = 1<<31;  // is inverted?
-pub const VAR:VID = 1<<30;  // is variable?
-pub const T:VID = 1<<29;    // T: max VID (hack so O/I nodes show up at bottom)
-pub const O:NID = NID{ var:T,     idx:0 };
-pub const I:NID = NID{ var:T|INV, idx:0 };
-#[inline(always)] pub fn is_var(x:NID)->bool { (x.var & VAR) != 0 }
-#[inline(always)] pub fn is_inv(x:NID)->bool { (x.var & INV) != 0 }
-#[inline(always)] pub fn idx(x:NID)->usize { x.idx as usize }
-#[inline(always)] pub fn var(x:NID)->VID { x.var & !(INV|VAR) }
-#[inline(always)] pub fn not(x:NID)->NID { NID { var:x.var^INV, idx:x.idx } }
-#[inline(always)] pub fn nv(v:VID)->NID { NID { var:v|VAR, idx:0 } }
-#[inline(always)] pub fn nvi(v:VID,i:IDX)->NID { NID { var:v, idx:i } }
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
+pub struct NID { n: u64 }
+pub const INV:u64 = 1<<63;  // is inverted?
+pub const VAR:u64 = 1<<62;  // is variable?
+pub const T:u64 = 1<<61;    // T: max VID (hack so O/I nodes show up at bottom)
+pub const TV:VID = 1<<29;   // same thing but in 32 bits
+pub const IDX_MASK:u64 = (1<<32)-1;
+pub const O:NID = NID{ n:T };
+pub const I:NID = NID{ n:(T|INV) };
+#[inline(always)] pub fn is_var(x:NID)->bool { (x.n & VAR) != 0 }
+#[inline(always)] pub fn is_inv(x:NID)->bool { (x.n & INV) != 0 }
+#[inline(always)] pub fn is_const(x:NID)->bool { (x.n & T) != 0 }
+//#[inline(always)] pub fn code(x:NID)->u32 { (x.n & (INV|T) >> 61) as u32 }
+#[inline(always)] pub fn idx(x:NID)->usize { (x.n & IDX_MASK) as usize }
+#[inline(always)] pub fn var(x:NID)->VID { ((x.n & !(INV|VAR)) >> 32) as VID}
+#[inline(always)] pub fn not(x:NID)->NID { NID { n:x.n^INV } }
+#[inline(always)] pub fn nv(v:VID)->NID { NID { n:((v as u64) << 32)|VAR }}
+#[inline(always)] pub fn nvi(v:VID,i:IDX)->NID { NID{ n:((v as u64) << 32) + i as u64 }}
+
 impl fmt::Display for NID {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    if self.var == T { if is_inv(*self) { write!(f, "I") } else { write!(f, "O") } }
+    if is_const(*self) { if is_inv(*self) { write!(f, "I") } else { write!(f, "O") } }
     else { if is_inv(*self) { write!(f, "¬")?; }
            if is_var(*self) { write!(f, "x{}", var(*self)) }
-           else { write!(f, "@[x{}:{}]", var(*self), self.idx) } }}}
+           else { write!(f, "@[x{}:{}]", var(*self), idx(*self)) } }}}
+
+impl fmt::Debug for NID { // for test suite output
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self) }}
 
 /// A Norm is an enum to represent a normalized form of a given f,g,h triple
 #[derive(Debug)]
@@ -80,7 +86,7 @@ impl BDDBase {
 
   pub fn new(nvars:usize)->BDDBase {
     // the vars are 1-indexed, because node 0 is ⊥ (false)
-    let bits = vec![BDDNode{v:T,hi:O,lo:I}]; // node 0 is ⊥
+    let bits = vec![BDDNode{v:TV,hi:O,lo:I}]; // node 0 is ⊥
     BDDBase{nvars:nvars, bits:bits,
             vmemo:(0..nvars).map(|_| FnvHashMap::default()).collect(),
             xmemo:(0..nvars).map(|_| FnvHashMap::default()).collect(),
@@ -229,8 +235,7 @@ impl BDDBase {
         let new_nid = {
           macro_rules! branch { ($meth:ident) => {{
             let i = self.$meth(v,f);
-            if (i.var&T)==T {
-              if (i.var&INV)==INV { self.$meth(v,g) } else { self.$meth(v,h) }}
+            if is_const(i) { if is_inv(i) { self.$meth(v,g) } else { self.$meth(v,h) }}
             else { let (t,e) = (self.$meth(v,g), self.$meth(v,h)); self.ite(i,t,e) }}}}
           let (hi,lo) = (branch!(when_hi), branch!(when_lo));
           if hi == lo {hi} else {
@@ -238,7 +243,7 @@ impl BDDBase {
             match self.vmemo[v as usize].get(&hilo) {
               Some(&n) => n,
               None => {
-                let res = NID { var:v, idx:self.bits.len() as IDX};
+                let res = nvi(v, self.bits.len() as IDX);
                 self.vmemo[v as usize].insert(hilo, res);
                 self.bits.push(BDDNode{v:v, hi:hi, lo:lo});
                 res }}}};
@@ -333,12 +338,22 @@ impl BDDBase {
 } // end impl BDDBase
 
 
+// basic test suite
+
+#[test] fn test_nids() {
+  assert_eq!(O, NID{n:0x2000000000000000u64});
+  assert_eq!(I, NID{n:0xa000000000000000u64});
+  assert_eq!(nv(0), NID{n:0x4000000000000000u64});
+  assert_eq!(nv(1), NID{n:0x4000000100000000u64});
+  assert_eq!(nvi(0,0), NID{n:0x0000000000000000u64});
+  assert_eq!(nvi(1,0), NID{n:0x0000000100000000u64}); }
+
 #[test] fn test_base() {
   let mut base = BDDBase::new(3);
   let (v1, v2, v3) = (nv(1), nv(2), nv(3));
   assert_eq!(base.nvars, 3);
-  assert_eq!((T,I,O), base.tup(I));
-  assert_eq!((T,O,I), base.tup(O));
+  assert_eq!((TV,I,O), base.tup(I));
+  assert_eq!((TV,O,I), base.tup(O));
   assert_eq!((1,I,O), base.tup(v1));
   assert_eq!((2,I,O), base.tup(v2));
   assert_eq!((3,I,O), base.tup(v3));
