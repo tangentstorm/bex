@@ -39,7 +39,6 @@ pub const I:NID = NID{ n:(T|INV) };
 #[inline(always)] pub fn is_var(x:NID)->bool { (x.n & VAR) != 0 }
 #[inline(always)] pub fn is_inv(x:NID)->bool { (x.n & INV) != 0 }
 #[inline(always)] pub fn is_const(x:NID)->bool { (x.n & T) != 0 }
-//#[inline(always)] pub fn code(x:NID)->u32 { (x.n & (INV|T) >> 61) as u32 }
 #[inline(always)] pub fn idx(x:NID)->usize { (x.n & IDX_MASK) as usize }
 #[inline(always)] pub fn var(x:NID)->VID { ((x.n & !(INV|VAR)) >> 32) as VID}
 #[inline(always)] pub fn not(x:NID)->NID { NID { n:x.n^INV } }
@@ -252,50 +251,49 @@ impl BDDBase {
             .or_insert_with(|| FnvHashMap::default());
           hm.insert((g,h), new_nid); }
         new_nid }}}
+
 
   /// choose normal form for writing this node. Algorithm based on:
   /// "Efficient Implementation of a BDD Package"
   /// http://www.cs.cmu.edu/~emc/15817-f08/bryant-bdd-1991.pdf
+  /// (This is one of the biggest bottlenecks so we inline a lot, do our own tail call
+  /// optimizations, etc...)
   pub fn norm(&self, f0:NID, g0:NID, h0:NID)->Norm {
     let mut f = f0; let mut g = g0; let mut h = h0;
-    // rustc doesn't do tail call optimization, so we'll do it ourselves.
     macro_rules! bounce { ($x:expr,$y:expr,$z:expr) => {{
-      // !! NB. can't set f,g,h directly because we might end up with e.g. `f=g;g=f;`
-      let xx=$x; let yy=$y; let zz=$z;  f=xx; g=yy; h=zz; }}}
-    loop { match (f,g,h) {
-      (I, _, _)          => return Norm::Nid(g),
-      (O, _, _)          => return Norm::Nid(h),
-      (_, I, O)          => return Norm::Nid(f),
-      (_, O, I)          => return Norm::Nid(not(f)),
-      (_, _, O) if g==f  => return Norm::Nid(f),
-      (_, _, I) if g==f  => return Norm::Nid(I),
-      _otherwise => {
+      let xx=$x; let yy=$y; let zz=$z;  f=xx; g=yy; h=zz; }}} // avoid `f=g;g=f;`
+    loop {
+      if f==I { return Norm::Nid(g) }            // (I, _, _)
+      if f==O { return Norm::Nid(h) }            // (O, _, _)
+      if g==h { return Norm::Nid(g) }            // (_, g, g)
+      if g==f { if h==I { return Norm::Nid(I) }  // (f, f, I)
+                if h==O { return Norm::Nid(f) }  // (f, f, O)
+                g=I }
+      else if T==(T & g.n & h.n) { // both const, and we know g!=h
+        return if g==I { return Norm::Nid(f) } else { Norm::Nid(not(f)) }}
+      else {
         let nf = not(f);
-        if      g==h  { return Norm::Nid(g) }
-        else if g==f  { g=I } // bounce!(f,I,h)
-        else if g==nf { g=O } // bounce!(f,O,h)
+        if      g==nf { g=O } // bounce!(f,O,h)
         else if h==f  { h=O } // bounce!(f,g,O)
         else if h==nf { h=I } // bounce!(f,g,I)
         else {
-          let (xf, xg, xh) = (idx(f), idx(g), idx(h));
-          let (fv, gv, hv) = (var(f), var(g), var(h));
-          macro_rules! cmp { ($x0:expr,$x1:expr) => { (($x0<fv) || (($x0==fv) && ($x1<xf))) }}
-          match (g,h) {
-            (I,_) if cmp!(hv,xh) => bounce!(h,I,f),
-            (O,_) if cmp!(hv,xh) => bounce!(not(h),O,nf),
-            (_,O) if cmp!(gv,xg) => bounce!(g,f,O),
-            (_,I) if cmp!(gv,xg) => bounce!(not(g),nf,I),
-            _otherwise => {
-              let ng = not(g);
-              if (h==ng) && cmp!(gv,xg) { bounce!(g,f,nf) }
-              // choose form where first 2 slots are NOT inverted:
-              // from { (f,g,h), (¬f,h,g), ¬(f,¬g,¬h), ¬(¬f,¬g,¬h) }
-              else if is_inv(f) { bounce!(nf,h,g) }
-              else if is_inv(g) { return match self.norm(f,ng,not(h)) {
-                Norm::Nid(x) => Norm::Nid(not(x)),
-                Norm::Not(x,y,z) => Norm::Tup(x,y,z),
-                Norm::Tup(x,y,z) => Norm::Not(x,y,z)}}
-              else { return Norm::Tup(f,g,h) }}}}}}}}
+          let (fv, fi) = (var(f), idx(f));
+          macro_rules! cmp { ($x0:expr,$x1:expr) => { (($x0<fv) || (($x0==fv) && ($x1<fi))) }}
+          if      g==I && cmp!(var(h), idx(h)) { bounce!(h,I,f) }
+          else if g==O && cmp!(var(h), idx(h)) { bounce!(not(h),O,nf) }
+          else if h==I && cmp!(var(g), idx(g)) { bounce!(not(g),nf,I) }
+          else if h==O && cmp!(var(g), idx(g)) { bounce!(g,f,O) }
+          else {
+            let ng = not(g);
+            if (h==ng) && cmp!(var(g), idx(g)) { bounce!(g,f,nf) }
+            // choose form where first 2 slots are NOT inverted:
+            // from { (f,g,h), (¬f,h,g), ¬(f,¬g,¬h), ¬(¬f,¬g,¬h) }
+            else if is_inv(f) { bounce!(nf,h,g) }
+            else if is_inv(g) { return match self.norm(f,ng,not(h)) {
+              Norm::Nid(x) => Norm::Nid(not(x)),
+              Norm::Not(x,y,z) => Norm::Tup(x,y,z),
+              Norm::Tup(x,y,z) => Norm::Not(x,y,z)}}
+            else { return Norm::Tup(f,g,h) }}}}}}
 
 
   pub fn save(&self, path:&str)->::std::io::Result<()> {
