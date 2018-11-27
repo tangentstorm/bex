@@ -256,12 +256,10 @@ impl BDDBase {
   /// choose normal form for writing this node. Algorithm based on:
   /// "Efficient Implementation of a BDD Package"
   /// http://www.cs.cmu.edu/~emc/15817-f08/bryant-bdd-1991.pdf
-  /// (This is one of the biggest bottlenecks so we inline a lot, do our own tail call
-  /// optimizations, etc...)
+  // (This is one of the biggest bottlenecks so we inline a lot,
+  // do our own tail call optimizations, etc...)
   pub fn norm(&self, f0:NID, g0:NID, h0:NID)->Norm {
     let mut f = f0; let mut g = g0; let mut h = h0;
-    macro_rules! bounce { ($x:expr,$y:expr,$z:expr) => {{
-      let xx=$x; let yy=$y; let zz=$z;  f=xx; g=yy; h=zz; }}} // avoid `f=g;g=f;`
     loop {
       if f==I { return Norm::Nid(g) }            // (I, _, _)
       if f==O { return Norm::Nid(h) }            // (O, _, _)
@@ -278,17 +276,18 @@ impl BDDBase {
         else if h==nf { h=I } // bounce!(f,g,I)
         else {
           let (fv, fi) = (var(f), idx(f));
-          macro_rules! cmp { ($x0:expr,$x1:expr) => { (($x0<fv) || (($x0==fv) && ($x1<fi))) }}
-          if      g==I && cmp!(var(h), idx(h)) { bounce!(h,I,f) }
-          else if g==O && cmp!(var(h), idx(h)) { bounce!(not(h),O,nf) }
-          else if h==I && cmp!(var(g), idx(g)) { bounce!(not(g),nf,I) }
-          else if h==O && cmp!(var(g), idx(g)) { bounce!(g,f,O) }
+          macro_rules! cmp { ($x0:expr,$x1:expr) => {
+            { let x0=$x0; ((x0<fv) || ((x0==fv) && ($x1<fi))) }}}
+          if      g==I && cmp!(var(h),idx(h)) { g=f; f=h; h=g;  g=I; }  // bounce!(h,I,f)
+          else if g==O && cmp!(var(h),idx(h)) { f=not(h); g=O;  h=nf; } // bounce(not(h),O,nf)
+          else if h==I && cmp!(var(g),idx(g)) { f=not(g); g=nf; h=I; }  // bounce!(not(g),nf,I)
+          else if h==O && cmp!(var(g),idx(g)) { h=f; f=g; g=h;  h=O; }  // bounce!(g,f,O)
           else {
             let ng = not(g);
-            if (h==ng) && cmp!(var(g), idx(g)) { bounce!(g,f,nf) }
+            if (h==ng) && cmp!(var(g), idx(g)) { h=f; f=g; g=h; h=nf; } // bounce!(g,f,nf)
             // choose form where first 2 slots are NOT inverted:
             // from { (f,g,h), (¬f,h,g), ¬(f,¬g,¬h), ¬(¬f,¬g,¬h) }
-            else if is_inv(f) { bounce!(nf,h,g) }
+            else if is_inv(f) { f=g; g=h; h=f; f=nf; } // bounce!(nf,h,g)
             else if is_inv(g) { return match self.norm(f,ng,not(h)) {
               Norm::Nid(x) => Norm::Nid(not(x)),
               Norm::Not(x,y,z) => Norm::Tup(x,y,z),
