@@ -2,6 +2,12 @@
 name = "bex"
 version = "0.1.0"
 authors = ["tangentstorm <michal.wallace@gmail.com>"]
+description = "A rust library for working with boolean expressions (expression trees, decision diagrams, etc.)"
+repository = "https://github.com/tangentstorm/bex"
+keywords = ["bdd", "diagram"]
+categories = ["algorithms", "data-structures"]
+license = "MIT"
+readme = "README.md"
 
 [dependencies]
 serde = "1.0"
