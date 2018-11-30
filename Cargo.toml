@@ -11,4 +11,3 @@ fnv = "1.0"
 
 [lib]
 name = "bex"
-path = "lib.rs"
