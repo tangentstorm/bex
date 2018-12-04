@@ -1,15 +1,34 @@
 /// A module for efficient implementation of binary decision diagrams.
 use std::cmp::min;
-use std::collections::HashMap;
+// use std::collections::HashMap;
 use std::collections::HashSet;
 use std::process::Command;      // for creating and viewing digarams
 use std::fs::File;
 use std::cmp::Ordering;
 use std::io::Write;
 use std::fmt;
-use fnv::FnvHashMap;
+
+// use fnv::FnvHashMap;
 use bincode;
 use io;
+
+/// single place to make changes to to the hashmap interface
+use hashbrown::hash_map::DefaultHashBuilder;
+use hashbrown::hash_map::HashMap;
+type BDDHashMap<K,V,S=DefaultHashBuilder> = HashMap<K,V,S>;
+/*use hashbrown::hash_map::Entry;
+pub struct BDDHashMap<K,V> { map: hashbrown::HashMap<K,V> }
+impl<K,V> BDDHashMap<K,V> {
+  pub fn default() -> Self { BDDHashMap{ map: hashbrown::HashMap::new()  } }
+  pub fn entry(&mut self, key: K) -> Entry<K, V, S> { self.map.entry(key) }
+  pub fn insert(&mut self, k: K, v: V) -> Option<V> { self.map.insert(k, v) }
+  pub fn get<Q: ?Sized>(&self, k: &Q) -> Option<&V> 
+      where K: core::borrow::Borrow<Q>,
+            Q: core::hash::Hash + Eq { self.map.get(k) } 
+}
+*/
+
+
 
 // core data types
 
@@ -65,18 +84,18 @@ pub enum Norm {
 
 /// A BDD Base contains any number of BDD structures, and various caches
 /// related to calculating nodes.
-#[derive(Debug, Serialize, Deserialize)]
+// #[derive(Debug, Serialize, Deserialize)]
 pub struct BDDBase {
   nvars: usize,
   // nbits:usize,
   bits: Vec<BDDNode>,
   pub tags: HashMap<String, NID>,
   /// variable-specific memoization. These record (v,lo,hi) lookups.
-  vmemo: Vec<FnvHashMap<(NID, NID),NID>>,
+  vmemo: Vec<BDDHashMap<(NID, NID),NID>>,
   /// arbitrary memoization. These record normalized (f,g,h) lookups,
   /// and are indexed at three layers: v,f,(g h); where v is the
   /// branching variable.
-  xmemo: Vec<FnvHashMap<NID, FnvHashMap<(NID,NID), NID>>> }
+  xmemo: Vec<BDDHashMap<NID, BDDHashMap<(NID,NID), NID>>> }
 
 
 
@@ -87,8 +106,8 @@ impl BDDBase {
     // the vars are 1-indexed, because node 0 is ⊥ (false)
     let bits = vec![BDDNode{v:TV,hi:O,lo:I}]; // node 0 is ⊥
     BDDBase{nvars:nvars, bits:bits,
-            vmemo:(0..nvars).map(|_| FnvHashMap::default()).collect(),
-            xmemo:(0..nvars).map(|_| FnvHashMap::default()).collect(),
+            vmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
+            xmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
             tags:HashMap::new()}}
 
   pub fn nvars(&self)->usize { self.nvars }
@@ -248,7 +267,7 @@ impl BDDBase {
                 res }}}};
         if !is_var(f) { // now add the triple to the generalized memo store
           let mut hm = self.xmemo[v as usize].entry(f)
-            .or_insert_with(|| FnvHashMap::default());
+            .or_insert_with(|| BDDHashMap::default());
           hm.insert((g,h), new_nid); }
         new_nid }}}
 
@@ -295,15 +314,20 @@ impl BDDBase {
             else { return Norm::Tup(f,g,h) }}}}}}
 
 
-  pub fn save(&self, path:&str)->::std::io::Result<()> {
+/*  pub fn save(&self, path:&str)->::std::io::Result<()> {
     let s = bincode::serialize(&self).unwrap();
     return io::put(path, &s) }
+*/
 
+/*
   pub fn from_path(path:&str)->::std::io::Result<(BDDBase)> {
     let s = io::get(path)?;
-    return Ok(bincode::deserialize(&s).unwrap()); }
-
+return    
+return Ok(bincode::deserialize(&s).unwrap()); }
+*/
   pub fn load(&mut self, path:&str)->::std::io::Result<()> {
+    return Ok(()) }
+/*
     let other = BDDBase::from_path(path)?;
     self.nvars = other.nvars;
     self.bits = other.bits;
@@ -311,6 +335,7 @@ impl BDDBase {
     self.xmemo = other.xmemo;
     self.tags = other.tags;
     Ok(()) }
+*/
 
 
   pub fn swap(&mut self, n:NID, x:VID, y:VID)-> NID {
