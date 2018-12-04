@@ -76,7 +76,7 @@ pub struct BDDBase {
   /// arbitrary memoization. These record normalized (f,g,h) lookups,
   /// and are indexed at three layers: v,f,(g h); where v is the
   /// branching variable.
-  xmemo: Vec<FnvHashMap<NID, FnvHashMap<(NID,NID), NID>>> }
+  xmemo: Vec<FnvHashMap<(NID, NID,NID), NID>> }
 
 
 
@@ -222,7 +222,7 @@ impl BDDBase {
   /// load the memoized NID if it exists
   #[inline] fn get_norm_memo<'a>(&'a self, v:VID, f:NID, g:NID, h:NID) -> Option<&'a NID> {
     if is_var(f) { self.vmemo[var(f) as usize].get(&(g,h)) }
-    else { self.xmemo[v as usize].get(&f).map_or(None, |fmemo| fmemo.get(&(g,h))) }}
+    else { self.xmemo[v as usize].get(&(f,g,h)) }}
 
   #[inline] fn ite_norm(&mut self, f:NID, g:NID, h:NID)->NID {
     // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
@@ -246,10 +246,8 @@ impl BDDBase {
                 self.vmemo[v as usize].insert(hilo, res);
                 self.bits.push(BDDNode{v:v, hi:hi, lo:lo});
                 res }}}};
-        if !is_var(f) { // now add the triple to the generalized memo store
-          let mut hm = self.xmemo[v as usize].entry(f)
-            .or_insert_with(|| FnvHashMap::default());
-          hm.insert((g,h), new_nid); }
+        // now add the triple to the generalized memo store
+        if !is_var(f) { self.xmemo[v as usize].insert((f,g,h), new_nid); }
         new_nid }}}
 
 
