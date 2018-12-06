@@ -142,12 +142,13 @@ impl BDDBase {
   #[inline]
   pub fn bdd(&self, n:NID)->BDDNode {
     // bdd for var x still has huge number for the v
+    let bits = &self.bits[..];
     if is_var(n) {
       if is_inv(n) { BDDNode{v:var(n), lo:I, hi:O }}
       else { BDDNode{v:var(n), lo:O, hi:I } }}
     else if is_inv(n) {
-      let mut b=self.bits[idx(n)]; b.hi=not(b.hi); b.lo=not(b.lo); b }
-    else { self.bits[idx(n)] }}
+      let mut b = unsafe { *bits.get_unchecked(idx(n)) }; b.hi=not(b.hi); b.lo=not(b.lo); b }
+    else { unsafe { *bits.get_unchecked(idx(n)) }}}
 
   #[inline]
   pub fn tup(&self, n:NID)->(VID,NID,NID) {
@@ -263,8 +264,9 @@ impl BDDBase {
 
   /// load the memoized NID if it exists
   #[inline] fn get_norm_memo<'a>(&'a self, v:VID, f:NID, g:NID, h:NID) -> Option<&'a NID> {
-    if is_var(f) { self.vmemo[var(f) as usize].get(&(g,h)) }
-    else { self.xmemo[v as usize].get(&(f,g,h)) }}
+    unsafe {
+      if is_var(f) { self.vmemo.as_slice().get_unchecked(var(f) as usize).get(&(g,h)) }
+      else { self.xmemo.as_slice().get_unchecked(v as usize).get(&(f,g,h)) }}}
 
   #[inline] fn ite_norm(&mut self, f:NID, g:NID, h:NID)->NID {
     // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
@@ -281,7 +283,7 @@ impl BDDBase {
           let (hi,lo) = (branch!(when_hi), branch!(when_lo));
           if hi == lo {hi} else {
             let hilo = (hi,lo);
-            match self.vmemo[v as usize].get(&hilo) {
+            match unsafe { self.vmemo.as_slice().get_unchecked(v as usize).get(&hilo) } {
               Some(&n) => n,
               None => {
                 let res = nvi(v, self.bits.len() as IDX);
