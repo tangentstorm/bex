@@ -13,9 +13,9 @@ use io;
 
 // core data types
 
-/// A VID uniquely identifies an input variable in the BDD.
+/// Variable ID: uniquely identifies an input variable in the BDD.
 pub type VID = u32;
-/// An IDX is an index into a vector.
+/// Index into a (usually VID-specific) vector.
 pub type IDX = u32;
 
 /// A BDDNode is a triple consisting of a VID, which references an input variable,
@@ -24,27 +24,65 @@ pub type IDX = u32;
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct BDDNode { pub v:VID, pub hi:NID, pub lo:NID } // if|then|else
 
-/// A NID represents a node in the BDD. Here they contain information about
-/// the branching variable so that it's easier to break up the BDD
-/// into slices based on the branching variable of the nodes.
+/// A NID represents a node in the BDD. Essentially, this acts like a tuple
+/// containing a VID and IDX, but for performance reasons, it is packed into a u64.
+/// See below for helper functions that manipulate and analyze the packed bits.
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct NID { n: u64 }
-pub const INV:u64 = 1<<63;  // is inverted?
-pub const VAR:u64 = 1<<62;  // is variable?
-pub const T:u64 = 1<<61;    // T: max VID (hack so O/I nodes show up at bottom)
-pub const TV:VID = 1<<29;   // same thing but in 32 bits
-pub const IDX_MASK:u64 = (1<<32)-1;
+
+/// Single-bit mask representing that a NID is inverted.
+const INV:u64 = 1<<63;  // is inverted?
+
+/// Single-bit mask indicating that a NID represents a variable. (The corresponding
+/// "virtual" nodes have I as their hi branch and O as their lo branch. They're simple
+/// and numerous enough that we don't bother actually storing them.)
+const VAR:u64 = 1<<62;  // is variable?
+
+/// Single-bit mask indicating that the NID represents a constant. The corresponding
+/// virtual node branches on constant "true" value, hence the letter T. There is only
+/// one such node -- O (I is its inverse) but having this bit in the NID lets us
+/// easily detect and optimize the cases.
+const T:u64 = 1<<61;    // T: max VID (hack so O/I nodes show up at bottom)
+
+/// TV is the same concept as T, but shifted to fit in a 32 bit VID.
+const TV:VID = 1<<29;   // same thing but in 32 bits
+
+/// Constant used to extract the index part of a NID.
+const IDX_MASK:u64 = (1<<32)-1;
+
+/// NID of the virtual node represeting the constant function 0, or "always false."
 pub const O:NID = NID{ n:T };
+
+/// NID of the virtual node represeting the constant function 1, or "always true."
 pub const I:NID = NID{ n:(T|INV) };
+
+// NID support routines
+
+/// Does the NID represent a variable?
 #[inline(always)] pub fn is_var(x:NID)->bool { (x.n & VAR) != 0 }
+
+/// Is the NID inverted? That is, does it represent `not(some other nid)`?
 #[inline(always)] pub fn is_inv(x:NID)->bool { (x.n & INV) != 0 }
+
+/// Does the NID refer to one of the two constant nodes (O or I)?
 #[inline(always)] pub fn is_const(x:NID)->bool { (x.n & T) != 0 }
+
+/// Map the NID to an index. (I,e, if n=idx(x), then x is the nth node branching on var(x))
 #[inline(always)] pub fn idx(x:NID)->usize { (x.n & IDX_MASK) as usize }
+
+/// On which variable does this node branch? (I and O branch on TV)
 #[inline(always)] pub fn var(x:NID)->VID { ((x.n & !(INV|VAR)) >> 32) as VID}
+
+/// Toggle the INV bit, applying a logical "NOT" operation to the corressponding node.
 #[inline(always)] pub fn not(x:NID)->NID { NID { n:x.n^INV } }
+
+/// Construct the NID for the (virtual) node corresponding to an input variable.
 #[inline(always)] pub fn nv(v:VID)->NID { NID { n:((v as u64) << 32)|VAR }}
+
+/// Construct a NID with the given variable and index.
 #[inline(always)] pub fn nvi(v:VID,i:IDX)->NID { NID{ n:((v as u64) << 32) + i as u64 }}
 
+/// Pretty-printer for NIDS that reveal some of their internal data.
 impl fmt::Display for NID {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     if is_const(*self) { if is_inv(*self) { write!(f, "I") } else { write!(f, "O") } }
@@ -52,6 +90,7 @@ impl fmt::Display for NID {
            if is_var(*self) { write!(f, "x{}", var(*self)) }
            else { write!(f, "@[x{}:{}]", var(*self), idx(*self)) } }}}
 
+/// Same as fmt::Display. Mostly so it's easier to see the problem when an assertion fails.
 impl fmt::Debug for NID { // for test suite output
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self) }}
 
