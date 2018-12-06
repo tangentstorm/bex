@@ -278,7 +278,7 @@ impl BDDBase {
         let new_nid = {
           macro_rules! branch { ($meth:ident) => {{
             let i = self.$meth(v,f);
-            if is_const(i) { if is_inv(i) { self.$meth(v,g) } else { self.$meth(v,h) }}
+            if is_const(i) { if i==I { self.$meth(v,g) } else { self.$meth(v,h) }}
             else { let (t,e) = (self.$meth(v,g), self.$meth(v,h)); self.ite(i,t,e) }}}}
           let (hi,lo) = (branch!(when_hi), branch!(when_lo));
           if hi == lo {hi} else {
