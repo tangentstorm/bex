@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::process::Command;      // for creating and viewing digarams
 use std::fs::File;
-use std::cmp::Ordering;
 use std::io::Write;
 use std::fmt;
 use bincode;
@@ -214,24 +213,23 @@ impl BDDBase {
 
   /// nid of y when x is high
   #[inline] pub fn when_hi(&mut self, x:VID, y:NID)->NID {
-    match var(y).cmp(&x) {
-      Ordering::Greater => y,  // y independent of x, so no change. includes yv = I
-      Ordering::Equal => self.tup(y).1, // x ∧ if(x,th,_) → th
-      Ordering::Less => {      // y may depend on x, so recurse.
-        let (yv, yt, ye) = self.tup(y);
-        let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
-        self.ite(nv(yv), th, el) }}}
+    let vy = var(y);
+    if vy == x { self.tup(y).1 }  // x ∧ if(x,th,_) → th
+    else if vy > x { y }          // y independent of x, so no change. includes yv = I
+    else {                        // y may depend on x, so recurse.
+      let (yv, yt, ye) = self.tup(y);
+      let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
+      self.ite(nv(yv), th, el) }}
 
   /// nid of y when x is lo
   #[inline] pub fn when_lo(&mut self, x:VID, y:NID)->NID {
-    match var(y).cmp(&x) {
-      Ordering::Greater => y,  // y independent of x, so no change. includes yv = I
-      Ordering::Equal => self.tup(y).2, // ¬x ∧ if(x,_,el) → el
-      Ordering::Less => {   // y may depend on x, so recurse.
-        let (yv, yt, ye) = self.tup(y);
-        let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
-        self.ite(nv(yv), th, el) }}}
-
+    let vy = var(y);
+    if vy == x { self.tup(y).2 }  // ¬x ∧ if(x,_,el) → el
+    else if vy > x { y }          // y independent of x, so no change. includes yv = I
+    else {                        // y may depend on x, so recurse.
+      let (yv, yt, ye) = self.tup(y);
+      let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
+      self.ite(nv(yv), th, el) }}
 
   /// is n the nid of a variable?
   pub fn is_var(&self, n:NID)->bool { return is_var(n) }
