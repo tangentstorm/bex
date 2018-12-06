@@ -1,7 +1,7 @@
 extern crate bincode;
-#[macro_use]
-extern crate serde_derive;
+#[macro_use] extern crate serde_derive;
 extern crate fnv;
+extern crate hashbrown;
 
 pub mod base;
 pub use base::*;

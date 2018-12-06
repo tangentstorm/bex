@@ -7,7 +7,6 @@ use std::fs::File;
 use std::cmp::Ordering;
 use std::io::Write;
 use std::fmt;
-use fnv::FnvHashMap;
 use bincode;
 use io;
 
@@ -105,7 +104,7 @@ pub enum Norm {
 /// Type alias for whatever HashMap implementation we're curretly using -- std,
 /// fnv, hashbrown... Hashing is an extremely important aspect of a BDD base, so
 /// it's useful to have a single place to configure this.
-pub type BDDHashMap<K,V> = FnvHashMap<K,V>;
+pub type BDDHashMap<K,V> = hashbrown::hash_map::HashMap<K,V>;
 
 
 /// A BDD Base contains any number of BDD structures, and various caches
