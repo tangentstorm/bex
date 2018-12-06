@@ -102,6 +102,12 @@ pub enum Norm {
   Not(NID, NID, NID)}
 
 
+/// Type alias for whatever HashMap implementation we're curretly using -- std,
+/// fnv, hashbrown... Hashing is an extremely important aspect of a BDD base, so
+/// it's useful to have a single place to configure this.
+pub type BDDHashMap<K,V> = FnvHashMap<K,V>;
+
+
 /// A BDD Base contains any number of BDD structures, and various caches
 /// related to calculating nodes.
 #[derive(Debug, Serialize, Deserialize)]
@@ -111,11 +117,11 @@ pub struct BDDBase {
   bits: Vec<BDDNode>,
   pub tags: HashMap<String, NID>,
   /// variable-specific memoization. These record (v,lo,hi) lookups.
-  vmemo: Vec<FnvHashMap<(NID, NID),NID>>,
+  vmemo: Vec<BDDHashMap<(NID, NID),NID>>,
   /// arbitrary memoization. These record normalized (f,g,h) lookups,
   /// and are indexed at three layers: v,f,(g h); where v is the
   /// branching variable.
-  xmemo: Vec<FnvHashMap<(NID, NID,NID), NID>> }
+  xmemo: Vec<BDDHashMap<(NID, NID,NID), NID>> }
 
 
 
@@ -126,8 +132,8 @@ impl BDDBase {
     // the vars are 1-indexed, because node 0 is ⊥ (false)
     let bits = vec![BDDNode{v:TV,hi:O,lo:I}]; // node 0 is ⊥
     BDDBase{nvars:nvars, bits:bits,
-            vmemo:(0..nvars).map(|_| FnvHashMap::default()).collect(),
-            xmemo:(0..nvars).map(|_| FnvHashMap::default()).collect(),
+            vmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
+            xmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
             tags:HashMap::new()}}
 
   pub fn nvars(&self)->usize { self.nvars }
