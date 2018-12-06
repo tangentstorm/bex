@@ -303,12 +303,10 @@ impl BDDBase {
   pub fn norm(&self, f0:NID, g0:NID, h0:NID)->Norm {
     let mut f = f0; let mut g = g0; let mut h = h0;
     loop {
-      if f==I { return Norm::Nid(g) }            // (I, _, _)
-      if f==O { return Norm::Nid(h) }            // (O, _, _)
-      if g==h { return Norm::Nid(g) }            // (_, g, g)
-      if g==f { if h==I { return Norm::Nid(I) }  // (f, f, I)
-                if h==O { return Norm::Nid(f) }  // (f, f, O)
-                g=I }
+      if is_const(f) { return Norm::Nid(if f==I { g } else { h }) }           // (I/O, _, _)
+      if g==h { return Norm::Nid(g) }                                         // (_, g, g)
+      if g==f { if is_const(h) { return Norm::Nid(if h==I { I } else { f }) } // (f, f, I/O)
+                else { g=I }}
       else if T==(T & g.n & h.n) { // both const, and we know g!=h
         return if g==I { return Norm::Nid(f) } else { Norm::Nid(not(f)) }}
       else {
@@ -320,10 +318,12 @@ impl BDDBase {
           let (fv, fi) = (var(f), idx(f));
           macro_rules! cmp { ($x0:expr,$x1:expr) => {
             { let x0=$x0; ((x0<fv) || ((x0==fv) && ($x1<fi))) }}}
-          if      g==I && cmp!(var(h),idx(h)) { g=f; f=h; h=g;  g=I; }  // bounce!(h,I,f)
-          else if g==O && cmp!(var(h),idx(h)) { f=not(h); g=O;  h=nf; } // bounce(not(h),O,nf)
-          else if h==I && cmp!(var(g),idx(g)) { f=not(g); g=nf; h=I; }  // bounce!(not(g),nf,I)
-          else if h==O && cmp!(var(g),idx(g)) { h=f; f=g; g=h;  h=O; }  // bounce!(g,f,O)
+          if is_const(g) && cmp!(var(h),idx(h)) {
+            if g==I { g=f; f=h; h=g;  g=I; }     // bounce!(h,I,f)
+            else    { f=not(h); g=O;  h=nf; }}   // bounce(not(h),O,nf)
+          else if is_const(h) && cmp!(var(g),idx(g)) {
+            if h==I { f=not(g); g=nf; h=I; }     // bounce!(not(g),nf,I)
+            else    { h=f; f=g; g=h;  h=O; }}    // bounce!(g,f,O)
           else {
             let ng = not(g);
             if (h==ng) && cmp!(var(g), idx(g)) { h=f; f=g; g=h; h=nf; } // bounce!(g,f,nf)
