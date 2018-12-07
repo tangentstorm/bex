@@ -42,9 +42,6 @@ const VAR:u64 = 1<<62;  // is variable?
 /// easily detect and optimize the cases.
 const T:u64 = 1<<61;    // T: max VID (hack so O/I nodes show up at bottom)
 
-/// TV is the same concept as T, but shifted to fit in a 32 bit VID.
-const TV:VID = 1<<29;   // same thing but in 32 bits
-
 /// Constant used to extract the index part of a NID.
 const IDX_MASK:u64 = (1<<32)-1;
 
@@ -112,7 +109,7 @@ pub type BDDHashMap<K,V> = hashbrown::hash_map::HashMap<K,V>;
 pub struct BDDBase {
   nvars: usize,
   // nbits:usize,
-  bits: Vec<BDDNode>,
+  bits: Vec<Vec<(NID, NID)>>,
   pub tags: HashMap<String, NID>,
   /// variable-specific memoization. These record (v,lo,hi) lookups.
   vmemo: Vec<BDDHashMap<(NID, NID),NID>>,
@@ -128,8 +125,8 @@ impl BDDBase {
 
   pub fn new(nvars:usize)->BDDBase {
     // the vars are 1-indexed, because node 0 is ⊥ (false)
-    let bits = vec![BDDNode{v:TV,hi:O,lo:I}]; // node 0 is ⊥
-    BDDBase{nvars:nvars, bits:bits,
+    BDDBase{nvars:nvars,
+            bits: (0..nvars).map(|_| vec![]).collect(),
             vmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
             xmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
             tags:HashMap::new()}}
@@ -139,20 +136,22 @@ impl BDDBase {
   pub fn tag(&mut self, s:String, n:NID) { self.tags.insert(s, n); }
   pub fn get(&self, s:&String)->Option<NID> { Some(*self.tags.get(s)?) }
 
+  /// return (var, hi, lo) triple for the given nid
   #[inline]
-  pub fn bdd(&self, n:NID)->BDDNode {
-    // bdd for var x still has huge number for the v
-    let bits = &self.bits[..];
-    if is_var(n) {
-      if is_inv(n) { BDDNode{v:var(n), lo:I, hi:O }}
-      else { BDDNode{v:var(n), lo:O, hi:I } }}
-    else if is_inv(n) {
-      let mut b = unsafe { *bits.get_unchecked(idx(n)) }; b.hi=not(b.hi); b.lo=not(b.lo); b }
-    else { unsafe { *bits.get_unchecked(idx(n)) }}}
+  pub fn tup(&self, n:NID)->(NID,NID) {
+    if is_const(n) { if n==I { (I, O) } else { (O, I) } }
+    else if is_var(n) { if is_inv(n) { (O, I) } else { (I, O) }}
+    else {
+      let bits = // self.bits[var(n) as usize].as_slice();
+        unsafe { self.bits.as_slice().get_unchecked(var(n) as usize).as_slice() };
+      let (mut hi, mut lo) = unsafe { *bits.get_unchecked(idx(n)) };
+      if is_inv(n) { hi = not(hi); lo = not(lo); }
+      (hi, lo) }}
+
 
   #[inline]
-  pub fn tup(&self, n:NID)->(VID,NID,NID) {
-    let bdd = self.bdd(n); (bdd.v, bdd.hi, bdd.lo) }
+  pub fn bdd(&self, n:NID)->BDDNode {
+    let t=self.tup(n); BDDNode{v:var(n), hi:t.0, lo:t.1 }}
 
   /// walk node recursively, without revisiting shared nodes
   pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
@@ -163,9 +162,9 @@ impl BDDBase {
   fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>)
   where F: FnMut(NID,VID,NID,NID) {
     if !seen.contains(&n) {
-      seen.insert(n); let (i,t,e) = self.tup(n); f(n,i,t,e);
-      if idx(t) > 0 { self.step(t, f, seen); }
-      if idx(e) > 0 { self.step(e, f, seen); }}}
+      seen.insert(n); let (hi,lo) = self.tup(n); f(n,var(n),hi,lo);
+      if !is_const(hi) { self.step(hi, f, seen); }
+      if !is_const(lo) { self.step(lo, f, seen); }}}
 
 
   // generate dot file (graphviz)
@@ -214,21 +213,21 @@ impl BDDBase {
 
   /// nid of y when x is high
   #[inline] pub fn when_hi(&mut self, x:VID, y:NID)->NID {
-    let vy = var(y);
-    if vy == x { self.tup(y).1 }  // x ∧ if(x,th,_) → th
-    else if vy > x { y }          // y independent of x, so no change. includes yv = I
+    let yv = var(y);
+    if yv == x { self.tup(y).0 }  // x ∧ if(x,th,_) → th
+    else if yv > x { y }          // y independent of x, so no change. includes yv = I
     else {                        // y may depend on x, so recurse.
-      let (yv, yt, ye) = self.tup(y);
+      let (yt, ye) = self.tup(y);
       let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
       self.ite(nv(yv), th, el) }}
 
   /// nid of y when x is lo
   #[inline] pub fn when_lo(&mut self, x:VID, y:NID)->NID {
-    let vy = var(y);
-    if vy == x { self.tup(y).2 }  // ¬x ∧ if(x,_,el) → el
-    else if vy > x { y }          // y independent of x, so no change. includes yv = I
+    let yv = var(y);
+    if yv == x { self.tup(y).1 }  // ¬x ∧ if(x,_,el) → el
+    else if yv > x { y }          // y independent of x, so no change. includes yv = I
     else {                        // y may depend on x, so recurse.
-      let (yv, yt, ye) = self.tup(y);
+      let (yt, ye) = self.tup(y);
       let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
       self.ite(nv(yv), th, el) }}
 
@@ -244,7 +243,7 @@ impl BDDBase {
   /// replace var x with y in z
   pub fn replace(&mut self, x:VID, y:NID, z:NID)->NID {
     if self.might_depend(z, x) {
-      let (zv,zt,ze) = self.tup(z);
+      let (zt,ze) = self.tup(z); let zv = var(z);
       if x==zv { self.ite(y, zt, ze) }
       else {
         let th = self.replace(x, y, zt);
@@ -283,12 +282,14 @@ impl BDDBase {
           let (hi,lo) = (branch!(when_hi), branch!(when_lo));
           if hi == lo {hi} else {
             let hilo = (hi,lo);
-            match unsafe { self.vmemo.as_slice().get_unchecked(v as usize).get(&hilo) } {
+            match // self.vmemo[v as usize].get(&hilo)
+              unsafe { self.vmemo.as_slice().get_unchecked(v as usize).get(&hilo) }
+            {
               Some(&n) => n,
               None => {
-                let res = nvi(v, self.bits.len() as IDX);
+                let res = nvi(v, self.bits[v as usize].len() as IDX);
                 self.vmemo[v as usize].insert(hilo, res);
-                self.bits.push(BDDNode{v:v, hi:hi, lo:lo});
+                self.bits[v as usize].push(hilo);
                 res }}}};
         // now add the triple to the generalized memo store
         if !is_var(f) { self.xmemo[v as usize].insert((f,g,h), new_nid); }
@@ -391,11 +392,11 @@ impl BDDBase {
   let mut base = BDDBase::new(3);
   let (v1, v2, v3) = (nv(1), nv(2), nv(3));
   assert_eq!(base.nvars, 3);
-  assert_eq!((TV,I,O), base.tup(I));
-  assert_eq!((TV,O,I), base.tup(O));
-  assert_eq!((1,I,O), base.tup(v1));
-  assert_eq!((2,I,O), base.tup(v2));
-  assert_eq!((3,I,O), base.tup(v3));
+  assert_eq!((I,O), base.tup(I));
+  assert_eq!((O,I), base.tup(O));
+  assert_eq!((I,O), base.tup(v1));
+  assert_eq!((I,O), base.tup(v2));
+  assert_eq!((I,O), base.tup(v3));
   assert_eq!(I, base.when_hi(3,v3));
   assert_eq!(O, base.when_lo(3,v3))}
 
