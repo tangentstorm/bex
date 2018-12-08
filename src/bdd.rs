@@ -109,24 +109,9 @@ enum Norm {
 /// it's useful to have a single place to configure this.
 pub type BDDHashMap<K,V> = hashbrown::hash_map::HashMap<K,V>;
 
-/// This structure contains the main parts of a BDD base's internal state.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BDDState {
-  /// variable-specific hi/lo pairs for individual bdd nodes.
-  nodes: Vec<Vec<(NID, NID)>>,
-  /// variable-specific memoization. These record (v,lo,hi) lookups.
-  vmemo: Vec<BDDHashMap<(NID, NID),NID>>,
-  /// arbitrary memoization. These record normalized (f,g,h) lookups,
-  /// and are indexed at three layers: v,f,(g h); where v is the
-  /// branching variable.
-  xmemo: Vec<BDDHashMap<(NID, NID,NID), NID>> }
-
-
 /// This is the top-level type for this crate.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BDDBase {
-  /// the number of variables in the base
-  nvars: usize,
   /// allows us to give user-friendly names to specific nodes in the base.
   pub tags: HashMap<String, NID>,
   /// the actual data
@@ -177,21 +162,120 @@ impl ITE {
               Norm::Not(ite) => Norm::Ite(ite),
               Norm::Ite(ite) => Norm::Not(ite)}}
             else { return Norm::Ite(ITE::new(f,g,h)) }}}}}} }
+
+/// This structure contains the main parts of a BDD base's internal state.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BDDState {
+  /// variable-specific hi/lo pairs for individual bdd nodes.
+  nodes: Vec<Vec<(NID, NID)>>,
+  /// variable-specific memoization. These record (v,lo,hi) lookups.
+  vmemo: Vec<BDDHashMap<(NID, NID),NID>>,
+  /// arbitrary memoization. These record normalized (f,g,h) lookups,
+  /// and are indexed at three layers: v,f,(g h); where v is the
+  /// branching variable.
+  xmemo: Vec<BDDHashMap<(NID, NID,NID), NID>> }
+
+impl BDDState {
+
+  /// constructor
+  fn new(nvars:usize)->BDDState {
+    BDDState{
+      nodes: (0..nvars).map(|_| vec![]).collect(),
+      vmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
+      xmemo:(0..nvars).map(|_| BDDHashMap::default()).collect() } }
+
+  /// return the number of variables
+  fn nvars(&self)->usize { self.nodes.len() }
+
+  /// return (hi, lo) pair for the given nid. used internally
+  #[inline] fn tup(&self, n:NID)->(NID,NID) {
+    if is_const(n) { if n==I { (I, O) } else { (O, I) } }
+    else if is_var(n) { if is_inv(n) { (O, I) } else { (I, O) }}
+    else {
+      let bits = // self.bits[var(n) as usize].as_slice();
+        unsafe { self.nodes.as_slice().get_unchecked(var(n) as usize).as_slice() };
+      let (mut hi, mut lo) = unsafe { *bits.get_unchecked(idx(n)) };
+      if is_inv(n) { hi = not(hi); lo = not(lo); }
+      (hi, lo) }}
+
+
+  /// all-purpose node creation/lookup
+  #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
+    let norm = ITE::norm(f,g,h);
+    match norm {
+      Norm::Nid(x) => x,
+      Norm::Ite(ite) => self.ite_norm(ite),
+      Norm::Not(ite) => not(self.ite_norm(ite)) }}
+
+  /// load the memoized NID if it exists
+  #[inline] fn get_norm_memo<'a>(&'a self, v:VID, f:NID, g:NID, h:NID) -> Option<&'a NID> {
+    unsafe {
+      if is_var(f) { self.vmemo.as_slice().get_unchecked(var(f) as usize).get(&(g,h)) }
+      else { self.xmemo.as_slice().get_unchecked(v as usize).get(&(f,g,h)) }}}
+
+  /// helper for ite to work on the normalized i,t,e triple
+  #[inline] fn ite_norm(&mut self, ite:ITE)->NID {
+    // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
+    // this should only bec called from ite() on pre-normalized triples
+    let ITE { i:f, t:g, e:h } = ite;
+    let v = min(var(f), min(var(g), var(h)));
+    match self.get_norm_memo(v, f, g, h) {
+      Some(&n) => n,
+      None => {
+        let new_nid = {
+          macro_rules! branch { ($meth:ident) => {{
+            let i = self.$meth(v,f);
+            if is_const(i) { if i==I { self.$meth(v,g) } else { self.$meth(v,h) }}
+            else { let (t,e) = (self.$meth(v,g), self.$meth(v,h)); self.ite(i,t,e) }}}}
+          let (hi,lo) = (branch!(when_hi), branch!(when_lo));
+          if hi == lo {hi} else {
+            let hilo = (hi,lo);
+            match // self.vmemo[v as usize].get(&hilo)
+              unsafe { self.vmemo.as_slice().get_unchecked(v as usize).get(&hilo) }
+            {
+              Some(&n) => n,
+              None => {
+                let res = nvi(v, self.nodes[v as usize].len() as IDX);
+                self.vmemo[v as usize].insert(hilo, res);
+                self.nodes[v as usize].push(hilo);
+                res }}}};
+        // now add the triple to the generalized memo store
+        if !is_var(f) { self.xmemo[v as usize].insert((f,g,h), new_nid); }
+        new_nid }}}
+
+// when_hi / when_lo
+
+  /// nid of y when x is high
+  #[inline] pub fn when_hi(&mut self, x:VID, y:NID)->NID {
+    let yv = var(y);
+    if yv == x { self.tup(y).0 }  // x ∧ if(x,th,_) → th
+    else if yv > x { y }          // y independent of x, so no change. includes yv = I
+    else {                        // y may depend on x, so recurse.
+      let (yt, ye) = self.tup(y);
+      let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
+      self.ite(nv(yv), th, el) }}
+
+  /// nid of y when x is low
+  #[inline] pub fn when_lo(&mut self, x:VID, y:NID)->NID {
+    let yv = var(y);
+    if yv == x { self.tup(y).1 }  // ¬x ∧ if(x,_,el) → el
+    else if yv > x { y }          // y independent of x, so no change. includes yv = I
+    else {                        // y may depend on x, so recurse.
+      let (yt, ye) = self.tup(y);
+      let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
+      self.ite(nv(yv), th, el) }}
+
+} // end impl BDDState
 
 
 impl BDDBase {
 
+  /// constructor
   pub fn new(nvars:usize)->BDDBase {
-    // the vars are 1-indexed, because node 0 is ⊥ (false)
-    BDDBase{nvars:nvars,
-            state: BDDState{
-              nodes: (0..nvars).map(|_| vec![]).collect(),
-              vmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
-              xmemo:(0..nvars).map(|_| BDDHashMap::default()).collect() },
-            tags:HashMap::new()}}
+    BDDBase{state: BDDState::new(nvars), tags:HashMap::new()}}
 
   /// accessor for number of variables
-  pub fn nvars(&self)->usize { self.nvars }
+  pub fn nvars(&self)->usize { self.state.nvars() }
 
   /// add a new tag to the tag map
   pub fn tag(&mut self, s:String, n:NID) { self.tags.insert(s, n); }
@@ -199,22 +283,13 @@ impl BDDBase {
   /// retrieve a NID by tag
   pub fn get(&self, s:&String)->Option<NID> { Some(*self.tags.get(s)?) }
 
+  /// return (hi, lo) pair for the given nid. used internally
+  #[inline] fn tup(&self, n:NID)->(NID,NID) { self.state.tup(n) }
+
   /// retrieve a node by its id.
-  #[inline] pub fn bdd(&self, n:NID)->BDDNode {
+  pub fn bdd(&self, n:NID)->BDDNode {
     let t=self.tup(n); BDDNode{v:var(n), hi:t.0, lo:t.1 }}
 
-  /// return (var, hi, lo) triple for the given nid. used internally
-  #[inline] fn tup(&self, n:NID)->(NID,NID) {
-    if is_const(n) { if n==I { (I, O) } else { (O, I) } }
-    else if is_var(n) { if is_inv(n) { (O, I) } else { (I, O) }}
-    else {
-      let bits = // self.bits[var(n) as usize].as_slice();
-        unsafe { self.state.nodes.as_slice().get_unchecked(var(n) as usize).as_slice() };
-      let (mut hi, mut lo) = unsafe { *bits.get_unchecked(idx(n)) };
-      if is_inv(n) { hi = not(hi); lo = not(lo); }
-      (hi, lo) }}
-
-
   /// walk node recursively, without revisiting shared nodes
   pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
     let mut seen = HashSet::new();
@@ -273,33 +348,18 @@ impl BDDBase {
   pub fn  gt(&mut self, x:NID, y:NID)->NID { self.ite(x, not(y), O) }
   pub fn  lt(&mut self, x:NID, y:NID)->NID { self.ite(x, O, y) }
 
-  /// nid of y when x is high
-  #[inline] pub fn when_hi(&mut self, x:VID, y:NID)->NID {
-    let yv = var(y);
-    if yv == x { self.tup(y).0 }  // x ∧ if(x,th,_) → th
-    else if yv > x { y }          // y independent of x, so no change. includes yv = I
-    else {                        // y may depend on x, so recurse.
-      let (yt, ye) = self.tup(y);
-      let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
-      self.ite(nv(yv), th, el) }}
+  /// all-purpose node creation/lookup
+  #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID { self.state.ite(f,g,h) }
 
-  /// nid of y when x is lo
-  #[inline] pub fn when_lo(&mut self, x:VID, y:NID)->NID {
-    let yv = var(y);
-    if yv == x { self.tup(y).1 }  // ¬x ∧ if(x,_,el) → el
-    else if yv > x { y }          // y independent of x, so no change. includes yv = I
-    else {                        // y may depend on x, so recurse.
-      let (yt, ye) = self.tup(y);
-      let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
-      self.ite(nv(yv), th, el) }}
-
-  /// is n the nid of a variable?
-  pub fn is_var(&self, n:NID)->bool { return is_var(n) }
+  /// nid of y when x is high
+  #[inline] pub fn when_hi(&mut self, x:VID, y:NID)->NID { self.state.when_hi(x,y) }
+
+  /// nid of y when x is low
+  #[inline] pub fn when_lo(&mut self, x:VID, y:NID)->NID { self.state.when_lo(x,y) }
 
   /// is it possible x depends on y?
   /// the goal here is to avoid exploring a subgraph if we don't have to.
-  #[inline]
-  pub fn might_depend(&mut self, x:NID, y:VID)->bool {
+  #[inline] pub fn might_depend(&mut self, x:NID, y:VID)->bool {
     if is_var(x) { var(x)==y } else { var(x) <= y }}
 
   /// replace var x with y in z
@@ -312,51 +372,6 @@ impl BDDBase {
         let el = self.replace(x, y, ze);
         self.ite(nv(zv), th, el) }}
     else { z }}
-
-// all-purpose node creation/lookup
-
-  #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
-    let norm = ITE::norm(f,g,h);
-    match norm {
-      Norm::Nid(x) => x,
-      Norm::Ite(ite) => self.ite_norm(ite),
-      Norm::Not(ite) => not(self.ite_norm(ite)) }}
-
-  /// load the memoized NID if it exists
-  #[inline] fn get_norm_memo<'a>(&'a self, v:VID, f:NID, g:NID, h:NID) -> Option<&'a NID> {
-    unsafe {
-      if is_var(f) { self.state.vmemo.as_slice().get_unchecked(var(f) as usize).get(&(g,h)) }
-      else { self.state.xmemo.as_slice().get_unchecked(v as usize).get(&(f,g,h)) }}}
-
-  #[inline] fn ite_norm(&mut self, ite:ITE)->NID {
-    // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
-    // this should only bec called from ite() on pre-normalized triples
-    let ITE { i:f, t:g, e:h } = ite;
-    let v = min(var(f), min(var(g), var(h)));
-    match self.get_norm_memo(v, f, g, h) {
-      Some(&n) => n,
-      None => {
-        let new_nid = {
-          macro_rules! branch { ($meth:ident) => {{
-            let i = self.$meth(v,f);
-            if is_const(i) { if i==I { self.$meth(v,g) } else { self.$meth(v,h) }}
-            else { let (t,e) = (self.$meth(v,g), self.$meth(v,h)); self.ite(i,t,e) }}}}
-          let (hi,lo) = (branch!(when_hi), branch!(when_lo));
-          if hi == lo {hi} else {
-            let hilo = (hi,lo);
-            match // self.vmemo[v as usize].get(&hilo)
-              unsafe { self.state.vmemo.as_slice().get_unchecked(v as usize).get(&hilo) }
-            {
-              Some(&n) => n,
-              None => {
-                let res = nvi(v, self.state.nodes[v as usize].len() as IDX);
-                self.state.vmemo[v as usize].insert(hilo, res);
-                self.state.nodes[v as usize].push(hilo);
-                res }}}};
-        // now add the triple to the generalized memo store
-        if !is_var(f) { self.state.xmemo[v as usize].insert((f,g,h), new_nid); }
-        new_nid }}}
-
 
 
   pub fn save(&self, path:&str)->::std::io::Result<()> {
@@ -409,7 +424,7 @@ impl BDDBase {
 #[test] fn test_base() {
   let mut base = BDDBase::new(3);
   let (v1, v2, v3) = (nv(1), nv(2), nv(3));
-  assert_eq!(base.nvars, 3);
+  assert_eq!(base.nvars(), 3);
   assert_eq!((I,O), base.tup(I));
   assert_eq!((O,I), base.tup(O));
   assert_eq!((I,O), base.tup(v1));
