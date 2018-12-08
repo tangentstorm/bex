@@ -89,12 +89,20 @@ impl fmt::Display for NID {
 impl fmt::Debug for NID { // for test suite output
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self) }}
 
-/// A Norm is an enum to represent a normalized form of a given f,g,h triple
+/// An if/then/else triple. This is similar to an individual BDDNode, but the 'if' part
+/// part represents a node, not a variable
 #[derive(Debug)]
-pub enum Norm {
+struct ITE {i:NID, t:NID, e:NID}
+
+/// This represents the result of normalizing an ITE. There are three conditions:
+#[derive(Debug)]
+enum Norm {
+  /// used when the ITE simplifies to a single NID.
   Nid(NID),
-  Tup(NID, NID, NID),
-  Not(NID, NID, NID)}
+  /// a normalized ITE.
+  Ite(ITE),
+  /// a normalized, inverted ITE.
+  Not(ITE)}
 
 /// Type alias for whatever HashMap implementation we're curretly using -- std,
 /// fnv, hashbrown... Hashing is an extremely important aspect of a BDD base, so
@@ -125,6 +133,52 @@ pub struct BDDBase {
   state: BDDState}
 
 
+impl ITE {
+  /// shorthand constructor
+  pub fn new (i:NID, t:NID, e:NID)-> ITE { ITE { i:i, t:t, e:e } }
+
+  /// choose normal form for writing this triple. Algorithm based on:
+  /// "Efficient Implementation of a BDD Package"
+  /// http://www.cs.cmu.edu/~emc/15817-f08/bryant-bdd-1991.pdf
+  // (This is one of the biggest bottlenecks so we inline a lot,
+  // do our own tail call optimizations, etc...)
+  pub fn norm(f0:NID, g0:NID, h0:NID)->Norm {
+    let mut f = f0; let mut g = g0; let mut h = h0;
+    loop {
+      if is_const(f) { return Norm::Nid(if f==I { g } else { h }) }           // (I/O, _, _)
+      if g==h { return Norm::Nid(g) }                                         // (_, g, g)
+      if g==f { if is_const(h) { return Norm::Nid(if h==I { I } else { f }) } // (f, f, I/O)
+                else { g=I }}
+      else if T==(T & g.n & h.n) { // both const, and we know g!=h
+        return if g==I { return Norm::Nid(f) } else { Norm::Nid(not(f)) }}
+      else {
+        let nf = not(f);
+        if      g==nf { g=O } // bounce!(f,O,h)
+        else if h==f  { h=O } // bounce!(f,g,O)
+        else if h==nf { h=I } // bounce!(f,g,I)
+        else {
+          let (fv, fi) = (var(f), idx(f));
+          macro_rules! cmp { ($x0:expr,$x1:expr) => {
+            { let x0=$x0; ((x0<fv) || ((x0==fv) && ($x1<fi))) }}}
+          if is_const(g) && cmp!(var(h),idx(h)) {
+            if g==I { g=f; f=h; h=g;  g=I; }     // bounce!(h,I,f)
+            else    { f=not(h); g=O;  h=nf; }}   // bounce(not(h),O,nf)
+          else if is_const(h) && cmp!(var(g),idx(g)) {
+            if h==I { f=not(g); g=nf; h=I; }     // bounce!(not(g),nf,I)
+            else    { h=f; f=g; g=h;  h=O; }}    // bounce!(g,f,O)
+          else {
+            let ng = not(g);
+            if (h==ng) && cmp!(var(g), idx(g)) { h=f; f=g; g=h; h=nf; } // bounce!(g,f,nf)
+            // choose form where first 2 slots are NOT inverted:
+            // from { (f,g,h), (¬f,h,g), ¬(f,¬g,¬h), ¬(¬f,¬g,¬h) }
+            else if is_inv(f) { f=g; g=h; h=f; f=nf; } // bounce!(nf,h,g)
+            else if is_inv(g) { return match ITE::norm(f,ng,not(h)) {
+              Norm::Nid(nid) => Norm::Nid(not(nid)),
+              Norm::Not(ite) => Norm::Ite(ite),
+              Norm::Ite(ite) => Norm::Not(ite)}}
+            else { return Norm::Ite(ITE::new(f,g,h)) }}}}}} }
+
+
 impl BDDBase {
 
   pub fn new(nvars:usize)->BDDBase {
@@ -136,14 +190,21 @@ impl BDDBase {
               xmemo:(0..nvars).map(|_| BDDHashMap::default()).collect() },
             tags:HashMap::new()}}
 
+  /// accessor for number of variables
   pub fn nvars(&self)->usize { self.nvars }
 
+  /// add a new tag to the tag map
   pub fn tag(&mut self, s:String, n:NID) { self.tags.insert(s, n); }
+
+  /// retrieve a NID by tag
   pub fn get(&self, s:&String)->Option<NID> { Some(*self.tags.get(s)?) }
 
-  /// return (var, hi, lo) triple for the given nid
-  #[inline]
-  pub fn tup(&self, n:NID)->(NID,NID) {
+  /// retrieve a node by its id.
+  #[inline] pub fn bdd(&self, n:NID)->BDDNode {
+    let t=self.tup(n); BDDNode{v:var(n), hi:t.0, lo:t.1 }}
+
+  /// return (var, hi, lo) triple for the given nid. used internally
+  #[inline] fn tup(&self, n:NID)->(NID,NID) {
     if is_const(n) { if n==I { (I, O) } else { (O, I) } }
     else if is_var(n) { if is_inv(n) { (O, I) } else { (I, O) }}
     else {
@@ -153,11 +214,7 @@ impl BDDBase {
       if is_inv(n) { hi = not(hi); lo = not(lo); }
       (hi, lo) }}
 
-
-  #[inline]
-  pub fn bdd(&self, n:NID)->BDDNode {
-    let t=self.tup(n); BDDNode{v:var(n), hi:t.0, lo:t.1 }}
-
+
   /// walk node recursively, without revisiting shared nodes
   pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
     let mut seen = HashSet::new();
@@ -259,12 +316,11 @@ impl BDDBase {
 // all-purpose node creation/lookup
 
   #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
-    // println!("ite({},{},{})", f,g,h);
-    let norm = self.norm(f,g,h);
+    let norm = ITE::norm(f,g,h);
     match norm {
       Norm::Nid(x) => x,
-      Norm::Tup(x,y,z) => self.ite_norm(x,y,z),
-      Norm::Not(x,y,z) => not(self.ite_norm(x,y,z)) }}
+      Norm::Ite(ite) => self.ite_norm(ite),
+      Norm::Not(ite) => not(self.ite_norm(ite)) }}
 
   /// load the memoized NID if it exists
   #[inline] fn get_norm_memo<'a>(&'a self, v:VID, f:NID, g:NID, h:NID) -> Option<&'a NID> {
@@ -272,9 +328,10 @@ impl BDDBase {
       if is_var(f) { self.state.vmemo.as_slice().get_unchecked(var(f) as usize).get(&(g,h)) }
       else { self.state.xmemo.as_slice().get_unchecked(v as usize).get(&(f,g,h)) }}}
 
-  #[inline] fn ite_norm(&mut self, f:NID, g:NID, h:NID)->NID {
+  #[inline] fn ite_norm(&mut self, ite:ITE)->NID {
     // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
     // this should only bec called from ite() on pre-normalized triples
+    let ITE { i:f, t:g, e:h } = ite;
     let v = min(var(f), min(var(g), var(h)));
     match self.get_norm_memo(v, f, g, h) {
       Some(&n) => n,
@@ -300,47 +357,6 @@ impl BDDBase {
         if !is_var(f) { self.state.xmemo[v as usize].insert((f,g,h), new_nid); }
         new_nid }}}
 
-
-  /// choose normal form for writing this node. Algorithm based on:
-  /// "Efficient Implementation of a BDD Package"
-  /// http://www.cs.cmu.edu/~emc/15817-f08/bryant-bdd-1991.pdf
-  // (This is one of the biggest bottlenecks so we inline a lot,
-  // do our own tail call optimizations, etc...)
-  pub fn norm(&self, f0:NID, g0:NID, h0:NID)->Norm {
-    let mut f = f0; let mut g = g0; let mut h = h0;
-    loop {
-      if is_const(f) { return Norm::Nid(if f==I { g } else { h }) }           // (I/O, _, _)
-      if g==h { return Norm::Nid(g) }                                         // (_, g, g)
-      if g==f { if is_const(h) { return Norm::Nid(if h==I { I } else { f }) } // (f, f, I/O)
-                else { g=I }}
-      else if T==(T & g.n & h.n) { // both const, and we know g!=h
-        return if g==I { return Norm::Nid(f) } else { Norm::Nid(not(f)) }}
-      else {
-        let nf = not(f);
-        if      g==nf { g=O } // bounce!(f,O,h)
-        else if h==f  { h=O } // bounce!(f,g,O)
-        else if h==nf { h=I } // bounce!(f,g,I)
-        else {
-          let (fv, fi) = (var(f), idx(f));
-          macro_rules! cmp { ($x0:expr,$x1:expr) => {
-            { let x0=$x0; ((x0<fv) || ((x0==fv) && ($x1<fi))) }}}
-          if is_const(g) && cmp!(var(h),idx(h)) {
-            if g==I { g=f; f=h; h=g;  g=I; }     // bounce!(h,I,f)
-            else    { f=not(h); g=O;  h=nf; }}   // bounce(not(h),O,nf)
-          else if is_const(h) && cmp!(var(g),idx(g)) {
-            if h==I { f=not(g); g=nf; h=I; }     // bounce!(not(g),nf,I)
-            else    { h=f; f=g; g=h;  h=O; }}    // bounce!(g,f,O)
-          else {
-            let ng = not(g);
-            if (h==ng) && cmp!(var(g), idx(g)) { h=f; f=g; g=h; h=nf; } // bounce!(g,f,nf)
-            // choose form where first 2 slots are NOT inverted:
-            // from { (f,g,h), (¬f,h,g), ¬(f,¬g,¬h), ¬(¬f,¬g,¬h) }
-            else if is_inv(f) { f=g; g=h; h=f; f=nf; } // bounce!(nf,h,g)
-            else if is_inv(g) { return match self.norm(f,ng,not(h)) {
-              Norm::Nid(x) => Norm::Nid(not(x)),
-              Norm::Not(x,y,z) => Norm::Tup(x,y,z),
-              Norm::Tup(x,y,z) => Norm::Not(x,y,z)}}
-            else { return Norm::Tup(f,g,h) }}}}}}
 
 
   pub fn save(&self, path:&str)->::std::io::Result<()> {
