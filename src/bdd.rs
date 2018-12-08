@@ -177,7 +177,6 @@ impl HILO {
   #[inline] fn invert(self)-> HILO { HILO{ hi: not(self.hi), lo: not(self.lo) }}
 }
 
-
 /// This structure contains the main parts of a BDD base's internal state.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BDDState {
@@ -227,18 +226,23 @@ impl BDDState {
       else { self.xmemo.as_slice().get_unchecked(v as usize).get(&ite) }}}
 
   #[inline] fn put_xmemo(&mut self, v:VID, ite:ITE, new_nid:NID) {
-    self.xmemo[v as usize].insert(ite, new_nid); }
+    unsafe {
+      self.xmemo.as_mut_slice().get_unchecked_mut(v as usize).insert(ite, new_nid); }}
 
   #[inline] fn get_simple_node<'a>(&'a self, v:VID, hilo:HILO)-> Option<&'a NID> {
     unsafe { self.vmemo.as_slice().get_unchecked(v as usize).get(&hilo) }}
 
   #[inline] fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID {
-    let res = nvi(v, self.nodes[v as usize].len() as IDX);
-    self.vmemo[v as usize].insert(hilo, res);
-    self.nodes[v as usize].push(hilo);
-    res }
+    unsafe {
+      let vnodes = self.nodes.as_mut_slice().get_unchecked_mut(v as usize);
+      let res = nvi(v, vnodes.len() as IDX);
+      vnodes.push(hilo);
+      self.vmemo.as_mut_slice().get_unchecked_mut(v as usize).insert(hilo,res);
+      res }}
 
 
+// ite
+
   /// all-purpose node creation/lookup
   #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
     let norm = ITE::norm(f,g,h);
