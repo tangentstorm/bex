@@ -91,7 +91,7 @@ impl fmt::Debug for NID { // for test suite output
 
 /// An if/then/else triple. This is similar to an individual BDDNode, but the 'if' part
 /// part represents a node, not a variable
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 struct ITE {i:NID, t:NID, e:NID}
 
 /// This represents the result of normalizing an ITE. There are three conditions:
@@ -125,8 +125,8 @@ impl ITE {
   /// choose normal form for writing this triple. Algorithm based on:
   /// "Efficient Implementation of a BDD Package"
   /// http://www.cs.cmu.edu/~emc/15817-f08/bryant-bdd-1991.pdf
-  // (This is one of the biggest bottlenecks so we inline a lot,
-  // do our own tail call optimizations, etc...)
+  /// (This is one of the biggest bottlenecks so we inline a lot,
+  /// do our own tail call optimization, etc...)
   pub fn norm(f0:NID, g0:NID, h0:NID)->Norm {
     let mut f = f0; let mut g = g0; let mut h = h0;
     loop {
@@ -188,7 +188,7 @@ pub struct BDDState {
   /// arbitrary memoization. These record normalized (f,g,h) lookups,
   /// and are indexed at three layers: v,f,(g h); where v is the
   /// branching variable.
-  xmemo: Vec<BDDHashMap<(NID, NID,NID), NID>> }
+  xmemo: Vec<BDDHashMap<ITE, NID>> }
 
 impl BDDState {
 
@@ -206,12 +206,37 @@ impl BDDState {
   #[inline] fn tup(&self, n:NID)-> (NID, NID) {
     if is_const(n) { if n==I { (I, O) } else { (O, I) } }
     else if is_var(n) { if is_inv(n) { (O, I) } else { (I, O) }}
-    else {
-      let bits = // self.bits[var(n) as usize].as_slice();
-        unsafe { self.nodes.as_slice().get_unchecked(var(n) as usize).as_slice() };
-      let mut hilo = unsafe { *bits.get_unchecked(idx(n)) };
-      if is_inv(n) { hilo = hilo.invert() };
-      (hilo.hi, hilo.lo) }}
+    else { let mut hilo = self.get_hilo(n);
+           if is_inv(n) { hilo = hilo.invert() };
+           (hilo.hi, hilo.lo) }}
+
+
+// core routines that actually read/write the state
+
+  /// the "put" for this one is put_simple_node
+  #[inline] fn get_hilo(&self, n:NID)->HILO {
+    unsafe {
+      let bits = self.nodes.as_slice().get_unchecked(var(n) as usize).as_slice();
+      *bits.get_unchecked(idx(n)) }}
+
+  /// load the memoized NID if it exists
+  #[inline] fn get_memo<'a>(&'a self, v:VID, ite:&ITE) -> Option<&'a NID> {
+    unsafe {
+      if is_var(ite.i) {
+        self.vmemo.as_slice().get_unchecked(var(ite.i) as usize).get(&HILO::new(ite.t, ite.e)) }
+      else { self.xmemo.as_slice().get_unchecked(v as usize).get(&ite) }}}
+
+  #[inline] fn put_xmemo(&mut self, v:VID, ite:ITE, new_nid:NID) {
+    self.xmemo[v as usize].insert(ite, new_nid); }
+
+  #[inline] fn get_simple_node<'a>(&'a self, v:VID, hilo:HILO)-> Option<&'a NID> {
+    unsafe { self.vmemo.as_slice().get_unchecked(v as usize).get(&hilo) }}
+
+  #[inline] fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID {
+    let res = nvi(v, self.nodes[v as usize].len() as IDX);
+    self.vmemo[v as usize].insert(hilo, res);
+    self.nodes[v as usize].push(hilo);
+    res }
 
 
   /// all-purpose node creation/lookup
@@ -222,19 +247,13 @@ impl BDDState {
       Norm::Ite(ite) => self.ite_norm(ite),
       Norm::Not(ite) => not(self.ite_norm(ite)) }}
 
-  /// load the memoized NID if it exists
-  #[inline] fn get_norm_memo<'a>(&'a self, v:VID, f:NID, g:NID, h:NID) -> Option<&'a NID> {
-    unsafe {
-      if is_var(f) { self.vmemo.as_slice().get_unchecked(var(f) as usize).get(&HILO::new(g,h)) }
-      else { self.xmemo.as_slice().get_unchecked(v as usize).get(&(f,g,h)) }}}
-
   /// helper for ite to work on the normalized i,t,e triple
   #[inline] fn ite_norm(&mut self, ite:ITE)->NID {
     // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
     // this should only bec called from ite() on pre-normalized triples
     let ITE { i:f, t:g, e:h } = ite;
     let v = min(var(f), min(var(g), var(h)));
-    match self.get_norm_memo(v, f, g, h) {
+    match self.get_memo(v, &ite) {
       Some(&n) => n,
       None => {
         let new_nid = {
@@ -245,21 +264,15 @@ impl BDDState {
           let (hi,lo) = (branch!(when_hi), branch!(when_lo));
           if hi == lo {hi} else { self.simple_node(v, HILO::new(hi,lo)) }};
         // now add the triple to the generalized memo store
-        if !is_var(f) { self.xmemo[v as usize].insert((f,g,h), new_nid); }
+        if !is_var(f) { self.put_xmemo(v, ite, new_nid) }
         new_nid }}}
 
   /// fetch or create a "simple" node, where the hi and lo branches are both
   /// already fully computed pointers to existing nodes.
   #[inline] fn simple_node(&mut self, v:VID, hilo:HILO)->NID {
-    match // self.vmemo[v as usize].get(&hilo)
-      unsafe { self.vmemo.as_slice().get_unchecked(v as usize).get(&hilo) }
-    {
+    match self.get_simple_node(v, hilo) {
       Some(&n) => n,
-      None => {
-        let res = nvi(v, self.nodes[v as usize].len() as IDX);
-        self.vmemo[v as usize].insert(hilo, res);
-        self.nodes[v as usize].push(hilo);
-        res }}}
+      None => { self.put_simple_node(v, hilo) }}}
 
   /// nid of y when x is high
   #[inline] pub fn when_hi(&mut self, x:VID, y:NID)->NID {
