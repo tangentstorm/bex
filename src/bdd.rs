@@ -163,13 +163,28 @@ impl ITE {
               Norm::Ite(ite) => Norm::Not(ite)}}
             else { return Norm::Ite(ITE::new(f,g,h)) }}}}}} }
 
+/// Simple Hi/Lo pair stored internally when representing nodes.
+/// All nodes with the same branching variable go in the same array, so there's
+/// no point duplicating it.
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
+struct HILO {hi:NID, lo:NID}
+
+impl HILO {
+  /// constructor
+  fn new(hi:NID, lo:NID)->HILO { HILO { hi:hi, lo:lo } }
+
+  /// apply the not() operator to both branches
+  #[inline] fn invert(self)-> HILO { HILO{ hi: not(self.hi), lo: not(self.lo) }}
+}
+
+
 /// This structure contains the main parts of a BDD base's internal state.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BDDState {
   /// variable-specific hi/lo pairs for individual bdd nodes.
-  nodes: Vec<Vec<(NID, NID)>>,
-  /// variable-specific memoization. These record (v,lo,hi) lookups.
-  vmemo: Vec<BDDHashMap<(NID, NID),NID>>,
+  nodes: Vec<Vec<HILO>>,
+  /// variable-specific memoization. These record (v,hilo) lookups.
+  vmemo: Vec<BDDHashMap<HILO,NID>>,
   /// arbitrary memoization. These record normalized (f,g,h) lookups,
   /// and are indexed at three layers: v,f,(g h); where v is the
   /// branching variable.
@@ -188,17 +203,17 @@ impl BDDState {
   fn nvars(&self)->usize { self.nodes.len() }
 
   /// return (hi, lo) pair for the given nid. used internally
-  #[inline] fn tup(&self, n:NID)->(NID,NID) {
+  #[inline] fn tup(&self, n:NID)-> (NID, NID) {
     if is_const(n) { if n==I { (I, O) } else { (O, I) } }
     else if is_var(n) { if is_inv(n) { (O, I) } else { (I, O) }}
     else {
       let bits = // self.bits[var(n) as usize].as_slice();
         unsafe { self.nodes.as_slice().get_unchecked(var(n) as usize).as_slice() };
-      let (mut hi, mut lo) = unsafe { *bits.get_unchecked(idx(n)) };
-      if is_inv(n) { hi = not(hi); lo = not(lo); }
-      (hi, lo) }}
-
+      let mut hilo = unsafe { *bits.get_unchecked(idx(n)) };
+      if is_inv(n) { hilo = hilo.invert() };
+      (hilo.hi, hilo.lo) }}
 
+
   /// all-purpose node creation/lookup
   #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
     let norm = ITE::norm(f,g,h);
@@ -210,7 +225,7 @@ impl BDDState {
   /// load the memoized NID if it exists
   #[inline] fn get_norm_memo<'a>(&'a self, v:VID, f:NID, g:NID, h:NID) -> Option<&'a NID> {
     unsafe {
-      if is_var(f) { self.vmemo.as_slice().get_unchecked(var(f) as usize).get(&(g,h)) }
+      if is_var(f) { self.vmemo.as_slice().get_unchecked(var(f) as usize).get(&HILO::new(g,h)) }
       else { self.xmemo.as_slice().get_unchecked(v as usize).get(&(f,g,h)) }}}
 
   /// helper for ite to work on the normalized i,t,e triple
@@ -228,22 +243,23 @@ impl BDDState {
             if is_const(i) { if i==I { self.$meth(v,g) } else { self.$meth(v,h) }}
             else { let (t,e) = (self.$meth(v,g), self.$meth(v,h)); self.ite(i,t,e) }}}}
           let (hi,lo) = (branch!(when_hi), branch!(when_lo));
-          if hi == lo {hi} else {
-            let hilo = (hi,lo);
-            match // self.vmemo[v as usize].get(&hilo)
-              unsafe { self.vmemo.as_slice().get_unchecked(v as usize).get(&hilo) }
-            {
-              Some(&n) => n,
-              None => {
-                let res = nvi(v, self.nodes[v as usize].len() as IDX);
-                self.vmemo[v as usize].insert(hilo, res);
-                self.nodes[v as usize].push(hilo);
-                res }}}};
+          if hi == lo {hi} else { self.simple_node(v, HILO::new(hi,lo)) }};
         // now add the triple to the generalized memo store
         if !is_var(f) { self.xmemo[v as usize].insert((f,g,h), new_nid); }
         new_nid }}}
 
-// when_hi / when_lo
+  /// fetch or create a "simple" node, where the hi and lo branches are both
+  /// already fully computed pointers to existing nodes.
+  #[inline] fn simple_node(&mut self, v:VID, hilo:HILO)->NID {
+    match // self.vmemo[v as usize].get(&hilo)
+      unsafe { self.vmemo.as_slice().get_unchecked(v as usize).get(&hilo) }
+    {
+      Some(&n) => n,
+      None => {
+        let res = nvi(v, self.nodes[v as usize].len() as IDX);
+        self.vmemo[v as usize].insert(hilo, res);
+        self.nodes[v as usize].push(hilo);
+        res }}}
 
   /// nid of y when x is high
   #[inline] pub fn when_hi(&mut self, x:VID, y:NID)->NID {
