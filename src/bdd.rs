@@ -96,21 +96,16 @@ pub enum Norm {
   Tup(NID, NID, NID),
   Not(NID, NID, NID)}
 
-
 /// Type alias for whatever HashMap implementation we're curretly using -- std,
 /// fnv, hashbrown... Hashing is an extremely important aspect of a BDD base, so
 /// it's useful to have a single place to configure this.
 pub type BDDHashMap<K,V> = hashbrown::hash_map::HashMap<K,V>;
 
-
-/// A BDD Base contains any number of BDD structures, and various caches
-/// related to calculating nodes.
+/// This structure contains the main parts of a BDD base's internal state.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BDDBase {
-  nvars: usize,
-  // nbits:usize,
-  bits: Vec<Vec<(NID, NID)>>,
-  pub tags: HashMap<String, NID>,
+pub struct BDDState {
+  /// variable-specific hi/lo pairs for individual bdd nodes.
+  nodes: Vec<Vec<(NID, NID)>>,
   /// variable-specific memoization. These record (v,lo,hi) lookups.
   vmemo: Vec<BDDHashMap<(NID, NID),NID>>,
   /// arbitrary memoization. These record normalized (f,g,h) lookups,
@@ -119,6 +114,15 @@ pub struct BDDBase {
   xmemo: Vec<BDDHashMap<(NID, NID,NID), NID>> }
 
 
+/// This is the top-level type for this crate.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BDDBase {
+  /// the number of variables in the base
+  nvars: usize,
+  /// allows us to give user-friendly names to specific nodes in the base.
+  pub tags: HashMap<String, NID>,
+  /// the actual data
+  state: BDDState}
 
 
 impl BDDBase {
@@ -126,9 +130,10 @@ impl BDDBase {
   pub fn new(nvars:usize)->BDDBase {
     // the vars are 1-indexed, because node 0 is ⊥ (false)
     BDDBase{nvars:nvars,
-            bits: (0..nvars).map(|_| vec![]).collect(),
-            vmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
-            xmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
+            state: BDDState{
+              nodes: (0..nvars).map(|_| vec![]).collect(),
+              vmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
+              xmemo:(0..nvars).map(|_| BDDHashMap::default()).collect() },
             tags:HashMap::new()}}
 
   pub fn nvars(&self)->usize { self.nvars }
@@ -143,7 +148,7 @@ impl BDDBase {
     else if is_var(n) { if is_inv(n) { (O, I) } else { (I, O) }}
     else {
       let bits = // self.bits[var(n) as usize].as_slice();
-        unsafe { self.bits.as_slice().get_unchecked(var(n) as usize).as_slice() };
+        unsafe { self.state.nodes.as_slice().get_unchecked(var(n) as usize).as_slice() };
       let (mut hi, mut lo) = unsafe { *bits.get_unchecked(idx(n)) };
       if is_inv(n) { hi = not(hi); lo = not(lo); }
       (hi, lo) }}
@@ -264,8 +269,8 @@ impl BDDBase {
   /// load the memoized NID if it exists
   #[inline] fn get_norm_memo<'a>(&'a self, v:VID, f:NID, g:NID, h:NID) -> Option<&'a NID> {
     unsafe {
-      if is_var(f) { self.vmemo.as_slice().get_unchecked(var(f) as usize).get(&(g,h)) }
-      else { self.xmemo.as_slice().get_unchecked(v as usize).get(&(f,g,h)) }}}
+      if is_var(f) { self.state.vmemo.as_slice().get_unchecked(var(f) as usize).get(&(g,h)) }
+      else { self.state.xmemo.as_slice().get_unchecked(v as usize).get(&(f,g,h)) }}}
 
   #[inline] fn ite_norm(&mut self, f:NID, g:NID, h:NID)->NID {
     // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
@@ -283,16 +288,16 @@ impl BDDBase {
           if hi == lo {hi} else {
             let hilo = (hi,lo);
             match // self.vmemo[v as usize].get(&hilo)
-              unsafe { self.vmemo.as_slice().get_unchecked(v as usize).get(&hilo) }
+              unsafe { self.state.vmemo.as_slice().get_unchecked(v as usize).get(&hilo) }
             {
               Some(&n) => n,
               None => {
-                let res = nvi(v, self.bits[v as usize].len() as IDX);
-                self.vmemo[v as usize].insert(hilo, res);
-                self.bits[v as usize].push(hilo);
+                let res = nvi(v, self.state.nodes[v as usize].len() as IDX);
+                self.state.vmemo[v as usize].insert(hilo, res);
+                self.state.nodes[v as usize].push(hilo);
                 res }}}};
         // now add the triple to the generalized memo store
-        if !is_var(f) { self.xmemo[v as usize].insert((f,g,h), new_nid); }
+        if !is_var(f) { self.state.xmemo[v as usize].insert((f,g,h), new_nid); }
         new_nid }}}
 
 
@@ -348,11 +353,8 @@ impl BDDBase {
 
   pub fn load(&mut self, path:&str)->::std::io::Result<()> {
     let other = BDDBase::from_path(path)?;
-    self.nvars = other.nvars;
-    self.bits = other.bits;
-    self.vmemo = other.vmemo;
-    self.xmemo = other.xmemo;
     self.tags = other.tags;
+    self.state = other.state;
     Ok(()) }
 
 
