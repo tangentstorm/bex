@@ -245,8 +245,7 @@ impl BDDState {
 
   /// all-purpose node creation/lookup
   #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
-    let norm = ITE::norm(f,g,h);
-    match norm {
+    match ITE::norm(f,g,h) {
       Norm::Nid(x) => x,
       Norm::Ite(ite) => self.ite_norm(ite),
       Norm::Not(ite) => not(self.ite_norm(ite)) }}
