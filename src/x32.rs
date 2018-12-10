@@ -21,7 +21,7 @@ fn bitmaj<T:TBit>(x:T, y:T, z:T) -> T {
   (x.clone()&y.clone()) ^ (x.clone()&z.clone()) ^ (y&z) }
 
 
-// BaseBit implementation (u38 references into TBase)
+// BaseBit implementation (u32 references into TBase)
 pub type BaseRef = Rc<RefCell<Base>>;
 
 #[derive(Clone)]
@@ -68,8 +68,10 @@ impl std::fmt::Debug for BaseBit {
   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
     write!(f, "[#{}]", self.n) }}
 
-
+
 // --- lifted u32 type -----------------------------------------
+
+// TODO: implement iterators on the bits to simplify all these loops!!
 
 pub trait TBit32<T:TBit> : Sized {
   fn i(&self) -> T;
@@ -77,16 +79,29 @@ pub trait TBit32<T:TBit> : Sized {
   fn new(&self, u:u32) -> Self;
   fn get(&self, i:u8) -> T;
   fn set(&mut self, i:u8, v:T);
-  fn rotate_right(self, y:u8) -> Self {
+  fn rotate_right(&self, y:u8) -> Self {
     let mut res = self.new(0);
     for i in 0..32 { res.set(i, self.get((i+y) % 32)) }
     res}
-  fn wrapping_add(self, y:Self) -> Self {
+
+  // TODO: this doesn't actually wrap! (should it??)
+  fn wrapping_add(&self, y:Self) -> Self {
     let mut res = self.new(0); let mut carry = self.o();
     for i in 0..32 { match (self.get(i), y.get(i), carry) {
       (a,b,c) => { res.set(i, a.clone() ^ b.clone() ^ c.clone());
                    carry = bitmaj(a, b, c) }}}
-    res}
+      res}
+
+  fn times(self, y:Self) -> Self {
+    let mut sum = self.new(0);
+    for i in 0..32 {
+      let mut xi = self.rotate_right(0);
+      for j in 0..32 {
+        let xij = xi.get(j) & y.get(i);
+        xi.set(j, xij) }
+      sum = sum.wrapping_add(xi.rotate_right(32-i)); }
+    sum }
+
   fn u(self) -> u32; }
 
 
@@ -187,3 +202,21 @@ impl std::ops::Not for X32 {
     let mut res = self.clone();
     for i in 0..32 { res.bits[i] = !res.bits[i].clone() }
     res }}
+
+
+// -- test suite for x32
+
+#[test] fn test_roundtrip() {
+  let k = 1234567890u32;
+  assert_eq!(x32(k).u(), k) }
+
+#[test] fn test_add() {
+  assert_eq!((x32(2).wrapping_add(x32(3))).u(), 5u32) }
+
+#[test] fn test_mul() {
+  assert_eq!((x32(2).times(x32(3))).u(),  6u32);
+  assert_eq!((x32(3).times(x32(5))).u(), 15u32) }
+
+#[test] fn test_ror() {
+  assert_eq!((x32(10).rotate_right(1)).u(), 5u32) }
+
