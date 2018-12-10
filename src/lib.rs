@@ -14,6 +14,6 @@ pub mod apl;
 /// Binary decision diagrams.
 pub mod bdd;
 /// Working with arrays of bit structures as if they were integers.
-pub mod x32;
+pub mod int;
 /// Input/output support for the other modules.
 pub mod io;
