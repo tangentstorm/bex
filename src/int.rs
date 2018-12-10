@@ -136,13 +136,27 @@ macro_rules! xint_type {
     pub struct $T{pub bits:Vec<BaseBit>}
 
     impl $T {
-      fn new(nbits:u8, u:usize)->$T {
-        $T{bits:(0..nbits)
+      pub fn new(u:usize)->$T {
+        $T{bits:(0..$n)
            .map(|i| if (u&1<<i)==0 { gbase_o() } else { gbase_i() })
-           .collect()} }}
+           .collect()}}
+
+      pub fn from_vec(v:Vec<BaseBit>)->$T {
+        $T{bits: if v.len() >= $n { v.iter().take($n).map(|x|x.clone()).collect() }
+           else {
+             let zs = (0..($n-v.len())).map(|_| gbase_o());
+             v.iter().map(|x|x.clone()).chain(zs.into_iter()).collect() }}}
+
+      pub fn eq(&self, other:Self)-> BaseBit {
+        println!("WARNING! {:?}.eq({:?}) not implemted yet!", self, other);
+        gbase_o() }
+      pub fn lt(&self, other:Self)-> BaseBit {
+        println!("WARNING! {:?}.lt({:?}) not implemted yet!", self, other);
+        gbase_o() }
+    }
 
     /// shorthand constructor
-    pub fn $c(u:$U) -> $T { $T::new($n, u as usize) }
+    pub fn $c(u:$U) -> $T { $T::new(u as usize) }
 
     impl std::fmt::Debug for $T {
       fn fmt(&self, f: &mut std::fmt::Formatter)->std::fmt::Result {
@@ -153,13 +167,15 @@ macro_rules! xint_type {
             1 => { write!(f, "I").expect("!?"); },
             n => { write!(f, ":{}", n).expect("!?"); }}}
         write!(f, "]")}}
+
+// TODO: just inline BInt here, so people don't have to import it.
 
     impl BInt<$U,BaseBit> for $T {
       fn n()->u8 { $n }
-      fn zero()->Self { $T::new($n, 0) }
+      fn zero()->Self { $T::new(0) }
       fn o(&self)->BaseBit { gbase_o() }
       fn i(&self)->BaseBit { gbase_i() }
-      fn new(&self, u:$U)->Self { $T::new($n, u as usize) }
+      fn new(&self, u:$U)->Self { $T::new(u as usize) }
       fn get(&self, i:u8)->BaseBit { self.bits[i as usize].clone() }
       fn set(&mut self, i:u8, v:BaseBit) { self.bits[i as usize]=v }
 
