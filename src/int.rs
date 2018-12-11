@@ -29,41 +29,42 @@ pub type BaseRef = Rc<RefCell<Base>>;
 #[derive(Clone)]
 pub struct BaseBit {pub base:BaseRef, pub n:NID}
 
+impl BaseBit {
+  /// perform an arbitrary operation using the base
+  fn op<F:FnMut(&mut Base)->NID>(&self, mut op:F)->BaseBit {
+    let r = op(&mut self.base.borrow_mut());
+    BaseBit{base:self.base.clone(), n:r} }}
+
 impl std::cmp::PartialEq for BaseBit {
   fn eq(&self, other:&Self)->bool {
     self.base.as_ptr() == other.base.as_ptr() && self.n==other.n }}
 
 impl TBit for BaseBit {
   fn when(self, var:u32, val:Self)->Self {
-    let r = self.base.borrow_mut().when(var as usize, val.n, self.n);
-    BaseBit{base:self.base, n:r} }
+    self.op(|base| base.when(var as usize, val.n, self.n)) }
 
   fn sub(self, s:SID)->Self {
-    BaseBit{base:self.base.clone(), n:self.base.borrow_mut().sub(self.n, s)} } }
+    self.op(|base| base.sub(self.n, s)) }}
 
 impl std::ops::Not for BaseBit {
-  type Output = BaseBit;
+  type Output = Self;
   fn not(self) -> Self {
-    let r = self.base.borrow_mut().not(self.n);
-    BaseBit{base:self.base, n:r} } }
+    self.op(|base| base.not(self.n)) }}
 
 impl std::ops::BitAnd<BaseBit> for BaseBit {
   type Output = Self;
   fn bitand(self, other:Self) -> Self {
-    let r = self.base.borrow_mut().and(self.n, other.n);
-    BaseBit{base:self.base, n:r} } }
+    self.op(|base| base.and(self.n, other.n)) }}
 
 impl std::ops::BitXor<BaseBit> for BaseBit {
   type Output = Self;
   fn bitxor(self, other:Self) -> Self {
-    let r = self.base.borrow_mut().xor(self.n, other.n);
-    BaseBit{base:self.base, n:r} } }
+    self.op(|base| base.xor(self.n, other.n))}}
 
 impl std::ops::BitOr<BaseBit> for BaseBit {
   type Output = Self;
   fn bitor(self, other:Self) -> Self {
-    let r = self.base.borrow_mut().or(self.n, other.n);
-    BaseBit{base:self.base, n:r} } }
+    self.op(|base| base.or(self.n, other.n)) }}
 
 impl std::fmt::Debug for BaseBit {
   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -116,7 +117,7 @@ pub trait BInt<U, T:TBit> : Sized {
                    carry = bitmaj(a, b, c) }}}
       res}
 
-  fn times(self, y:Self) -> Self {
+  fn times(&self, y:&Self) -> Self {
     let mut sum = Self::zero();
     for i in 0..Self::n() {
       let mut xi = self.rotate_right(0);
@@ -147,10 +148,12 @@ macro_rules! xint_type {
              let zs = (0..($n-v.len())).map(|_| gbase_o());
              v.iter().map(|x|x.clone()).chain(zs.into_iter()).collect() }}}
 
-      pub fn eq(&self, other:Self)-> BaseBit {
+      pub fn eq(&self, other:&Self)-> BaseBit {
         println!("WARNING! {:?}.eq({:?}) not implemted yet!", self, other);
         gbase_o() }
-      pub fn lt(&self, other:Self)-> BaseBit {
+
+      pub fn lt(&self, other:&Self)-> BaseBit {
+        for i in (0..$n).rev() { print!("{},", i); }
         println!("WARNING! {:?}.lt({:?}) not implemted yet!", self, other);
         gbase_o() }
     }
@@ -241,12 +244,12 @@ xint_type!(64, x64, X64, u64);
   assert_eq!((x32(2).wrapping_add(x32(3))).u(), 5u32) }
 
 #[test] fn test_mul32() {
-  assert_eq!((x32(2).times(x32(3))).u(),  6u32);
-  assert_eq!((x32(3).times(x32(5))).u(), 15u32) }
+  assert_eq!((x32(2).times(&x32(3))).u(),  6u32);
+  assert_eq!((x32(3).times(&x32(5))).u(), 15u32) }
 
 #[test] fn test_mul64() {
-  assert_eq!((x64(2).times(x64(3))).u(),  6u64);
-  assert_eq!((x64(3).times(x64(5))).u(), 15u64) }
+  assert_eq!((x64(2).times(&x64(3))).u(),  6u64);
+  assert_eq!((x64(3).times(&x64(5))).u(), 15u64) }
 
 #[test] fn test_ror() {
   assert_eq!((x32(10).rotate_right(1)).u(), 5u32) }
