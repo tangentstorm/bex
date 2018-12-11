@@ -149,13 +149,18 @@ macro_rules! xint_type {
              v.iter().map(|x|x.clone()).chain(zs.into_iter()).collect() }}}
 
       pub fn eq(&self, other:&Self)-> BaseBit {
-        println!("WARNING! {:?}.eq({:?}) not implemted yet!", self, other);
-        gbase_o() }
+        let mut res = gbase_i();
+        for (x, y) in self.bits.iter().zip(other.bits.iter()).rev() {
+          // TODO: implement EQL (XNOR) nodes in base
+          res = res & !(x.clone()^y.clone()) }
+        res}
 
       pub fn lt(&self, other:&Self)-> BaseBit {
-        for i in (0..$n).rev() { print!("{},", i); }
-        println!("WARNING! {:?}.lt({:?}) not implemted yet!", self, other);
-        gbase_o() }
+        let mut res = gbase_o();
+        for (x, y) in self.bits.iter().zip(other.bits.iter()).rev() {
+          // TODO: implement LT nodes in base
+          res = res | (!x.clone() & y.clone())  }
+        res}
     }
 
     /// shorthand constructor
@@ -251,3 +256,13 @@ xint_type!(64, x64, X64, u64);
 
 #[test] fn test_ror() {
   assert_eq!((x32(10).rotate_right(1)).u(), 5u32) }
+
+#[test] fn test_lt() {
+  assert_eq!(x32(10).lt(&x32(11)), gbase_i());
+  assert_eq!(x32(11).lt(&x32(10)), gbase_o());
+  assert_eq!(x32(10).lt(&x32(10)), gbase_o()); }
+
+#[test] fn test_eq() {
+  assert_eq!(x32(10).eq(&x32(10)), gbase_i());
+  assert_eq!(x32(11).eq(&x32(10)), gbase_o());
+  assert_eq!(x32(10).eq(&x32(11)), gbase_o()); }
