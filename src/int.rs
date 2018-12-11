@@ -200,16 +200,16 @@ macro_rules! xint_type {
     impl std::ops::BitAnd<Self> for $T {
       type Output = Self;
       fn bitand(self, rhs:Self) -> Self {
-        let mut res = Self::zero();
-        for i in 0..$n { res.bits[i] = self.bits[i].clone() & rhs.bits[i].clone() }
-        res }}
+        $T{bits: self.bits.iter().zip(rhs.bits.iter())
+           .map(|(x,y)| x.clone() & y.clone())
+           .collect() }}}
 
     impl std::ops::BitXor<Self> for $T {
       type Output = Self;
       fn bitxor(self, rhs:Self) -> Self {
-        let mut res = Self::zero();
-        for i in 0..$n { res.bits[i] = self.bits[i].clone() ^ rhs.bits[i].clone() }
-        res }}
+        $T{bits: self.bits.iter().zip(rhs.bits.iter())
+           .map(|(x,y)| x.clone() ^ y.clone())
+           .collect() }}}
 
     impl std::ops::Shr<u8> for $T {
       type Output = Self;
@@ -221,11 +221,9 @@ macro_rules! xint_type {
     impl std::ops::Not for $T {
       type Output = Self;
       fn not(self) -> Self {
-        let mut res = self.clone();
-        for i in 0..$n { res.bits[i] = !res.bits[i].clone() }
-        res }}
-  }}
+        $T{bits: self.bits.iter().map(|x| !x.clone()).collect()} }}
 
+}} // end xint_type macro
 
 // actual type implementations:
 
@@ -253,4 +251,3 @@ xint_type!(64, x64, X64, u64);
 
 #[test] fn test_ror() {
   assert_eq!((x32(10).rotate_right(1)).u(), 5u32) }
-
