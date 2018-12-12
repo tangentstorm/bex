@@ -1,6 +1,7 @@
 /// bex: a boolean expression library for rust
 use std::collections::HashMap;
 use std::ops::Index;
+use io;
 
 
 
@@ -12,9 +13,10 @@ type SUB = HashMap<VID,NID>;
 
 pub const GONE:usize = 1<<63;
 
-#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord)]
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Op {
   O, I, Var(VID), Not(NID), And(NID,NID), Or(NID,NID), Xor(NID,NID),
+  // Eql(NID,NID), LT(Nid,Nid),
   Ch(NID, NID, NID), Mj(NID, NID, NID) }
 
 /// outside the base, you deal only with opaque references.
@@ -40,6 +42,7 @@ pub trait TBase {
 // a concrete implemetation:
 
 // !! TODO: move subs/subc into external structure
+#[derive(Serialize, Deserialize)]
 pub struct Base {
   pub bits: Vec<Op>,               // all known bits (simplified)     TODO: make private
   pub nvars: usize,
@@ -66,6 +69,14 @@ impl Base {
 
   pub fn empty()->Base { Base::new(vec![Op::O, Op::I], HashMap::new(), 0) }
 
+  // TODO: extract a Trait? These are almost exactly the same in bdd.rs
+  pub fn save(&self, path:&str)->::std::io::Result<()> {
+    let s = bincode::serialize(&self).unwrap();
+    return io::put(path, &s) }
+
+  pub fn load(path:&str)->::std::io::Result<(Base)> {
+    let s = io::get(path)?;
+    return Ok(bincode::deserialize(&s).unwrap()); }
 
   /// given a function that maps input bits to 64-bit masks, color each node
   /// in the base according to its inputs (thus tracking the spread of influence

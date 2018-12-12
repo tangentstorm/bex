@@ -410,15 +410,9 @@ impl BDDBase {
     let s = bincode::serialize(&self).unwrap();
     return io::put(path, &s) }
 
-  pub fn from_path(path:&str)->::std::io::Result<(BDDBase)> {
+  pub fn load(path:&str)->::std::io::Result<(BDDBase)> {
     let s = io::get(path)?;
     return Ok(bincode::deserialize(&s).unwrap()); }
-
-  pub fn load(&mut self, path:&str)->::std::io::Result<()> {
-    let other = BDDBase::from_path(path)?;
-    self.tags = other.tags;
-    self.state = other.state;
-    Ok(()) }
 
 
   pub fn swap(&mut self, n:NID, x:VID, y:VID)-> NID {
