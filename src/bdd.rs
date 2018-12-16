@@ -34,7 +34,12 @@ const INV:u64 = 1<<63;  // is inverted?
 /// Single-bit mask indicating that a NID represents a variable. (The corresponding
 /// "virtual" nodes have I as their hi branch and O as their lo branch. They're simple
 /// and numerous enough that we don't bother actually storing them.)
-const VAR:u64 = 1<<62;  // is variable?
+const VAR:u64 = 1<<62;   // is variable?
+
+/// In addition, for solving, we want to distinguish between "virtual" variables which
+/// represent some intermediate, unsimplified calculation, and "real" variables, which
+/// represent actual input variables. That's what this bit does.
+const RVAR:u64 = 1<<60;  // is *real* variable?
 
 /// Single-bit mask indicating that the NID represents a constant. The corresponding
 /// virtual node branches on constant "true" value, hence the letter T. There is only
@@ -47,7 +52,6 @@ const IDX_MASK:u64 = (1<<32)-1;
 
 /// NID of the virtual node represeting the constant function 0, or "always false."
 pub const O:NID = NID{ n:T };
-
 /// NID of the virtual node represeting the constant function 1, or "always true."
 pub const I:NID = NID{ n:(T|INV) };
 
@@ -55,6 +59,8 @@ pub const I:NID = NID{ n:(T|INV) };
 
 /// Does the NID represent a variable?
 #[inline(always)] pub fn is_var(x:NID)->bool { (x.n & VAR) != 0 }
+/// Does the NID represent a *real* variable?
+#[inline(always)] pub fn is_rvar(x:NID)->bool { (x.n & RVAR) != 0 }
 
 /// Is the NID inverted? That is, does it represent `not(some other nid)`?
 #[inline(always)] pub fn is_inv(x:NID)->bool { (x.n & INV) != 0 }
@@ -67,6 +73,11 @@ pub const I:NID = NID{ n:(T|INV) };
 
 /// On which variable does this node branch? (I and O branch on TV)
 #[inline(always)] pub fn var(x:NID)->VID { ((x.n & !(INV|VAR)) >> 32) as VID}
+/// Same as var() but strips out the RVAR bit.
+#[inline(always)] pub fn rvar(x:NID)->VID { ((x.n & !(INV|VAR|RVAR)) >> 32) as VID}
+
+/// internal function to strip rvar bit and convert to usize
+#[inline(always)] fn rv(v:VID)->usize { (v&!((RVAR>>32) as VID)) as usize}
 
 /// Toggle the INV bit, applying a logical "NOT" operation to the corressponding node.
 #[inline(always)] pub fn not(x:NID)->NID { NID { n:x.n^INV } }
@@ -74,16 +85,22 @@ pub const I:NID = NID{ n:(T|INV) };
 /// Construct the NID for the (virtual) node corresponding to an input variable.
 #[inline(always)] pub fn nv(v:VID)->NID { NID { n:((v as u64) << 32)|VAR }}
 
+/// Construct the NID for the (virtual) node corresponding to an input variable.
+#[inline(always)] pub fn nvr(v:VID)->NID { NID { n:((v as u64) << 32)|VAR|RVAR }}
+
 /// Construct a NID with the given variable and index.
 #[inline(always)] pub fn nvi(v:VID,i:IDX)->NID { NID{ n:((v as u64) << 32) + i as u64 }}
-
+
 /// Pretty-printer for NIDS that reveal some of their internal data.
 impl fmt::Display for NID {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     if is_const(*self) { if is_inv(*self) { write!(f, "I") } else { write!(f, "O") } }
     else { if is_inv(*self) { write!(f, "¬")?; }
-           if is_var(*self) { write!(f, "x{}", var(*self)) }
-           else { write!(f, "@[x{}:{}]", var(*self), idx(*self)) } }}}
+           if is_var(*self) {
+             if is_rvar(*self) { write!(f, "x{}", rvar(*self)) }
+             else { write!(f, "v{}", var(*self)) }}
+           else if is_rvar(*self) { write!(f, "@[v{}:{}]", rvar(*self), idx(*self)) }
+           else { write!(f, "@[v{}:{}]", var(*self), idx(*self)) }}}}
 
 /// Same as fmt::Display. Mostly so it's easier to see the problem when an assertion fails.
 impl fmt::Debug for NID { // for test suite output
@@ -215,29 +232,29 @@ impl BDDState {
   /// the "put" for this one is put_simple_node
   #[inline] fn get_hilo(&self, n:NID)->HILO {
     unsafe {
-      let bits = self.nodes.as_slice().get_unchecked(var(n) as usize).as_slice();
+      let bits = self.nodes.as_slice().get_unchecked(rv(var(n))).as_slice();
       *bits.get_unchecked(idx(n)) }}
 
   /// load the memoized NID if it exists
   #[inline] fn get_memo<'a>(&'a self, v:VID, ite:&ITE) -> Option<&'a NID> {
     unsafe {
       if is_var(ite.i) {
-        self.vmemo.as_slice().get_unchecked(var(ite.i) as usize).get(&HILO::new(ite.t, ite.e)) }
-      else { self.xmemo.as_slice().get_unchecked(v as usize).get(&ite) }}}
+        self.vmemo.as_slice().get_unchecked(rv(rvar(ite.i))).get(&HILO::new(ite.t,ite.e)) }
+      else { self.xmemo.as_slice().get_unchecked(rv(v)).get(&ite) }}}
 
   #[inline] fn put_xmemo(&mut self, v:VID, ite:ITE, new_nid:NID) {
     unsafe {
-      self.xmemo.as_mut_slice().get_unchecked_mut(v as usize).insert(ite, new_nid); }}
+      self.xmemo.as_mut_slice().get_unchecked_mut(rv(v)).insert(ite, new_nid); }}
 
   #[inline] fn get_simple_node<'a>(&'a self, v:VID, hilo:HILO)-> Option<&'a NID> {
-    unsafe { self.vmemo.as_slice().get_unchecked(v as usize).get(&hilo) }}
+    unsafe { self.vmemo.as_slice().get_unchecked(rv(v)).get(&hilo) }}
 
   #[inline] fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID {
     unsafe {
-      let vnodes = self.nodes.as_mut_slice().get_unchecked_mut(v as usize);
+      let vnodes = self.nodes.as_mut_slice().get_unchecked_mut(rv(v));
       let res = nvi(v, vnodes.len() as IDX);
       vnodes.push(hilo);
-      self.vmemo.as_mut_slice().get_unchecked_mut(v as usize).insert(hilo,res);
+      self.vmemo.as_mut_slice().get_unchecked_mut(rv(v) as usize).insert(hilo,res);
       res }}
 
 
@@ -270,6 +287,7 @@ impl BDDState {
         if !is_var(f) { self.put_xmemo(v, ite, new_nid) }
         new_nid }}}
 
+
   /// fetch or create a "simple" node, where the hi and lo branches are both
   /// already fully computed pointers to existing nodes.
   #[inline] fn simple_node(&mut self, v:VID, hilo:HILO)->NID {
@@ -350,11 +368,11 @@ impl BDDBase {
     w!("  I[label=⊤; shape=square];");
     w!("  O[label=⊥; shape=square];");
     w!("node[shape=circle];");
-    self.walk(n, &mut |n,v,_,_| w!("  {}[label={}];", fmt(n), v));
+    self.walk(n, &mut |n,v,_,_| w!("  \"{}\"[label={}];", fmt(n), v));
     w!("edge[style=solid];");
-    self.walk(n, &mut |n,_,t,_| w!("  {}->{};", fmt(n), fmt(t)));
+    self.walk(n, &mut |n,_,t,_| w!("  \"{}\"->\"{}\";", fmt(n), fmt(t)));
     w!("edge[style=dashed];");
-    self.walk(n, &mut |n,_,_,e| w!("  {}->{};", fmt(n), fmt(e)));
+    self.walk(n, &mut |n,_,_,e| w!("  \"{}\"->\"{}\";", fmt(n), fmt(e)));
     w!("}}"); }
 
   pub fn save_dot(&self, n:NID, path:&str) {
@@ -442,8 +460,10 @@ impl BDDBase {
 #[test] fn test_nids() {
   assert_eq!(O, NID{n:0x2000000000000000u64});
   assert_eq!(I, NID{n:0xa000000000000000u64});
-  assert_eq!(nv(0), NID{n:0x4000000000000000u64});
-  assert_eq!(nv(1), NID{n:0x4000000100000000u64});
+  assert_eq!(nv(0),  NID{n:0x4000000000000000u64});
+  assert_eq!(nvr(0), NID{n:0x5000000000000000u64});
+  assert_eq!(nv(1),  NID{n:0x4000000100000000u64});
+  assert!(var(nv(0)) < var(nvr(0)));
   assert_eq!(nvi(0,0), NID{n:0x0000000000000000u64});
   assert_eq!(nvi(1,0), NID{n:0x0000000100000000u64}); }
 
