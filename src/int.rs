@@ -4,6 +4,7 @@
 extern crate std;
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::cmp::min;
 use base::{Base, TBase, NID, VID, SID};
 
 
@@ -117,14 +118,19 @@ pub trait BInt<U, T:TBit> : Sized {
                    carry = bitmaj(a, b, c) }}}
       res}
 
-  fn times(&self, y:&Self) -> Self {
-    let mut sum = Self::zero();
+  fn from<B:BInt<U2,T>,U2>(other:B) -> Self {
+    let mut res = Self::zero();
+    for i in 0..min(Self::n(),B::n()) { res.set(i, other.get(i).clone()) }
+    res }
+
+  fn times<U2,B:BInt<U2,T>>(&self, y:&Self) -> B {
+    let mut sum = B::zero();
     for i in 0..Self::n() {
       let mut xi = self.rotate_right(0);
       for j in 0..Self::n() {
         let xij = xi.get(j) & y.get(i);
         xi.set(j, xij) }
-      sum = sum.wrapping_add(xi.rotate_right(Self::n() -i)); }
+      sum = sum.wrapping_add(B::from(xi.rotate_right(Self::n() -i))); }
     sum }
 
   fn u(self) -> U; }
@@ -232,6 +238,8 @@ macro_rules! xint_type {
 
 // actual type implementations:
 
+xint_type!( 8,  x8,  X8,  u8);
+xint_type!(16, x16, X16, u16);
 xint_type!(32, x32, X32, u32);
 xint_type!(64, x64, X64, u64);
 
@@ -247,12 +255,12 @@ xint_type!(64, x64, X64, u64);
   assert_eq!((x32(2).wrapping_add(x32(3))).u(), 5u32) }
 
 #[test] fn test_mul32() {
-  assert_eq!((x32(2).times(&x32(3))).u(),  6u32);
-  assert_eq!((x32(3).times(&x32(5))).u(), 15u32) }
+  assert_eq!((x32(2).times::<u32,X32>(&x32(3))).u(),  6u32);
+  assert_eq!((x32(3).times::<u32,X32>(&x32(5))).u(), 15u32) }
 
 #[test] fn test_mul64() {
-  assert_eq!((x64(2).times(&x64(3))).u(),  6u64);
-  assert_eq!((x64(3).times(&x64(5))).u(), 15u64) }
+  assert_eq!((x64(2).times::<u64,X64>(&x64(3))).u(),  6u64);
+  assert_eq!((x64(3).times::<u64,X64>(&x64(5))).u(), 15u64) }
 
 #[test] fn test_ror() {
   assert_eq!((x32(10).rotate_right(1)).u(), 5u32) }
