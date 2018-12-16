@@ -17,3 +17,5 @@ pub mod bdd;
 pub mod int;
 /// Input/output support for the other modules.
 pub mod io;
+/// solve AST-based expressions by converting them to BDDs.
+pub mod solve;
