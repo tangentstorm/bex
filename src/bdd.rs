@@ -99,7 +99,7 @@ impl fmt::Display for NID {
            if is_var(*self) {
              if is_rvar(*self) { write!(f, "x{}", rvar(*self)) }
              else { write!(f, "v{}", var(*self)) }}
-           else if is_rvar(*self) { write!(f, "@[v{}:{}]", rvar(*self), idx(*self)) }
+           else if is_rvar(*self) { write!(f, "@[x{}:{}]", rvar(*self), idx(*self)) }
            else { write!(f, "@[v{}:{}]", var(*self), idx(*self)) }}}}
 
 /// Same as fmt::Display. Mostly so it's easier to see the problem when an assertion fails.
@@ -359,20 +359,19 @@ impl BDDBase {
     macro_rules! w {
       ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap() }}
 
-    let fmt = |x| match x {
-      I=>"I".to_string(), O=>"O".to_string(),
-      _ if is_inv(x) => format!("not{}", not(x)),
-      _ => format!("{}", x)};
+    let fmt = |n:NID| {
+      if is_rvar(n) { format!("x{}", rvar(n)) }
+      else { format!("{}", n) }};
 
     w!("digraph bdd {{");
     w!("  I[label=⊤; shape=square];");
     w!("  O[label=⊥; shape=square];");
     w!("node[shape=circle];");
-    self.walk(n, &mut |n,v,_,_| w!("  \"{}\"[label={}];", fmt(n), v));
+    self.walk(n, &mut |n,v,_,_| w!("  \"{}\"[label=\"{}\"];", n, fmt(n)));
     w!("edge[style=solid];");
-    self.walk(n, &mut |n,_,t,_| w!("  \"{}\"->\"{}\";", fmt(n), fmt(t)));
+    self.walk(n, &mut |n,_,t,_| w!("  \"{}\"->\"{}\";", n, t));
     w!("edge[style=dashed];");
-    self.walk(n, &mut |n,_,_,e| w!("  \"{}\"->\"{}\";", fmt(n), fmt(e)));
+    self.walk(n, &mut |n,_,_,e| w!("  \"{}\"->\"{}\";", n, e));
     w!("}}"); }
 
   pub fn save_dot(&self, n:NID, path:&str) {
@@ -380,14 +379,16 @@ impl BDDBase {
     let mut txt = File::create(path).expect("couldn't create dot file");
     txt.write_all(s.as_bytes()).expect("failet to write text to dot file"); }
 
-  pub fn show(&self, n:NID) {
-    self.save_dot(n, "+bdd.dot");
-    let out = Command::new("dot").args(&["-Tpng","+bdd.dot"])
+  pub fn show_named(&self, n:NID, s:&str) {   // !! almost exactly the same as in bdd.rs
+    self.save_dot(n, format!("{}.dot", s).as_str());
+    let out = Command::new("dot").args(&["-Tpng",format!("{}.dot",s).as_str()])
       .output().expect("failed to run 'dot' command");
-    let mut png = File::create("+bdd.png").expect("couldn't create png");
+    let mut png = File::create(format!("{}.png",s).as_str()).expect("couldn't create png");
     png.write_all(&out.stdout).expect("couldn't write png");
-    Command::new("firefox").args(&["+bdd.png"])
+    Command::new("firefox").args(&[format!("{}.png",s).as_str()])
       .spawn().expect("failed to launch firefox"); }
+
+  pub fn show(&self, n:NID) { self.show_named(n, "+bdd") }
 
 
   // public node constructors
