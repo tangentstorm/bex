@@ -297,9 +297,9 @@ fn base_when(){
 }
 
 
-fn order<T:PartialOrd>(x:T, y:T)->(T,T) { if x < y { (x,y) } else { (y,x) }}
-#[cfg(todo)] // this works, but only used by Ch and Mj
-fn order3<T:Ord+Clone>(x:T, y:T, z:T)->(T,T,T) {
+// TODO: put these elsewhere.
+#[cfg(todo)] pub fn order<T:PartialOrd>(x:T, y:T)->(T,T) { if x < y { (x,y) } else { (y,x) }}
+#[cfg(todo)] pub fn order3<T:Ord+Clone>(x:T, y:T, z:T)->(T,T,T) {
   let mut res = [x,y,z];
   res.sort();
   (res[0].clone(), res[1].clone(), res[2].clone())}

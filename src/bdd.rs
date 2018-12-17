@@ -367,7 +367,7 @@ impl BDDBase {
     w!("  I[label=⊤; shape=square];");
     w!("  O[label=⊥; shape=square];");
     w!("node[shape=circle];");
-    self.walk(n, &mut |n,v,_,_| w!("  \"{}\"[label=\"{}\"];", n, fmt(n)));
+    self.walk(n, &mut |n,_,_,_| w!("  \"{}\"[label=\"{}\"];", n, fmt(n)));
     w!("edge[style=solid];");
     self.walk(n, &mut |n,_,t,_| w!("  \"{}\"->\"{}\";", n, t));
     w!("edge[style=dashed];");

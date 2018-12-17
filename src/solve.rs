@@ -27,7 +27,7 @@ impl<'a> Progress for ProgressReport<'a> {
     { // on really special occasions, output a diagram
       bdds.save_dot(newtop, format!("{}-{:04}.dot", self.prefix, step).as_str()); } }
 
-  fn on_done(&self, base:&Base, bdds: &mut bdd::BDDBase, newtop:bdd::NID) {
+  fn on_done(&self, _base:&Base, bdds: &mut bdd::BDDBase, newtop:bdd::NID) {
     bdds.show_named(newtop, format!("{}-final.dot", self.prefix).as_str()); } }
 
 
@@ -69,5 +69,5 @@ fn bdd_refine_one(bdds: &mut bdd::BDDBase, base:&Base, oldtop:bdd::NID)->bdd::NI
     Op::Or(x,y) => bdds.or(v(x), v(y)),
     // !! 'Var' should only appear in leaves, so don't need it here.
     // Op::Var(x) => bdd::nvr(x as bdd::VID),
-    _ => { panic!("don't know how to translate {:?}", op ); oldtop }};
+    _ => { panic!("don't know how to translate {:?}", op ) }};
   return bdds.replace(otv, newdef, oldtop) }
