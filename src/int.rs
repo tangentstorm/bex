@@ -156,16 +156,18 @@ macro_rules! xint_type {
 
       pub fn eq(&self, other:&Self)-> BaseBit {
         let mut res = gbase_i();
-        for (x, y) in self.bits.iter().zip(other.bits.iter()).rev() {
+        for (x, y) in self.bits.iter().zip(other.bits.iter()) {
           // TODO: implement EQL (XNOR) nodes in base
           res = res & !(x.clone()^y.clone()) }
         res}
 
       pub fn lt(&self, other:&Self)-> BaseBit {
         let mut res = gbase_o();
-        for (x, y) in self.bits.iter().zip(other.bits.iter()).rev() {
-          // TODO: implement LT nodes in base
-          res = res | (!x.clone() & y.clone())  }
+        for (x, y) in self.bits.iter().zip(other.bits.iter()) {
+          // TODO: implement EQ, LT nodes in base
+          let eq = !(x.clone() ^ y.clone());
+          let lt = (!x.clone()) & y.clone();
+          res = lt | (eq & res); }
         res}
     }
 
@@ -267,6 +269,8 @@ xint_type!(64, x64, X64, u64);
   assert_eq!((x32(10).rotate_right(1)).u(), 5u32) }
 
 #[test] fn test_lt() {
+  assert_eq!(x4(1).lt(&x4(2)), gbase_i());
+  assert_eq!(x4(2).lt(&x4(1)), gbase_o());
   assert_eq!(x32(10).lt(&x32(11)), gbase_i());
   assert_eq!(x32(11).lt(&x32(10)), gbase_o());
   assert_eq!(x32(10).lt(&x32(10)), gbase_o()); }
