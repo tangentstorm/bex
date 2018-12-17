@@ -1,6 +1,9 @@
 /// bex: a boolean expression library for rust
-use std::collections::HashMap;
+use std::collections::{HashMap,HashSet};
+use std::fs::File;
+use std::io::Write;
 use std::ops::Index;
+use std::process::Command;      // for creating and viewing digarams
 use io;
 
 
@@ -77,6 +80,66 @@ impl Base {
   pub fn load(path:&str)->::std::io::Result<(Base)> {
     let s = io::get(path)?;
     return Ok(bincode::deserialize(&s).unwrap()); }
+
+
+  pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID) {
+    let mut seen = HashSet::new();
+    self.step(n,f,&mut seen)}
+
+  fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>) where F:FnMut(NID) {
+    if !seen.contains(&n) {
+      seen.insert(n);
+      f(n);
+      let mut s = |x| self.step(x, f, seen);
+      match self.bits[n] {
+        Op::O | Op::I | Op::Var(_) => {  } // we already called f(n) so nothing to do
+        Op::Not(x)    => { s(x); }
+        Op::And(x,y)  => { s(x); s(y); }
+        Op::Xor(x,y)  => { s(x); s(y); }
+        Op::Or(x,y)   => { s(x); s(y); }
+        Op::Ch(x,y,z) => { s(x); s(y); s(z); }
+        Op::Mj(x,y,z) => { s(x); s(y); s(z); } }}}
+
+
+  // generate dot file (graphviz)
+  pub fn dot<T>(&self, n:NID, wr: &mut T) where T : ::std::fmt::Write {
+    macro_rules! w {
+      ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap() }}
+    macro_rules! dotop {
+      ($s:expr, $n:expr $(,$xs:expr)*) => {{
+        w!("  {}[label={}];", $n, $s); // draw the node
+        $( w!(" {}->{};", $xs, $n); )* }}}  // draw the edges leading into it
+
+    w!("digraph bdd {{");
+    w!("rankdir=BT;"); // put root on top
+    w!("node[shape=circle];");
+    w!("edge[style=solid];");
+    self.walk(n, &mut |n| {
+      match &self.bits[n] {
+        Op::O => w!(" {}[label=⊥];", n),
+        Op::I => w!(" {}[label=⊤];", n),
+        Op::Var(x)  => w!("{}[label=\"${}\"];", n, x),
+        Op::And(x,y) => dotop!("∧",n,x,y),
+        Op::Xor(x,y) => dotop!("≠",n,x,y),
+        Op::Or(x,y)  => dotop!("∨",n,x,y),
+        Op::Not(x)  => dotop!("¬",n,x),
+        _ => w!("  \"{}\"[label={}];", n, n) }});
+    w!("}}"); }
+
+  pub fn save_dot(&self, n:NID, path:&str) { // !! taken from bdd.rs
+    let mut s = String::new(); self.dot(n, &mut s);
+    let mut txt = File::create(path).expect("couldn't create dot file");
+    txt.write_all(s.as_bytes()).expect("failet to write text to dot file"); }
+
+
+  pub fn show(&self, n:NID) {   // !! almost exactly the same as in bdd.rs
+    self.save_dot(n, "+ast.dot");
+    let out = Command::new("dot").args(&["-Tpng","+ast.dot"])
+      .output().expect("failed to run 'dot' command");
+    let mut png = File::create("+ast.png").expect("couldn't create png");
+    png.write_all(&out.stdout).expect("couldn't write png");
+    Command::new("firefox").args(&["+ast.png"])
+      .spawn().expect("failed to launch firefox"); }
 
   /// given a function that maps input bits to 64-bit masks, color each node
   /// in the base according to its inputs (thus tracking the spread of influence
