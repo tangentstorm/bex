@@ -132,14 +132,17 @@ impl Base {
     txt.write_all(s.as_bytes()).expect("failet to write text to dot file"); }
 
 
-  pub fn show(&self, n:NID) {   // !! almost exactly the same as in bdd.rs
-    self.save_dot(n, "+ast.dot");
-    let out = Command::new("dot").args(&["-Tpng","+ast.dot"])
+  pub fn show_named(&self, n:NID, s:&str) {   // !! almost exactly the same as in bdd.rs
+    self.save_dot(n, format!("{}.dot", s).as_str());
+    let out = Command::new("dot").args(&["-Tpng",format!("{}.dot",s).as_str()])
       .output().expect("failed to run 'dot' command");
-    let mut png = File::create("+ast.png").expect("couldn't create png");
+    let mut png = File::create(format!("{}.png",s).as_str()).expect("couldn't create png");
     png.write_all(&out.stdout).expect("couldn't write png");
-    Command::new("firefox").args(&["+ast.png"])
+    Command::new("firefox").args(&[format!("{}.png",s).as_str()])
       .spawn().expect("failed to launch firefox"); }
+
+  pub fn show(&self, n:NID) { self.show_named(n, "+ast+") }
+
 
   /// given a function that maps input bits to 64-bit masks, color each node
   /// in the base according to its inputs (thus tracking the spread of influence
@@ -337,33 +340,36 @@ impl TBase for Base {
 
   fn and(&mut self, x:NID, y:NID)->NID {
     if x == y { x }
-    else { let (lo,hi) = order(x, y);
-           match order(self[x], self[y]) {
-             (Op::O,_) => self.o(),
-             (Op::I,_) => hi,
-             (Op::Not(n),_) if n==hi => self.o(),
-             (_,Op::Not(n)) if n==lo => self.o(),
-             _ => self.nid(Op::And(lo,hi)) }}}
+    else {
+      let (lo,hi) = if self[x] < self[y] { (x,y) } else { (y,x) };
+      match (self[lo], self[hi]) {
+        (Op::O,_) => self.o(),
+        (Op::I,_) => hi,
+        (Op::Not(n),_) if n==hi => self.o(),
+        (_,Op::Not(n)) if n==lo => self.o(),
+        _ => self.nid(Op::And(lo,hi)) }}}
 
   fn xor(&mut self, x:NID, y:NID)->NID {
     if x == y { self.o() }
-    else { let (lo,hi) = order(x, y);
-           match (self[lo], self[hi]) {
-             (Op::O, _) => hi,
-             (Op::I, _) => self.not(hi),
-             (Op::Var(_), Op::Not(n)) if n==lo => self.i(),
-             _ => self.nid(Op::Xor(lo,hi)) }}}
+    else {
+      let (lo,hi) = if self[x] < self[y] { (x,y) } else { (y,x) };
+      match (self[lo], self[hi]) {
+        (Op::O, _) => hi,
+        (Op::I, _) => self.not(hi),
+        (Op::Var(_), Op::Not(n)) if n==lo => self.i(),
+        _ => self.nid(Op::Xor(lo,hi)) }}}
 
   fn or(&mut self, x:NID, y:NID)->NID {
     if x == y { x }
-    else { let (lo,hi) = order(x, y);
-           match (self[lo], self[hi]) {
-             (Op::O, _) => hi,
-             (Op::I, _) => self.i(),
-             (Op::Var(_), Op::Not(n)) if n==lo => self.i(),
-             (Op::Not(m), Op::Not(n)) => {
-               let a = self.and(m,n); self.not(a)},
-             _ => self.nid(Op::Or(lo,hi)) }}}
+    else {
+      let (lo,hi) = if self[x] < self[y] { (x,y) } else { (y,x) };
+      match (self[lo], self[hi]) {
+        (Op::O, _) => hi,
+        (Op::I, _) => self.i(),
+        (Op::Var(_), Op::Not(n)) if n==lo => self.i(),
+        (Op::Not(m), Op::Not(n)) => {
+          let a = self.and(m,n); self.not(a)},
+        _ => self.nid(Op::Or(lo,hi)) }}}
 
 
 
