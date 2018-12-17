@@ -238,6 +238,7 @@ macro_rules! xint_type {
 
 // actual type implementations:
 
+xint_type!( 4,  x4,  X4,  u8);  // there's no u4
 xint_type!( 8,  x8,  X8,  u8);
 xint_type!(16, x16, X16, u16);
 xint_type!(32, x32, X32, u32);
