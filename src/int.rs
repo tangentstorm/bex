@@ -118,19 +118,21 @@ pub trait BInt<U, T:TBit> : Sized {
                    carry = bitmaj(a, b, c) }}}
       res}
 
-  fn from<B:BInt<U2,T>,U2>(other:B) -> Self {
+  fn from<B:BInt<U2,T>,U2>(other:&B) -> Self {
     let mut res = Self::zero();
     for i in 0..min(Self::n(),B::n()) { res.set(i, other.get(i).clone()) }
     res }
 
-  fn times<U2,B:BInt<U2,T>>(&self, y:&Self) -> B {
+  fn times<U2,B:BInt<U2,T>>(&self, y0:&Self) -> B {
     let mut sum = B::zero();
-    for i in 0..Self::n() {
-      let mut xi = self.rotate_right(0);
-      for j in 0..Self::n() {
+    let x = B::from(self);
+    let y = B::from(y0);
+    for i in 0..B::n() {
+      let mut xi = x.rotate_right(0); // poor man's copy
+      for j in 0..B::n() {
         let xij = xi.get(j) & y.get(i);
         xi.set(j, xij) }
-      sum = sum.wrapping_add(B::from(xi.rotate_right(Self::n() -i))); }
+      sum = sum.wrapping_add(xi.rotate_right(B::n() -i)); }
     sum }
 
   fn u(self) -> U; }
@@ -158,7 +160,9 @@ macro_rules! xint_type {
         let mut res = gbase_i();
         for (x, y) in self.bits.iter().zip(other.bits.iter()) {
           // TODO: implement EQL (XNOR) nodes in base
-          res = res & !(x.clone()^y.clone()) }
+          let eq = !(x.clone()^y.clone());
+          // println!("{} eq {} ?  {}", x.n, y.n, eq.n);
+          res = res & eq}
         res}
 
       pub fn lt(&self, other:&Self)-> BaseBit {
