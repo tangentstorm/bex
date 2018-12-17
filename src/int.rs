@@ -174,7 +174,7 @@ macro_rules! xint_type {
           res = lt | (eq & res); }
         res}
     }
-
+
     /// shorthand constructor
     pub fn $c(u:$U) -> $T { $T::new(u as usize) }
 
