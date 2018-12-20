@@ -1,7 +1,8 @@
 /// solve ast-based expressions by converting to BDDs.
+use apl;
 use bdd;
 use base;
-use base::{Op,Base};
+use base::{Op,Base,TBase,VID,NID};
 
 pub trait Progress {
   fn on_start(&self);
@@ -39,6 +40,34 @@ impl<'a> Progress for ProgressReport<'a> {
       bdds.save_dot(newtop, format!("{}-final.dot", self.prefix).as_str()); }}}
 
 
+fn default_bitmask(_base:&Base, v:VID) -> u64 {
+  if v < 64 { 1u64 << v } else { 0 }}
+
+/// This function renumbers the NIDs so that nodes with higher IDs "cost" more.
+/// Sorting your AST this way dramatically reduces the cost of converting to
+/// BDD form. (For example, the test_tiny benchmark drops from 5282 steps to 111)_
+pub fn sort_by_cost(base:&Base, top:NID)->(Base,NID) {
+
+  let (mut base0,kept0) = base.repack(vec![top]);
+  base0.tag(kept0[0], "-top-".to_string());
+
+  // m:mask (which input vars are required?); c:cost (in steps before we can calculate)
+  let (_m0,c0) = base0.masks_and_costs(default_bitmask);
+  let mut p = apl::gradeup(&c0); // p[new idx] = old idx
+  let base1 = base0.permute(&p);
+
+  // now permute so that vars are on bottom and everything else is flipped
+  // this is purely so that the node we want to replace remains on top in the bdd
+  let max = p.len()-1; let min = base1.nvars+1;
+  for i in 0..min { p[i] = i }
+  for i in min..p.len() { p[i] = min + (max-i) }
+  let ast = base1.permute(&p);
+  let &nid = ast.tags.get("-top-").expect("what? I just put it there.");
+  (ast,nid) }
+
+
+
+
 pub fn bdd_refine<P:Progress>(bdds: &mut bdd::BDDBase, base:&Base, end:bdd::NID, pr:P) {
   let mut topnid = end;
   // step is just a number. we're packing it in a nid as a kludge
