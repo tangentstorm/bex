@@ -23,7 +23,10 @@ impl<'a> Progress for ProgressReport<'a> {
     println!("{:4}, {:4}, {:4}→{:3?}, {:8}",
              step, secs, oldtop, base[bdd::var(oldtop) as usize], newtop);
     if step&7 == 0 { // every so often, save the state
-      println!("\n# newtop: {}  step:{}", newtop, step);
+      // !! TODO: expected number of steps only works if sort_by_cost was called.
+      { let expected_steps = base.bits.len() as f64;
+        let percent_done = 100.0 * (step as f64) / expected_steps as f64;
+        println!("\n# newtop: {}  step:{}/{} ({:.2}%)", newtop, step, base.bits.len(), percent_done); }
       if self.save_bdd {
         bdds.tag("top".to_string(), newtop); bdds.tag("step".to_string(), bdd::nv(step));
         bdds.save(format!("{}-{:04}.bdd", self.prefix, step).as_str())
