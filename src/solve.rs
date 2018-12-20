@@ -9,7 +9,12 @@ pub trait Progress {
              oldtop:bdd::NID, newtop:bdd::NID);
   fn on_done(&self, base:&Base, bdds: &mut bdd::BDDBase, newtop:bdd::NID); }
 
-pub struct ProgressReport<'a> { pub save_dot: bool, pub save_bdd: bool, pub prefix: &'a str }
+pub struct ProgressReport<'a> {
+  pub save_dot: bool,
+  pub save_bdd: bool,
+  pub prefix: &'a str,
+  pub show_result: bool }
+
 impl<'a> Progress for ProgressReport<'a> {
   fn on_start(&self) { } //println!("step, seconds, topnid, oldtopvar, newtopvar"); }
   fn on_step(&self, base:&Base, bdds: &mut bdd::BDDBase, step:u32, secs:u64,
@@ -28,7 +33,10 @@ impl<'a> Progress for ProgressReport<'a> {
       bdds.save_dot(newtop, format!("{}-{:04}.dot", self.prefix, step).as_str()); } }
 
   fn on_done(&self, _base:&Base, bdds: &mut bdd::BDDBase, newtop:bdd::NID) {
-    bdds.show_named(newtop, format!("{}-final.dot", self.prefix).as_str()); } }
+    if self.show_result {
+      bdds.show_named(newtop, format!("{}-final", self.prefix).as_str()); }
+    else {
+      bdds.save_dot(newtop, format!("{}-final.dot", self.prefix).as_str()); }}}
 
 
 pub fn bdd_refine<P:Progress>(bdds: &mut bdd::BDDBase, base:&Base, end:bdd::NID, pr:P) {

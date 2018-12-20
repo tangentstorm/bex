@@ -6,6 +6,10 @@ This crate lets you build a complicated abstract syntax tree (or logic circuit s
 
 ## changelog
 
+### 0.1.3 (in progress)
+
+- `solve::ProgressReport` can now simply save the final result instead of showing it (as dot can take a very long time to render it into a png).
+
 ### 0.1.2 (2018-12-17)
 
 - added Cargo.toml documentation link to [docs.rs/bex](https://docs.rs/bex/)
