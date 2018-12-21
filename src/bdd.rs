@@ -260,7 +260,7 @@ impl BDDState {
 
 // ite
 
-  /// all-purpose node creation/lookup
+  /// if-then-else routine. all-purpose node creation/lookup tool.
   #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
     match ITE::norm(f,g,h) {
       Norm::Nid(x) => x,
@@ -270,21 +270,26 @@ impl BDDState {
   /// helper for ite to work on the normalized i,t,e triple
   #[inline] fn ite_norm(&mut self, ite:ITE)->NID {
     // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
-    // this should only bec called from ite() on pre-normalized triples
-    let ITE { i:f, t:g, e:h } = ite;
-    let v = min(var(f), min(var(g), var(h)));
+    // it should only be called from ite() on pre-normalized triples
+    let ITE { i, t, e } = ite;
+    let (vi, vt, ve) = (var(i), var(t), var(e));
+    let v = min(vi, min(vt, ve));
     match self.get_memo(v, &ite) {
       Some(&n) => n,
       None => {
+        // We know we're going to branch on v, and v is either the branch var
+        // or not relevant to each of i,t,e. So we either retrieve the hilo pair
+        // or just pass the nid directly to each side of the branch.
+        let (hi_i, lo_i) = if v == vi {self.tup(i)} else {(i,i)};
+        let (hi_t, lo_t) = if v == vt {self.tup(t)} else {(t,t)};
+        let (hi_e, lo_e) = if v == ve {self.tup(e)} else {(e,e)};
         let new_nid = {
-          macro_rules! branch { ($meth:ident) => {{
-            let i = self.$meth(v,f);
-            if is_const(i) { if i==I { self.$meth(v,g) } else { self.$meth(v,h) }}
-            else { let (t,e) = (self.$meth(v,g), self.$meth(v,h)); self.ite(i,t,e) }}}}
-          let (hi,lo) = (branch!(when_hi), branch!(when_lo));
+          // TODO: push one of these off into a queue for other threads
+          let hi = self.ite(hi_i, hi_t, hi_e);
+          let lo = self.ite(lo_i, lo_t, lo_e);
           if hi == lo {hi} else { self.simple_node(v, HILO::new(hi,lo)) }};
         // now add the triple to the generalized memo store
-        if !is_var(f) { self.put_xmemo(v, ite, new_nid) }
+        if !is_var(i) { self.put_xmemo(v, ite, new_nid) }
         new_nid }}}
 
 
@@ -296,7 +301,7 @@ impl BDDState {
       None => { self.put_simple_node(v, hilo) }}}
 
   /// nid of y when x is high
-  #[inline] pub fn when_hi(&mut self, x:VID, y:NID)->NID {
+  pub fn when_hi(&mut self, x:VID, y:NID)->NID {
     let yv = var(y);
     if yv == x { self.tup(y).0 }  // x ∧ if(x,th,_) → th
     else if yv > x { y }          // y independent of x, so no change. includes yv = I
@@ -306,7 +311,7 @@ impl BDDState {
       self.ite(nv(yv), th, el) }}
 
   /// nid of y when x is low
-  #[inline] pub fn when_lo(&mut self, x:VID, y:NID)->NID {
+  pub fn when_lo(&mut self, x:VID, y:NID)->NID {
     let yv = var(y);
     if yv == x { self.tup(y).1 }  // ¬x ∧ if(x,_,el) → el
     else if yv > x { y }          // y independent of x, so no change. includes yv = I
