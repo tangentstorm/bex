@@ -132,7 +132,7 @@ pub struct BDDBase {
   /// allows us to give user-friendly names to specific nodes in the base.
   pub tags: HashMap<String, NID>,
   /// the actual data
-  state: BDDState}
+  worker: BddWorker}
 
 
 impl ITE {
@@ -196,7 +196,7 @@ impl HILO {
 
 /// This structure contains the main parts of a BDD base's internal state.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BDDState {
+pub struct BddWorker {
   /// variable-specific hi/lo pairs for individual bdd nodes.
   nodes: Vec<Vec<HILO>>,
   /// variable-specific memoization. These record (v,hilo) lookups.
@@ -209,11 +209,11 @@ pub struct BDDState {
 
 
 
-impl BDDState {
+impl BddWorker {
 
   /// constructor
-  fn new(nvars:usize)->BDDState {
-    BDDState{
+  fn new(nvars:usize)->BddWorker {
+    BddWorker{
       nodes: (0..nvars).map(|_| vec![]).collect(),
       vmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
       xmemo:(0..nvars).map(|_| BDDHashMap::default()).collect() } }
@@ -302,17 +302,17 @@ impl BDDState {
         if !is_var(i) { self.put_xmemo(v, ite, new_nid) }
         new_nid }}}
 
-} // end impl BDDState
+} // end impl BddWorker
 
 
 impl BDDBase {
 
   /// constructor
   pub fn new(nvars:usize)->BDDBase {
-    BDDBase{state: BDDState::new(nvars), tags:HashMap::new()}}
+    BDDBase{worker: BddWorker::new(nvars), tags:HashMap::new()}}
 
   /// accessor for number of variables
-  pub fn nvars(&self)->usize { self.state.nvars() }
+  pub fn nvars(&self)->usize { self.worker.nvars() }
 
   /// add a new tag to the tag map
   pub fn tag(&mut self, s:String, n:NID) { self.tags.insert(s, n); }
@@ -321,7 +321,7 @@ impl BDDBase {
   pub fn get(&self, s:&String)->Option<NID> { Some(*self.tags.get(s)?) }
 
   /// return (hi, lo) pair for the given nid. used internally
-  #[inline] fn tup(&self, n:NID)->(NID,NID) { self.state.tup(n) }
+  #[inline] fn tup(&self, n:NID)->(NID,NID) { self.worker.tup(n) }
 
   /// retrieve a node by its id.
   pub fn bdd(&self, n:NID)->BDDNode {
@@ -394,7 +394,7 @@ impl BDDBase {
   pub fn  lt(&mut self, x:NID, y:NID)->NID { self.ite(x, O, y) }
 
   /// all-purpose node creation/lookup
-  #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID { self.state.ite(f,g,h) }
+  #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID { self.worker.ite(f,g,h) }
 
   /// nid of y when x is high
   pub fn when_hi(&mut self, x:VID, y:NID)->NID {
