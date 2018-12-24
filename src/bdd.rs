@@ -6,6 +6,7 @@ use std::process::Command;      // for creating and viewing digarams
 use std::fs::File;
 use std::io::Write;
 use std::fmt;
+use serde::Serialize;
 use bincode;
 use io;
 
@@ -109,11 +110,11 @@ impl fmt::Debug for NID { // for test suite output
 /// An if/then/else triple. This is similar to an individual BDDNode, but the 'if' part
 /// part represents a node, not a variable
 #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-struct ITE {i:NID, t:NID, e:NID}
+pub struct ITE {i:NID, t:NID, e:NID}
 
 /// This represents the result of normalizing an ITE. There are three conditions:
 #[derive(Debug)]
-enum Norm {
+pub enum Norm {
   /// used when the ITE simplifies to a single NID.
   Nid(NID),
   /// a normalized ITE.
@@ -125,14 +126,6 @@ enum Norm {
 /// fnv, hashbrown... Hashing is an extremely important aspect of a BDD base, so
 /// it's useful to have a single place to configure this.
 pub type BDDHashMap<K,V> = hashbrown::hash_map::HashMap<K,V>;
-
-/// This is the top-level type for this crate.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BDDBase {
-  /// allows us to give user-friendly names to specific nodes in the base.
-  pub tags: HashMap<String, NID>,
-  /// the actual data
-  worker: BddWorker}
 
 
 impl ITE {
@@ -184,39 +177,20 @@ impl ITE {
 /// All nodes with the same branching variable go in the same array, so there's
 /// no point duplicating it.
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
-struct HILO {hi:NID, lo:NID}
+pub struct HILO {hi:NID, lo:NID}
 
 impl HILO {
   /// constructor
   fn new(hi:NID, lo:NID)->HILO { HILO { hi:hi, lo:lo } }
 
   /// apply the not() operator to both branches
-  #[inline] fn invert(self)-> HILO { HILO{ hi: not(self.hi), lo: not(self.lo) }}
-}
+  #[inline] fn invert(self)-> HILO { HILO{ hi: not(self.hi), lo: not(self.lo) }} }
+
 
-/// This structure contains the main parts of a BDD base's internal state.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BddState {
-  /// variable-specific hi/lo pairs for individual bdd nodes.
-  nodes: Vec<Vec<HILO>>,
-  /// variable-specific memoization. These record (v,hilo) lookups.
-  vmemo: Vec<BDDHashMap<HILO,NID>>,
-  /// arbitrary memoization. These record normalized (f,g,h) lookups,
-  /// and are indexed at three layers: v,f,(g h); where v is the
-  /// branching variable.
-  xmemo: Vec<BDDHashMap<ITE, NID>> }
+/// trait allowing multiple implementations of the in-memory storage layer.
+pub trait BddState : Sized + Serialize {
 
-impl BddState {
-
-  /// constructor
-  fn new(nvars:usize)->BddState {
-    BddState{
-      nodes: (0..nvars).map(|_| vec![]).collect(),
-      vmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
-      xmemo:(0..nvars).map(|_| BDDHashMap::default()).collect() } }
-
-  /// return the number of variables
-  fn nvars(&self)->usize { self.nodes.len() }
+  fn new(nvars: usize)->Self;
 
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)-> (NID, NID) {
@@ -226,8 +200,49 @@ impl BddState {
            if is_inv(n) { hilo = hilo.invert() };
            (hilo.hi, hilo.lo) }}
 
+  /// fetch or create a "simple" node, where the hi and lo branches are both
+  /// already fully computed pointers to existing nodes.
+  #[inline] fn simple_node(&mut self, v:VID, hilo:HILO)->NID {
+    match self.get_simple_node(v, hilo) {
+      Some(&n) => n,
+      None => { self.put_simple_node(v, hilo) }}}
+
+  // --- implement these --------------------------------------------
+
+  fn nvars(&self)->usize;
+
+  #[inline] fn get_hilo(&self, n:NID)->HILO;
+  /// load the memoized NID if it exists
+  #[inline] fn get_memo<'a>(&'a self, v:VID, ite:&ITE) -> Option<&'a NID>;
+  #[inline] fn put_xmemo(&mut self, v:VID, ite:ITE, new_nid:NID);
+  #[inline] fn get_simple_node<'a>(&'a self, v:VID, hilo:HILO)-> Option<&'a NID>;
+  #[inline] fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID; }
+
 
-// core routines that actually read/write the state
+/// Groups everything by variable. I thought this would be useful, but it probably is not.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UnsafeVarKeyedBddState {
+  /// variable-specific hi/lo pairs for individual bdd nodes.
+  nodes: Vec<Vec<HILO>>,
+  /// variable-specific memoization. These record (v,hilo) lookups.
+  vmemo: Vec<BDDHashMap<HILO,NID>>,
+  /// arbitrary memoization. These record normalized (f,g,h) lookups,
+  /// and are indexed at three layers: v,f,(g h); where v is the
+  /// branching variable.
+  xmemo: Vec<BDDHashMap<ITE, NID>> }
+
+
+impl BddState for UnsafeVarKeyedBddState {
+
+  /// constructor
+  fn new(nvars:usize)->UnsafeVarKeyedBddState {
+    UnsafeVarKeyedBddState{
+      nodes: (0..nvars).map(|_| vec![]).collect(),
+      vmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
+      xmemo:(0..nvars).map(|_| BDDHashMap::default()).collect() }}
+
+  /// return the number of variables
+  fn nvars(&self)->usize { self.nodes.len() }
 
   /// the "put" for this one is put_simple_node
   #[inline] fn get_hilo(&self, n:NID)->HILO {
@@ -255,23 +270,14 @@ impl BddState {
       let res = nvi(v, vnodes.len() as IDX);
       vnodes.push(hilo);
       self.vmemo.as_mut_slice().get_unchecked_mut(rv(v) as usize).insert(hilo,res);
-      res }}
-
-  /// fetch or create a "simple" node, where the hi and lo branches are both
-  /// already fully computed pointers to existing nodes.
-  #[inline] fn simple_node(&mut self, v:VID, hilo:HILO)->NID {
-    match self.get_simple_node(v, hilo) {
-      Some(&n) => n,
-      None => { self.put_simple_node(v, hilo) }}}
-
-} // end bddstate
+      res }} }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct BddWorker { state:BddState }
+struct BddWorker<TState:BddState> { state:TState }
 
-impl BddWorker {
+impl<TState:BddState> BddWorker<TState> {
 
-  pub fn new(state: BddState)->BddWorker { BddWorker{ state }}
+  pub fn new(state: TState)->BddWorker<TState> { BddWorker{ state }}
   pub fn nvars(&self)->usize { self.state.nvars() }
   pub fn tup(&self, n:NID)->(NID,NID) { self.state.tup(n) }
 
@@ -305,15 +311,23 @@ impl BddWorker {
           if hi == lo {hi} else { self.state.simple_node(v, HILO::new(hi,lo)) }};
         // now add the triple to the generalized memo store
         if !is_var(i) { self.state.put_xmemo(v, ite, new_nid) }
-        new_nid }}}
-}
+        new_nid }}} }
+
+/// This is the top-level type for this crate.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BddBase<TState:BddState> {
+  /// allows us to give user-friendly names to specific nodes in the base.
+  pub tags: HashMap<String, NID>,
+  /// the actual data
+  worker: BddWorker<TState>}
+
 
 
-impl BDDBase {
+impl<TState:BddState> BddBase<TState> {
 
   /// constructor
-  pub fn new(nvars:usize)->BDDBase {
-    BDDBase{worker: BddWorker::new(BddState::new(nvars)), tags:HashMap::new()}}
+  pub fn new(nvars:usize)->BddBase<TState> {
+    BddBase{worker: BddWorker::new(TState::new(nvars)), tags:HashMap::new()}}
 
   /// accessor for number of variables
   pub fn nvars(&self)->usize { self.worker.nvars() }
@@ -456,7 +470,13 @@ impl BDDBase {
   pub fn node_count(&self, n:NID)->usize {
     let mut c = 0; self.walk(n, &mut |_,_,_,_| c+=1); c }
 
-} // end impl BDDBase
+} // end impl BddBase
+
+
+/// The default type used by the rest of the system.
+/// (Note the first three letters in uppercase).
+pub type BDDBase = BddBase<UnsafeVarKeyedBddState>;
+
 
 
 // basic test suite
