@@ -21,7 +21,7 @@ pub type IDX = u32;
 /// associated variable's value determines which branch to take.
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct BDDNode { pub v:VID, pub hi:NID, pub lo:NID } // if|then|else
-
+
 /// A NID represents a node in the BDD. Essentially, this acts like a tuple
 /// containing a VID and IDX, but for performance reasons, it is packed into a u64.
 /// See below for helper functions that manipulate and analyze the packed bits.
@@ -206,6 +206,9 @@ pub struct BDDState {
   /// branching variable.
   xmemo: Vec<BDDHashMap<ITE, NID>> }
 
+
+
+
 impl BDDState {
 
   /// constructor
@@ -257,6 +260,13 @@ impl BDDState {
       self.vmemo.as_mut_slice().get_unchecked_mut(rv(v) as usize).insert(hilo,res);
       res }}
 
+  /// fetch or create a "simple" node, where the hi and lo branches are both
+  /// already fully computed pointers to existing nodes.
+  #[inline] fn simple_node(&mut self, v:VID, hilo:HILO)->NID {
+    match self.get_simple_node(v, hilo) {
+      Some(&n) => n,
+      None => { self.put_simple_node(v, hilo) }}}
+
 
 // ite
 
@@ -291,34 +301,6 @@ impl BDDState {
         // now add the triple to the generalized memo store
         if !is_var(i) { self.put_xmemo(v, ite, new_nid) }
         new_nid }}}
-
-
-  /// fetch or create a "simple" node, where the hi and lo branches are both
-  /// already fully computed pointers to existing nodes.
-  #[inline] fn simple_node(&mut self, v:VID, hilo:HILO)->NID {
-    match self.get_simple_node(v, hilo) {
-      Some(&n) => n,
-      None => { self.put_simple_node(v, hilo) }}}
-
-  /// nid of y when x is high
-  pub fn when_hi(&mut self, x:VID, y:NID)->NID {
-    let yv = var(y);
-    if yv == x { self.tup(y).0 }  // x ∧ if(x,th,_) → th
-    else if yv > x { y }          // y independent of x, so no change. includes yv = I
-    else {                        // y may depend on x, so recurse.
-      let (yt, ye) = self.tup(y);
-      let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
-      self.ite(nv(yv), th, el) }}
-
-  /// nid of y when x is low
-  pub fn when_lo(&mut self, x:VID, y:NID)->NID {
-    let yv = var(y);
-    if yv == x { self.tup(y).1 }  // ¬x ∧ if(x,_,el) → el
-    else if yv > x { y }          // y independent of x, so no change. includes yv = I
-    else {                        // y may depend on x, so recurse.
-      let (yt, ye) = self.tup(y);
-      let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
-      self.ite(nv(yv), th, el) }}
 
 } // end impl BDDState
 
@@ -358,6 +340,13 @@ impl BDDBase {
       if !is_const(hi) { self.step(hi, f, seen); }
       if !is_const(lo) { self.step(lo, f, seen); }}}
 
+  pub fn save(&self, path:&str)->::std::io::Result<()> {
+    let s = bincode::serialize(&self).unwrap();
+    return io::put(path, &s) }
+
+  pub fn load(path:&str)->::std::io::Result<(BDDBase)> {
+    let s = io::get(path)?;
+    return Ok(bincode::deserialize(&s).unwrap()); }
 
   // generate dot file (graphviz)
   pub fn dot<T>(&self, n:NID, wr: &mut T) where T : ::std::fmt::Write {
@@ -408,11 +397,25 @@ impl BDDBase {
   #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID { self.state.ite(f,g,h) }
 
   /// nid of y when x is high
-  #[inline] pub fn when_hi(&mut self, x:VID, y:NID)->NID { self.state.when_hi(x,y) }
+  pub fn when_hi(&mut self, x:VID, y:NID)->NID {
+    let yv = var(y);
+    if yv == x { self.tup(y).0 }  // x ∧ if(x,th,_) → th
+    else if yv > x { y }          // y independent of x, so no change. includes yv = I
+    else {                        // y may depend on x, so recurse.
+      let (yt, ye) = self.tup(y);
+      let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
+      self.ite(nv(yv), th, el) }}
 
   /// nid of y when x is low
-  #[inline] pub fn when_lo(&mut self, x:VID, y:NID)->NID { self.state.when_lo(x,y) }
-
+  pub fn when_lo(&mut self, x:VID, y:NID)->NID {
+    let yv = var(y);
+    if yv == x { self.tup(y).1 }  // ¬x ∧ if(x,_,el) → el
+    else if yv > x { y }          // y independent of x, so no change. includes yv = I
+    else {                        // y may depend on x, so recurse.
+      let (yt, ye) = self.tup(y);
+      let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
+      self.ite(nv(yv), th, el) }}
+
   /// is it possible x depends on y?
   /// the goal here is to avoid exploring a subgraph if we don't have to.
   #[inline] pub fn might_depend(&mut self, x:NID, y:VID)->bool {
@@ -428,17 +431,8 @@ impl BDDBase {
         let el = self.replace(x, y, ze);
         self.ite(nv(zv), th, el) }}
     else { z }}
-
 
-  pub fn save(&self, path:&str)->::std::io::Result<()> {
-    let s = bincode::serialize(&self).unwrap();
-    return io::put(path, &s) }
-
-  pub fn load(path:&str)->::std::io::Result<(BDDBase)> {
-    let s = io::get(path)?;
-    return Ok(bincode::deserialize(&s).unwrap()); }
-
-
+  /// swap input variables x and y within bdd n
   pub fn swap(&mut self, n:NID, x:VID, y:VID)-> NID {
     if y>x { return self.swap(n,y,x) }
     /*
