@@ -221,6 +221,18 @@ pub trait BddState : Sized + Serialize {
 
 /// Groups everything by variable. I thought this would be useful, but it probably is not.
 #[derive(Debug, Serialize, Deserialize)]
+pub struct SafeVarKeyedBddState {
+  /// variable-specific hi/lo pairs for individual bdd nodes.
+  nodes: Vec<Vec<HILO>>,
+  /// variable-specific memoization. These record (v,hilo) lookups.
+  vmemo: Vec<BDDHashMap<HILO,NID>>,
+  /// arbitrary memoization. These record normalized (f,g,h) lookups,
+  /// and are indexed at three layers: v,f,(g h); where v is the
+  /// branching variable.
+  xmemo: Vec<BDDHashMap<ITE, NID>> }
+
+/// Same as the safe version but disables bounds checking.
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UnsafeVarKeyedBddState {
   /// variable-specific hi/lo pairs for individual bdd nodes.
   nodes: Vec<Vec<HILO>>,
@@ -230,6 +242,42 @@ pub struct UnsafeVarKeyedBddState {
   /// and are indexed at three layers: v,f,(g h); where v is the
   /// branching variable.
   xmemo: Vec<BDDHashMap<ITE, NID>> }
+
+
+impl BddState for SafeVarKeyedBddState {
+
+  /// constructor
+  fn new(nvars:usize)->SafeVarKeyedBddState {
+    SafeVarKeyedBddState{
+      nodes: (0..nvars).map(|_| vec![]).collect(),
+      vmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
+      xmemo:(0..nvars).map(|_| BDDHashMap::default()).collect() }}
+
+  /// return the number of variables
+  fn nvars(&self)->usize { self.nodes.len() }
+
+  /// the "put" for this one is put_simple_node
+  #[inline] fn get_hilo(&self, n:NID)->HILO {
+    self.nodes[rv(var(n))][idx(n)] }
+
+  /// load the memoized NID if it exists
+  #[inline] fn get_memo<'a>(&'a self, v:VID, ite:&ITE) -> Option<&'a NID> {
+    if is_var(ite.i) {
+      self.vmemo[rvar(ite.i) as usize].get(&HILO::new(ite.t,ite.e)) }
+    else { self.xmemo.as_slice().get(rv(v))?.get(&ite) }}
+
+  #[inline] fn put_xmemo(&mut self, v:VID, ite:ITE, new_nid:NID) {
+      self.xmemo[rv(v)].insert(ite, new_nid); }
+
+  #[inline] fn get_simple_node<'a>(&'a self, v:VID, hilo:HILO)-> Option<&'a NID> {
+    self.vmemo[rv(v)].get(&hilo) }
+
+  #[inline] fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID {
+    let ref mut vnodes = self.nodes[rv(v)];
+    let res = nvi(v, vnodes.len() as IDX);
+    vnodes.push(hilo);
+    self.vmemo[rv(v) as usize].insert(hilo,res);
+    res } }
 
 
 impl BddState for UnsafeVarKeyedBddState {
@@ -246,19 +294,16 @@ impl BddState for UnsafeVarKeyedBddState {
 
   /// the "put" for this one is put_simple_node
   #[inline] fn get_hilo(&self, n:NID)->HILO {
-    unsafe {
-      let bits = self.nodes.as_slice().get_unchecked(rv(var(n))).as_slice();
-      *bits.get_unchecked(idx(n)) }}
+    unsafe { let bits = self.nodes.as_slice().get_unchecked(rv(var(n))).as_slice();
+             *bits.get_unchecked(idx(n)) }}
 
   /// load the memoized NID if it exists
   #[inline] fn get_memo<'a>(&'a self, v:VID, ite:&ITE) -> Option<&'a NID> {
-    unsafe {
-      if is_var(ite.i) {
-        self.vmemo.as_slice().get_unchecked(rv(rvar(ite.i))).get(&HILO::new(ite.t,ite.e)) }
-      else { self.xmemo.as_slice().get_unchecked(rv(v)).get(&ite) }}}
+    unsafe { if is_var(ite.i) {
+      self.vmemo.as_slice().get_unchecked(rv(rvar(ite.i))).get(&HILO::new(ite.t,ite.e)) }
+             else { self.xmemo.as_slice().get_unchecked(rv(v)).get(&ite) }}}
 
-  #[inline] fn put_xmemo(&mut self, v:VID, ite:ITE, new_nid:NID) {
-    unsafe {
+  #[inline] fn put_xmemo(&mut self, v:VID, ite:ITE, new_nid:NID) { unsafe {
       self.xmemo.as_mut_slice().get_unchecked_mut(rv(v)).insert(ite, new_nid); }}
 
   #[inline] fn get_simple_node<'a>(&'a self, v:VID, hilo:HILO)-> Option<&'a NID> {
@@ -475,8 +520,10 @@ impl<TState:BddState> BddBase<TState> {
 
 /// The default type used by the rest of the system.
 /// (Note the first three letters in uppercase).
+#[cfg(safe)]
+pub type BDDBase = BddBase<SafeVarKeyedBddState>;
+#[cfg(not(safe))]
 pub type BDDBase = BddBase<UnsafeVarKeyedBddState>;
-
 
 
 // basic test suite
