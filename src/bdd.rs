@@ -196,7 +196,7 @@ impl HILO {
 
 /// This structure contains the main parts of a BDD base's internal state.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BddWorker {
+pub struct BddState {
   /// variable-specific hi/lo pairs for individual bdd nodes.
   nodes: Vec<Vec<HILO>>,
   /// variable-specific memoization. These record (v,hilo) lookups.
@@ -206,14 +206,11 @@ pub struct BddWorker {
   /// branching variable.
   xmemo: Vec<BDDHashMap<ITE, NID>> }
 
-
-
-
-impl BddWorker {
+impl BddState {
 
   /// constructor
-  fn new(nvars:usize)->BddWorker {
-    BddWorker{
+  fn new(nvars:usize)->BddState {
+    BddState{
       nodes: (0..nvars).map(|_| vec![]).collect(),
       vmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
       xmemo:(0..nvars).map(|_| BDDHashMap::default()).collect() } }
@@ -267,8 +264,16 @@ impl BddWorker {
       Some(&n) => n,
       None => { self.put_simple_node(v, hilo) }}}
 
+} // end bddstate
 
-// ite
+#[derive(Debug, Serialize, Deserialize)]
+struct BddWorker { state:BddState }
+
+impl BddWorker {
+
+  pub fn new(state: BddState)->BddWorker { BddWorker{ state }}
+  pub fn nvars(&self)->usize { self.state.nvars() }
+  pub fn tup(&self, n:NID)->(NID,NID) { self.state.tup(n) }
 
   /// if-then-else routine. all-purpose node creation/lookup tool.
   #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
@@ -284,7 +289,7 @@ impl BddWorker {
     let ITE { i, t, e } = ite;
     let (vi, vt, ve) = (var(i), var(t), var(e));
     let v = min(vi, min(vt, ve));
-    match self.get_memo(v, &ite) {
+    match self.state.get_memo(v, &ite) {
       Some(&n) => n,
       None => {
         // We know we're going to branch on v, and v is either the branch var
@@ -297,19 +302,18 @@ impl BddWorker {
           // TODO: push one of these off into a queue for other threads
           let hi = self.ite(hi_i, hi_t, hi_e);
           let lo = self.ite(lo_i, lo_t, lo_e);
-          if hi == lo {hi} else { self.simple_node(v, HILO::new(hi,lo)) }};
+          if hi == lo {hi} else { self.state.simple_node(v, HILO::new(hi,lo)) }};
         // now add the triple to the generalized memo store
-        if !is_var(i) { self.put_xmemo(v, ite, new_nid) }
+        if !is_var(i) { self.state.put_xmemo(v, ite, new_nid) }
         new_nid }}}
-
-} // end impl BddWorker
+}
 
 
 impl BDDBase {
 
   /// constructor
   pub fn new(nvars:usize)->BDDBase {
-    BDDBase{worker: BddWorker::new(nvars), tags:HashMap::new()}}
+    BDDBase{worker: BddWorker::new(BddState::new(nvars)), tags:HashMap::new()}}
 
   /// accessor for number of variables
   pub fn nvars(&self)->usize { self.worker.nvars() }
