@@ -377,15 +377,17 @@ impl<S:BddState> SimpleBddWorker<S> {
         if !is_var(i) { self.state.put_xmemo(v, ite, new_nid) }
         new_nid }}} }
 
-// -- message types for multi-threaded programming -----------------------------
+// ----------------------------------------------------------------
+// Helper types for BddSwarm
+// ----------------------------------------------------------------
+/// Query ID for BddSwarm.
+type QID = usize;
 
-type TID = usize;
-
-/// A query message.
+/// Query message for BddSwarm.
 #[derive(PartialEq,Debug)]
 enum QMsg { ITE(NID,NID,NID) }
 
-/// A Response message.
+/// Response message for BddSwarm.
 #[derive(PartialEq,Debug)]
 enum RMsg {
   /// resolved to a nid
@@ -395,32 +397,38 @@ enum RMsg {
   /// A new simple node
   Smp(VID,HILO) }
 
-fn work(tx:Sender<(TID, RMsg)>, rx:Receiver<(TID, QMsg)>) {
-  loop {
-    match rx.recv().expect("aaaaah!") {
-      (id, msg) => {
-        println!("Worker got msg {}: {:?}", id, msg);
-        match msg {
-          QMsg::ITE(f,g,h) => {
-            tx.send((id, RMsg::Nid( I )))
-              .expect("I TOLD you you'd regret not writing a better error message someday.");
-          }} }} }}
+/// Partial BDD node (for BddWIP).
+enum BddPart { HiPart(NID), LoPart(NID) }
+
+/// Work in progress for BddSwarm.
+struct BddWIP { v:VID, hi:Option<NID>, lo:Option<NID> }
+impl BddWIP {
+  /// construct a new WIP node that branches on the given variable
+  fn new(v:VID)->BddWIP { BddWIP{ v, hi:None, lo:None } }
+
+  /// add a part to the WIP
+  fn add_part(&mut self, part:BddPart) {
+    match part {
+      BddPart::HiPart(n) => { self.hi = Some(n) }
+      BddPart::LoPart(n) => { self.lo = Some(n) } }}
+
+  /// are all parts filled in?
+  fn is_complete(&self)->bool { self.hi.is_some() && self.lo.is_some() }}
 
 
 // ----------------------------------------------------------------
 /// BddSwarm: a multi-threaded worker implementation
 // ----------------------------------------------------------------
-
 #[derive(Debug)]
 struct BddSwarm <TState:BddState> {
   /// counter for transactions
-  id: TID,
+  id: QID,
   /// receives messages from the workers
-  rx: Receiver<(TID, RMsg)>,
+  rx: Receiver<(QID, RMsg)>,
   /// send messages to myself (so we can put them back in the queue.
-  me: Sender<(TID, RMsg)>,
+  me: Sender<(QID, RMsg)>,
   /// array of receivers, corresponding to threads doing the work.
-  workers: Vec<Sender<(TID, QMsg)>>,
+  workers: Vec<Sender<(QID, QMsg)>>,
   /// read-only version of the state shared by all threads.
   stable: TState,
   /// mutable version of the state kept by the main thread.
@@ -434,19 +442,41 @@ impl<TState:BddState> Serialize for BddSwarm<TState> {
     self.stable.serialize::<S>(ser) } }
 
 
-impl<TState:BddState> BddSwarm<TState> {
+// TODO: clean up duplicate code between SimpleBddWorker and BddSwarm
 
-  fn new(nvars:usize)->BddSwarm<TState> {
-    let (me, rx) = channel::<(TID, RMsg)>();
+impl<S:BddState> BddWorker<S> for BddSwarm<S> {
+
+  fn new(nvars:usize)->Self {
+    let (me, rx) = channel::<(QID, RMsg)>();
     let mut workers = vec![];
     for _ in 0..2 {
-      let (tx, rx) = channel::<(TID, QMsg)>();
+      let (tx, rx) = channel::<(QID, QMsg)>();
       let me_clone = me.clone();
-      thread::spawn(|| { work(me_clone, rx) });
+      thread::spawn(|| { swarm_work(me_clone, rx) });
       workers.push(tx); }
-    let stable = TState::new(nvars);
-    let recent = TState::new(nvars);
-    BddSwarm{ me, rx, id:0, workers, stable, recent }}
+    let stable = S::new(nvars);
+    let recent = S::new(nvars);
+    Self{ me, rx, id:0, workers, stable, recent }}
+
+  fn new_with_state(state: S)->Self {
+    println!("warning: new_with_state probably doesn't work so well yet..."); // TODO!
+    let mut res = Self::new(state.nvars());
+    res.stable = state.clone();
+    res.recent = state.clone();
+    res }
+
+  fn nvars(&self)->usize { self.recent.nvars() }
+  fn tup(&self, n:NID)->(NID,NID) { self.recent.tup(n) }
+
+  /// if-then-else routine. all-purpose node creation/lookup tool.
+  fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
+    match ITE::norm(f,g,h) {
+      Norm::Nid(x) => x,
+      Norm::Ite(ite) => self.ite_norm(ite),
+      Norm::Not(ite) => not(self.ite_norm(ite)) }} }
+
+impl<S:BddState> BddSwarm<S> {
+  #[inline] fn ite_norm(&mut self, ite:ITE)->NID { I }
 
   fn run(&mut self, x:QMsg)->RMsg {
     let w:usize = self.id % self.workers.len();
@@ -460,32 +490,18 @@ impl<TState:BddState> BddSwarm<TState> {
     self.id += 1;
     result.expect("got invalid result?") } }
 
-
-// TODO: clean up duplicate code between SimpleBddWorker and BddSwarm
-
-impl<S:BddState> BddWorker<S> for BddSwarm<S> {
-  fn new(nvars:usize)->Self { Self::new(nvars) }
-  fn new_with_state(state: S)->Self {
-    let mut res = Self::new(state.nvars());
-    res.stable = state.clone();
-    res.recent = state.clone();
-    res }
-  fn nvars(&self)->usize { self.recent.nvars() }
-  fn tup(&self, n:NID)->(NID,NID) { self.recent.tup(n) }
-
-  /// if-then-else routine. all-purpose node creation/lookup tool.
-  fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
-    match ITE::norm(f,g,h) {
-      Norm::Nid(x) => x,
-      Norm::Ite(ite) => self.ite_norm(ite),
-      Norm::Not(ite) => not(self.ite_norm(ite)) }} }
 
 
-impl<S:BddState> BddSwarm<S> {
-  #[inline] fn ite_norm(&mut self, ite:ITE)->NID { I }
-}
-
-
+fn swarm_work(tx:Sender<(QID, RMsg)>, rx:Receiver<(QID, QMsg)>) {
+  loop {
+    match rx.recv().expect("aaaaah!") {
+      (id, msg) => {
+        println!("Worker got msg {}: {:?}", id, msg);
+        match msg {
+          QMsg::ITE(f,g,h) => {
+            tx.send((id, RMsg::Nid( I )))
+              .expect("I TOLD you you'd regret not writing a better error message someday.");
+          }} }} }}
 
 /// This is the top-level type for this crate.
 #[derive(Debug, Serialize, Deserialize)]
