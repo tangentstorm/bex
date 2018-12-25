@@ -3,6 +3,7 @@ use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::process::Command;      // for creating and viewing digarams
+use std::marker::PhantomData;
 use std::fs::File;
 use std::io::Write;
 use std::fmt;
@@ -317,22 +318,31 @@ impl BddState for UnsafeVarKeyedBddState {
       self.vmemo.as_mut_slice().get_unchecked_mut(rv(v) as usize).insert(hilo,res);
       res }} }
 
+pub trait BddWorker<S:BddState> : Sized + Serialize {
+  fn new(nvars:usize)->Self;
+  fn new_with_state(state: S)->Self;
+  fn nvars(&self)->usize;
+  fn tup(&self, n:NID)->(NID,NID);
+  #[inline] fn ite(&mut self, f:NID, g:NID, h:NID)->NID; }
+
+
 #[derive(Debug, Serialize, Deserialize)]
-struct BddWorker<TState:BddState> { state:TState }
+pub struct SimpleBddWorker<S:BddState> { state:S }
 
-impl<TState:BddState> BddWorker<TState> {
-
-  pub fn new(state: TState)->BddWorker<TState> { BddWorker{ state }}
-  pub fn nvars(&self)->usize { self.state.nvars() }
-  pub fn tup(&self, n:NID)->(NID,NID) { self.state.tup(n) }
+impl<S:BddState> BddWorker<S> for SimpleBddWorker<S> {
+  fn new(nvars:usize)->Self { SimpleBddWorker{ state: S::new(nvars) }}
+  fn new_with_state(state: S)->Self { SimpleBddWorker{ state }}
+  fn nvars(&self)->usize { self.state.nvars() }
+  fn tup(&self, n:NID)->(NID,NID) { self.state.tup(n) }
 
   /// if-then-else routine. all-purpose node creation/lookup tool.
-  #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
+  #[inline] fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
     match ITE::norm(f,g,h) {
       Norm::Nid(x) => x,
       Norm::Ite(ite) => self.ite_norm(ite),
-      Norm::Not(ite) => not(self.ite_norm(ite)) }}
+      Norm::Not(ite) => not(self.ite_norm(ite)) }} }
 
+impl<S:BddState> SimpleBddWorker<S> {
   /// helper for ite to work on the normalized i,t,e triple
   #[inline] fn ite_norm(&mut self, ite:ITE)->NID {
     // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
@@ -360,19 +370,19 @@ impl<TState:BddState> BddWorker<TState> {
 
 /// This is the top-level type for this crate.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BddBase<TState:BddState> {
+pub struct BddBase<S:BddState, W:BddWorker<S>> {
   /// allows us to give user-friendly names to specific nodes in the base.
   pub tags: HashMap<String, NID>,
-  /// the actual data
-  worker: BddWorker<TState>}
-
-
+  phantom: PhantomData<S>,
+  worker: W}
 
-impl<TState:BddState> BddBase<TState> {
+impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
 
   /// constructor
-  pub fn new(nvars:usize)->BddBase<TState> {
-    BddBase{worker: BddWorker::new(TState::new(nvars)), tags:HashMap::new()}}
+  pub fn new(nvars:usize)->BddBase<S,W> {
+    BddBase{phantom: PhantomData,
+            worker: W::new(nvars),
+            tags:HashMap::new()}}
 
   /// accessor for number of variables
   pub fn nvars(&self)->usize { self.worker.nvars() }
@@ -521,9 +531,12 @@ impl<TState:BddState> BddBase<TState> {
 /// The default type used by the rest of the system.
 /// (Note the first three letters in uppercase).
 #[cfg(safe)]
-pub type BDDBase = BddBase<SafeVarKeyedBddState>;
+type S = SafeVarKeyedBddState;
 #[cfg(not(safe))]
-pub type BDDBase = BddBase<UnsafeVarKeyedBddState>;
+type S = UnsafeVarKeyedBddState;
+
+pub type BDDBase = BddBase<S,SimpleBddWorker<S>>;
+
 
 
 // basic test suite
