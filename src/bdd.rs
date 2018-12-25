@@ -117,7 +117,7 @@ impl fmt::Debug for NID { // for test suite output
 pub struct ITE {i:NID, t:NID, e:NID}
 
 /// This represents the result of normalizing an ITE. There are three conditions:
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Norm {
   /// used when the ITE simplifies to a single NID.
   Nid(NID),
@@ -378,55 +378,64 @@ impl<S:BddState> SimpleBddWorker<S> {
 
 // -- message types for multi-threaded programming -----------------------------
 
+type TID = usize;
+
+/// A query message.
 #[derive(PartialEq,Debug)]
-enum Intent { Add(u32, u32) }
+enum QMsg { ITE(NID,NID,NID) }
 
+/// A Response message.
 #[derive(PartialEq,Debug)]
-enum Event { Sum(u32) }
+enum RMsg {
+  /// resolved to a nid
+  Nid(NID),
+  /// work in progress
+  Wip(VID,Norm,Norm),
+  /// A new simple node
+  Smp(VID,HILO) }
 
-struct IntentMsg { id:usize, msg:Intent }
-struct EventMsg { id:usize, msg:Event }
-
-
-fn work(tx:Sender<EventMsg>, rx:Receiver<IntentMsg>) {
+fn work(tx:Sender<(TID, RMsg)>, rx:Receiver<(TID, QMsg)>) {
   loop {
     match rx.recv().expect("aaaaah!") {
-      IntentMsg{ id, msg } => {
+      (id, msg) => {
         println!("Worker got msg {}: {:?}", id, msg);
         match msg {
-          Intent::Add(x,y) => {
-            tx.send(EventMsg{id, msg:Event::Sum(x+y)})
+          QMsg::ITE(f,g,h) => {
+            tx.send((id, RMsg::Nid( I )))
               .expect("I TOLD you you'd regret not writing a better error message someday.");
           }} }} }}
+
 
 struct Master {
+  /// counter for transactions
+  id: TID,
   /// receives messages from the workers
-  rx: Receiver<EventMsg>,
+  rx: Receiver<(TID, RMsg)>,
   /// send messages to myself (so we can put them back in the queue.
-  me: Sender<EventMsg>,
-  id: usize,
-  workers: Vec<Sender<IntentMsg>> }
+  me: Sender<(TID, RMsg)>,
+  /// array of receivers, corresponding to threads doing the work.
+  workers: Vec<Sender<(TID, QMsg)>> }
 
 impl Master {
   fn new()->Master {
-    let (me, rx) = channel::<EventMsg>();
+    let (me, rx) = channel::<(TID, RMsg)>();
     let mut workers = vec![];
     for _ in 0..2 {
-      let (tx, rx) = channel::<IntentMsg>();
+      let (tx, rx) = channel::<(TID, QMsg)>();
       let me_clone = me.clone();
       thread::spawn(|| { work(me_clone, rx) });
       workers.push(tx); }
     Master{ me, rx, id:0, workers}}
 
-  fn run(&mut self, x:Intent)->Event {
+  fn run(&mut self, x:QMsg)->RMsg {
     let w:usize = self.id % self.workers.len();
-    self.workers[w].send(IntentMsg{ id:self.id, msg:x }).expect("ugh");
-    let mut result:Option<Event> = None;
+    self.workers[w].send((self.id, x)).expect("ugh");
+    let mut result:Option<RMsg> = None;
     while result.is_none() {
-      let EventMsg{id, msg} = self.rx.recv().expect("oh no!");
+      let (id, msg) = self.rx.recv().expect("oh no!");
       println!("Master got msg {}: {:?}", id, msg);
       if id==self.id { result = Some(msg) }
-      else { self.me.send(EventMsg{id, msg}).expect(":/"); }}
+      else { self.me.send((id, msg)).expect(":/"); }}
     self.id += 1;
     result.expect("got invalid result?") } }
 
