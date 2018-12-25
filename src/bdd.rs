@@ -1,4 +1,5 @@
 /// A module for efficient implementation of binary decision diagrams.
+use std::clone::Clone;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -113,7 +114,7 @@ impl fmt::Debug for NID { // for test suite output
 
 /// An if/then/else triple. This is similar to an individual BDDNode, but the 'if' part
 /// part represents a node, not a variable
-#[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone)]
 pub struct ITE {i:NID, t:NID, e:NID}
 
 /// This represents the result of normalizing an ITE. There are three conditions:
@@ -192,7 +193,7 @@ impl HILO {
 
 
 /// trait allowing multiple implementations of the in-memory storage layer.
-pub trait BddState : Sized + Serialize {
+pub trait BddState : Sized + Serialize + Clone {
 
   fn new(nvars: usize)->Self;
 
@@ -224,7 +225,7 @@ pub trait BddState : Sized + Serialize {
 
 
 /// Groups everything by variable. I thought this would be useful, but it probably is not.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SafeVarKeyedBddState {
   /// variable-specific hi/lo pairs for individual bdd nodes.
   nodes: Vec<Vec<HILO>>,
@@ -236,7 +237,7 @@ pub struct SafeVarKeyedBddState {
   xmemo: Vec<BDDHashMap<ITE, NID>> }
 
 /// Same as the safe version but disables bounds checking.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UnsafeVarKeyedBddState {
   /// variable-specific hi/lo pairs for individual bdd nodes.
   nodes: Vec<Vec<HILO>>,
@@ -406,7 +407,12 @@ fn work(tx:Sender<(TID, RMsg)>, rx:Receiver<(TID, QMsg)>) {
           }} }} }}
 
 
-struct Master {
+// ----------------------------------------------------------------
+/// BddSwarm: a multi-threaded worker implementation
+// ----------------------------------------------------------------
+
+#[derive(Debug)]
+struct BddSwarm <TState:BddState> {
   /// counter for transactions
   id: TID,
   /// receives messages from the workers
@@ -414,10 +420,23 @@ struct Master {
   /// send messages to myself (so we can put them back in the queue.
   me: Sender<(TID, RMsg)>,
   /// array of receivers, corresponding to threads doing the work.
-  workers: Vec<Sender<(TID, QMsg)>> }
+  workers: Vec<Sender<(TID, QMsg)>>,
+  /// read-only version of the state shared by all threads.
+  stable: TState,
+  /// mutable version of the state kept by the main thread.
+  recent: TState }
 
-impl Master {
-  fn new()->Master {
+
+use serde::ser::{Serializer};
+impl<TState:BddState> Serialize for BddSwarm<TState> {
+  fn serialize<S:Serializer>(&self, ser: S)->Result<S::Ok, S::Error> {
+    // all we really care about is the state:
+    self.stable.serialize::<S>(ser) } }
+
+
+impl<TState:BddState> BddSwarm<TState> {
+
+  fn new(nvars:usize)->BddSwarm<TState> {
     let (me, rx) = channel::<(TID, RMsg)>();
     let mut workers = vec![];
     for _ in 0..2 {
@@ -425,7 +444,9 @@ impl Master {
       let me_clone = me.clone();
       thread::spawn(|| { work(me_clone, rx) });
       workers.push(tx); }
-    Master{ me, rx, id:0, workers}}
+    let stable = TState::new(nvars);
+    let recent = TState::new(nvars);
+    BddSwarm{ me, rx, id:0, workers, stable, recent }}
 
   fn run(&mut self, x:QMsg)->RMsg {
     let w:usize = self.id % self.workers.len();
@@ -439,20 +460,18 @@ impl Master {
     self.id += 1;
     result.expect("got invalid result?") } }
 
-
-
 
-// ----------------------------------------------------------------
-/// ThreadedBddWorker: a multi-threaded worker implementation
-// ----------------------------------------------------------------
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ThreadedBddWorker<S:BddState> { state:S }
+// TODO: clean up duplicate code between SimpleBddWorker and BddSwarm
 
-impl<S:BddState> BddWorker<S> for ThreadedBddWorker<S> {
-  fn new(nvars:usize)->Self { Self{ state: S::new(nvars) }}
-  fn new_with_state(state: S)->Self { Self{ state }}
-  fn nvars(&self)->usize { self.state.nvars() }
-  fn tup(&self, n:NID)->(NID,NID) { self.state.tup(n) }
+impl<S:BddState> BddWorker<S> for BddSwarm<S> {
+  fn new(nvars:usize)->Self { Self::new(nvars) }
+  fn new_with_state(state: S)->Self {
+    let mut res = Self::new(state.nvars());
+    res.stable = state.clone();
+    res.recent = state.clone();
+    res }
+  fn nvars(&self)->usize { self.recent.nvars() }
+  fn tup(&self, n:NID)->(NID,NID) { self.recent.tup(n) }
 
   /// if-then-else routine. all-purpose node creation/lookup tool.
   fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
@@ -461,10 +480,8 @@ impl<S:BddState> BddWorker<S> for ThreadedBddWorker<S> {
       Norm::Ite(ite) => self.ite_norm(ite),
       Norm::Not(ite) => not(self.ite_norm(ite)) }} }
 
-// !! everything above this line is exactly the same in SimpleBddWorker.
-// TODO: clean up duplicate code between Simple/Threaded Bdd Workers
 
-impl<S:BddState> ThreadedBddWorker<S> {
+impl<S:BddState> BddSwarm<S> {
   #[inline] fn ite_norm(&mut self, ite:ITE)->NID { I }
 }
 
