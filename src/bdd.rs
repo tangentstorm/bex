@@ -8,6 +8,7 @@ use std::fs::File;
 use std::io::Write;
 use std::marker::PhantomData;
 use std::process::Command;      // for creating and viewing digarams
+use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::thread;
 
@@ -193,7 +194,7 @@ impl HILO {
 
 
 /// trait allowing multiple implementations of the in-memory storage layer.
-pub trait BddState : Sized + Serialize + Clone {
+pub trait BddState : Sized + Serialize + Clone + Sync + Send {
 
   fn new(nvars: usize)->Self;
 
@@ -427,7 +428,7 @@ impl BddWIP {
 /// BddSwarm: a multi-threaded worker implementation
 // ----------------------------------------------------------------
 #[derive(Debug)]
-struct BddSwarm <TState:BddState> {
+struct BddSwarm <TState:BddState+'static> {
   /// counter for query ids.
   qid: QID,
   /// receives messages from the threads
@@ -437,7 +438,7 @@ struct BddSwarm <TState:BddState> {
   /// QMsg senders for each thread, so we can send queries to work on.
   swarm: Vec<QTx>,
   /// read-only version of the state shared by all threads.
-  stable: TState,
+  stable: Arc<TState>,
   /// mutable version of the state kept by the main thread.
   recent: TState }
 
@@ -454,14 +455,14 @@ impl<S:BddState> BddWorker<S> for BddSwarm<S> {
   fn new(nvars:usize)->Self {
     let (me, rx) = channel::<(QID, RMsg)>();
     let swarm = vec![];
-    let stable = S::new(nvars);
+    let stable = Arc::new(S::new(nvars));
     let recent = S::new(nvars);
     Self{ me, rx, qid:0, swarm, stable, recent }}
 
   fn new_with_state(state: S)->Self {
     println!("warning: new_with_state probably doesn't work so well yet..."); // TODO!
     let mut res = Self::new(state.nvars());
-    res.stable = state.clone();
+    res.stable = Arc::new(state.clone());
     res.recent = state.clone();
     res }
 
@@ -481,12 +482,8 @@ impl<S:BddState> BddSwarm<S> {
     while self.swarm.len() < 2 { // TODO: configure threads here.
       let (tx, rx) = channel::<(QID, QMsg)>();
       let me_clone = self.me.clone();
-      // TODO: figure out how to make these two functions implement Sync:
-      // let mem = |v:VID, ite:ITE|->Option<NID> { self.stable.get_memo(v, &ite).map(|&n|n) };
-      // let tup = |n:NID|->(NID,NID) { ss.tup(n) };
-      let mem = |v:VID, ite:ITE|->Option<NID> { None };
-      let tup = |n:NID|->(NID,NID) { (n,n) };
-      thread::spawn(move || { swarm_loop(me_clone, rx, &mem, &tup) });
+      let state = self.stable.clone();
+      thread::spawn(move || swarm_loop(me_clone, rx, state));
       self.swarm.push(tx); }
 
     // send the top-level request to some worker in the swarm:
@@ -498,7 +495,7 @@ impl<S:BddState> BddSwarm<S> {
     let mut result:Option<NID> = None;
     while result.is_none() {
       let (qid, rmsg) = self.rx.recv().expect("failed to read RMsg from queue!");
-      println!("got RMsg {}: {:?}", qid, rmsg);
+      println!("===> run_swarm got RMsg {}: {:?}", qid, rmsg);
       if qid == self.qid { result = Some(I) } // TODO: fix this
       else { self.me.send((qid, rmsg)).unwrap(); }}
     self.qid += 1;
@@ -510,7 +507,10 @@ impl<S:BddState> BddSwarm<S> {
 type MemFn = Fn(VID,ITE)->Option<NID>;
 type TupFn = Fn(NID)->(NID,NID);
 
-fn swarm_loop(tx:RTx, rx:QRx, mem:&MemFn, tup:&TupFn) {
+fn swarm_loop<S:BddState>(tx:RTx, rx:QRx, state:Arc<S>) {
+
+  let mem = |v:VID, ite:ITE| state.get_memo(v,&ite);
+  let tup = |n:NID| state.tup(n);
 
   for (qid, qmsg) in rx.iter() {
 
@@ -521,7 +521,7 @@ fn swarm_loop(tx:RTx, rx:QRx, mem:&MemFn, tup:&TupFn) {
       let (vi, vt, ve) = (var(i), var(t), var(e));
       let v = min(vi, min(vt, ve));
       match mem(v, ite) {
-        Some(n) => yld!(RMsg::Nid(if invert { not(n) } else { n })),
+        Some(&n) => yld!(RMsg::Nid(if invert { not(n) } else { n })),
         None => {
           let (hi_i, lo_i) = if v == vi {tup(i)} else {(i,i)};
           let (hi_t, lo_t) = if v == vt {tup(t)} else {(t,t)};
