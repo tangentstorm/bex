@@ -2,11 +2,14 @@
 use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::process::Command;      // for creating and viewing digarams
-use std::marker::PhantomData;
+use std::fmt;
 use std::fs::File;
 use std::io::Write;
-use std::fmt;
+use std::marker::PhantomData;
+use std::process::Command;      // for creating and viewing digarams
+use std::sync::mpsc::{channel, Sender, Receiver};
+use std::thread;
+
 use serde::Serialize;
 use bincode;
 use io;
@@ -323,20 +326,25 @@ pub trait BddWorker<S:BddState> : Sized + Serialize {
   fn new_with_state(state: S)->Self;
   fn nvars(&self)->usize;
   fn tup(&self, n:NID)->(NID,NID);
-  #[inline] fn ite(&mut self, f:NID, g:NID, h:NID)->NID; }
+  fn ite(&mut self, f:NID, g:NID, h:NID)->NID;
+}
+
 
 
+// ----------------------------------------------------------------
+/// SimpleBddWorker: a single-threaded worker implementation
+// ----------------------------------------------------------------
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SimpleBddWorker<S:BddState> { state:S }
 
 impl<S:BddState> BddWorker<S> for SimpleBddWorker<S> {
-  fn new(nvars:usize)->Self { SimpleBddWorker{ state: S::new(nvars) }}
-  fn new_with_state(state: S)->Self { SimpleBddWorker{ state }}
+  fn new(nvars:usize)->Self { Self{ state: S::new(nvars) }}
+  fn new_with_state(state: S)->Self { Self{ state }}
   fn nvars(&self)->usize { self.state.nvars() }
   fn tup(&self, n:NID)->(NID,NID) { self.state.tup(n) }
 
   /// if-then-else routine. all-purpose node creation/lookup tool.
-  #[inline] fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
+  fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
     match ITE::norm(f,g,h) {
       Norm::Nid(x) => x,
       Norm::Ite(ite) => self.ite_norm(ite),
@@ -367,6 +375,91 @@ impl<S:BddState> SimpleBddWorker<S> {
         // now add the triple to the generalized memo store
         if !is_var(i) { self.state.put_xmemo(v, ite, new_nid) }
         new_nid }}} }
+
+// -- message types for multi-threaded programming -----------------------------
+
+#[derive(PartialEq,Debug)]
+enum Intent { Add(u32, u32) }
+
+#[derive(PartialEq,Debug)]
+enum Event { Sum(u32) }
+
+struct IntentMsg { id:usize, msg:Intent }
+struct EventMsg { id:usize, msg:Event }
+
+
+fn work(tx:Sender<EventMsg>, rx:Receiver<IntentMsg>) {
+  loop {
+    match rx.recv().expect("aaaaah!") {
+      IntentMsg{ id, msg } => {
+        println!("Worker got msg {}: {:?}", id, msg);
+        match msg {
+          Intent::Add(x,y) => {
+            tx.send(EventMsg{id, msg:Event::Sum(x+y)})
+              .expect("I TOLD you you'd regret not writing a better error message someday.");
+          }} }} }}
+
+struct Master {
+  /// receives messages from the workers
+  rx: Receiver<EventMsg>,
+  /// send messages to myself (so we can put them back in the queue.
+  me: Sender<EventMsg>,
+  id: usize,
+  workers: Vec<Sender<IntentMsg>> }
+
+impl Master {
+  fn new()->Master {
+    let (me, rx) = channel::<EventMsg>();
+    let mut workers = vec![];
+    for _ in 0..2 {
+      let (tx, rx) = channel::<IntentMsg>();
+      let me_clone = me.clone();
+      thread::spawn(|| { work(me_clone, rx) });
+      workers.push(tx); }
+    Master{ me, rx, id:0, workers}}
+
+  fn run(&mut self, x:Intent)->Event {
+    let w:usize = self.id % self.workers.len();
+    self.workers[w].send(IntentMsg{ id:self.id, msg:x }).expect("ugh");
+    let mut result:Option<Event> = None;
+    while result.is_none() {
+      let EventMsg{id, msg} = self.rx.recv().expect("oh no!");
+      println!("Master got msg {}: {:?}", id, msg);
+      if id==self.id { result = Some(msg) }
+      else { self.me.send(EventMsg{id, msg}).expect(":/"); }}
+    self.id += 1;
+    result.expect("got invalid result?") } }
+
+
+
+
+// ----------------------------------------------------------------
+/// ThreadedBddWorker: a multi-threaded worker implementation
+// ----------------------------------------------------------------
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ThreadedBddWorker<S:BddState> { state:S }
+
+impl<S:BddState> BddWorker<S> for ThreadedBddWorker<S> {
+  fn new(nvars:usize)->Self { Self{ state: S::new(nvars) }}
+  fn new_with_state(state: S)->Self { Self{ state }}
+  fn nvars(&self)->usize { self.state.nvars() }
+  fn tup(&self, n:NID)->(NID,NID) { self.state.tup(n) }
+
+  /// if-then-else routine. all-purpose node creation/lookup tool.
+  fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
+    match ITE::norm(f,g,h) {
+      Norm::Nid(x) => x,
+      Norm::Ite(ite) => self.ite_norm(ite),
+      Norm::Not(ite) => not(self.ite_norm(ite)) }} }
+
+// !! everything above this line is exactly the same in SimpleBddWorker.
+// TODO: clean up duplicate code between Simple/Threaded Bdd Workers
+
+impl<S:BddState> ThreadedBddWorker<S> {
+  #[inline] fn ite_norm(&mut self, ite:ITE)->NID { I }
+}
+
+
 
 /// This is the top-level type for this crate.
 #[derive(Debug, Serialize, Deserialize)]
