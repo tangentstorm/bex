@@ -393,18 +393,25 @@ enum RMsg {
   /// resolved to a nid
   Nid(NID),
   /// work in progress
-  Wip(VID,Norm,Norm),
-  /// A new simple node
-  Smp(VID,HILO) }
+  Wip{v:VID, hi:Norm, lo:Norm, invert:bool}}
+
+/// Sender for QMsg
+type QTx = Sender<(QID, QMsg)>;
+/// Sender for RMsg
+type RTx = Sender<(QID, RMsg)>;
+/// Receiver for QMsg
+type QRx = Receiver<(QID, QMsg)>;
+/// Receiver for RMsg
+type RRx = Receiver<(QID, RMsg)>;
 
 /// Partial BDD node (for BddWIP).
 enum BddPart { HiPart(NID), LoPart(NID) }
 
 /// Work in progress for BddSwarm.
-struct BddWIP { v:VID, hi:Option<NID>, lo:Option<NID> }
+struct BddWIP { v:VID, hi:Option<NID>, lo:Option<NID>, invert: bool }
 impl BddWIP {
   /// construct a new WIP node that branches on the given variable
-  fn new(v:VID)->BddWIP { BddWIP{ v, hi:None, lo:None } }
+  fn new(v:VID, invert:bool)->BddWIP { BddWIP{ v, hi:None, lo:None, invert } }
 
   /// add a part to the WIP
   fn add_part(&mut self, part:BddPart) {
@@ -421,14 +428,14 @@ impl BddWIP {
 // ----------------------------------------------------------------
 #[derive(Debug)]
 struct BddSwarm <TState:BddState> {
-  /// counter for transactions
-  id: QID,
-  /// receives messages from the workers
-  rx: Receiver<(QID, RMsg)>,
+  /// counter for query ids.
+  qid: QID,
+  /// receives messages from the threads
+  rx: RRx,
   /// send messages to myself (so we can put them back in the queue.
-  me: Sender<(QID, RMsg)>,
-  /// array of receivers, corresponding to threads doing the work.
-  workers: Vec<Sender<(QID, QMsg)>>,
+  me: RTx,
+  /// QMsg senders for each thread, so we can send queries to work on.
+  swarm: Vec<QTx>,
   /// read-only version of the state shared by all threads.
   stable: TState,
   /// mutable version of the state kept by the main thread.
@@ -442,21 +449,14 @@ impl<TState:BddState> Serialize for BddSwarm<TState> {
     self.stable.serialize::<S>(ser) } }
 
 
-// TODO: clean up duplicate code between SimpleBddWorker and BddSwarm
-
 impl<S:BddState> BddWorker<S> for BddSwarm<S> {
 
   fn new(nvars:usize)->Self {
     let (me, rx) = channel::<(QID, RMsg)>();
-    let mut workers = vec![];
-    for _ in 0..2 {
-      let (tx, rx) = channel::<(QID, QMsg)>();
-      let me_clone = me.clone();
-      thread::spawn(|| { swarm_work(me_clone, rx) });
-      workers.push(tx); }
+    let swarm = vec![];
     let stable = S::new(nvars);
     let recent = S::new(nvars);
-    Self{ me, rx, id:0, workers, stable, recent }}
+    Self{ me, rx, qid:0, swarm, stable, recent }}
 
   fn new_with_state(state: S)->Self {
     println!("warning: new_with_state probably doesn't work so well yet..."); // TODO!
@@ -466,50 +466,89 @@ impl<S:BddState> BddWorker<S> for BddSwarm<S> {
     res }
 
   fn nvars(&self)->usize { self.recent.nvars() }
+
   fn tup(&self, n:NID)->(NID,NID) { self.recent.tup(n) }
 
-  /// if-then-else routine. all-purpose node creation/lookup tool.
-  fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
-    match ITE::norm(f,g,h) {
-      Norm::Nid(x) => x,
-      Norm::Ite(ite) => self.ite_norm(ite),
-      Norm::Not(ite) => not(self.ite_norm(ite)) }} }
+  /// all-purpose if-then-else node constructor. For the swarm implementation,
+  /// we push all the normalization and tree traversal work into the threads,
+  /// while this function puts all the parts together.
+  fn ite(&mut self, i:NID, t:NID, e:NID)->NID { self.run_swarm(i,t,e) } }
+
 
 impl<S:BddState> BddSwarm<S> {
-  #[inline] fn ite_norm(&mut self, ite:ITE)->NID { I }
 
-  fn run(&mut self, x:QMsg)->RMsg {
-    let w:usize = self.id % self.workers.len();
-    self.workers[w].send((self.id, x)).expect("ugh");
-    let mut result:Option<RMsg> = None;
+  fn run_swarm(&mut self, i:NID, t:NID, e:NID)->NID {
+    while self.swarm.len() < 2 { // TODO: configure threads here.
+      let (tx, rx) = channel::<(QID, QMsg)>();
+      let me_clone = self.me.clone();
+      // TODO: figure out how to make these two functions implement Sync:
+      // let mem = |v:VID, ite:ITE|->Option<NID> { self.stable.get_memo(v, &ite).map(|&n|n) };
+      // let tup = |n:NID|->(NID,NID) { ss.tup(n) };
+      let mem = |v:VID, ite:ITE|->Option<NID> { None };
+      let tup = |n:NID|->(NID,NID) { (n,n) };
+      thread::spawn(move || { swarm_loop(me_clone, rx, &mem, &tup) });
+      self.swarm.push(tx); }
+
+    // send the top-level request to some worker in the swarm:
+    let w:usize = self.qid % self.swarm.len();
+    self.swarm[w].send((self.qid, QMsg::ITE(i,t,e))).expect("failed sending query to swarm");
+
+    // each response can lead to up to two new ITE queries, and we'll relay those to
+    // other workers too, until we get back enough info to solve the original query.
+    let mut result:Option<NID> = None;
     while result.is_none() {
-      let (id, msg) = self.rx.recv().expect("oh no!");
-      println!("Master got msg {}: {:?}", id, msg);
-      if id==self.id { result = Some(msg) }
-      else { self.me.send((id, msg)).expect(":/"); }}
-    self.id += 1;
-    result.expect("got invalid result?") } }
+      let (qid, rmsg) = self.rx.recv().expect("failed to read RMsg from queue!");
+      println!("got RMsg {}: {:?}", qid, rmsg);
+      if qid == self.qid { result = Some(I) } // TODO: fix this
+      else { self.me.send((qid, rmsg)).unwrap(); }}
+    self.qid += 1;
+    result.unwrap() }}
 
-
-
-fn swarm_work(tx:Sender<(QID, RMsg)>, rx:Receiver<(QID, QMsg)>) {
-  loop {
-    match rx.recv().expect("aaaaah!") {
-      (id, msg) => {
-        println!("Worker got msg {}: {:?}", id, msg);
-        match msg {
-          QMsg::ITE(f,g,h) => {
-            tx.send((id, RMsg::Nid( I )))
-              .expect("I TOLD you you'd regret not writing a better error message someday.");
-          }} }} }}
 
-/// This is the top-level type for this crate.
+/// Code run by each thread in the swarm:
+
+type MemFn = Fn(VID,ITE)->Option<NID>;
+type TupFn = Fn(NID)->(NID,NID);
+
+fn swarm_loop(tx:RTx, rx:QRx, mem:&MemFn, tup:&TupFn) {
+
+  for (qid, qmsg) in rx.iter() {
+
+    macro_rules! yld { ($rmsg:expr) => {{ tx.send((qid, $rmsg)).unwrap(); }}}
+
+    let swarm_ite_norm = |ite:ITE, invert:bool| {
+      let ITE{i,t,e} = ite;
+      let (vi, vt, ve) = (var(i), var(t), var(e));
+      let v = min(vi, min(vt, ve));
+      match mem(v, ite) {
+        Some(n) => yld!(RMsg::Nid(if invert { not(n) } else { n })),
+        None => {
+          let (hi_i, lo_i) = if v == vi {tup(i)} else {(i,i)};
+          let (hi_t, lo_t) = if v == vt {tup(t)} else {(t,t)};
+          let (hi_e, lo_e) = if v == ve {tup(e)} else {(e,e)};
+
+          // now construct and normalize the queries for the hi/lo branches:
+          let hi = ITE::norm(hi_i, hi_t, hi_e);
+          let lo = ITE::norm(lo_i, lo_t, lo_e);
+          yld!(RMsg::Wip{ v, hi, lo, invert }) }}};
+
+    println!("--->   thread worker got qmsg {}: {:?}", qid, qmsg);
+    let QMsg::ITE(i0,t0,e0) = qmsg;
+
+    match ITE::norm(i0, t0, e0) {
+      Norm::Nid(x) => yld!(RMsg::Nid(x)),
+      Norm::Ite(ite) => swarm_ite_norm(ite, false),
+      Norm::Not(ite) => swarm_ite_norm(ite, true) }}}
+
+
+/// Finally, we put everything together. This is the top-level type for this crate.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BddBase<S:BddState, W:BddWorker<S>> {
   /// allows us to give user-friendly names to specific nodes in the base.
   pub tags: HashMap<String, NID>,
   phantom: PhantomData<S>,
   worker: W}
+
 
 impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
 
@@ -719,3 +758,28 @@ pub type BDDBase = BddBase<S,SimpleBddWorker<S>>;
   assert_eq!(not(v1), base.when_hi(2,x));
   assert_eq!(x,       base.when_lo(3,x));
   assert_eq!(x,       base.when_hi(3,x))}
+
+// swarm test suite
+type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddState>>;
+
+#[test] fn test_swarm_xor() {
+  let mut base = BddSwarmBase::new(3);
+  let (v1, v2) = (nv(1), nv(2));
+  let x = base.xor(v1, v2);
+  assert_eq!(v2,      base.when_lo(1,x));
+  assert_eq!(not(v2), base.when_hi(1,x));
+  assert_eq!(v1,      base.when_lo(2,x));
+  assert_eq!(not(v1), base.when_hi(2,x));
+  assert_eq!(x,       base.when_lo(3,x));
+  assert_eq!(x,       base.when_hi(3,x))}
+
+#[test] fn test_swarm_and() {
+  let mut base = BddSwarmBase::new(3);
+  let (v1, v2) = (nv(1), nv(2));
+  let a = base.and(v1, v2);
+  assert_eq!(O,  base.when_lo(1,a));
+  assert_eq!(v2, base.when_hi(1,a));
+  assert_eq!(O,  base.when_lo(2,a));
+  assert_eq!(v1, base.when_hi(2,a));
+  assert_eq!(a,  base.when_hi(3,a));
+  assert_eq!(a,  base.when_lo(3,a))}
