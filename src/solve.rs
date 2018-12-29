@@ -6,27 +6,31 @@ use base::{Op,Base,TBase,VID,NID};
 
 pub trait Progress {
   fn on_start(&self);
-  fn on_step(&self, base:&Base, bdds: &mut bdd::BDDBase, step:u32, secs:u64,
-             oldtop:bdd::NID, newtop:bdd::NID);
-  fn on_done(&self, base:&Base, bdds: &mut bdd::BDDBase, newtop:bdd::NID); }
+  fn on_step<X,Y>(&self, base:&Base, bdds: &mut bdd::BddBase<X,Y>, step:u32, secs:u64,
+             oldtop:bdd::NID, newtop:bdd::NID)
+     where X: bdd::BddState, Y: bdd::BddWorker<X>;
+  fn on_done<X,Y>(&self, base:&Base, bdds: &mut bdd::BddBase<X,Y>, newtop:bdd::NID)
+     where X: bdd::BddState, Y: bdd::BddWorker<X>; }
 
 pub struct ProgressReport<'a> {
   pub save_dot: bool,
   pub save_bdd: bool,
   pub prefix: &'a str,
   pub show_result: bool }
-
+
 impl<'a> Progress for ProgressReport<'a> {
   fn on_start(&self) { } //println!("step, seconds, topnid, oldtopvar, newtopvar"); }
-  fn on_step(&self, base:&Base, bdds: &mut bdd::BDDBase, step:u32, secs:u64,
-             oldtop:bdd::NID, newtop:bdd::NID) {
+  fn on_step<X,Y>(&self, base:&Base, bdds: &mut bdd::BddBase<X,Y>, step:u32, secs:u64,
+             oldtop:bdd::NID, newtop:bdd::NID)
+  where X: bdd::BddState, Y: bdd::BddWorker<X> {
     println!("{:4}, {:4}, {:4}→{:3?}, {:8}",
              step, secs, oldtop, base[bdd::var(oldtop) as usize], newtop);
     if step&7 == 0 { // every so often, save the state
       // !! TODO: expected number of steps only works if sort_by_cost was called.
       { let expected_steps = base.bits.len() as f64;
         let percent_done = 100.0 * (step as f64) / expected_steps as f64;
-        println!("\n# newtop: {}  step:{}/{} ({:.2}%)", newtop, step, base.bits.len(), percent_done); }
+        println!("\n# newtop: {}  step:{}/{} ({:.2}%)",
+                 newtop, step, base.bits.len(), percent_done); }
       if self.save_bdd {
         bdds.tag("top".to_string(), newtop); bdds.tag("step".to_string(), bdd::nv(step));
         bdds.save(format!("{}-{:04}.bdd", self.prefix, step).as_str())
@@ -36,7 +40,8 @@ impl<'a> Progress for ProgressReport<'a> {
     { // on really special occasions, output a diagram
       bdds.save_dot(newtop, format!("{}-{:04}.dot", self.prefix, step).as_str()); } }
 
-  fn on_done(&self, _base:&Base, bdds: &mut bdd::BDDBase, newtop:bdd::NID) {
+  fn on_done<X,Y>(&self, _base:&Base, bdds: &mut bdd::BddBase<X,Y>, newtop:bdd::NID)
+  where X: bdd::BddState, Y: bdd::BddWorker<X> {
     if self.show_result {
       bdds.show_named(newtop, format!("{}-final", self.prefix).as_str()); }
     else {
@@ -71,7 +76,8 @@ pub fn sort_by_cost(base:&Base, top:NID)->(Base,NID) {
 
 
 
-pub fn bdd_refine<P:Progress>(bdds: &mut bdd::BDDBase, base:&Base, end:bdd::NID, pr:P) {
+pub fn bdd_refine<X,Y,P:Progress>(bdds: &mut bdd::BddBase<X,Y>, base:&Base, end:bdd::NID, pr:P)
+where X: bdd::BddState, Y: bdd::BddWorker<X> {
   let mut topnid = end;
   // step is just a number. we're packing it in a nid as a kludge
   let mut step = bdd::var(bdds.get(&"step".to_string()).unwrap_or(bdd::nv(0)));
@@ -94,7 +100,8 @@ fn convert_nid(base:&Base, n:base::NID)->bdd::NID {
     Op::Var(x) => bdd::nvr(x as bdd::VID),
     _ => bdd::nv(n as u32) }}
 
-fn bdd_refine_one(bdds: &mut bdd::BDDBase, base:&Base, oldtop:bdd::NID)->bdd::NID {
+fn bdd_refine_one<X,Y>(bdds: &mut bdd::BddBase<X,Y>, base:&Base, oldtop:bdd::NID)->bdd::NID
+where X: bdd::BddState, Y: bdd::BddWorker<X> {
   let otv = bdd::var(oldtop);
   let op = base[otv as usize];
   let v = |x0:base::NID|->bdd::NID { convert_nid(base, x0) };
