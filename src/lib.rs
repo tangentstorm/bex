@@ -1,10 +1,12 @@
 //! A crate for working with boolean expressions.
 
+#[macro_use] extern crate log;
 extern crate bincode;
 #[macro_use] extern crate serde_derive;
 extern crate serde;
 extern crate fnv;
 extern crate hashbrown;
+extern crate simplelog;
 
 /// The core library, and support for boolean expressions as abstract syntax trees.
 pub mod base;
