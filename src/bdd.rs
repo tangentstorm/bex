@@ -15,6 +15,7 @@ use std::thread;
 use serde::Serialize;
 use bincode;
 use io;
+
 
 // core data types
 
@@ -117,6 +118,12 @@ impl fmt::Debug for NID { // for test suite output
 /// part represents a node, not a variable
 #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
 pub struct ITE {i:NID, t:NID, e:NID}
+impl ITE {
+  /// shorthand constructor
+  pub fn new (i:NID, t:NID, e:NID)-> ITE { ITE { i:i, t:t, e:e } }
+  pub fn min_var(&self)->VID { return min(var(self.i), min(var(self.t), var(self.e))) }
+  // NOTE: there is a separet impl for norm(), below
+}
 
 /// This represents the result of normalizing an ITE. There are three conditions:
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -135,9 +142,6 @@ pub type BDDHashMap<K,V> = hashbrown::hash_map::HashMap<K,V>;
 
 
 impl ITE {
-  /// shorthand constructor
-  pub fn new (i:NID, t:NID, e:NID)-> ITE { ITE { i:i, t:t, e:e } }
-
   /// choose normal form for writing this triple. Algorithm based on:
   /// "Efficient Implementation of a BDD Package"
   /// http://www.cs.cmu.edu/~emc/15817-f08/bryant-bdd-1991.pdf
@@ -220,7 +224,7 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
   #[inline] fn get_hilo(&self, n:NID)->HILO;
   /// load the memoized NID if it exists
   #[inline] fn get_memo<'a>(&'a self, v:VID, ite:&ITE) -> Option<&'a NID>;
-  #[inline] fn put_xmemo(&mut self, v:VID, ite:ITE, new_nid:NID);
+  #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID);
   #[inline] fn get_simple_node<'a>(&'a self, v:VID, hilo:HILO)-> Option<&'a NID>;
   #[inline] fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID; }
 
@@ -272,8 +276,9 @@ impl BddState for SafeVarKeyedBddState {
       self.vmemo[rvar(ite.i) as usize].get(&HILO::new(ite.t,ite.e)) }
     else { self.xmemo.as_slice().get(rv(v))?.get(&ite) }}
 
-  #[inline] fn put_xmemo(&mut self, v:VID, ite:ITE, new_nid:NID) {
-      self.xmemo[rv(v)].insert(ite, new_nid); }
+  #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID) {
+    let v = ite.min_var();
+    self.xmemo[rv(v)].insert(ite, new_nid); }
 
   #[inline] fn get_simple_node<'a>(&'a self, v:VID, hilo:HILO)-> Option<&'a NID> {
     self.vmemo[rv(v)].get(&hilo) }
@@ -309,8 +314,9 @@ impl BddState for UnsafeVarKeyedBddState {
       self.vmemo.as_slice().get_unchecked(rv(rvar(ite.i))).get(&HILO::new(ite.t,ite.e)) }
              else { self.xmemo.as_slice().get_unchecked(rv(v)).get(&ite) }}}
 
-  #[inline] fn put_xmemo(&mut self, v:VID, ite:ITE, new_nid:NID) { unsafe {
-      self.xmemo.as_mut_slice().get_unchecked_mut(rv(v)).insert(ite, new_nid); }}
+  #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID) { unsafe {
+    let v = ite.min_var();
+    self.xmemo.as_mut_slice().get_unchecked_mut(rv(v)).insert(ite, new_nid); }}
 
   #[inline] fn get_simple_node<'a>(&'a self, v:VID, hilo:HILO)-> Option<&'a NID> {
     unsafe { self.vmemo.as_slice().get_unchecked(rv(v)).get(&hilo) }}
@@ -375,7 +381,7 @@ impl<S:BddState> SimpleBddWorker<S> {
           let lo = self.ite(lo_i, lo_t, lo_e);
           if hi == lo {hi} else { self.state.simple_node(v, HILO::new(hi,lo)) }};
         // now add the triple to the generalized memo store
-        if !is_var(i) { self.state.put_xmemo(v, ite, new_nid) }
+        if !is_var(i) { self.state.put_xmemo(ite, new_nid) }
         new_nid }}} }
 
 // ----------------------------------------------------------------
@@ -385,8 +391,13 @@ impl<S:BddState> SimpleBddWorker<S> {
 type QID = usize;
 
 /// Query message for BddSwarm.
-#[derive(PartialEq,Debug)]
+#[derive(PartialEq)]
 enum QMsg<S:BddState> { Ite(QID, ITE), Cache(Arc<S>) }
+impl<S:BddState> std::fmt::Debug for QMsg<S> {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    match self {
+      QMsg::Ite(qid, ite) => { write!(f, "Ite(q{}, {:?})", qid, ite) }
+      QMsg::Cache(_) => { write!(f, "QMsg::Cache") } } }}
 
 /// Response message for BddSwarm.
 #[derive(PartialEq,Debug)]
@@ -453,8 +464,11 @@ pub struct BddSwarm <S:BddState+'static> {
   recent: S,
 
   // !! maybe these should be moved to a different struct, since they're specific to a run?
+
+  /// track new ites that aren't in the cache, so we can memoize once we solve them.
+  ites: Vec<ITE>,
   /// stores work in progress during a run:
-  tasks:Vec<BddWIP>,
+  wip:Vec<BddWIP>,
   /// track ongoing tasks so we don't duplicate work in progress:
   qid: BDDHashMap<ITE, QID>,
   /// stores dependencies during a run. The bool specifies whether to invert.
@@ -475,7 +489,8 @@ impl<S:BddState> BddWorker<S> for BddSwarm<S> {
     let swarm = vec![];
     let stable = Arc::new(S::new(nvars));
     let recent = S::new(nvars);
-    Self{ me, rx, swarm, stable, recent, deps:vec![], tasks:vec![], qid:BDDHashMap::new() }}
+    Self{ me, rx, swarm, stable, recent,
+          ites:vec![], deps:vec![], wip:vec![], qid:BDDHashMap::new() }}
 
   fn new_with_state(state: S)->Self {
     println!("warning: new_with_state probably doesn't work so well yet..."); // TODO!
@@ -502,59 +517,61 @@ impl<S:BddState> BddSwarm<S> {
   fn add_task(&mut self, opt_dep:Option<BddDep>, ite:ITE) {
     let (qid, is_dup) = {
       if let Some(&dup) = self.qid.get(&ite) { (dup, true) }
-      else { (self.tasks.len(), false) }};
+      else { (self.wip.len(), false) }};
     if is_dup {
       if let Some(dep) = opt_dep {
-        //println!("*** dup of task: {} invert: {}", qid, dep.invert);
-        if let BddWIP::Done(nid) = self.tasks[qid] { self.resolve_nid(dep.qid, nid) }
+        trace!("*** dup of task: {} invert: {}", qid, dep.invert);
+        if let BddWIP::Done(nid) = self.wip[qid] { self.resolve_nid(dep.qid, nid) }
         else { self.deps[qid].push(dep) }}
       else { panic!("Got duplicate request, but no dep. This should never happen!") }}
     else {
-      self.qid.insert(ite, qid);
+      self.qid.insert(ite, qid); self.ites.push(ite);
       let w:usize = qid % self.swarm.len();
       self.swarm[w].send(QMsg::Ite(qid, ite)).expect("send to swarm failed");
-      let ITE{i,t,e} = ite; let v = min(var(i), min(var(t), var(e)));
-      self.tasks.push(BddWIP::new(v));
+      self.wip.push(BddWIP::new(ite.min_var()));
       if let Some(dep) = opt_dep {
-        //println!("*** adding task #{}: {:?} invert:{}", qid, ite, dep.invert);
+        trace!("*** adding task #{}: {:?} invert:{}", qid, ite, dep.invert);
         self.deps.push(vec![dep]) }
       else {
         if qid == 0 {
-          //println!("*** adding task #{}: {:?} (no deps!)", qid, ite);
+          trace!("*** adding task #{}: {:?} (no deps!)", qid, ite);
           self.deps.push(vec![]) }
         else { panic!("non 0 qid with no deps!?") }}}}
 
   /// called whenever the wip resolves to a single nid
   fn resolve_nid(&mut self, qid:QID, nid:NID) {
-    if let BddWIP::Parts(_) = self.tasks[qid] {
-      //println!("resolved_nid: q{}=>{}. deps: {:?}", qid, nid, self.deps[qid].clone());
-      self.tasks[qid] = BddWIP::Done(nid); }
+    if let BddWIP::Parts(_) = self.wip[qid] {
+      trace!("resolved_nid: q{}=>{}. deps: {:?}", qid, nid, self.deps[qid].clone());
+      self.wip[qid] = BddWIP::Done(nid);
+      let ite = self.ites[qid];
+      self.recent.put_xmemo(ite, nid); }
     for &dep in self.deps[qid].clone().iter() {
       self.resolve_part(dep.qid, dep.part, nid, dep.invert) }
     if qid == 0 { self.me.send((0, RMsg::Ret(nid))).expect("failed to send Ret"); }}
 
   /// called whenever the wip resolves to a new simple (v/hi/lo) node.
   fn resolve_vhl(&mut self, qid:QID, v:VID, hilo:HILO, invert:bool) {
-    let nid = self.recent.simple_node(v, hilo);
-    //println!("resolved vhl: q{}=>{}. #deps: {}", qid, nid, self.deps[qid].len());
-    self.resolve_nid(qid, if invert { not(nid) } else { nid }); }
+    let nid0 = self.recent.simple_node(v, hilo);
+    let nid = if invert { not(nid0) } else { nid0 };
+    trace!("resolved vhl: q{}=>{}. #deps: {}", qid, nid, self.deps[qid].len());
+    self.resolve_nid(qid, nid); }
 
   fn resolve_part(&mut self, qid:usize, part:BddPart, nid0:NID, invert:bool) {
-    if let BddWIP::Parts(ref mut parts) = self.tasks[qid] {
+    if let BddWIP::Parts(ref mut parts) = self.wip[qid] {
       let nid = if invert { not(nid0) } else { nid0 };
-      // println!("   !! set {:?} for q{} to {}", part, qid, nid);
+      trace!("   !! set {:?} for q{} to {}", part, qid, nid);
       if part == BddPart::HiPart { parts.hi = Some(nid) } else { parts.lo = Some(nid) }}
-    else { println!("???? got a part for a qid #{} that was already done!", qid) }
-    if let BddWIP::Parts(wip) = self.tasks[qid] {
-      if let Some(hilo) = wip.hilo() { self.resolve_vhl(qid, wip.v, hilo, invert) }}}
+    else { warn!("???? got a part for a qid #{} that was already done!", qid) }
+    if let BddWIP::Parts(wip) = self.wip[qid] {
+      if let Some(hilo) = wip.hilo() { self.resolve_vhl(qid, wip.v, hilo, false) }}}
       // else { println!("got a part for q{} but it's still not done", qid);
-      //        for (qid, task) in self.tasks.iter().by_ref().enumerate() {
+      //        for (qid, task) in self.wip.iter().by_ref().enumerate() {
       //          println!("    q{} : {:?} {:?}", qid, task, self.deps[qid]); }} }}
 
 
   /// initialization logic for running the swarm. spawns threads and copies latest cache.
   fn init_swarm(&mut self) {
-    self.tasks = vec![]; self.deps = vec![]; self.qid = BDDHashMap::new();
+    self.wip = vec![]; self.ites = vec![]; self.deps = vec![]; self.qid = BDDHashMap::new();
     // wipe out and replace the channels so un-necessary work from last iteration
     // (that was still going on when we returned a value) gets ignored..
     let (me, rx) = channel::<(QID, RMsg)>(); self.me = me; self.rx = rx;
@@ -568,46 +585,56 @@ impl<S:BddState> BddSwarm<S> {
     self.stable = Arc::new(self.recent.clone());
     for tx in self.swarm.iter() {
       tx.send(QMsg::Cache(self.stable.clone())).expect("failed to send QMsg::Cache"); }}
-
+
   /// distrubutes the standard ite() operatation across a swarm of threads
   fn run_swarm(&mut self, i:NID, t:NID, e:NID)->NID {
-    self.init_swarm();
-    self.add_task(None, ITE{i,t,e});
-    let mut result:Option<NID> = None;
-    // each response can lead to up to two new ITE queries, and we'll relay those to
-    // other workers too, until we get back enough info to solve the original query.
-    while result.is_none() {
-      let (qid, rmsg) = self.rx.recv().expect("failed to read RMsg from queue!");
-      //println!("===> run_swarm got RMsg {}: {:?}", qid, rmsg);
-      match rmsg {
-        RMsg::Nid(nid) =>  { self.resolve_nid(qid, nid); }
-        RMsg::Smp{v,hi,lo,invert} => { self.resolve_vhl(qid, v, HILO{hi, lo}, invert); }
-        RMsg::Wip{v:_,hi,lo,invert} => {
-          // by the time we get here, the task for this node was already created.
-          // (add_task already filled in the v for us, so we don't need it.)
-          macro_rules! handle_part { ($xx:ident, $part:expr) => {
-            match $xx {
-              Norm::Nid(nid) => self.resolve_part(qid, $part, nid, invert),
-              Norm::Ite(ite) => self.add_task(Some(BddDep::new(qid, $part,  invert)), ite),
-              Norm::Not(ite) => self.add_task(Some(BddDep::new(qid, $part, !invert)), ite) }}}
-          handle_part!(hi, BddPart::HiPart); handle_part!(lo, BddPart::LoPart); }
-        RMsg::Ret(n) => { result = Some(n) }}}
-    // TODO: at some point, we should kill all the child threads.
-    result.unwrap() }}
+    macro_rules! swarm_ite { ($ite:expr) => {{
+      self.init_swarm(); self.add_task(None, $ite);
+      let mut result:Option<NID> = None;
+      // each response can lead to up to two new ITE queries, and we'll relay those to
+      // other workers too, until we get back enough info to solve the original query.
+      while result.is_none() {
+        let (qid, rmsg) = self.rx.recv().expect("failed to read RMsg from queue!");
+        trace!("===> run_swarm got RMsg {}: {:?}", qid, rmsg);
+        match rmsg {
+          RMsg::Nid(nid) =>  { self.resolve_nid(qid, nid); }
+          RMsg::Smp{v,hi,lo,invert} => { self.resolve_vhl(qid, v, HILO{hi, lo}, invert); }
+          RMsg::Wip{v:_,hi,lo,invert} => {
+            // by the time we get here, the task for this node was already created.
+            // (add_task already filled in the v for us, so we don't need it.)
+            macro_rules! handle_part { ($xx:ident, $part:expr) => {
+              match $xx {
+                Norm::Nid(nid) => self.resolve_part(qid, $part, nid, invert),
+                Norm::Ite(ite) => self.add_task(Some(BddDep::new(qid, $part,  invert)), ite),
+                Norm::Not(ite) => self.add_task(Some(BddDep::new(qid, $part, !invert)), ite) }}}
+            handle_part!(hi, BddPart::HiPart); handle_part!(lo, BddPart::LoPart); }
+          RMsg::Ret(n) => { result = Some(n) }}}
+      result.unwrap() }}}
 
+    // TODO: at some point, we should kill all the child threads.
+
+    match ITE::norm(i,t,e) {
+      Norm::Nid(n) => n,
+      Norm::Ite(ite) => { swarm_ite!(ite) }
+      Norm::Not(ite) => { not(swarm_ite!(ite)) }}}
+
+} // end bddswarm
 
 /// Code run by each thread in the swarm:
 
 fn swarm_loop<S:BddState>(tx:RTx, rx:QRx<S>, mut state:Arc<S>) {
-
   for qmsg in rx.iter() {
     match qmsg {
       QMsg::Cache(s) => { state = s }
       QMsg::Ite(qid, ITE{i:i0,t:t0,e:e0}) => {
-
-        // println!("got qmsg with qid = {}", qid);
+        trace!("got qmsg with qid = {}", qid);
 
         macro_rules! yld { ($rmsg:expr) => { if tx.send((qid, $rmsg)).is_err() { break } }}
+
+        macro_rules! smp_norm { ($v:expr, $hh:expr, $ll:expr, $inv:expr) => {{
+          if let Some(&n) = state.get_simple_node($v,HILO{hi:$hh,lo:$ll}) {
+            yld!(RMsg::Nid(if $inv { not(n) } else { n })) }
+          else { yld!(RMsg::Smp{ v:$v, hi:$hh, lo:$ll, invert:$inv }) }}}}
 
         macro_rules! swarm_ite_norm { ($ite:expr, $invert:expr)=> {{
           let ITE{i,t,e} = $ite; let invert = $invert;
@@ -626,12 +653,13 @@ fn swarm_loop<S:BddState>(tx:RTx, rx:QRx<S>, mut state:Arc<S>) {
 
               // if they're both simple nids, see if the memo already exists.
               if let (Norm::Nid(hn), Norm::Nid(ln)) = (hi,lo) {
-                if let Some(&n) = state.get_simple_node(v,HILO{hi:hn,lo:ln}) {
-                  yld!(RMsg::Nid(if invert { not(n) } else { n })) }
-                else { yld!(RMsg::Smp{ v, hi:hn, lo:ln, invert }) }}
-              else { yld!(RMsg::Wip{ v, hi, lo, invert }) }}}}}}
+                match ITE::norm(nv(v), hn, ln) {
+                  Norm::Nid(n) => {yld!(RMsg::Nid(if invert { not(n) } else { n }))}
+                  Norm::Ite(ITE{i:vv,t:hh,e:ll}) => smp_norm!(var(vv),hh,ll, invert),
+                  Norm::Not(ITE{i:vv,t:hh,e:ll}) => smp_norm!(var(vv),hh,ll,!invert)}}
+              else { yld!(RMsg::Wip{ v, hi, lo, invert }) }}} }}}
 
-        // println!("--->   thread worker got qmsg {}: {:?}", qid, qmsg);
+        trace!("--->   thread worker got qmsg {}: {:?}", qid, qmsg);
         match ITE::norm(i0, t0, e0) {
           Norm::Nid(x) => yld!(RMsg::Nid(x)),
           Norm::Ite(ite) => swarm_ite_norm!(ite, false),
@@ -903,17 +931,18 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
 
 /// slightly harder test case that requires ite() to recurse
 #[test] fn test_swarm_ite() {
+  //use simplelog::*;  TermLogger::init(LevelFilter::Trace, Config::default()).unwrap();
   let mut base = BddSwarmBase::new(3);
   let (x0,x1,x2) = (nv(0), nv(1), nv(2));
   assert_eq!(vec![0,0,0,0,1,1,1,1], base.tt(x0));
   assert_eq!(vec![0,0,1,1,0,0,1,1], base.tt(x1));
   assert_eq!(vec![0,1,0,1,0,1,0,1], base.tt(x2));
-  println!("\n----| x = x0 xor x1 |----");
+  debug!("\n----| x = x0 xor x1 |----");
   let x = base.xor(x0, x1);
   assert_eq!(vec![0,0,1,1,1,1,0,0], base.tt(x));
-  println!("\n----| a = x1 and x2 |----");
+  debug!("\n----| a = x1 and x2 |----");
   let a = base.and(x1, x2);
   assert_eq!(vec![0,0,0,1,0,0,0,1], base.tt(a));
-  println!("\n----| x ? a : !a |----");
+  debug!("\n----| x ? a : !a |----");
   let i = base.ite(x, a, not(a));
   assert_eq!(vec![1,1,0,1,0,0,1,0], base.tt(i)); }
