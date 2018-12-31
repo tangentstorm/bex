@@ -519,14 +519,15 @@ impl<S:BddState> BddSwarm<S> {
   /// add the dependencies to the original task (unless it's already finished,
   /// in which case we resolve immediately))
   fn add_task(&mut self, opt_dep:Option<BddDep>, ite:ITE) {
+    trace!("add_task({:?}, {:?})", opt_dep, ite);
     let (qid, is_dup) = {
       if let Some(&dup) = self.qid.get(&ite) { (dup, true) }
       else { (self.wip.len(), false) }};
     if is_dup {
       if let Some(dep) = opt_dep {
-        trace!("*** dup of task: {} invert: {}", qid, dep.invert);
+        trace!("*** task {:?} is dup of q{} invert: {}", ite, qid, dep.invert);
         if let BddWIP::Done(nid) = self.wip[qid] {
-          self.resolve_nid(dep.qid, if dep.invert { not(nid) } else {nid}) }
+          self.resolve_part(dep.qid, dep.part, nid, dep.invert); }
         else { self.deps[qid].push(dep) }}
       else { panic!("Got duplicate request, but no dep. This should never happen!") }}
     else {
@@ -545,8 +546,9 @@ impl<S:BddState> BddSwarm<S> {
 
   /// called whenever the wip resolves to a single nid
   fn resolve_nid(&mut self, qid:QID, nid:NID) {
+    trace!("resolve_nid(q{}, {})", qid, nid);
     if let BddWIP::Done(old) = self.wip[qid] {
-      warn!("resolving already resolved nid");
+      warn!("resolving already resolved nid for q{}", qid);
       assert_eq!(old, nid, "old and new resolutions didn't match!") }
     else {
       trace!("resolved_nid: q{}=>{}. deps: {:?}", qid, nid, self.deps[qid].clone());
@@ -559,10 +561,11 @@ impl<S:BddState> BddSwarm<S> {
 
   /// called whenever the wip resolves to a new simple (v/hi/lo) node.
   fn resolve_vhl(&mut self, qid:QID, v:VID, hilo:HILO, invert:bool) {
+    trace!("resolve_vhl(q{}, v{}, {:?}, invert:{}", qid, v, hilo, invert);
     let HILO{hi:h0,lo:l0} = hilo;
     // we apply invert first so it normalizes correctly.
-    let (hi,lo) = if invert { (not(h0), not(l0)) } else { (h0, l0) };
-    let nid = match ITE::norm(nv(v), hi, lo) {
+    let (h1,l1) = if invert { (not(h0), not(l0)) } else { (h0, l0) };
+    let nid = match ITE::norm(nv(v), h1, l1) {
       Norm::Nid(n) => n,
       Norm::Ite(ITE{i:vv,t:hi,e:lo}) =>     self.recent.simple_node(var(vv), HILO{hi,lo}),
       Norm::Not(ITE{i:vv,t:hi,e:lo}) => not(self.recent.simple_node(var(vv), HILO{hi,lo})) };
