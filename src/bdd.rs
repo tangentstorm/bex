@@ -405,11 +405,19 @@ enum RMsg {
   /// resolved to a nid
   Nid(NID),
   /// a simple node needs to be constructed:
-  Smp{v:VID, hi:NID, lo:NID, invert:bool},
+  Vhl{v:VID, hi:NID, lo:NID, invert:bool},
   /// other work in progress
   Wip{v:VID, hi:Norm, lo:Norm, invert:bool},
   /// We've solved the whole problem, so exit the loop and return this nid.
   Ret(NID)}
+
+fn rmsg_not(rmsg:RMsg)->RMsg {
+  match rmsg {
+    RMsg::Nid(n) => RMsg::Nid(not(n)),
+    RMsg::Vhl{v,hi,lo,invert} => RMsg::Vhl{v,hi,lo,invert:!invert},
+    RMsg::Wip{v,hi,lo,invert} => RMsg::Wip{v,hi,lo,invert:!invert},
+    RMsg::Ret(n) => RMsg::Ret(not(n))}}
+
 
 /// Sender for QMsg
 type QTx<S> = Sender<QMsg<S>>;
@@ -426,18 +434,14 @@ enum BddPart { HiPart, LoPart }
 
 /// Work in progress for BddSwarm.
 #[derive(PartialEq,Debug,Copy,Clone)]
-struct BddParts{ v:VID, hi:Option<NID>, lo:Option<NID>}
+struct BddParts{ v:VID, hi:Option<NID>, lo:Option<NID>, invert:bool}
 impl BddParts {
-  // fn is_complete(&self)->bool { self.hi.is_some() && self.lo.is_some() }
   fn hilo(&self)->Option<HILO> {
     if let (Some(hi), Some(lo)) = (self.hi, self.lo) { Some(HILO{hi,lo}) } else { None }}}
 
 /// Work in progress for BddSwarm.
-#[derive(Debug,Copy,Clone)]
-enum BddWIP { Done(NID), Parts(BddParts) }
-impl BddWIP {
-  /// construct a new WIP node that branches on the given variable
-  fn new(v:VID)->BddWIP { BddWIP::Parts(BddParts{ v, hi:None, lo:None }) }}
+#[derive(PartialEq,Debug,Copy,Clone)]
+enum BddWIP { Fresh, Done(NID), Parts(BddParts) }
 
 /// Helps track dependencies between WIP tasks
 #[derive(Debug,Copy,Clone)]
@@ -529,7 +533,7 @@ impl<S:BddState> BddSwarm<S> {
       self.qid.insert(ite, qid); self.ites.push(ite);
       let w:usize = qid % self.swarm.len();
       self.swarm[w].send(QMsg::Ite(qid, ite)).expect("send to swarm failed");
-      self.wip.push(BddWIP::new(ite.min_var()));
+      self.wip.push(BddWIP::Fresh);
       if let Some(dep) = opt_dep {
         trace!("*** added task #{}: {:?} invert:{}", qid, ite, dep.invert);
         self.deps.push(vec![dep]) }
@@ -541,23 +545,27 @@ impl<S:BddState> BddSwarm<S> {
 
   /// called whenever the wip resolves to a single nid
   fn resolve_nid(&mut self, qid:QID, nid:NID) {
-    if let BddWIP::Parts(_) = self.wip[qid] {
+    if let BddWIP::Done(old) = self.wip[qid] {
+      warn!("resolving already resolved nid");
+      assert_eq!(old, nid, "old and new resolutions didn't match!") }
+    else {
       trace!("resolved_nid: q{}=>{}. deps: {:?}", qid, nid, self.deps[qid].clone());
       self.wip[qid] = BddWIP::Done(nid);
       let ite = self.ites[qid];
-      self.recent.put_xmemo(ite, nid); }
-    for &dep in self.deps[qid].clone().iter() {
-      self.resolve_part(dep.qid, dep.part, nid, dep.invert) }
-    if qid == 0 { self.me.send((0, RMsg::Ret(nid))).expect("failed to send Ret"); }}
+      self.recent.put_xmemo(ite, nid);
+      for &dep in self.deps[qid].clone().iter() {
+        self.resolve_part(dep.qid, dep.part, nid, dep.invert) }
+      if qid == 0 { self.me.send((0, RMsg::Ret(nid))).expect("failed to send Ret"); }}}
 
   /// called whenever the wip resolves to a new simple (v/hi/lo) node.
   fn resolve_vhl(&mut self, qid:QID, v:VID, hilo:HILO, invert:bool) {
-    let HILO{hi,lo} = hilo;
-    let nid0 = match ITE::norm(nv(v), hi, lo) {
+    let HILO{hi:h0,lo:l0} = hilo;
+    // we apply invert first so it normalizes correctly.
+    let (hi,lo) = if invert { (not(h0), not(l0)) } else { (h0, l0) };
+    let nid = match ITE::norm(nv(v), hi, lo) {
       Norm::Nid(n) => n,
       Norm::Ite(ITE{i:vv,t:hi,e:lo}) =>     self.recent.simple_node(var(vv), HILO{hi,lo}),
       Norm::Not(ITE{i:vv,t:hi,e:lo}) => not(self.recent.simple_node(var(vv), HILO{hi,lo})) };
-    let nid = if invert { not(nid0) } else { nid0 };
     trace!("resolved vhl: q{}=>{}. #deps: {}", qid, nid, self.deps[qid].len());
     self.resolve_nid(qid, nid); }
 
@@ -568,8 +576,7 @@ impl<S:BddState> BddSwarm<S> {
       if part == BddPart::HiPart { parts.hi = Some(nid) } else { parts.lo = Some(nid) }}
     else { warn!("???? got a part for a qid #{} that was already done!", qid) }
     if let BddWIP::Parts(wip) = self.wip[qid] {
-      // !! invert=false here because the invert param was for the whole thing
-      if let Some(hilo) = wip.hilo() { self.resolve_vhl(qid, wip.v, hilo, false) }}}
+      if let Some(hilo) = wip.hilo() { self.resolve_vhl(qid, wip.v, hilo, wip.invert) }}}
       // else { println!("got a part for q{} but it's still not done", qid);
       //        for (qid, task) in self.wip.iter().by_ref().enumerate() {
       //          println!("    q{} : {:?} {:?}", qid, task, self.deps[qid]); }} }}
@@ -603,15 +610,17 @@ impl<S:BddState> BddSwarm<S> {
         trace!("===> run_swarm got RMsg {}: {:?}", qid, rmsg);
         match rmsg {
           RMsg::Nid(nid) =>  { self.resolve_nid(qid, nid); }
-          RMsg::Smp{v,hi,lo,invert} => { self.resolve_vhl(qid, v, HILO{hi, lo}, invert); }
-          RMsg::Wip{v:_,hi,lo,invert} => {
+          RMsg::Vhl{v,hi,lo,invert} => { self.resolve_vhl(qid, v, HILO{hi, lo}, invert); }
+          RMsg::Wip{v,hi,lo,invert} => {
             // by the time we get here, the task for this node was already created.
             // (add_task already filled in the v for us, so we don't need it.)
+            assert_eq!(self.wip[qid], BddWIP::Fresh);
+            self.wip[qid] = BddWIP::Parts(BddParts{ v, hi:None, lo:None, invert });
             macro_rules! handle_part { ($xx:ident, $part:expr) => {
               match $xx {
-                Norm::Nid(nid) => self.resolve_part(qid, $part, nid, invert),
-                Norm::Ite(ite) => self.add_task(Some(BddDep::new(qid, $part,  invert)), ite),
-                Norm::Not(ite) => self.add_task(Some(BddDep::new(qid, $part, !invert)), ite)}}}
+                Norm::Nid(nid) => self.resolve_part(qid, $part, nid, false),
+                Norm::Ite(ite) => self.add_task(Some(BddDep::new(qid, $part, false)), ite),
+                Norm::Not(ite) => self.add_task(Some(BddDep::new(qid, $part, true)), ite)}}}
             handle_part!(hi, BddPart::HiPart); handle_part!(lo, BddPart::LoPart); }
           RMsg::Ret(n) => { result = Some(n) }}}
       result.unwrap() }}}
@@ -630,24 +639,21 @@ fn swarm_ite<S:BddState>(state: &Arc<S>, ite0:ITE)->RMsg {
   let ITE { i, t, e } = ite0;
   match ITE::norm(i,t,e) {
       Norm::Nid(n) => RMsg::Nid(n),
-      Norm::Ite(ite) => swarm_ite_norm(state, ite, false),
-      Norm::Not(ite) => swarm_ite_norm(state, ite, true) }}
+      Norm::Ite(ite) => swarm_ite_norm(state, ite),
+      Norm::Not(ite) => rmsg_not(swarm_ite_norm(state, ite)) }}
 
-fn swarm_smp_norm<S:BddState>(state: &Arc<S>, ite:ITE, invert:bool)->RMsg {
+fn swarm_vhl_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
   let ITE{i:vv,t:hi,e:lo} = ite; let v = var(vv);
   debug_assert!(is_var(vv)); debug_assert_eq!(v, ite.min_var());
-  // if a node is already in the cache, just return it
-  if let Some(&n) = state.get_simple_node(v, HILO{hi,lo}) {
-    RMsg::Nid(if invert { not(n) } else { n }) }
-  // otherwise, we have to tell the main thread to create it
-  else { RMsg::Smp{ v, hi, lo, invert } }}
+  if let Some(&n) = state.get_simple_node(v, HILO{hi,lo}) { RMsg::Nid(n) }
+  else { RMsg::Vhl{ v, hi, lo, invert:false } }}
 
-fn swarm_ite_norm<S:BddState>(state: &Arc<S>, ite:ITE, invert:bool)->RMsg {
+fn swarm_ite_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
   let ITE { i, t, e } = ite;
   let (vi, vt, ve) = (var(i), var(t), var(e));
   let v = min(vi, min(vt, ve));
   match state.get_memo(v, &ite) {
-    Some(&n) => RMsg::Nid(if invert { not(n) } else { n }),
+    Some(&n) => RMsg::Nid(n),
     None => {
       let (hi_i, lo_i) = if v == vi {state.tup(i)} else {(i,i)};
       let (hi_t, lo_t) = if v == vt {state.tup(t)} else {(t,t)};
@@ -659,12 +665,12 @@ fn swarm_ite_norm<S:BddState>(state: &Arc<S>, ite:ITE, invert:bool)->RMsg {
       if let (Norm::Nid(hn), Norm::Nid(ln)) = (hi,lo) {
         match ITE::norm(nv(v), hn, ln) {
           // first, it might normalize to a nid directly:
-          Norm::Nid(n) => { RMsg::Nid(if invert { not(n) } else { n }) }
+          Norm::Nid(n) => { RMsg::Nid(n) }
           // otherwise, the normalized triple might already be in cache:
-          Norm::Ite(ite) => swarm_smp_norm(state, ite,  invert),
-          Norm::Not(ite) => swarm_smp_norm(state, ite, !invert)}}
+          Norm::Ite(ite) => swarm_vhl_norm(state, ite),
+          Norm::Not(ite) => rmsg_not(swarm_vhl_norm(state, ite))}}
       // otherwise at least one side is not a simple nid yet, and we have to defer
-      else { RMsg::Wip{ v, hi, lo, invert } }}}}
+      else { RMsg::Wip{ v, hi, lo, invert:false } }}}}
 
 
 
