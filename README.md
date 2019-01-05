@@ -14,6 +14,8 @@ This crate lets you build a complicated abstract syntax tree (or logic circuit s
 - refactored `bdd` so that the `BddState` is now owned by a `BddWorker`. Further, both `BddState` and `BddWorker` are now traits.
 - Moved `BddWorker` implementation into `SimpleBddWorker`.
 - Provided multiple implementations for `BddState` -- (so far: with and without array bounds checking).
+- Added a multi-core bdd worker: BddSwarm. Between threading and an out-of-order execution model that results in potential short circuiting, ite() calls that once took 30 or more seconds on my low-end 2-core laptop now run in 0 seconds!
+- Added examples/bdd-solve.rs, demonstrating one method of using bex to solve arbitrary problems. (Albeit very very slowly, still...)
 
 ### 0.1.2 (2018-12-17)
 
