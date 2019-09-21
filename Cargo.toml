@@ -10,6 +10,14 @@ categories = ["algorithms", "data-structures"]
 license = "MIT"
 readme = "README.md"
 
+[[bin]]
+name = "bex-shell"
+path = "examples/bex-shell.rs"
+
+[[bin]]
+name = "bdd-solve"
+path = "examples/bdd-solve.rs"
+
 [dependencies]
 serde = "1.0"
 serde_derive = "1.0"
