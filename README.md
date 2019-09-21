@@ -10,17 +10,17 @@ This crate lets you build a complicated abstract syntax tree (or logic circuit s
 
 - added `solve::sort_by_cost` which optimizes the ast→bdd conversion to take only one `bdd_refine_one` step per AST node (improved my still-external benchmark script by an order of magnitude).
 - `solve::ProgressReport` can now simply save the final result instead of showing it (as dot can take a very long time to render it into a png). It also now shows progress as a percentage (though only currently accurate when `sort_by_cost` was called)
-- in `bdd`, 'ite_norm` now constructs hi/lo nodes directly from input rather than calling `when_xx`. This resulted in about a 23% speedup.
+- in `bdd`, `ite_norm` now constructs hi/lo nodes directly from input rather than calling `when_xx`. This resulted in about a 23% speedup.
 - refactored `bdd` so that the `BddState` is now owned by a `BddWorker`. Further, both `BddState` and `BddWorker` are now traits.
 - Moved `BddWorker` implementation into `SimpleBddWorker`.
 - Provided multiple implementations for `BddState` -- (so far: with and without array bounds checking).
-- Added a multi-core bdd worker: BddSwarm. Between threading and an out-of-order execution model that results in potential short circuiting, ite() calls that once took 30 or more seconds on my low-end 2-core laptop now run in 0 seconds!
-- Added examples/bdd-solve.rs, demonstrating one method of using bex to solve arbitrary problems. (Albeit very very slowly, still...)
-- Checked in examples/bex-shell.rs (a tiny forth-like interpreter for manipulating BDDs interactively...)
+- Added a multi-core bdd worker: `BddSwarm`. Between threading and an out-of-order execution model that results in potential short circuiting, `ite()` calls that once took 30 or more seconds on my low-end 2-core laptop now run in 0 seconds!
+- Added `examples/bdd-solve.rs`, demonstrating one method of using bex to solve arbitrary problems. (Albeit very very slowly, still...)
+- Checked in `examples/bex-shell.rs` (a tiny forth-like interpreter for manipulating BDDs interactively...)
 
 ### 0.1.2 (2018-12-17)
 
-- added Cargo.toml documentation link to [docs.rs/bex](https://docs.rs/bex/)
+- added `Cargo.toml` documentation link to [docs.rs/bex](https://docs.rs/bex/)
 - added this changelog
 
 ### 0.1.1 (2018-12-17)
