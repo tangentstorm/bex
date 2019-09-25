@@ -1,12 +1,23 @@
 # bex
-A rust library for working with boolean expressions (expression trees, decision diagrams, etc.)
+A rust library for working with boolean expressions
+(expression trees, decision diagrams, etc.)
 
-This crate lets you build a complicated abstract syntax tree (or logic circuit schematic, if you prefer) by working with individual Bit structs, or vectors that act like integers. You can also solve these AST structures by converting them into reduced, ordered, binary decision diagrams (ROBDDs) - a normal form consisting of if-then-else triples that essentially act like compressed truth tables. You can also construct and manipulate BDDs directly.
-
+This crate lets you build a complicated abstract syntax tree (or logic
+circuit schematic, if you prefer) by working with individual Bit
+structs, or vectors that act like integers. You can also solve these
+AST structures by converting them into reduced, ordered, binary
+decision diagrams (ROBDDs) - a normal form consisting of if-then-else
+triples that essentially act like compressed truth tables. You can
+also construct and manipulate BDDs directly.
 
 ## changelog
 
 ### 0.1.3 (2019-09-24)
+
+I got most this working back in December and then put it all aside for a while.
+It's still pretty messy, but I'm starting to work on it again, so I figured I
+would ship what I have, and then aim for more frequent, small releases as I
+continue to tinker with it.
 
 **multi-threaded workers**
 - refactored `bdd` so that the `BddState` is now owned by a `BddWorker`.
@@ -47,19 +58,28 @@ This crate lets you build a complicated abstract syntax tree (or logic circuit s
 
 ### 0.1.1 (2018-12-17)
 
-- Renamed `bex::x32` to `bex::int`, used macros to generalize number of bits, added `times`, `lt`, and `eq` functions
+- Renamed `bex::x32` to `bex::int`, used macros to generalize number of bits,
+  added `times`, `lt`, and `eq` functions
 - Added `bex::solve` for converting between ast and bdd representations.
-- Added distinction between `real` (input) and `virtual` (intermediate) variables in `bdd::NID`
-- Added graphviz (`*.dot`) output for `base::Base` and improved formatting for `bdd::BDDBase`
+- Added distinction between `real` (input) and `virtual` (intermediate)
+  variables in `bdd::NID`
+- Added graphviz (`*.dot`) output for `base::Base` and improved formatting
+  for `bdd::BDDBase`
 - Various performance enhancements for `bex::bdd`. Most notably:
   - switched caches to use the `hashbrown` crate (for about a 40% speedup!)
   - added inlining hints for many functions
   - re-ordered logic in bottleneck functions (`norm`, `ite_norm`) to minimize work
-  - `bdd::NID` is now a single u64 with redundant information packed into the NID itself. This way, decisions can be made looking at the NID directly, without fetching the actual node.
+  - `bdd::NID` is now a single u64 with redundant information packed into the NID itself.
+    This way, decisions can be made looking at the NID directly, without fetching the
+	actual node.
   - Disabled bounds checking for internal node lookups. (unsafe)
 - Refactored `bex::bdd` in preparation for multi-threading.
-  - Grouped the internal node lists and the caches by branching variable (VID). This isn't actually an optimization, but I expect(ed?) it to make concurrent solving easier in the future.
-  - moved all the unsafe, data-mutating operations into a handful of isolated functions on a single source page. These will likely be factored out into a new `Worker` struct, eventually.
+  - Grouped the internal node lists and the caches by branching variable (VID).
+    This isn't actually an optimization, but I expect(ed?) it to make concurrent
+	solving easier in the future.
+  - moved all the unsafe, data-mutating operations into a handful of
+    isolated functions on a single source page. These will likely be
+    factored out into a new `Worker` struct, eventually.
 
 ### 0.1.0 (2018-11-30)
 
