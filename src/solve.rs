@@ -2,14 +2,14 @@
 use apl;
 use bdd;
 use base;
-use base::{Op,Base,TBase,VID,NID};
+use base::{Op,ASTBase,TBase,VID,NID};
 
 pub trait Progress {
   fn on_start(&self);
-  fn on_step<X,Y>(&self, base:&Base, bdds: &mut bdd::BddBase<X,Y>, step:u32, secs:u64,
+  fn on_step<X,Y>(&self, base:&ASTBase, bdds: &mut bdd::BddBase<X,Y>, step:u32, secs:u64,
              oldtop:bdd::NID, newtop:bdd::NID)
      where X: bdd::BddState, Y: bdd::BddWorker<X>;
-  fn on_done<X,Y>(&self, base:&Base, bdds: &mut bdd::BddBase<X,Y>, newtop:bdd::NID)
+  fn on_done<X,Y>(&self, base:&ASTBase, bdds: &mut bdd::BddBase<X,Y>, newtop:bdd::NID)
      where X: bdd::BddState, Y: bdd::BddWorker<X>; }
 
 pub struct ProgressReport<'a> {
@@ -20,7 +20,7 @@ pub struct ProgressReport<'a> {
 
 impl<'a> Progress for ProgressReport<'a> {
   fn on_start(&self) { } //println!("step, seconds, topnid, oldtopvar, newtopvar"); }
-  fn on_step<X,Y>(&self, base:&Base, bdds: &mut bdd::BddBase<X,Y>, step:u32, secs:u64,
+  fn on_step<X,Y>(&self, base:&ASTBase, bdds: &mut bdd::BddBase<X,Y>, step:u32, secs:u64,
              oldtop:bdd::NID, newtop:bdd::NID)
   where X: bdd::BddState, Y: bdd::BddWorker<X> {
     println!("{:4}, {:4}, {:4}→{:3?}, {:8}",
@@ -40,7 +40,7 @@ impl<'a> Progress for ProgressReport<'a> {
     { // on really special occasions, output a diagram
       bdds.save_dot(newtop, format!("{}-{:04}.dot", self.prefix, step).as_str()); } }
 
-  fn on_done<X,Y>(&self, _base:&Base, bdds: &mut bdd::BddBase<X,Y>, newtop:bdd::NID)
+  fn on_done<X,Y>(&self, _base:&ASTBase, bdds: &mut bdd::BddBase<X,Y>, newtop:bdd::NID)
   where X: bdd::BddState, Y: bdd::BddWorker<X> {
     if self.show_result {
       bdds.show_named(newtop, format!("{}-final", self.prefix).as_str()); }
@@ -48,13 +48,13 @@ impl<'a> Progress for ProgressReport<'a> {
       bdds.save_dot(newtop, format!("{}-final.dot", self.prefix).as_str()); }}}
 
 
-fn default_bitmask(_base:&Base, v:VID) -> u64 {
+fn default_bitmask(_base:&ASTBase, v:VID) -> u64 {
   if v < 64 { 1u64 << v } else { 0 }}
 
 /// This function renumbers the NIDs so that nodes with higher IDs "cost" more.
 /// Sorting your AST this way dramatically reduces the cost of converting to
 /// BDD form. (For example, the test_tiny benchmark drops from 5282 steps to 111)_
-pub fn sort_by_cost(base:&Base, top:NID)->(Base,NID) {
+pub fn sort_by_cost(base:&ASTBase, top:NID)->(ASTBase,NID) {
 
   let (mut base0,kept0) = base.repack(vec![top]);
   base0.tag(kept0[0], "-top-".to_string());
@@ -76,7 +76,7 @@ pub fn sort_by_cost(base:&Base, top:NID)->(Base,NID) {
 
 
 
-pub fn bdd_refine<X,Y,P:Progress>(bdds: &mut bdd::BddBase<X,Y>, base:&Base, end:bdd::NID, pr:P)
+pub fn bdd_refine<X,Y,P:Progress>(bdds: &mut bdd::BddBase<X,Y>, base:&ASTBase, end:bdd::NID, pr:P)
 where X: bdd::BddState, Y: bdd::BddWorker<X> {
   let mut topnid = end;
   // step is just a number. we're packing it in a nid as a kludge
@@ -93,14 +93,14 @@ where X: bdd::BddState, Y: bdd::BddWorker<X> {
   pr.on_done(base, bdds, newtop); }
 
 /// map a nid from the base to a (usually virtual) variable in the bdd
-fn convert_nid(base:&Base, n:base::NID)->bdd::NID {
+fn convert_nid(base:&ASTBase, n:base::NID)->bdd::NID {
   match base[n as usize] {
     Op::O => bdd::O,
     Op::I => bdd::I,
     Op::Var(x) => bdd::nvr(x as bdd::VID),
     _ => bdd::nv(n as u32) }}
 
-fn bdd_refine_one<X,Y>(bdds: &mut bdd::BddBase<X,Y>, base:&Base, oldtop:bdd::NID)->bdd::NID
+fn bdd_refine_one<X,Y>(bdds: &mut bdd::BddBase<X,Y>, base:&ASTBase, oldtop:bdd::NID)->bdd::NID
 where X: bdd::BddState, Y: bdd::BddWorker<X> {
   let otv = bdd::var(oldtop);
   let op = base[otv as usize];

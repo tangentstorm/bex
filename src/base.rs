@@ -46,7 +46,7 @@ pub trait TBase {
 
 // !! TODO: move subs/subc into external structure
 #[derive(Serialize, Deserialize)]
-pub struct Base {
+pub struct ASTBase {
   pub bits: Vec<Op>,               // all known bits (simplified)     TODO: make private
   pub nvars: usize,
   pub tags: HashMap<String, NID>,       // support for naming/tagging bits.  TODO: make private
@@ -56,28 +56,28 @@ pub struct Base {
   subc: Vec<HashMap<NID,NID>>       // cache of substiution results
 }
 
-type VarMaskFn = fn(&Base,VID)->u64;
+type VarMaskFn = fn(&ASTBase,VID)->u64;
 
-impl Base {
+impl ASTBase {
 
 
-  pub fn new(bits:Vec<Op>, tags:HashMap<String, NID>, nvars:usize)->Base {
-    Base{bits: bits,
-         nvars:nvars,
-         tags: tags,
-         hash: HashMap::new(),
-         vars: vec![],
-         subs: vec![],
-         subc: vec![]}}
+  pub fn new(bits:Vec<Op>, tags:HashMap<String, NID>, nvars:usize)->ASTBase {
+    ASTBase{bits: bits,
+            nvars:nvars,
+            tags: tags,
+            hash: HashMap::new(),
+            vars: vec![],
+            subs: vec![],
+            subc: vec![]}}
 
-  pub fn empty()->Base { Base::new(vec![Op::O, Op::I], HashMap::new(), 0) }
+  pub fn empty()->ASTBase { ASTBase::new(vec![Op::O, Op::I], HashMap::new(), 0) }
 
   // TODO: extract a Trait? These are almost exactly the same in bdd.rs
   pub fn save(&self, path:&str)->::std::io::Result<()> {
     let s = bincode::serialize(&self).unwrap();
     return io::put(path, &s) }
 
-  pub fn load(path:&str)->::std::io::Result<(Base)> {
+  pub fn load(path:&str)->::std::io::Result<(ASTBase)> {
     let s = io::get(path)?;
     return Ok(bincode::deserialize(&s).unwrap()); }
 
@@ -211,7 +211,7 @@ impl Base {
   /// in the result. This is intentional, as this function is used by the garbage
   /// collector, but if a node whose nid is in `oldnids` references a node that
   /// is not in `oldnids`, the resulting generated node will reference GONE (2^64).
-  pub fn permute(&self, oldnids:&Vec<NID>)->Base {
+  pub fn permute(&self, oldnids:&Vec<NID>)->ASTBase {
     let newnid = {
       let mut result = vec![GONE; self.bits.len()];
       for (i,&n) in oldnids.iter().enumerate() { result[n] = i; }
@@ -230,11 +230,11 @@ impl Base {
     for (key, &val) in &self.tags {
       if newnid[val] != GONE { newtags.insert(key.clone(), newnid[val]); }}
 
-    Base::new(newbits, newtags, self.nvars) }
+    ASTBase::new(newbits, newtags, self.nvars) }
 
-  /// Construct a new Base with only the nodes necessary to define the given nodes.
+  /// Construct a new ASTBase with only the nodes necessary to define the given nodes.
   /// The relative order of the bits is preserved.
-  pub fn repack(&self, keep:Vec<NID>) -> (Base, Vec<NID>) {
+  pub fn repack(&self, keep:Vec<NID>) -> (ASTBase, Vec<NID>) {
 
     // garbage collection: mark dependencies of the bits we want to keep
     let mut deps = vec!(false;self.bits.len());
@@ -247,19 +247,19 @@ impl Base {
 
     return (self.permute(&oldnids), keep.iter().map(|&i| newnids[i]).collect()); }
 
-} // end impl Base
+} // end impl ASTBase
 
-impl Index<NID> for Base {
+impl Index<NID> for ASTBase {
   type Output = Op;
   fn index(&self, index:NID) -> &Self::Output { &self.bits[index] } }
 
-impl ::std::fmt::Debug for Base {
+impl ::std::fmt::Debug for ASTBase {
   fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-    write!(f,"Base[{}]", self.bits.len()) } }
+    write!(f,"ASTBase[{}]", self.bits.len()) } }
 
 #[test]
 fn base_basics(){
-  let mut b = Base::empty();
+  let mut b = ASTBase::empty();
   assert_eq!(b.bits.len(), 2);
 
   // constants
@@ -278,7 +278,7 @@ fn base_basics(){
 
 #[test]
 fn base_vars(){
-  let mut b = Base::empty(); let n = b.bits.len();
+  let mut b = ASTBase::empty(); let n = b.bits.len();
   let x0 = b.var(0); let x02 = b.var(0); let x1 = b.var(1);
   assert!(x0 == n, "var() should create a node. expected {}, got {}", n, x0);
   assert!(x0 == x02, "var(0) should always return the same nid.");
@@ -289,7 +289,7 @@ fn base_vars(){
 
 #[test]
 fn base_when(){
-  let mut b = Base::empty(); let x0 = b.var(0);
+  let mut b = ASTBase::empty(); let x0 = b.var(0);
   assert!(b[x0] == Op::Var(0), "expect var(0) to return nid for Var(0)");
   assert!(b.when(0,0,x0)==  0, "x0 when x0 == 0 should be O");
   assert!(b.when(0,1,x0)==  1, "x0 when x0 == 1 should be I");
@@ -304,7 +304,7 @@ fn base_when(){
   res.sort();
   (res[0].clone(), res[1].clone(), res[2].clone())}
 
-impl TBase for Base {
+impl TBase for ASTBase {
 
   fn o(&self)->NID { 0 }
   fn i(&self)->NID { 1 }
@@ -436,4 +436,4 @@ impl TBase for Base {
         self.hash.insert(op, n);
         n }}}
 
-} // impl TBase for Base
+} // impl TBase for ASTBase

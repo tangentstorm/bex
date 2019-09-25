@@ -1323,7 +1323,7 @@ use bex::solve::{ProgressReport, bdd_refine, sort_by_cost};
 macro_rules! find_factors {
   ($T0:ident, $T1:ident, $n:expr, $expect:expr, $show:expr) => {{
     // reset gbase on each test
-    GBASE.with(|gb| gb.replace(bex::base::Base::empty()));
+    GBASE.with(|gb| gb.replace(bex::base::ASTBase::empty()));
 
     let x = $T0::from_vec((0..$T0::n())
                           .map(|i| gbase_def('x'.to_string(), i as u32)).collect());
