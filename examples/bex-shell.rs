@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 extern crate bex;
 use bex::*;
+use bex::ast::ASTBase;
 
 
 // forth-like REPL for the BDD  (helper routines)
@@ -36,7 +37,7 @@ fn pop3<T>(data: &mut Vec<T>)->(T,T,T){
 enum Item { Vid(VID), Nid(NID), Int(u32) }
 
 
-fn repl(base:&mut bex::Base) {
+fn repl(base:&mut ASTBase) {
   let mut scope = HashMap::new();
   println!("hint: no variables defined. type '8 vars' to define 8 of them.");
   let mut data: Vec<NID> = Vec::new();
@@ -99,7 +100,7 @@ fn repl(base:&mut bex::Base) {
 
 
 fn main() {
-  let mut base = bex::Base::empty();
+  let mut base = ASTBase::empty();
   let args = ::std::env::args().skip(1);
   if args.count() == 0 { repl(&mut base) }
   else { for arg in ::std::env::args().skip(1) { match arg.as_str() {

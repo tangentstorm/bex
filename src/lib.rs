@@ -14,6 +14,8 @@ pub use base::*;
 
 /// Misc helper routines inspired by the APL family of programming languages.
 pub mod apl;
+/// Base implementation for simple AST representation.
+pub mod ast;
 /// Binary decision diagrams.
 pub mod bdd;
 /// Working with arrays of bit structures as if they were integers.

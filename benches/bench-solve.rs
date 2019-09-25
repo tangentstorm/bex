@@ -16,7 +16,7 @@ pub fn small(b: &mut Bencher) {
     let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
                         (6, 35), (7, 30), (10,21), (14,15)];
     find_factors!(X8,X16, 210, expected, false);
-    GBASE.with(|gb| gb.replace(bex::base::Base::empty()));
+    GBASE.with(|gb| gb.replace(bex::ast::ASTBase::empty()));
   }); }
 
 
