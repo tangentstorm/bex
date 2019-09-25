@@ -5,7 +5,7 @@ extern crate std;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::cmp::min;
-use base::{TBase, NID, VID, SID};
+use base::{Base, NID, VID, SID};
 use ast::ASTBase;
 
 
@@ -24,7 +24,7 @@ fn bitmaj<T:TBit>(x:T, y:T, z:T) -> T {
   (x.clone()&y.clone()) ^ (x.clone()&z.clone()) ^ (y&z) }
 
 
-// BaseBit implementation (u32 references into TBase)
+// BaseBit implementation (u32 references into a Base)
 pub type BaseRef = Rc<RefCell<ASTBase>>;
 
 // -- basebit --

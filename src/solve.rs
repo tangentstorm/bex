@@ -2,7 +2,7 @@
 use apl;
 use bdd;
 use base;
-use base::{Op,TBase,VID,NID};
+use base::{Op,Base,VID,NID};
 use ast::ASTBase;
 
 pub trait Progress {

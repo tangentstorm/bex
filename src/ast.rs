@@ -221,7 +221,7 @@ impl ::std::fmt::Debug for ASTBase {
   fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
     write!(f,"ASTBase[{}]", self.bits.len()) } }
 
-impl TBase for ASTBase {
+impl Base for ASTBase {
 
   fn o(&self)->NID { 0 }
   fn i(&self)->NID { 1 }
@@ -353,7 +353,7 @@ impl TBase for ASTBase {
         self.hash.insert(op, n);
         n }}}
 
-} // impl TBase for ASTBase
+} // impl Base for ASTBase
 
 
 #[test]

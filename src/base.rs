@@ -1,7 +1,7 @@
 /// bex: a boolean expression library for rust
 use std::collections::HashMap;
 
-// abstract bits and bit base types (trait TBase)
+// abstract bits and bit base types (trait Base)
 pub type VID = usize;
 pub type NID = usize;
 pub type SID = usize; // canned substition
@@ -17,7 +17,7 @@ pub enum Op {
 
 /// outside the base, you deal only with opaque references.
 /// inside, it could be stored any way we like.
-pub trait TBase {
+pub trait Base {
   fn o(&self)->NID;
   fn i(&self)->NID;
   fn var(&mut self, v:VID)->NID;
