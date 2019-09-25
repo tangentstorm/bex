@@ -1317,13 +1317,14 @@ extern crate bex;
 use bex::bdd;
 use bex::int::{BInt, BaseBit, GBASE, gbase_def};
 use bex::solve::{ProgressReport, bdd_refine, sort_by_cost};
+use bex::ast::ASTBase;
 
 /// Find all pairs of type T0 that multiply n as a T1. (T0 and T1 are
 /// BInt types. Generally T0 would have half as many bits as T1)
 macro_rules! find_factors {
   ($T0:ident, $T1:ident, $n:expr, $expect:expr, $show:expr) => {{
     // reset gbase on each test
-    GBASE.with(|gb| gb.replace(bex::base::ASTBase::empty()));
+    GBASE.with(|gb| gb.replace(ASTBase::empty()));
 
     let x = $T0::from_vec((0..$T0::n())
                           .map(|i| gbase_def('x'.to_string(), i as u32)).collect());

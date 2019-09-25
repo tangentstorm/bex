@@ -2,7 +2,8 @@
 use apl;
 use bdd;
 use base;
-use base::{Op,ASTBase,TBase,VID,NID};
+use base::{Op,TBase,VID,NID};
+use ast::ASTBase;
 
 pub trait Progress {
   fn on_start(&self);
