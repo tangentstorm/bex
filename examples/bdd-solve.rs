@@ -1,8 +1,9 @@
 //! example for bdd-based general solver with bex:
 //!
-//! let k = 614889782588491410;
-//!
-//! k = */2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
+//! ```text
+//!     NB. k =: 614889782588491410
+//!     k =: */2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
+//! ```
 //!
 //! That is, k is the product of the first 15 primes. This is the value with the
 //! largest number of unique prime factors that still fits into a u64.
@@ -19,11 +20,12 @@
 //!
 //! The list was generated with the following J program:
 //!
+//! ```text
 //!     xy0 =: */L:0 (0,"1#:i.2^n-1) </."1 |.p:i.n=:15
 //!     xys =: ({~[:I.([:*./(2^32)>])"1) \:~\:~@;"1 xy0
 //!     txt =: ,('    ',LF,~}:)"1 ] _4 ;\ ([: < ','10}  3|.'), (', ": )"1 xys
 //!     txt 1!:2 <'nums.txt'
-//!
+//! ```
 
 #![feature(test)]
 extern crate test;
