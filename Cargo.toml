@@ -1,6 +1,6 @@
 [package]
 name = "bex"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["tangentstorm <michal.wallace@gmail.com>"]
 description = "A rust library for working with boolean expressions (expression trees, decision diagrams, etc.)"
 documentation = "https://docs.rs/bex/"
