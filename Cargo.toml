@@ -10,6 +10,9 @@ categories = ["algorithms", "data-structures"]
 license = "MIT"
 readme = "README.md"
 
+[lib]
+name = "bex"
+
 [[bin]]
 name = "bex-shell"
 path = "examples/bex-shell.rs"
@@ -30,5 +33,9 @@ simplelog = "0.5"
 version = "0.1"
 features = ["serde"]
 
-[lib]
-name = "bex"
+[dev-dependencies]
+bencher = "0.1.5"
+
+[[bench]]
+name = "bench-solve"
+harness = false

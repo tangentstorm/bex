@@ -14,10 +14,8 @@ This is my main benchmark:
 
 Smaller benchmarks can be run with:
 
-    $ rustup install nightly  # if you haven't already.
-
-	$ cargo +nightly bench --bin bdd-solve bench_tiny
-	$ cargo +nightly bench --bin bdd-solve bench_small
+	$ cargo bench --bench bench-solve tiny
+	$ cargo bench --bench bench-solve small
 
 Even the "small" benchmark is currently painfully slow, which is sad, because it's just solving to find two u8 values that multiply together to get the u16 value 210... Something you can probably do faster with a pencil and paper.
 

@@ -1,34 +1,33 @@
-//! example for bdd-based general solver with bex:
-//!
-//! ```text
-//!     NB. k =: 614889782588491410
-//!     k =: */2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
-//! ```
-//!
-//! That is, k is the product of the first 15 primes. This is the value with the
-//! largest number of unique prime factors that still fits into a u64.
-//!
-//! Now, we want to find all pairs (x,y) of 32 bit numbers such that x>y and x*y=k.
-//! (The first condition strips out duplicates, but also just makes our BDD
-//! a little more interesting.)
-//!
-//! There are 2^15=32,768 ways to group the factors into two products that multiply to k.
-//! But since we only care about one ordering, this brings us down to 2^14 = 16,384.
-//! However, many of these (for example, 307,444,891,294,245,705 * 2) involve an x
-//! that's too big to fit in a u32. Once we eliminate these numbers, we wind up with
-//! 3827 possible solutions.
-//!
-//! The list was generated with the following J program:
-//!
-//! ```text
-//!     xy0 =: */L:0 (0,"1#:i.2^n-1) </."1 |.p:i.n=:15
-//!     xys =: ({~[:I.([:*./(2^32)>])"1) \:~\:~@;"1 xy0
-//!     txt =: ,('    ',LF,~}:)"1 ] _4 ;\ ([: < ','10}  3|.'), (', ": )"1 xys
-//!     txt 1!:2 <'nums.txt'
-//! ```
-
-#![feature(test)]
-extern crate test;
+// note: i temporarily replaced '//!' with '///'
+// until i get benchmarks cleanly factored out.
+/// example for bdd-based general solver with bex:
+///
+/// ```text
+///     NB. k =: 614889782588491410
+///     k =: */2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
+/// ```
+///
+/// That is, k is the product of the first 15 primes. This is the value with the
+/// largest number of unique prime factors that still fits into a u64.
+///
+/// Now, we want to find all pairs (x,y) of 32 bit numbers such that x>y and x*y=k.
+/// (The first condition strips out duplicates, but also just makes our BDD
+/// a little more interesting.)
+///
+/// There are 2^15=32,768 ways to group the factors into two products that multiply to k.
+/// But since we only care about one ordering, this brings us down to 2^14 = 16,384.
+/// However, many of these (for example, 307,444,891,294,245,705 * 2) involve an x
+/// that's too big to fit in a u32. Once we eliminate these numbers, we wind up with
+/// 3827 possible solutions.
+///
+/// The list was generated with the following J program:
+///
+/// ```text
+///     xy0 =: */L:0 (0,"1#:i.2^n-1) </."1 |.p:i.n=:15
+///     xys =: ({~[:I.([:*./(2^32)>])"1) \:~\:~@;"1 xy0
+///     txt =: ,('    ',LF,~}:)"1 ] _4 ;\ ([: < ','10}  3|.'), (', ": )"1 xys
+///     txt 1!:2 <'nums.txt'
+/// ```
 
 
 /// Product of the first 15 primes: 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
@@ -1364,12 +1363,6 @@ macro_rules! find_factors {
   use bex::int::{X4,X8};
   find_factors!(X4,X8, 210, vec![(14,15)], true); }
 
-#[bench] pub fn bench_tiny(b: &mut test::Bencher) {
-  use bex::int::{X4,X8};
-  b.iter(|| {
-    find_factors!(X4,X8, 210, vec![(14,15)], false);
-  }); }
-
 /// same as tiny test, but multiply 2 bytes to get 210. There are 8 distinct answers.
 #[test] pub fn test_small() {
   use bex::int::{X8,X16};
@@ -1377,16 +1370,8 @@ macro_rules! find_factors {
                       (6, 35), (7, 30), (10,21), (14,15)];
   find_factors!(X8,X16, 210, expected, false); }
 
-#[bench] pub fn bench_small(b: &mut test::Bencher) {
-  use bex::int::{X8,X16};
-  b.iter(|| {
-    let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
-                        (6, 35), (7, 30), (10,21), (14,15)];
-    find_factors!(X8,X16, 210, expected, false);
-    GBASE.with(|gb| gb.replace(bex::base::Base::empty()));
-  }); }
-
 /// The real challenge: factor the 64-bit product of the first 15 primes.
+#[cfg(not(test))]
 pub fn main() {
   use bex::int::{X32, X64};
   find_factors!(X32, X64, K as usize, factors(), false); }
