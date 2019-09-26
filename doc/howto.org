@@ -1,0 +1,12 @@
+#+title: howto: common (development) tasks for bex
+
+* Group a git commits without squashing.                        :git:
+
+Make changes, then...
+
+: git fetch
+: git rebase
+: git branch -d merge                  # if it exists
+: git branch merge                     # create new branch to hold recent commits
+: git reset --hard origin/master       # move the master branche's HEAD back
+: git merge --no-ff merge -m <msg>     # force a merge commit 

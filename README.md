@@ -14,7 +14,7 @@ also construct and manipulate BDDs directly.
 
 ### 0.1.4 (upcoming. 2019-10-xx?)
 
-**Refactoring**
+**code cleanup**
 - Unify the AST and BDD "Base" interfaces. (#2, #5)
   - `base` now contains only the abstract trait `Base` (formerly `TBase`)
   - `Base` methods now act on associated types `Self::N` and `Self::V`,
@@ -24,6 +24,10 @@ also construct and manipulate BDDs directly.
     moved out of `trait Base` and into `struct ASTBase` directly.
   - The old `base::{Op,SID,SUB,NID,VID}` types have also moved to the `ast` module.
   - `bdd::BddBase` now implements `base::Base`.
+
+**documentation**
+- Began writing/collecting more documentation in the
+  [doc/](https://github.com/tangentstorm/bex/tree/master/doc) directory.
 
 ### 0.1.3 (2019-09-24)
 
