@@ -5,8 +5,8 @@ extern crate std;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::cmp::min;
-use base::{Base, NID, VID, SID};
-use ast::ASTBase;
+use base::{Base};
+use ast::{ASTBase, NID, VID, SID};
 
 
 // TBit : for use outside the Base, by types such as X32, below.

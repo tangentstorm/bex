@@ -1,38 +1,25 @@
 /// bex: a boolean expression library for rust
-use std::collections::HashMap;
-
-// abstract bits and bit base types (trait Base)
-pub type VID = usize;
-pub type NID = usize;
-pub type SID = usize; // canned substition
-pub type SUB = HashMap<VID,NID>;
-
-pub const GONE:usize = 1<<63;
-
-#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum Op {
-  O, I, Var(VID), Not(NID), And(NID,NID), Or(NID,NID), Xor(NID,NID),
-  // Eql(NID,NID), LT(Nid,Nid),
-  Ch(NID, NID, NID), Mj(NID, NID, NID) }
-
 /// outside the base, you deal only with opaque references.
 /// inside, it could be stored any way we like.
 pub trait Base {
-  fn o(&self)->NID;
-  fn i(&self)->NID;
-  fn var(&mut self, v:VID)->NID;
-  fn def(&mut self, s:String, i:u32)->NID;
-  fn tag(&mut self, n:NID, s:String)->NID;
-  fn not(&mut self, x:NID)->NID;
-  fn and(&mut self, x:NID, y:NID)->NID;
-  fn xor(&mut self, x:NID, y:NID)->NID;
-  fn or(&mut self, x:NID, y:NID)->NID;
-  #[cfg(todo)] fn mj(&mut self, x:NID, y:NID, z:NID)->NID;
-  #[cfg(todo)] fn ch(&mut self, x:NID, y:NID, z:NID)->NID;
-  fn when(&mut self, v:VID, val:NID, nid:NID)->NID;
-  fn sid(&mut self, kv:SUB) -> SID;
-  fn sub(&mut self, x:NID, s:SID)->NID; // set many inputs at once
-  fn nid(&mut self, op:Op)->NID;   // given an op, return a nid
+
+  /// Node identifier type. Usually mapped to xxx::NID
+  type N;
+
+  /// Variable identifier type. Usually mapped to xxx::VID
+  type V;
+
+  fn o(&self)->Self::N;
+  fn i(&self)->Self::N;
+  fn var(&mut self, v:Self::V)->Self::N;
+  fn def(&mut self, s:String, i:u32)->Self::N;
+  fn tag(&mut self, n:Self::N, s:String)->Self::N;
+  fn not(&mut self, x:Self::N)->Self::N;
+  fn and(&mut self, x:Self::N, y:Self::N)->Self::N;
+  fn xor(&mut self, x:Self::N, y:Self::N)->Self::N;
+  fn or(&mut self, x:Self::N, y:Self::N)->Self::N;
+  #[cfg(todo)] fn mj(&mut self, x:Self::N, y:Self::N, z:Self::N)->Self::N;
+  #[cfg(todo)] fn ch(&mut self, x:Self::N, y:Self::N, z:Self::N)->Self::N;
 }
 
 

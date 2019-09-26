@@ -14,6 +14,7 @@ use std::thread;
 
 use serde::Serialize;
 use bincode;
+use base;
 use io;
 
 
@@ -867,6 +868,30 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
     res }
 
 } // end impl BddBase
+
+// Base Trait
+
+impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
+  type N = NID;
+  type V = VID;
+
+  fn o(&self)->NID { O }
+  fn i(&self)->NID { I }
+  fn var(&mut self, v:VID)->NID { nv(v) }
+
+  // TODO: these should be moved into seperate struct
+  fn def(&mut self, s:String, i:u32)->NID { nv(19760820) }  // TODO: make default impl
+  fn tag(&mut self, n:NID, s:String)->NID { self.tag(s, n); n }
+
+  fn not(&mut self, x:NID)->NID { not(x) }
+  fn and(&mut self, x:NID, y:NID)->NID { self.and(x, y) }
+  fn xor(&mut self, x:NID, y:NID)->NID { self.xor(x, y) }
+  fn or(&mut self, x:NID, y:NID)->NID  { self.or(x, y) }
+  #[cfg(todo)] fn mj(&mut self, x:NID, y:NID, z:NID)->NID  {
+    self.xor(x, self.xor(y, z))  // TODO: normalize the order here. make this the default impl.
+  }
+  #[cfg(todo)] fn ch(&mut self, x:NID, y:NID, z:NID)->NID { self.ite(x, y, z) }
+}
 
 
 /// The default type used by the rest of the system.

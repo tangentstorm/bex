@@ -1,9 +1,9 @@
 /// solve ast-based expressions by converting to BDDs.
 use apl;
 use bdd;
-use base;
-use base::{Op,Base,VID,NID};
-use ast::ASTBase;
+use base::Base;
+use ast;
+use ast::{Op,ASTBase};
 
 pub trait Progress {
   fn on_start(&self);
@@ -18,6 +18,7 @@ pub struct ProgressReport<'a> {
   pub save_bdd: bool,
   pub prefix: &'a str,
   pub show_result: bool }
+
 
 impl<'a> Progress for ProgressReport<'a> {
   fn on_start(&self) { } //println!("step, seconds, topnid, oldtopvar, newtopvar"); }
@@ -49,13 +50,13 @@ impl<'a> Progress for ProgressReport<'a> {
       bdds.save_dot(newtop, format!("{}-final.dot", self.prefix).as_str()); }}}
 
 
-fn default_bitmask(_base:&ASTBase, v:VID) -> u64 {
+fn default_bitmask(_base:&ASTBase, v:ast::VID) -> u64 {
   if v < 64 { 1u64 << v } else { 0 }}
 
 /// This function renumbers the NIDs so that nodes with higher IDs "cost" more.
 /// Sorting your AST this way dramatically reduces the cost of converting to
 /// BDD form. (For example, the test_tiny benchmark drops from 5282 steps to 111)_
-pub fn sort_by_cost(base:&ASTBase, top:NID)->(ASTBase,NID) {
+pub fn sort_by_cost(base:&ASTBase, top:ast::NID)->(ASTBase,ast::NID) {
 
   let (mut base0,kept0) = base.repack(vec![top]);
   base0.tag(kept0[0], "-top-".to_string());
@@ -94,7 +95,7 @@ where X: bdd::BddState, Y: bdd::BddWorker<X> {
   pr.on_done(base, bdds, newtop); }
 
 /// map a nid from the base to a (usually virtual) variable in the bdd
-fn convert_nid(base:&ASTBase, n:base::NID)->bdd::NID {
+fn convert_nid(base:&ASTBase, n:ast::NID)->bdd::NID {
   match base[n as usize] {
     Op::O => bdd::O,
     Op::I => bdd::I,
@@ -105,7 +106,7 @@ fn bdd_refine_one<X,Y>(bdds: &mut bdd::BddBase<X,Y>, base:&ASTBase, oldtop:bdd::
 where X: bdd::BddState, Y: bdd::BddWorker<X> {
   let otv = bdd::var(oldtop);
   let op = base[otv as usize];
-  let v = |x0:base::NID|->bdd::NID { convert_nid(base, x0) };
+  let v = |x0:ast::NID|->bdd::NID { convert_nid(base, x0) };
   let newdef:bdd::NID = match op {
     // Op::Not should only occur once at the very top, if at all:
     Op::Not(x) => bdd::not(v(x)),

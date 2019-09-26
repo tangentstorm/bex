@@ -8,6 +8,19 @@ use std::process::Command;      // for creating and viewing digarams
 use io;
 use base::*;
 
+pub type VID = usize;
+pub type NID = usize;
+const GONE:usize = 1<<63;
+
+pub type SID = usize; // canned substition
+type SUB = HashMap<VID,NID>;
+
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum Op {
+  O, I, Var(VID), Not(NID), And(NID,NID), Or(NID,NID), Xor(NID,NID),
+  // Eql(NID,NID), LT(Nid,Nid),
+  Ch(NID, NID, NID), Mj(NID, NID, NID) }
+
 // !! TODO: move subs/subc into external structure
 #[derive(Serialize, Deserialize)]
 pub struct ASTBase {
@@ -36,6 +49,15 @@ impl ASTBase {
 
   pub fn empty()->ASTBase { ASTBase::new(vec![Op::O, Op::I], HashMap::new(), 0) }
 
+  fn nid(&mut self, op:Op)->NID {
+    match self.hash.get(&op) {
+      Some(&n) => n,
+      None => {
+        let n = self.bits.len();
+        self.bits.push(op);
+        self.hash.insert(op, n);
+        n }}}
+
   // TODO: extract a Trait? These are almost exactly the same in bdd.rs
   pub fn save(&self, path:&str)->::std::io::Result<()> {
     let s = bincode::serialize(&self).unwrap();
@@ -44,6 +66,53 @@ impl ASTBase {
   pub fn load(path:&str)->::std::io::Result<(ASTBase)> {
     let s = io::get(path)?;
     return Ok(bincode::deserialize(&s).unwrap()); }
+  
+
+  fn sid(&mut self, kv:SUB)->SID {
+    let res = self.subs.len();
+    self.subs.push(kv); self.subc.push(HashMap::new());
+    res }
+
+  pub fn sub(&mut self, x:NID, s:SID)->NID {
+    macro_rules! op {
+      [not $x:ident] => {{ let x1 = self.sub($x, s); self.not(x1) }};
+      [$f:ident $x:ident $y:ident] => {{
+        let x1 = self.sub($x, s);
+        let y1 = self.sub($y, s);
+        self.$f(x1,y1) }}}
+    match self.subc[s].get(&x) {
+      Some(&n) => n,
+      None => {
+        let n = match self[x] {
+          Op::O | Op::I => x,
+          Op::Var(v) => match self.subs[s].get(&v) {
+            Some(&y) => y,
+            None => x },
+          Op::Not(a) => op![not a],
+          Op::And(a,b) => op![and a b],
+          Op::Xor(a,b) => op![xor a b],
+          other => { panic!("huh?! sub({:?},{})", other, s) }};
+        self.subc[s].insert(x, n);
+        n }}}
+
+
+  pub fn when(&mut self, v:VID, val:NID, nid:NID)->NID {
+    // print!(":{}",nid);
+    macro_rules! op {
+      [not $x:ident] => {{ let x1 = self.when(v, val, $x); self.not(x1) }};
+      [$f:ident $x:ident $y:ident] => {{
+        let x1 = self.when(v, val, $x);
+        let y1 = self.when(v, val, $y);
+        self.$f(x1,y1) }}}
+    if v >= self.vars.len() { nid }
+    else { match self[nid] {
+      Op::Var(x) if x==v => val,
+      Op::O | Op::I | Op::Var(_) => nid,
+      Op::Not(x)    => op![not x],
+      Op::And(x, y) => op![and x y],
+      Op::Xor(x, y) => op![xor x y],
+      other => { println!("unhandled match: {:?}", other); nid }}}}
+
 
 
   pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID) {
@@ -223,6 +292,9 @@ impl ::std::fmt::Debug for ASTBase {
 
 impl Base for ASTBase {
 
+  type N = NID;
+  type V = VID;
+
   fn o(&self)->NID { 0 }
   fn i(&self)->NID { 1 }
 
@@ -297,62 +369,6 @@ impl Base for ASTBase {
 
   #[cfg(todo)]
   fn ch(&mut self, x:NID, y:NID, z:NID)->NID { self.o() }
-
-
-  fn sid(&mut self, kv:SUB)->SID {
-    let res = self.subs.len();
-    self.subs.push(kv); self.subc.push(HashMap::new());
-    res }
-
-  fn sub(&mut self, x:NID, s:SID)->NID {
-    macro_rules! op {
-      [not $x:ident] => {{ let x1 = self.sub($x, s); self.not(x1) }};
-      [$f:ident $x:ident $y:ident] => {{
-        let x1 = self.sub($x, s);
-        let y1 = self.sub($y, s);
-        self.$f(x1,y1) }}}
-    match self.subc[s].get(&x) {
-      Some(&n) => n,
-      None => {
-        let n = match self[x] {
-          Op::O | Op::I => x,
-          Op::Var(v) => match self.subs[s].get(&v) {
-            Some(&y) => y,
-            None => x },
-          Op::Not(a) => op![not a],
-          Op::And(a,b) => op![and a b],
-          Op::Xor(a,b) => op![xor a b],
-          other => { panic!("huh?! sub({:?},{})", other, s) }};
-        self.subc[s].insert(x, n);
-        n }}}
-
-
-  fn when(&mut self, v:VID, val:NID, nid:NID)->NID {
-    // print!(":{}",nid);
-    macro_rules! op {
-      [not $x:ident] => {{ let x1 = self.when(v, val, $x); self.not(x1) }};
-      [$f:ident $x:ident $y:ident] => {{
-        let x1 = self.when(v, val, $x);
-        let y1 = self.when(v, val, $y);
-        self.$f(x1,y1) }}}
-    if v >= self.vars.len() { nid }
-    else { match self[nid] {
-      Op::Var(x) if x==v => val,
-      Op::O | Op::I | Op::Var(_) => nid,
-      Op::Not(x)    => op![not x],
-      Op::And(x, y) => op![and x y],
-      Op::Xor(x, y) => op![xor x y],
-      other => { println!("unhandled match: {:?}", other); nid }}}}
-
-  fn nid(&mut self, op:Op)->NID {
-    match self.hash.get(&op) {
-      Some(&n) => n,
-      None => {
-        let n = self.bits.len();
-        self.bits.push(op);
-        self.hash.insert(op, n);
-        n }}}
-
 } // impl Base for ASTBase
 
 

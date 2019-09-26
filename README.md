@@ -12,6 +12,19 @@ also construct and manipulate BDDs directly.
 
 ## changelog
 
+### 0.1.4 (upcoming. 2019-10-xx?)
+
+**Refactoring**
+- Unify the AST and BDD "Base" interfaces. (#2, #5)
+  - `base` now contains only the abstract trait `Base` (formerly `TBase`)
+  - `Base` methods now act on associated types `Self::N` and `Self::V`,
+    rather than `NID` and `VID` directly.
+  - The old `struct base::Base` is now `ast::ASTBase`. Methods `sid`, `sub`,
+    and `when` (which might not apply to other implementations) have been
+    moved out of `trait Base` and into `struct ASTBase` directly.
+  - The old `base::{Op,SID,SUB,NID,VID}` types have also moved to the `ast` module.
+  - `bdd::BddBase` now implements `base::Base`.
+
 ### 0.1.3 (2019-09-24)
 
 I got most this working back in December and then put it all aside for a while.

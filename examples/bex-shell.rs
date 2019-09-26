@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 extern crate bex;
 use bex::*;
-use bex::ast::ASTBase;
+use bex::ast::{ASTBase,NID,VID};
 
 
 // forth-like REPL for the BDD  (helper routines)
