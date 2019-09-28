@@ -17,7 +17,8 @@ pub struct ProgressReport<'a> {
   pub save_dot: bool,
   pub save_bdd: bool,
   pub prefix: &'a str,
-  pub show_result: bool }
+  pub show_result: bool,
+  pub save_result: bool }
 
 
 impl<'a> Progress for ProgressReport<'a> {
@@ -46,8 +47,9 @@ impl<'a> Progress for ProgressReport<'a> {
   where X: bdd::BddState, Y: bdd::BddWorker<X> {
     if self.show_result {
       bdds.show_named(newtop, format!("{}-final", self.prefix).as_str()); }
-    else {
-      bdds.save_dot(newtop, format!("{}-final.dot", self.prefix).as_str()); }}}
+    else if self.save_result {
+      bdds.save_dot(newtop, format!("{}-final.dot", self.prefix).as_str()); }
+    else {}}}
 
 
 fn default_bitmask(_base:&ASTBase, v:ast::VID) -> u64 {

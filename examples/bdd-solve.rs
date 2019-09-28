@@ -1348,7 +1348,7 @@ macro_rules! find_factors {
       let mut bdds = bdd::BDDBase::new(base.bits.len());
       bdd_refine(&mut bdds, &base, bdd::nv(newtop as bdd::VID),
                  ProgressReport{ save_dot: $show, save_bdd: false, prefix: "x",
-                                 show_result: $show });
+                                 show_result: $show, save_result: $show });
     });
     let expect = $expect;
     let actual = expect.clone();
@@ -1362,9 +1362,11 @@ macro_rules! find_factors {
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny() {
   use bex::int::{X4,X8};
-  find_factors!(X4,X8, 210, vec![(14,15)], true); }
+  find_factors!(X4,X8, 210, vec![(14,15)], false); }
 
 /// same as tiny test, but multiply 2 bytes to get 210. There are 8 distinct answers.
+/// this was intended as a unit test but is *way* too slow.
+#[cfg(slowtests)]
 #[test] pub fn test_small() {
   use bex::int::{X8,X16};
   let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
