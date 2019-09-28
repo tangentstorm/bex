@@ -15,6 +15,7 @@ also construct and manipulate BDDs directly.
 ### 0.1.4 (upcoming. 2019-10-xx?)
 
 **code cleanup**
+- `cargo test` now runs quickly, without generating diagrams (#3)
 - Unify the AST and BDD "Base" interfaces. (#2, #5)
   - `base` now contains only the abstract trait `Base` (formerly `TBase`)
   - `Base` methods now act on associated types `Self::N` and `Self::V`,
