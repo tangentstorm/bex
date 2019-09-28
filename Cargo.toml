@@ -21,6 +21,9 @@ path = "examples/bex-shell.rs"
 name = "bdd-solve"
 path = "examples/bdd-solve.rs"
 
+[features]
+noswarm = []
+
 [dependencies]
 serde = "1.0"
 serde_derive = "1.0"
@@ -28,6 +31,7 @@ bincode = "1.0"
 fnv = "1.0"
 log = { version = "0.4", features = ["max_level_debug"]}
 simplelog = "0.5"
+num_cpus = "1.0"
 
 [dependencies.hashbrown]
 version = "0.1"

@@ -15,6 +15,8 @@ also construct and manipulate BDDs directly.
 ### 0.1.4 (upcoming. 2019-10-xx?)
 
 **code cleanup**
+- Swarming is now enabled by default for BDDBase. (#7)
+  For now, you can disable with `--feature noswarm`, but that's probably going to go away.
 - `cargo test` now runs quickly, without generating diagrams (#3)
 - Unify the AST and BDD "Base" interfaces. (#2, #5)
   - `base` now contains only the abstract trait `Base` (formerly `TBase`)

@@ -12,7 +12,9 @@ use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::thread;
 
-use serde::Serialize;
+extern crate num_cpus;
+
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use bincode;
 use base;
 use io;
@@ -479,12 +481,16 @@ pub struct BddSwarm <S:BddState+'static> {
   /// stores dependencies during a run. The bool specifies whether to invert.
   deps: Vec<Vec<BddDep>> }
 
-
-use serde::ser::{Serializer};
 impl<TState:BddState> Serialize for BddSwarm<TState> {
   fn serialize<S:Serializer>(&self, ser: S)->Result<S::Ok, S::Error> {
     // all we really care about is the state:
     self.stable.serialize::<S>(ser) } }
+
+impl<'de:'a, 'a, S:BddState + Deserialize<'de>> Deserialize<'de> for BddSwarm<S> {
+  fn deserialize<D:Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+    let mut res = Self::new(0);
+    res.stable = Arc::new(S::deserialize(d)?);
+    Ok(res) }}
 
 
 impl<S:BddState> BddWorker<S> for BddSwarm<S> {
@@ -592,7 +598,7 @@ impl<S:BddState> BddSwarm<S> {
     // (that was still going on when we returned a value) gets ignored..
     let (me, rx) = channel::<(QID, RMsg)>(); self.me = me; self.rx = rx;
     self.swarm = vec![];
-    while self.swarm.len() < 2 { // TODO: configure threads here.
+    while self.swarm.len() < num_cpus::get() {
       let (tx, rx) = channel::<QMsg<S>>();
       let me_clone = self.me.clone();
       let state = self.stable.clone();
@@ -901,7 +907,11 @@ type S = SafeVarKeyedBddState;
 #[cfg(not(safe))]
 type S = UnsafeVarKeyedBddState;
 
+#[cfg(feature="noswarm")]
 pub type BDDBase = BddBase<S,SimpleBddWorker<S>>;
+
+#[cfg(not(feature="noswarm"))]
+pub type BDDBase = BddBase<S,BddSwarm<S>>;
 
 
 
