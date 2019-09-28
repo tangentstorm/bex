@@ -1,6 +1,6 @@
 #+title: howto: common (development) tasks for bex
 
-* Group a git commits without squashing.                        :git:
+* Group git commits without squashing.                          :git:
 
 Make changes, then...
 
@@ -10,3 +10,12 @@ Make changes, then...
 : git branch merge                     # create new branch to hold recent commits
 : git reset --hard origin/master       # move the master branche's HEAD back
 : git merge --no-ff merge -m <msg>     # force a merge commit 
+
+* Enable/disable output for =trace!=
+This is controlled by the log crate: https://docs.rs/log/0.4.8/log/
+For now, I'm configuring it globally in Cargo.toml
+
+#+begin_src toml
+[dependencies]
+log = { version = "0.4", features = ["max_level_debug"]}
+#+end_src

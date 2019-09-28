@@ -984,13 +984,10 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
   assert_eq!(vec![0,0,0,0,1,1,1,1], base.tt(x0));
   assert_eq!(vec![0,0,1,1,0,0,1,1], base.tt(x1));
   assert_eq!(vec![0,1,0,1,0,1,0,1], base.tt(x2));
-  debug!("\n----| x = x0 xor x1 |----");
   let x = base.xor(x0, x1);
   assert_eq!(vec![0,0,1,1,1,1,0,0], base.tt(x));
-  debug!("\n----| a = x1 and x2 |----");
   let a = base.and(x1, x2);
   assert_eq!(vec![0,0,0,1,0,0,0,1], base.tt(a));
-  debug!("\n----| x ? a : !a |----");
   let i = base.ite(x, a, not(a));
   assert_eq!(vec![1,1,0,1,0,0,1,0], base.tt(i)); }
 
