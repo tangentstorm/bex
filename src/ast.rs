@@ -24,10 +24,10 @@ pub enum Op {
 // !! TODO: move subs/subc into external structure
 #[derive(Serialize, Deserialize)]
 pub struct ASTBase {
-  pub bits: Vec<Op>,               // all known bits (simplified)     TODO: make private
+  pub bits: Vec<Op>,                // all known bits (simplified)     TODO: make private
   pub nvars: usize,
-  pub tags: HashMap<String, NID>,       // support for naming/tagging bits.  TODO: make private
-  hash: HashMap<Op, NID>,      // expression cache (simple+complex)
+  pub tags: HashMap<String, NID>,   // support for naming/tagging bits.  TODO: make private
+  hash: HashMap<Op, NID>,           // expression cache (simple+complex)
   vars: Vec<NID>,                   // quick index of Var(n) in bits
   subs: Vec<SUB>,                   // list of substitution dicts
   subc: Vec<HashMap<NID,NID>>       // cache of substiution results
@@ -66,7 +66,7 @@ impl ASTBase {
   pub fn load(path:&str)->::std::io::Result<(ASTBase)> {
     let s = io::get(path)?;
     return Ok(bincode::deserialize(&s).unwrap()); }
-  
+
 
   fn sid(&mut self, kv:SUB)->SID {
     let res = self.subs.len();
@@ -297,9 +297,9 @@ impl Base for ASTBase {
 
   fn new(n:usize)->Self {
     let mut res = ASTBase::empty();
-    for i in 0..n { res.var(i); }
+    for i in 0..n { println!("var({})",i); res.var(i); }
     res }
-  fn num_vars(&self)->usize { self.nvars.clone() }
+  fn num_vars(&self)->usize { self.nvars }
 
   fn o(&self)->NID { 0 }
   fn i(&self)->NID { 1 }
@@ -314,6 +314,9 @@ impl Base for ASTBase {
         vars.push(bits.len());
         bits.push(Op::Var(i)) }}
     vars[v] }
+
+  fn when_hi(&mut self, v:VID, n:NID)->NID { self.when(v,1,n) }
+  fn when_lo(&mut self, v:VID, n:NID)->NID { self.when(v,0,n) }
 
   fn def(&mut self, s:String, i:u32)->NID {
     let next = self.vars.len();
@@ -378,43 +381,15 @@ impl Base for ASTBase {
 } // impl Base for ASTBase
 
 
-#[test]
-fn ast_basics(){
-  let mut b = ASTBase::empty();
-  assert_eq!(b.bits.len(), 2);
-
-  // constants
-  assert!(0==b.o(), "o");      assert!(1==b.i(), "i");
-
-  // not
-  assert!(1==b.not(0), "¬o");  assert!(0==b.not(1), "¬i");
-
-  // and
-  assert!(0==b.and(0,0),"o∧o");  assert!(0==b.and(1,0), "i∧o");
-  assert!(0==b.and(0,1),"o∧i");  assert!(1==b.and(1,1), "i∧i");
-
-  // xor
-  assert!(0==b.xor(0,0),"o≠o");  assert!(1==b.xor(1,0), "i≠o");
-  assert!(1==b.xor(0,1),"o≠i");  assert!(0==b.xor(1,1), "i≠i"); }
+test_base_consts!(ASTBase);
+test_base_vars!(ASTBase);
+test_base_when!(ASTBase);
 
 #[test]
 fn ast_vars(){
   let mut b = ASTBase::empty(); let n = b.bits.len();
-  let x0 = b.var(0); let x02 = b.var(0); let x1 = b.var(1);
-  assert!(x0 == n, "var() should create a node. expected {}, got {}", n, x0);
-  assert!(x0 == x02, "var(0) should always return the same nid.");
+  let x0 = b.var(0); let x1 = b.var(1);
   assert!(x1 == x0+1);
   let nx0 = b.not(x0);
-  assert!(x0 == b.not(nx0), "expected x0=¬¬x0");
   assert!(nx0 == b.nid(Op::Not(x0))) }
 
-#[test]
-fn ast_when(){
-  let mut b = ASTBase::empty(); let x0 = b.var(0);
-  assert!(b[x0] == Op::Var(0), "expect var(0) to return nid for Var(0)");
-  assert!(b.when(0,0,x0)==  0, "x0 when x0 == 0 should be O");
-  assert!(b.when(0,1,x0)==  1, "x0 when x0 == 1 should be I");
-  assert!(b.when(1,1,x0)== x0, "x0 when x1 == 1 should be x0");
-}
-
-test_base_consts!(ASTBase);

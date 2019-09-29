@@ -881,13 +881,15 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   type N = NID;
   type V = VID;
 
-  fn new(n:usize)->Self { Self::new(0) }
+  fn new(n:usize)->Self { Self::new(n) }
   fn num_vars(&self)->usize { self.nvars() }
-
 
   fn o(&self)->NID { O }
   fn i(&self)->NID { I }
   fn var(&mut self, v:VID)->NID { nv(v) }
+
+  fn when_hi(&mut self, v:VID, n:NID)->NID { self.when_hi(v,n) }
+  fn when_lo(&mut self, v:VID, n:NID)->NID { self.when_lo(v,n) }
 
   // TODO: these should be moved into seperate struct
   fn def(&mut self, s:String, i:u32)->NID { nv(19760820) }  // TODO: make default impl
@@ -898,7 +900,7 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   fn xor(&mut self, x:NID, y:NID)->NID { self.xor(x, y) }
   fn or(&mut self, x:NID, y:NID)->NID  { self.or(x, y) }
   #[cfg(todo)] fn mj(&mut self, x:NID, y:NID, z:NID)->NID  {
-    self.xor(x, self.xor(y, z))  // TODO: normalize the order here. make this the default impl.
+    self.xor(x, self.xor(y, z))  // TODO: normalize order. make this the default impl.
   }
   #[cfg(todo)] fn ch(&mut self, x:NID, y:NID, z:NID)->NID { self.ite(x, y, z) }
 }
@@ -917,6 +919,11 @@ pub type BDDBase = BddBase<S,SimpleBddWorker<S>>;
 #[cfg(not(feature="noswarm"))]
 pub type BDDBase = BddBase<S,BddSwarm<S>>;
 
+
+// generic base::Base test suite
+test_base_consts!(BDDBase);
+test_base_vars!(BDDBase);
+test_base_when!(BDDBase);
 
 
 // basic test suite
@@ -1021,4 +1028,3 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
   assert_eq!(anb, anb2);
 }
 
-test_base_consts!(BDDBase);
