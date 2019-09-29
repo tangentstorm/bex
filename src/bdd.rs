@@ -671,7 +671,7 @@ fn swarm_ite_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
       // now construct and normalize the queries for the hi/lo branches:
       let hi = ITE::norm(hi_i, hi_t, hi_e);
       let lo = ITE::norm(lo_i, lo_t, lo_e);
-      // if they're both simple nids, we're guaranteed to have vhl,a so check cache
+      // if they're both simple nids, we're guaranteed to have a vhl, so check cache
       if let (Norm::Nid(hn), Norm::Nid(ln)) = (hi,lo) {
         match ITE::norm(nv(v), hn, ln) {
           // first, it might normalize to a nid directly:
@@ -881,6 +881,10 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   type N = NID;
   type V = VID;
 
+  fn new(n:usize)->Self { Self::new(0) }
+  fn num_vars(&self)->usize { self.nvars() }
+
+
   fn o(&self)->NID { O }
   fn i(&self)->NID { I }
   fn var(&mut self, v:VID)->NID { nv(v) }
@@ -1016,3 +1020,5 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
   assert_eq!(vec![0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0], base.tt(anb2));
   assert_eq!(anb, anb2);
 }
+
+test_base_consts!(BDDBase);

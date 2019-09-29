@@ -1,6 +1,8 @@
-/// bex: a boolean expression library for rust
-/// outside the base, you deal only with opaque references.
-/// inside, it could be stored any way we like.
+#![macro_use]
+
+///! bex: a boolean expression library for rust
+///! outside the base, you deal only with opaque references.
+///! inside, it could be stored any way we like.
 pub trait Base {
 
   /// Node identifier type. Usually mapped to xxx::NID
@@ -8,6 +10,9 @@ pub trait Base {
 
   /// Variable identifier type. Usually mapped to xxx::VID
   type V;
+
+  fn new(n:usize)->Self;
+  fn num_vars(&self)->usize;
 
   fn o(&self)->Self::N;
   fn i(&self)->Self::N;
@@ -21,6 +26,19 @@ pub trait Base {
   #[cfg(todo)] fn mj(&mut self, x:Self::N, y:Self::N, z:Self::N)->Self::N;
   #[cfg(todo)] fn ch(&mut self, x:Self::N, y:Self::N, z:Self::N)->Self::N;
 }
+
+macro_rules! base_test {
+  ($name:ident, $basename:ident, $nvars:expr, $tt:tt) => {
+    macro_rules! $name {
+      ($BaseType:ident) => {
+        #[test] fn $name() {
+          use base::Base;
+          let mut $basename = <$BaseType as Base>::new($nvars);
+          $tt }}}}}
+
+base_test!{test_base_consts, base, 0, {
+  let (o,i) = (base.o(), base.i());
+  assert_eq!(base.and(o, i), o); }}
 
 
 // TODO: put these elsewhere.

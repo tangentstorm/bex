@@ -295,6 +295,12 @@ impl Base for ASTBase {
   type N = NID;
   type V = VID;
 
+  fn new(n:usize)->Self {
+    let mut res = ASTBase::empty();
+    for i in 0..n { res.var(i); }
+    res }
+  fn num_vars(&self)->usize { self.nvars.clone() }
+
   fn o(&self)->NID { 0 }
   fn i(&self)->NID { 1 }
 
@@ -410,3 +416,5 @@ fn ast_when(){
   assert!(b.when(0,1,x0)==  1, "x0 when x0 == 1 should be I");
   assert!(b.when(1,1,x0)== x0, "x0 when x1 == 1 should be x0");
 }
+
+test_base_consts!(ASTBase);
