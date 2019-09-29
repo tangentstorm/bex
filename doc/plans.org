@@ -1,0 +1,48 @@
+#+title: plans for things to try in bex
+
+* TODO [2/3] extract WIP base, and use for ANF
+** DONE extract basic test suite for =trait Base=
+Just take the simple tests that exist for =ast= and =bdd=
+** DONE Create anf.rs stub and get the simple tests passing.
+** TODO Extract wip.rs from BDDSwarm
+*** WIP = work in progress
+The idea is to reify work-in-progress so that the work can be prioritized and distributed across multiple workers.
+*** trait WIPBase : Base
+- Slow-running bases should be WIP.
+  - Q: type for queries
+  - W: type for work-in-progress nodes
+  - C: type for finished work cache
+*** struct FWBase<W:WIPBase>
+This is a generic type finished work.
+
+* TODO Finish the ANF implementation as a WIPBase.
+
+* -- backlog (unsorted) --
+** add some more benchmarks
+*** keep scaling the multiplication problem search space by 1 bit
+*** and/xor tables for fns of n bits
+*** n queens
+https://github.com/chrisying/parabdd/blob/master/src/nqueens.cpp
+** compare benchmarks
+*** compare to CUDD
+*** compare to BUDDy (has vectorized operations)
+http://vlsicad.eecs.umich.edu/BK/Slots/cache/www.itu.dk/research/buddy/
+*** compare to sylvan (MULTI-CORE BDD)
+ https://github.com/trolando/sylvan
+*** =dd= for python offers all three:
+https://github.com/tulip-control/dd
+** proper sifting for bdds
+** more new base types
+*** ZddBase
+*** CnfBase
+**** Plain CNF
+**** Tseytin Transformation
+**** SAT solver
+*** Biconditional BDD (a=b decomposition)
+*** BmpBase (raw bitmaps)
+** allow swarms to run across the network
+** web browser for bases
+** move tagging to a separate struct
+** implement visitor pattern for dot, count, etc
+*** move walk/step to top level
+*** linear walk of the nids (for permute/save)
