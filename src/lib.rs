@@ -8,19 +8,27 @@ extern crate fnv;
 extern crate hashbrown;
 extern crate simplelog;
 
-/// The core library, and support for boolean expressions as abstract syntax trees.
+/// Standard interface for working with databases of expressions.
 pub mod base;
 pub use base::*;
 
-/// Misc helper routines inspired by the APL family of programming languages.
-pub mod apl;
-/// Base implementation for simple AST representation.
+/// Internal routines used by some bases.
+mod nid;
+
+/// Abstract syntax trees (simple logic combinators).
 pub mod ast;
-/// Binary decision diagrams.
+/// Binary decision diagrams (if-then-else).
 pub mod bdd;
-/// Working with arrays of bit structures as if they were integers.
-pub mod int;
-/// Input/output support for the other modules.
-pub mod io;
-/// solve AST-based expressions by converting them to BDDs.
+
+/// Solve AST-based expressions by converting them to other forms.
 pub mod solve;
+
+/// Helper routines inspired by the APL family of programming languages.
+pub mod apl;
+/// Helpers for working with arrays of bit structures as if they were integers.
+pub mod int;
+/// Input/output helpers.
+pub mod io;
+
+/// (Experimental/Unfinished) support for algebraic normal form (XOR of AND).
+pub mod anf;

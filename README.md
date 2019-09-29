@@ -12,7 +12,7 @@ also construct and manipulate BDDs directly.
 
 ## changelog
 
-### 0.1.4 (upcoming. 2019-10-xx?)
+### 0.1.4 (upcoming. 2019-10-01?)
 
 **code cleanup**
 - Swarming is now enabled by default for BDDBase. (#7)
@@ -27,6 +27,16 @@ also construct and manipulate BDDs directly.
     moved out of `trait Base` and into `struct ASTBase` directly.
   - The old `base::{Op,SID,SUB,NID,VID}` types have also moved to the `ast` module.
   - `bdd::BddBase` now implements `base::Base`.
+  - Some of the tests for `ast` and `bdd` have been macro-fied and moved into `base`.
+    These macros allow re-using the same test code for each `Base` implementation.
+- The `bdd::NID` type and associated helper functions have been moved into `nid`
+  so the same scheme can be reused for other `Base` implementations.
+
+**ANFBase**
+- The `anf` module now contains the beginnings of a BDD-like structure for working
+  with expressions in algebraic normal form (XOR-of-ANDs).
+- Currently it passes the rudimentary test suite for constants and simple variables,
+  but it panics when confronted with anything more complicated than that.
 
 **documentation**
 - Began writing/collecting more documentation in the
@@ -62,7 +72,7 @@ continue to tinker with it.
   to solve arbitrary problems. (Albeit very very slowly, still...)
 - `examples/bex-shell.rs` is a tiny forth-like interpreter for
   manipulating expressions interactively.
-- See [exaples/README.md](https://github.com/tangentstorm/bex/tree/master/examples)
+- See [examples/README.md](https://github.com/tangentstorm/bex/tree/master/examples)
   for more details.
 
 **other improvements**

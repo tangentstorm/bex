@@ -1,4 +1,5 @@
 #![macro_use]
+use hashbrown::HashMap;
 
 ///! bex: a boolean expression library for rust
 ///! outside the base, you deal only with opaque references.
@@ -17,21 +18,33 @@ pub trait Base {
   fn o(&self)->Self::N;
   fn i(&self)->Self::N;
 
-  fn var(&mut self, v:Self::V)->Self::N;
+  fn var(&mut self, i:Self::V)->Self::N;
   fn when_hi(&mut self, v:Self::V, n:Self::N)->Self::N;
   fn when_lo(&mut self, v:Self::V, n:Self::N)->Self::N;
-
-  fn def(&mut self, s:String, i:u32)->Self::N;
-  fn tag(&mut self, n:Self::N, s:String)->Self::N;
 
   fn not(&mut self, x:Self::N)->Self::N;
   fn and(&mut self, x:Self::N, y:Self::N)->Self::N;
   fn xor(&mut self, x:Self::N, y:Self::N)->Self::N;
   fn or(&mut self, x:Self::N, y:Self::N)->Self::N;
 
+  fn def(&mut self, s:String, i:u32)->Self::N;
+  fn tag(&mut self, n:Self::N, s:String)->Self::N;
+
   #[cfg(todo)] fn mj(&mut self, x:Self::N, y:Self::N, z:Self::N)->Self::N;
   #[cfg(todo)] fn ch(&mut self, x:Self::N, y:Self::N, z:Self::N)->Self::N;
 }
+
+/*
+/// TODO: Generic tagging support for any base type.
+pub struct Tagged<B:Base> {
+  base: B,
+  tags: HashMap<String,B::N> }
+
+impl<B:Base> Tagged<B> {
+  pub fn def(&mut self, s:String, v:B::V)->B::N { self.base.var(v) }
+  pub fn tag(&mut self, n:B::N, s:String)->B::N { n }}
+
+ */
 
 // Meta-macro that generates a macro for testing any base implementation.
 macro_rules! base_test {
@@ -43,6 +56,7 @@ macro_rules! base_test {
           let mut $basename = <$BaseType as Base>::new($nvars);
           $tt }}}}}
 
+
 // Test operations on constants.
 base_test!(test_base_consts, b, 0, {
   let (o, i) = (b.o(), b.i());
