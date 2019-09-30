@@ -16,31 +16,25 @@
 use base::Base;
 use nid;
 use nid::{NID,VID,I,O};
+use hashbrown::HashMap;
 
 
 /// (v AND hi) XOR lo
 // TODO /// (ALL(v0..v1) AND hi) XOR lo
 // TODO: /// The v0..v1 thing is used to collapse long chains of nodes where lo=O.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 struct ANF {
   /// v is the variable in the head.
-  _v: VID,
+  v: VID,
   /// the hi subgraph gets ANDed to the head.
   hi: NID,
   /// the lo subgraph gets XORed to the hi node.
   lo: NID }
 
-enum ANFNode {
-  /// Lit holds constants or simple variables
-  Lit(NID),
-  /// Ref holds a regular ANF node.
-  Reg(ANF),
-  /// Neg holds a negated ANF node. (Meaning an extra 1 term needs to be XORed).
-  Neg(ANF)}
-
 pub struct ANFBase {
   nvars:usize,
-  nodes:Vec<ANF> }
+  nodes:Vec<ANF>,
+  cache:HashMap<ANF,NID>}
 
 
 impl Base for ANFBase {
@@ -48,7 +42,7 @@ impl Base for ANFBase {
   type N = NID;
   type V = VID;
 
-  fn new(n:usize)->Self { ANFBase { nvars: n, nodes:vec![] } }
+  fn new(n:usize)->Self { ANFBase { nvars: n, nodes:vec![], cache: HashMap::new() } }
   fn num_vars(&self)->usize { self.nvars }
 
   #[inline] fn o(&self)->NID { O }
@@ -60,22 +54,21 @@ impl Base for ANFBase {
 
   fn when_lo(&mut self, v:VID, n:NID)->NID {
     let nv = nid::var(n);
-    if nv > v { return n }  // n independent of v
-    if nv == v {
-      match self.fetch(n) {
-        ANFNode::Lit(x) => O,  // should only happen when v==nv==x, and v:=O
-        ANFNode::Reg(x) => x.lo,
-        ANFNode::Neg(x) => nid::not(x.lo) }}
+    if nv > v { n }  // n independent of v
+    else if nv == v {
+      if nid::is_lit(n) {
+        // a leaf node should never be inverted... unless it's also the root.
+        if nid::is_inv(n) { I } else { O }}
+      else { self.fetch(n).lo }}
     else { panic!("TODO: anf::when_lo") }}
 
   fn when_hi(&mut self, v:VID, n:NID)->NID {
     let nv = nid::var(n);
     if nv > v { return n }  // n independent of v
     if nv == v {
-      match self.fetch(n) {
-        ANFNode::Lit(n) => I,  // should only happen when v==nv==x, and v:=I
-        ANFNode::Reg(x) => self.xor(x.hi, x.lo),
-        ANFNode::Neg(x) => nid::not(self.xor(x.hi, x.lo)) }}
+      if nid::is_lit(n) {
+        if nid::is_inv(n) { O } else { I }}
+      else { self.fetch(n).hi }}
     else { panic!("TODO: anf::when_hi") }}
 
   // logical ops
@@ -87,7 +80,7 @@ impl Base for ANFBase {
     else if x == I || x == y { y }
     else if y == I { x }
     else if x == self.not(y) { O }
-    else { self.calc_and(x, y) }}
+    else { self.calc_and(self.fetch(x), self.fetch(y)) }}
 
   fn xor(&mut self, x:NID, y:NID)->NID {
     if x == y { O }
@@ -107,18 +100,34 @@ impl Base for ANFBase {
 
 impl ANFBase {
 
-  fn fetch(&mut self, n:NID)->ANFNode {
-    if nid::is_lit(n) { ANFNode::Lit(n) }
+
+  fn fetch(&self, n:NID)->ANF {
+    if nid::is_var(n) { // variables are (v*I)+O if normal, (v*I)+I if inverted.
+      ANF{v:nid::var(n), hi:I, lo: if nid::is_inv(n) { I } else { O } }}
+    else { self.nodes[nid::idx(n)] }}
+
+  fn vhl(&mut self, v:VID, hi:NID, lo:NID)->NID {
+    if let Some(&n) = self.cache.get(&ANF{v, hi, lo}) { n }
     else {
-      let a = self.nodes[nid::idx(n)];
-      if nid::is_inv(n) { ANFNode::Neg(a) }
-      else { ANFNode::Reg(a) }}}
+      let res = nid::nvi(v, self.nodes.len() as u32);
+      let anf = ANF{ v, hi ,lo };
+      self.cache.insert(anf, res);
+      self.nodes.push(anf);
+      res }}
 
-  fn calc_and(&mut self, x:NID, y:NID)->NID {
-    panic!("TODO: anf::calc_and")}
+  fn calc_and(&mut self, x:ANF, y:ANF)->NID {
+    panic!("TODO: anf::calc_and")} // TODO
 
+  /// called only by xor, so simple cases are already handled.
   fn calc_xor(&mut self, x:NID, y:NID)->NID {
-    panic!("TODO: anf::calc_xor")}
+    // x:(ab+c) + y:(pq+r) --> ab+(c+(pq+r))
+    let (vx, vy) = (nid::var(x), nid::var(y));
+    if vx < vy  {
+      let ANF{v, hi, lo} = self.fetch(x);
+      let lo = self.xor(lo, y);
+      self.vhl(v, hi, lo)}
+    else if vx > vy { self.calc_xor(y, x) }
+    else { panic!("TODO: anf::calc_xor when vx==vy")}} // TODO
 
 } // impl ANFBase
 
@@ -127,3 +136,9 @@ impl ANFBase {
 test_base_consts!(ANFBase);
 test_base_vars!(ANFBase);
 test_base_when!(ANFBase);
+
+#[test] fn test_anf_xor() {
+  let mut base = ANFBase::new(4);
+  let a = base.var(0); let b = base.var(1);
+  let (axb, bxa) = (base.xor(a,b), base.xor(b,a));
+  assert_eq!(axb, bxa, "xor should be order-independent") }
