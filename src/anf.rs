@@ -12,7 +12,6 @@
 //!     ab(c(1+d) + d) + cd      (after factoring)
 //! ```
 //! In addition, identical suffixes after factoring always refer to the same node.
-
 use base::Base;
 use nid;
 use nid::{NID,VID,I,O};
@@ -75,12 +74,12 @@ impl Base for ANFBase {
 
   #[inline] fn not(&mut self, n:NID)->NID { nid::not(n) }
 
-  fn and(&mut self, x:NID, y:NID)->NID {
+ fn and(&mut self, x:NID, y:NID)->NID {
     if x == O || y == O { O }
     else if x == I || x == y { y }
     else if y == I { x }
     else if x == self.not(y) { O }
-    else { self.calc_and(self.fetch(x), self.fetch(y)) }}
+    else { self.calc_and(x, y) }}
 
   fn xor(&mut self, x:NID, y:NID)->NID {
     if x == y { O }
@@ -100,7 +99,6 @@ impl Base for ANFBase {
 
 impl ANFBase {
 
-
   fn fetch(&self, n:NID)->ANF {
     if nid::is_var(n) { // variables are (v*I)+O if normal, (v*I)+I if inverted.
       ANF{v:nid::var(n), hi:I, lo: if nid::is_inv(n) { I } else { O } }}
@@ -114,31 +112,128 @@ impl ANFBase {
       self.cache.insert(anf, res);
       self.nodes.push(anf);
       res }}
+
 
-  fn calc_and(&mut self, x:ANF, y:ANF)->NID {
-    panic!("TODO: anf::calc_and")} // TODO
 
+  fn calc_and(&mut self, x:NID, y:NID)->NID {
+    let (vx, vy) = (nid::var(x), nid::var(y));
+    if vx < vy {
+      // base case: x:a + y:(pq+r)  a<p<q, p<r  --> a(pq+r)
+      if nid::is_var(x) { self.vhl(vx, y, O) }
+      else {
+        //     x:(ab+c) * y:(pq+r)
+        //  =  ab(pq) + ab(r) + c(pq) + c(r)
+        //  =  a(b(pq+r)) + c(pq+r)
+        //  =  a(by) + cy
+        // TODO: these can all happen in parallel.
+        let ANF{v:a, hi:b, lo:c } = self.fetch(x);
+        let hi = self.and(b, y);
+        let lo = self.and(c, y);
+        self.vhl(a, hi, lo)}}
+    else if vx > vy { self.calc_and(y, x) }
+    else { panic!("TODO: anf::calc_and when vx=vy")}}
+
   /// called only by xor, so simple cases are already handled.
   fn calc_xor(&mut self, x:NID, y:NID)->NID {
-    // x:(ab+c) + y:(pq+r) --> ab+(c+(pq+r))
     let (vx, vy) = (nid::var(x), nid::var(y));
     if vx < vy  {
+      // x:(ab+c) + y:(pq+r) --> ab+(c+(pq+r))
       let ANF{v, hi, lo} = self.fetch(x);
       let lo = self.xor(lo, y);
       self.vhl(v, hi, lo)}
     else if vx > vy { self.calc_xor(y, x) }
-    else { panic!("TODO: anf::calc_xor when vx==vy")}} // TODO
+    else { // vx == vy
+      // x:(ab+c) + y:(aq+r) -> ab+c+aq+r -> ab+aq+c+r -> a(b+q)+c+r
+      let ANF{v:a, hi:b, lo:c} = self.fetch(x);
+      let ANF{v:p, hi:q, lo:r} = self.fetch(y);
+      assert_eq!(a,p);
+      let hi = self.xor(b, q);
+      let lo = self.xor(c, r);
+      self.vhl(a, hi, lo)}}
 
 } // impl ANFBase
 
-// test suite
+// macros for building expressions
 
+#[macro_export]
+macro_rules! op {
+  ($b:ident, $x:tt $op:ident $y:tt) => {{
+    let x = expr![$b, $x];
+    let y = expr![$b, $y];
+    $b.$op(x,y) }}}
+
+#[macro_export]
+macro_rules! expr {
+  ($_:ident, $id:ident) => { $id };
+  ($b:ident, ($x:tt ^ $y:tt)) => { op![$b, $x xor $y] };
+  ($b:ident, ($x:tt & $y:tt)) => { op![$b, $x and $y] };}
+
+
+// test suite
 test_base_consts!(ANFBase);
 test_base_vars!(ANFBase);
 test_base_when!(ANFBase);
 
+#[test] fn test_anf_hilo() {
+  let mut base = ANFBase::new(1);
+  let a = base.var(0);
+  let ANF{ v, hi, lo } = base.fetch(a);
+  assert_eq!(v, nid::var(a));
+  assert_eq!(hi, I);
+  assert_eq!(lo, O); }
+
+#[test] fn test_anf_hilo_not() {
+  let mut base = ANFBase::new(1);
+  let a = base.var(0);
+  let ANF{ v, hi, lo } = base.fetch(nid::not(a));
+  assert_eq!(v, nid::var(a));
+  assert_eq!(hi, I);
+  assert_eq!(lo, I); }
+
+
 #[test] fn test_anf_xor() {
-  let mut base = ANFBase::new(4);
+  let mut base = ANFBase::new(2);
   let a = base.var(0); let b = base.var(1);
   let (axb, bxa) = (base.xor(a,b), base.xor(b,a));
-  assert_eq!(axb, bxa, "xor should be order-independent") }
+  assert_eq!(O, base.xor(a,a), "a xor a should be 0");
+  assert_eq!(base.not(a), base.xor(I,a), "a xor 1 should be ~a");
+  assert_eq!(axb, bxa, "xor should be order-independent");
+
+  let ANF{ v, hi, lo } = base.fetch(axb);
+  assert_eq!(v, nid::var(a));
+  assert_eq!(hi, I);
+  assert_eq!(lo, b); }
+
+#[test] fn test_anf_xor3() {
+  let mut base = ANFBase::new(4);
+  let a = base.var(0); let b = base.var(1); let c = base.var(2);
+  assert_eq!(expr![base, ((a ^ b) ^ c)],
+             expr![base, (a ^ (b ^ c))]); }
+
+
+#[test] fn test_anf_and() {
+  let mut base = ANFBase::new(2);
+  let a = base.var(0); let b = base.var(1);
+  let ab = base.and(a, b);
+  let ANF{v, hi, lo} = base.fetch(ab);
+  assert_eq!(v, nid::var(a));
+  assert_eq!(hi, b);}
+
+
+#[test] fn test_anf_and3() {
+  let mut base = ANFBase::new(4);
+  let a = base.var(0); let b = base.var(1); let c = base.var(2);
+  assert_eq!(expr![base, ((a & b) & c)],
+             expr![base, (a & (b & c))]); }
+
+
+#[test] fn test_anf_and_big() {
+  // x:(ab+c) * y:(pq+r) --> ab(pq+r) + c(pq+r)
+  let mut base = ANFBase::new(4);
+  let a = base.var(0); let b = base.var(1); let c = base.var(2);
+  let p = base.var(3); let q = base.var(4); let r = base.var(5);
+  let ab = base.and(a,b); let pq = base.and(p,q);
+  let actual = expr![base, ((ab ^ c) & (pq ^ r))];
+  let expected = expr![base, ((ab & (pq ^ r)) ^ (c & (pq ^ r)))];
+  assert_eq!(expected, actual); }
+
