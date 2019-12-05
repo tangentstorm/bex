@@ -1,5 +1,5 @@
 #![macro_use]
-use hashbrown::HashMap;
+// TODO: use hashbrown::HashMap;
 
 ///! bex: a boolean expression library for rust
 ///! outside the base, you deal only with opaque references.
