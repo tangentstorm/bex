@@ -59,6 +59,10 @@ pub const I:NID = NID{ n:(T|INV) };
 /// Is the NID inverted? That is, does it represent `not(some other nid)`?
 #[inline(always)] pub fn is_inv(x:NID)->bool { (x.n & INV) != 0 }
 
+/// Return the NID with the 'INV' flag removed.
+// !! pos()? abs()? I don't love any of these names.
+#[inline(always)] pub fn raw(x:NID)->NID { NID{ n: x.n & !INV }}
+
 /// Does the NID refer to one of the two constant nodes (O or I)?
 #[inline(always)] pub fn is_const(x:NID)->bool { (x.n & T) != 0 }
 

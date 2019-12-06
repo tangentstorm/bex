@@ -1,3 +1,4 @@
+
 //! Experimental structure for representing algebraic normal form (xor of ands).
 //!
 //! Algebraic normal form is essentially a boolean polynomial.
@@ -34,6 +35,23 @@ pub struct ANFBase {
   nvars:usize,
   nodes:Vec<ANF>,
   cache:HashMap<ANF,NID>}
+
+
+
+// macros for building expressions
+
+#[macro_export]
+macro_rules! op {
+  ($b:ident, $x:tt $op:ident $y:tt) => {{
+    let x = expr![$b, $x];
+    let y = expr![$b, $y];
+    $b.$op(x,y) }}}
+
+#[macro_export]
+macro_rules! expr {
+  ($_:ident, $id:ident) => { $id };
+  ($b:ident, ($x:tt ^ $y:tt)) => { op![$b, $x xor $y] };
+  ($b:ident, ($x:tt & $y:tt)) => { op![$b, $x and $y] };}
 
 
 impl Base for ANFBase {
@@ -74,21 +92,38 @@ impl Base for ANFBase {
 
   #[inline] fn not(&mut self, n:NID)->NID { nid::not(n) }
 
- fn and(&mut self, x:NID, y:NID)->NID {
+  fn and(&mut self, x:NID, y:NID)->NID {
     if x == O || y == O { O }
     else if x == I || x == y { y }
     else if y == I { x }
-    else if x == self.not(y) { O }
-    else { self.calc_and(x, y) }}
+    else if x == nid::not(y) { O }
 
+    // We want any 'xor 1' (not) to be kept at the top level. There are four cases:
+    else {
+      let (a,b) = (nid::raw(x), nid::raw(y));  // x!=I because it was handled above.
+      if nid::is_inv(x) {
+        // case 0:  x:~a & y:~b ==> 1 ^ a ^ ab ^ b
+        if nid::is_inv(y) { expr![ self,  (I ^ (a ^ ((a & b) ^ b)))] }
+        // case 1:  x:~a & y:b ==>  ab ^ b
+        else { expr![ self, ((a & b) ^ b)] }}
+      // case 2: x:a & y:~b ==> ab ^ a
+      else if nid::is_inv(y) { expr![ self, ((a & b) ^ a)] }
+      // case 3: x:a & y:b ==> ab
+      else { self.calc_and(x, y) }}}
+
   fn xor(&mut self, x:NID, y:NID)->NID {
     if x == y { O }
     else if x == O { y }
     else if y == O { x }
-    else if x == I { self.not(y) }
-    else if y == I { self.not(x) }
-    else if x == self.not(y) { I }
-    else { self.calc_xor(x, y) }}
+    else if x == I { nid::not(y) }
+    else if y == I { nid::not(x) }
+    else if x == nid::not(y) { I }
+    else {
+      // xor the raw anf expressions (without any 'xor 1' bits), then xor the bits.
+      let (a, b) = (nid::raw(x), nid::raw(y));
+      let res = self.calc_xor(a, b);
+      if nid::is_inv(x) == nid::is_inv(y) { res }
+      else { nid::not(res) }}}
 
   fn or(&mut self, x:NID, y:NID)->NID { panic!("TODO: anf::or") }
 
@@ -102,16 +137,26 @@ impl ANFBase {
   fn fetch(&self, n:NID)->ANF {
     if nid::is_var(n) { // variables are (v*I)+O if normal, (v*I)+I if inverted.
       ANF{v:nid::var(n), hi:I, lo: if nid::is_inv(n) { I } else { O } }}
-    else { self.nodes[nid::idx(n)] }}
-
-  fn vhl(&mut self, v:VID, hi:NID, lo:NID)->NID {
-    if let Some(&n) = self.cache.get(&ANF{v, hi, lo}) { n }
     else {
-      let res = nid::nvi(v, self.nodes.len() as u32);
-      let anf = ANF{ v, hi ,lo };
-      self.cache.insert(anf, res);
-      self.nodes.push(anf);
-      res }}
+      let mut anf = self.nodes[nid::idx(n)].clone();
+      if nid::is_inv(n) { anf.lo = nid::not(anf.lo) }
+      anf }}
+
+  fn vhl(&mut self, v:VID, hi0:NID, lo0:NID)->NID {
+    // this is technically an xor operation, so if we want to call it directly,
+    // we need to do the same logic as xor() to handle the 'not' bit.
+    // note that the cache only ever contains 'raw' nodes, except hi=I
+    let (hi,lo) = (if hi0 == I {I} else {nid::raw(hi0)}, nid::raw(lo0));
+    let res =
+      if let Some(&nid) = self.cache.get(&ANF{v, hi, lo}) { nid }
+      else {
+        let anf = ANF{ v, hi, lo };
+        let nid = nid::nvi(v, self.nodes.len() as u32);
+        self.cache.insert(anf, nid);
+        self.nodes.push(anf);
+        nid };
+    let invert = if hi == I { nid::is_inv(lo) } else { nid::is_inv(hi) != nid::is_inv(lo) };
+    if invert { nid::not( res )} else { res }}
 
 
 
@@ -152,21 +197,6 @@ impl ANFBase {
       self.vhl(a, hi, lo)}}
 
 } // impl ANFBase
-
-// macros for building expressions
-
-#[macro_export]
-macro_rules! op {
-  ($b:ident, $x:tt $op:ident $y:tt) => {{
-    let x = expr![$b, $x];
-    let y = expr![$b, $y];
-    $b.$op(x,y) }}}
-
-#[macro_export]
-macro_rules! expr {
-  ($_:ident, $id:ident) => { $id };
-  ($b:ident, ($x:tt ^ $y:tt)) => { op![$b, $x xor $y] };
-  ($b:ident, ($x:tt & $y:tt)) => { op![$b, $x and $y] };}
 
 
 // test suite
@@ -188,9 +218,11 @@ test_base_when!(ANFBase);
   let ANF{ v, hi, lo } = base.fetch(nid::not(a));
   assert_eq!(v, nid::var(a));
   assert_eq!(hi, I);
-  assert_eq!(lo, I); }
+  assert_eq!(lo, I); // the final I never appears in the stored structure,
+  // but if fetch is given an inverted nid, it inverts the lo branch.
+}
 
-
+
 #[test] fn test_anf_xor() {
   let mut base = ANFBase::new(2);
   let a = base.var(0); let b = base.var(1);
@@ -203,6 +235,18 @@ test_base_when!(ANFBase);
   assert_eq!(v, nid::var(a));
   assert_eq!(hi, I);
   assert_eq!(lo, b); }
+
+#[test] fn test_anf_xor_inv() {
+  let mut base = ANFBase::new(2);
+  let a = base.var(0); let b = base.var(1);
+  let axb = base.xor(a, b);
+  let naxb = base.xor(nid::not(a), b);
+  let axnb = base.xor(a, nid::not(b));
+  let naxnb = base.xor(nid::not(a), nid::not(b));
+  assert_eq!(naxnb, axb, "expect ~a ^ ~b == a^b");
+  assert_eq!(axnb, naxb, "expect a ^ ~b ==  ~a ^ b");
+  assert_eq!(axb, nid::not(naxb), "expect a ^ b ==  ~(~a ^ b)"); }
+
 
 #[test] fn test_anf_xor3() {
   let mut base = ANFBase::new(4);
@@ -217,8 +261,8 @@ test_base_when!(ANFBase);
   let ab = base.and(a, b);
   let ANF{v, hi, lo} = base.fetch(ab);
   assert_eq!(v, nid::var(a));
-  assert_eq!(hi, b);}
-
+  assert_eq!(hi, b);
+  assert_eq!(lo, O);}
 
 #[test] fn test_anf_and3() {
   let mut base = ANFBase::new(4);
