@@ -158,8 +158,6 @@ impl ANFBase {
     let invert = if hi == I { nid::is_inv(lo) } else { nid::is_inv(hi) != nid::is_inv(lo) };
     if invert { nid::not( res )} else { res }}
 
-
-
   fn calc_and(&mut self, x:NID, y:NID)->NID {
     let (vx, vy) = (nid::var(x), nid::var(y));
     if vx < vy {
@@ -176,7 +174,17 @@ impl ANFBase {
         let lo = self.and(c, y);
         self.vhl(a, hi, lo)}}
     else if vx > vy { self.calc_and(y, x) }
-    else { panic!("TODO: anf::calc_and when vx=vy")}}
+    else {
+      // x:(ab+c) * y:(aq+r) --> abq+abr+acq+cr --> a(b(q+r) + cq)+cr
+      let ANF{ v:a, hi:b, lo:c } = self.fetch(x);
+      let ANF{ v:p, hi:q, lo:r } = self.fetch(y);
+      assert_eq!(a,p);
+      // TODO: run in in parallel:
+      let cr = self.and(c,r);
+      let cq = self.and(c,q);
+      let qxr = self.xor(q,r);
+      let a = nid::nv(a);
+      expr![self, ((a & ((b & qxr) ^ cq)) ^ cr)] }}
 
   /// called only by xor, so simple cases are already handled.
   fn calc_xor(&mut self, x:NID, y:NID)->NID {
@@ -281,3 +289,13 @@ test_base_when!(ANFBase);
   let expected = expr![base, ((ab & (pq ^ r)) ^ (c & (pq ^ r)))];
   assert_eq!(expected, actual); }
 
+// TODO: remove the argument to new()
+#[test] fn test_anf_and_same_head() {
+  // x:(ab+c) * y:(aq+r) --> abq+abr+acq+cr --> a(b(q+r) + cq)+cr
+  let mut base = ANFBase::new(5);
+  let a = base.var(0); let b = base.var(1); let c = base.var(2);
+  let q = base.var(3); let r = base.var(4);
+  let ab = base.and(a,b); let aq = base.and(a,q);
+  let actual = expr![base, ((ab ^ c) & (aq ^ r))];
+  let expected = expr![base, ((a & ((b & (q ^ r)) ^ (c&q)))^(c&r))];
+  assert_eq!(expected, actual); }
