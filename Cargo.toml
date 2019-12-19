@@ -12,14 +12,15 @@ readme = "README.md"
 
 [lib]
 name = "bex"
+path = "src/lib.rs"
 
 [[bin]]
 name = "bex-shell"
-path = "examples/bex-shell.rs"
+path = "examples/shell/bex-shell.rs"
 
 [[bin]]
 name = "bdd-solve"
-path = "examples/bdd-solve.rs"
+path = "examples/solve/bdd-solve.rs"
 
 [features]
 noswarm = []

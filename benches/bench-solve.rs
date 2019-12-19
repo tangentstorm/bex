@@ -1,8 +1,12 @@
-include!("../examples/bdd-solve.rs");
-
 #[macro_use]
 extern crate bencher;
 use bencher::Bencher;
+
+extern crate bex;
+use bex::bdd;
+use bex::int::{BInt, BaseBit, GBASE, gbase_def};
+use bex::{find_factors, solve::{ProgressReport, bdd_refine, sort_by_cost}};
+use bex::ast::ASTBase;
 
 pub fn tiny(b: &mut Bencher) {
   use bex::int::{X4,X8};

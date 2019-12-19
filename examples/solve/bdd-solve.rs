@@ -1316,47 +1316,9 @@ fn factors()->Vec<(u32,u32)> {
 extern crate bex;
 use bex::bdd;
 use bex::int::{BInt, BaseBit, GBASE, gbase_def};
-use bex::solve::{ProgressReport, bdd_refine, sort_by_cost};
+use bex::{find_factors, solve::{ProgressReport, bdd_refine, sort_by_cost}};
 use bex::ast::ASTBase;
 
-/// Find all pairs of type T0 that multiply n as a T1. (T0 and T1 are
-/// BInt types. Generally T0 would have half as many bits as T1)
-macro_rules! find_factors {
-  ($T0:ident, $T1:ident, $n:expr, $expect:expr, $show:expr) => {{
-    // reset gbase on each test
-    GBASE.with(|gb| gb.replace(ASTBase::empty()));
-
-    let x = $T0::from_vec((0..$T0::n())
-                          .map(|i| gbase_def('x'.to_string(), i as u32)).collect());
-    let y = $T0::from_vec((0..$T0::n())
-                          .map(|i| gbase_def('y'.to_string(), i as u32)).collect());
-    let xy:$T1 = x.times(&y);
-    let k = $T1::new($n);
-    let lt = x.lt(&y);
-    let eq = xy.eq(&k);
-    if $show {
-      GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
-      GBASE.with(|gb| { gb.borrow().show_named(eq.clone().n, "eq") }); }
-    let top:BaseBit = lt & eq;
-    let _answer = GBASE.with(|gb| {
-      let (base, newtop) = sort_by_cost(&gb.borrow(), top.n);
-      // The diagram looks exactly the same before and after sort_by_cost, so I
-      // only generate it once. The only difference is the internal numbering.
-      // However: this sorting dramatically reduces the cost of the conversion.
-      // For example, test_tiny drops from to 111 steps.
-      if $show { base.show_named(newtop, "ast"); }
-      let mut bdds = bdd::BDDBase::new(base.bits.len());
-      bdd_refine(&mut bdds, &base, bdd::nv(newtop as bdd::VID),
-                 ProgressReport{ save_dot: $show, save_bdd: false, prefix: "x",
-                                 show_result: $show, save_result: $show });
-    });
-    let expect = $expect;
-    let actual = expect.clone();
-    assert_eq!(actual.len(), expect.len());
-    for i in 0..expect.len() {
-      assert_eq!(actual[i], expect[i], "mismatch at i={}", i) }
-  }}
-}
 
 
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
