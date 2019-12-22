@@ -670,7 +670,7 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
   pub fn save_dot(&self, n:NID, path:&str) {
     let mut s = String::new(); self.dot(n, &mut s);
     let mut txt = File::create(path).expect("couldn't create dot file");
-    txt.write_all(s.as_bytes()).expect("failet to write text to dot file"); }
+    txt.write_all(s.as_bytes()).expect("failed to write text to dot file"); }
 
   pub fn show_named(&self, n:NID, s:&str) {   // !! almost exactly the same as in bdd.rs
     self.save_dot(n, format!("{}.dot", s).as_str());
