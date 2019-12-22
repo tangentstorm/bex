@@ -63,15 +63,15 @@ impl ASTBase {
     let s = bincode::serialize(&self).unwrap();
     return io::put(path, &s) }
 
-  pub fn load(path:&str)->::std::io::Result<(ASTBase)> {
+  pub fn load(path:&str)->::std::io::Result<ASTBase> {
     let s = io::get(path)?;
     return Ok(bincode::deserialize(&s).unwrap()); }
 
 
-  fn sid(&mut self, kv:SUB)->SID {
+/*  fn sid(&mut self, kv:SUB)->SID {
     let res = self.subs.len();
     self.subs.push(kv); self.subc.push(HashMap::new());
-    res }
+    res } */
 
   pub fn sub(&mut self, x:NID, s:SID)->NID {
     macro_rules! op {
@@ -387,7 +387,7 @@ test_base_when!(ASTBase);
 
 #[test]
 fn ast_vars(){
-  let mut b = ASTBase::empty(); let n = b.bits.len();
+  let mut b = ASTBase::empty();
   let x0 = b.var(0); let x1 = b.var(1);
   assert!(x1 == x0+1);
   let nx0 = b.not(x0);

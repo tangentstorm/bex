@@ -122,12 +122,12 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
 
   fn nvars(&self)->usize;
 
-  #[inline] fn get_hilo(&self, n:NID)->HILO;
+  fn get_hilo(&self, n:NID)->HILO;
   /// load the memoized NID if it exists
-  #[inline] fn get_memo<'a>(&'a self, v:VID, ite:&ITE) -> Option<&'a NID>;
-  #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID);
-  #[inline] fn get_simple_node<'a>(&'a self, v:VID, hilo:HILO)-> Option<&'a NID>;
-  #[inline] fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID; }
+  fn get_memo<'a>(&'a self, v:VID, ite:&ITE) -> Option<&'a NID>;
+  fn put_xmemo(&mut self, ite:ITE, new_nid:NID);
+  fn get_simple_node<'a>(&'a self, v:VID, hilo:HILO)-> Option<&'a NID>;
+  fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID; }
 
 
 /// Groups everything by variable. I thought this would be useful, but it probably is not.
@@ -643,7 +643,7 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
     let s = bincode::serialize(&self).unwrap();
     return io::put(path, &s) }
 
-  pub fn load(path:&str)->::std::io::Result<(BDDBase)> {
+  pub fn load(path:&str)->::std::io::Result<BDDBase> {
     let s = io::get(path)?;
     return Ok(bincode::deserialize(&s).unwrap()); }
 
@@ -790,7 +790,7 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   fn when_lo(&mut self, v:VID, n:NID)->NID { self.when_lo(v,n) }
 
   // TODO: these should be moved into seperate struct
-  fn def(&mut self, s:String, i:u32)->NID { nv(19760820) }  // TODO: make default impl
+  fn def(&mut self, _s:String, _i:u32)->NID { todo!("BddBase::def()") }
   fn tag(&mut self, n:NID, s:String)->NID { self.tag(s, n); n }
 
   fn not(&mut self, x:NID)->NID { not(x) }
@@ -905,7 +905,7 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
 #[test] fn test_swarm_another() {
   use simplelog::*;  TermLogger::init(LevelFilter::Trace, Config::default()).unwrap();
   let mut base = BddSwarmBase::new(4);
-  let (a,b,c,d) = (nv(0), nv(1), nv(2), nv(3));
+  let (a,b) = (nv(0), nv(1));
   let anb = base.and(a,not(b));
   assert_eq!(vec![0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0], base.tt(anb));
 

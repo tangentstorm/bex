@@ -66,8 +66,8 @@ impl Base for ANFBase {
   #[inline] fn i(&self)->NID { I }
   #[inline] fn var(&mut self, v:VID)->NID { nid::nv(v) }
 
-  fn def(&mut self, s:String, v:u32)->NID { println!("TODO: anf::def"); self.var(v as VID) }
-  fn tag(&mut self, n:NID, s:String)->NID { println!("TODO: anf::tag"); n }
+  fn def(&mut self, _s:String, _v:u32)->NID { todo!("anf::def"); }
+  fn tag(&mut self, _n:NID, _s:String)->NID { todo!("anf::tag"); }
 
   fn when_lo(&mut self, v:VID, n:NID)->NID {
     let nv = nid::var(n);
@@ -125,7 +125,7 @@ impl Base for ANFBase {
       if nid::is_inv(x) == nid::is_inv(y) { res }
       else { nid::not(res) }}}
 
-  fn or(&mut self, x:NID, y:NID)->NID { panic!("TODO: anf::or") }
+  fn or(&mut self, _x:NID, _y:NID)->NID { todo!("anf::or") }
 
 } // impl Base for ANFBase
 

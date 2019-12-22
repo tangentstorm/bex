@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 extern crate bex;
 use bex::*;
-use bex::ast::{ASTBase,NID,VID};
+use bex::ast::{ASTBase,NID}; //,VID};
 
 
 // forth-like REPL for the BDD  (helper routines)
@@ -26,15 +26,15 @@ fn pop<T>(data: &mut Vec<T>)->T {
 fn pop2<T>(data: &mut Vec<T>)->(T,T){
   let y=pop(data); let x=pop(data); (x,y) }
 
-fn pop3<T>(data: &mut Vec<T>)->(T,T,T){
-  let (y,z)=pop2(data); let x=pop(data); (x,y,z) }
+/*fn pop3<T>(data: &mut Vec<T>)->(T,T,T){
+  let (y,z)=pop2(data); let x=pop(data); (x,y,z) }*/
 
 
 // forth-like REPL for the BDD  (main loop)
 
 // fn to_io(b:bool)->NID { if b {Op::I} else {Op::O} }
 
-enum Item { Vid(VID), Nid(NID), Int(u32) }
+// enum Item { Vid(VID), Nid(NID), Int(u32) }
 
 
 fn repl(base:&mut ASTBase) {
