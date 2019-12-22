@@ -1,0 +1,39 @@
+#+title: understing the (proposed) WIPBase trait
+
+* concepts
+
+- =<Q>= *Queries* are requests to the swarm. ("ITE" in BDDSwarm)
+
+- QMSG conveys a query. There are two types:
+    - actual query (asking to construct a new node in the base)
+    - message to update the cache
+
+- *Parts* is a struct for collecting the parts necessary to construct a node. It looks basically like the final well-formed node, but members that will take time to compute are wrapped in =Option<>=.
+
+  #+begin_example rust
+  struct BddParts{ v:VID, hi:Option<NID>, lo:Option<NID>, invert:bool}
+  #+end_example
+
+- *Part* is an an enum representing the parts necessary to construct a well-formed node.
+
+  #+begin_example rust
+  enum BddPart { HiPart, LoPart }
+  #+end_example
+
+- *Dep* is used to track dependencies between queries. Generally, a query is issued because it will result in a value that will become a part of some other query. Because the overall graphs we're dealing with tend to have many shared sub-structures, low level queries may have many high-level queries that depend on them.
+
+
+* Runtime structure
+
+At runtime, we will have one main 'swarm' and many worker threads/subprocesses.
+
+For BDDSwarm, the top-level entry point is =run_swarm=. It takes arguments i,t,e at the time of this writing, but probably ought to take a 'norm'.
+
+Internally, that calls =add_task= at the top level, and then recieves a constant stream of (qid, rmsg) pairs, some of which result in further calls to  =add_task=.
+
+I think =add_task= and =init_swarm= belong to the generic =wip/swarm= module, and it should also encapsulate all the queue stuff.
+
+
+* Short circuiting
+
+When working with large boolean expressions, there are often opportunities to short-circuit the evaluation of sub-expressions: for example, if you are calculating AND(X,Y), where X and Y are complicated sub-expressions, it may quickly become apparent that one of the inputs actually evaluates to "0"... In which case, there is no further need to evaluate the other side of the expression.
