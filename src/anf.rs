@@ -144,6 +144,8 @@ impl Base for ANFBase {
         let top = nid::nv(cv);
         expr![self, ((top & rhi) ^ rlo)] }}}
 
+  fn solutions(&self)->&dyn Iterator<Item=Vec<bool>> { todo!("anf::solutions") }
+
   fn save(&self, _path:&str)->::std::io::Result<()> { todo!("anf::save") }
   fn save_dot(&self, _n:NID, _path:&str) { todo!("anf::save_dot") }
   fn show_named(&self, _n:NID, _path:&str) { todo!("anf::show_named") }

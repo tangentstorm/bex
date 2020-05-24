@@ -1,11 +1,8 @@
 #![macro_use]
-// TODO: use hashbrown::HashMap;
-
 ///! bex: a boolean expression library for rust
 ///! outside the base, you deal only with opaque references.
 ///! inside, it could be stored any way we like.
 pub trait Base {
-
   /// Node identifier type. Usually mapped to xxx::NID
   type N;
 
@@ -35,6 +32,7 @@ pub trait Base {
 
   /// substitute node for variable in context.
   fn sub(&mut self, v:Self::V, n:Self::N, ctx:Self::N)->Self::N;
+  fn solutions(&self)->&dyn Iterator<Item=Vec<bool>>;
 
   fn save(&self, path:&str)->::std::io::Result<()>;
   fn save_dot(&self, n:Self::N, path:&str);

@@ -803,8 +803,21 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   fn save_dot(&self, n:NID, path:&str) { self.save_dot(n, path) }
   fn show_named(&self, n:NID, path:&str) { self.show_named(n, path) }
 
+  fn solutions(&self)->&dyn Iterator<Item=Vec<bool>> { todo!("bdd::solutions") }
+}
+
+
+
+struct SolutionIterator<'a> {
+  item: &'a Vec<bool>,
 }
 
+impl<'a> Iterator for SolutionIterator<'a> {
+  type Item = &'a Vec<bool>;
+  fn next(&mut self)->Option<Self::Item> {
+    return None
+  }
+}
 
 /// The default type used by the rest of the system.
 /// (Note the first three letters in uppercase).

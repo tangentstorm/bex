@@ -387,6 +387,7 @@ impl Base for ASTBase {
   fn save_dot(&self, _n:NID, _path:&str) { todo!("ast::save_dot") }
   fn show_named(&self, _n:NID, _path:&str) { todo!("ast::show_named") }
 
+  fn solutions(&self)->&dyn Iterator<Item=Vec<bool>> { todo!("ast::solutions") }
 } // impl Base for ASTBase
 
 
