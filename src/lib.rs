@@ -12,8 +12,8 @@ extern crate simplelog;
 pub mod base;
 pub use base::*;
 
-/// Internal routines used by some bases.
-mod nid;
+/// Node IDs (shared by various Base implementations)
+pub mod nid;
 
 /// Abstract syntax trees (simple logic combinators).
 pub mod ast;

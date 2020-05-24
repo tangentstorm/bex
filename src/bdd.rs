@@ -801,6 +801,8 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
     self.xor(x, self.xor(y, z))  // TODO: normalize order. make this the default impl.
   }
   #[cfg(todo)] fn ch(&mut self, x:NID, y:NID, z:NID)->NID { self.ite(x, y, z) }
+
+	fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID { self.replace(v,n,ctx) }
 }
 
 

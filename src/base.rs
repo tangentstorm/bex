@@ -12,7 +12,7 @@ pub trait Base {
   /// Variable identifier type. Usually mapped to xxx::VID
   type V;
 
-  fn new(n:usize)->Self;
+  fn new(n:usize)->Self where Self:Sized; // Sized so we can use trait objects.
   fn num_vars(&self)->usize;
 
   fn o(&self)->Self::N;
@@ -26,12 +26,18 @@ pub trait Base {
   fn and(&mut self, x:Self::N, y:Self::N)->Self::N;
   fn xor(&mut self, x:Self::N, y:Self::N)->Self::N;
   fn or(&mut self, x:Self::N, y:Self::N)->Self::N;
+  #[cfg(todo)] fn mj(&mut self, x:Self::N, y:Self::N, z:Self::N)->Self::N;
+  #[cfg(todo)] fn ch(&mut self, x:Self::N, y:Self::N, z:Self::N)->Self::N;
 
   fn def(&mut self, s:String, i:u32)->Self::N;
   fn tag(&mut self, n:Self::N, s:String)->Self::N;
+	fn get(&mut self, _s:&String)->Option<Self::N> { None } // TODO
 
-  #[cfg(todo)] fn mj(&mut self, x:Self::N, y:Self::N, z:Self::N)->Self::N;
-  #[cfg(todo)] fn ch(&mut self, x:Self::N, y:Self::N, z:Self::N)->Self::N;
+	fn sub(&mut self, _v:Self::V, _n:Self::N, _ctx:Self::N)->Self::N { unimplemented!() }  // TODO
+
+	fn save(&self, _path:&str)->::std::io::Result<()> { unimplemented!() } // TODO
+	fn save_dot(&self, _n:Self::N, _path:&str) { unimplemented!() } // TODO
+	fn show_named(&self, _n:Self::N, _path:&str) { unimplemented!() } // TODO
 }
 
 /*
