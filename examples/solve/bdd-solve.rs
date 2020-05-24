@@ -1329,13 +1329,11 @@ type BDD = bdd::BDDBase;
   find_factors!(BDD, X4, X8, 210, vec![(14,15)], false); }
 
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
-#[cfg(feature="wiptests")]
 #[test] pub fn test_tiny_anf() {
   use bex::anf;
   use bex::int::{X4,X8};
   type ANF = anf::ANFBase;
   find_factors!(ANF, X4, X8, 210, vec![(14,15)], false); }
-
 
 
 /// same as tiny test, but multiply 2 bytes to get 210. There are 8 distinct answers.
