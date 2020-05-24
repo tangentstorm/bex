@@ -88,7 +88,7 @@ pub fn refine<P:Progress>(dest: &mut B, base:&ASTBase, end:nid::NID, pr:P) {
   let mut step = nid::var(dest.get(&"step".to_string()).unwrap_or(nid::nv(0)));
   let mut newtop = topnid;
   pr.on_start();
-  while !nid::is_rvar(topnid) {
+  while !(nid::is_rvar(topnid) || nid::is_lit(topnid)) {
     let now = std::time::SystemTime::now();
     let oldtop = topnid;
     newtop = refine_one(dest, &base, oldtop); topnid=newtop;
@@ -111,7 +111,7 @@ fn refine_one(dest: &mut B, base:&ASTBase, oldtop:nid::NID)->nid::NID {
   let v = |x0:ast::NID|->nid::NID { convert_nid(base, x0) };
   let newdef:nid::NID = match op {
     // Op::Not should only occur once at the very top, if at all:
-    Op::Not(x) => nid::not(v(x)),
+    Op::Not(x) => dest.not(v(x)),
     // the VIDs on the right here are because we're treating each step in the
     // calculation as a 'virtual' input variable, and just slowly simplifying
     // until the virtual variables are all gone.
@@ -129,6 +129,7 @@ fn refine_one(dest: &mut B, base:&ASTBase, oldtop:nid::NID)->nid::NID {
 #[macro_export]
 macro_rules! find_factors {
   ($TDEST:ident, $T0:ident, $T1:ident, $n:expr, $expect:expr, $show:expr) => {{
+    use bex::Base;
     // reset gbase on each test
     GBASE.with(|gb| gb.replace(ASTBase::empty()));
 
@@ -157,7 +158,8 @@ macro_rules! find_factors {
                              show_result: $show, save_result: $show });
     });
     let expect = $expect;
-    let actual = expect.clone();
+    let actual = expect.clone(); // TODO: this isn't actually testing anything!!
+    println!("todo: expected results are not actually tested in find_factors!");
     assert_eq!(actual.len(), expect.len());
     for i in 0..expect.len() {
       assert_eq!(actual[i], expect[i], "mismatch at i={}", i) }
