@@ -24,6 +24,7 @@ path = "examples/solve/bdd-solve.rs"
 
 [features]
 noswarm = []
+wiptests = []
 
 [dependencies]
 serde = "1.0"

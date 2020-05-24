@@ -1316,30 +1316,39 @@ fn factors()->Vec<(u32,u32)> {
     (785341095,782958878), (785147363,783152070) ] }
 
 extern crate bex;
-use bex::bdd;
 use bex::int::{BInt, BaseBit, GBASE, gbase_def};
-use bex::{find_factors, solve::{ProgressReport, refine, sort_by_cost}};
+use bex::{bdd, find_factors, solve::{ProgressReport, refine, sort_by_cost}};
 use bex::ast::ASTBase;
 
-type B = bdd::BDDBase;
+type BDD = bdd::BDDBase;
 
 
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
-#[test] pub fn test_tiny() {
+#[test] pub fn test_tiny_bdd() {
   use bex::int::{X4,X8};
-  find_factors!(B, X4, X8, 210, vec![(14,15)], false); }
+  find_factors!(BDD, X4, X8, 210, vec![(14,15)], false); }
+
+/// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
+#[cfg(feature="wiptests")]
+#[test] pub fn test_tiny_anf() {
+  use bex::anf;
+  use bex::int::{X4,X8};
+  type ANF = anf::ANFBase;
+  find_factors!(ANF, X4, X8, 210, vec![(14,15)], false); }
+
+
 
 /// same as tiny test, but multiply 2 bytes to get 210. There are 8 distinct answers.
 /// this was intended as a unit test but is *way* too slow.
-#[cfg(slowtests)]
+#[cfg(feature="slowtests")]
 #[test] pub fn test_small() {
   use bex::int::{X8,X16};
   let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
                       (6, 35), (7, 30), (10,21), (14,15)];
-  find_factors!(B, X8, X16, 210, expected, false); }
+  find_factors!(BDD, X8, X16, 210, expected, false); }
 
 /// The real challenge: factor the 64-bit product of the first 15 primes.
 #[cfg(not(test))]
 pub fn main() {
   use bex::int::{X32, X64};
-  find_factors!(B, X32, X64, K as usize, factors(), false); }
+  find_factors!(BDD, X32, X64, K as usize, factors(), false); }
