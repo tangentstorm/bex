@@ -125,7 +125,7 @@ impl Base for ANFBase {
       if nid::is_inv(x) == nid::is_inv(y) { res }
       else { nid::not(res) }}}
 
-  fn or(&mut self, _x:NID, _y:NID)->NID { todo!("anf::or") }
+  fn or(&mut self, x:NID, y:NID)->NID { expr![self, ((x & y) ^ (x ^ y))] }
 
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID {
     let cv = nid::var(ctx);
