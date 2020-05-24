@@ -34,7 +34,8 @@ struct ANF {
 pub struct ANFBase {
   nvars:usize,
   nodes:Vec<ANF>,
-  cache:HashMap<ANF,NID>}
+  cache:HashMap<ANF,NID>,
+  tags:HashMap<String,NID>}
 
 
 
@@ -59,7 +60,8 @@ impl Base for ANFBase {
   type N = NID;
   type V = VID;
 
-  fn new(n:usize)->Self { ANFBase { nvars: n, nodes:vec![], cache: HashMap::new() } }
+  fn new(n:usize)->Self {
+    ANFBase { nvars: n, nodes:vec![], cache: HashMap::new(), tags:HashMap::new() }}
   fn num_vars(&self)->usize { self.nvars }
 
   #[inline] fn o(&self)->NID { O }
@@ -67,7 +69,9 @@ impl Base for ANFBase {
   #[inline] fn var(&mut self, v:VID)->NID { nid::nv(v) }
 
   fn def(&mut self, _s:String, _v:u32)->NID { todo!("anf::def"); }
-  fn tag(&mut self, _n:NID, _s:String)->NID { todo!("anf::tag"); }
+  // TODO: tag and get are copied verbatim from bdd
+  fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
+  fn get(&mut self, s:&String)->Option<NID> { Some(*self.tags.get(s)?) }
 
   fn when_lo(&mut self, v:VID, n:NID)->NID {
     let nv = nid::var(n);
@@ -140,7 +144,6 @@ impl Base for ANFBase {
         let top = nid::nv(cv);
         expr![self, ((top & rhi) ^ rlo)] }}}
 
-  fn get(&mut self, _s:&String)->Option<NID> { todo!("anf::get") }
   fn save(&self, _path:&str)->::std::io::Result<()> { todo!("anf::save") }
   fn save_dot(&self, _n:NID, _path:&str) { todo!("anf::save_dot") }
   fn show_named(&self, _n:NID, _path:&str) { todo!("anf::show_named") }
