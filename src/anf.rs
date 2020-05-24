@@ -127,8 +127,20 @@ impl Base for ANFBase {
 
   fn or(&mut self, _x:NID, _y:NID)->NID { todo!("anf::or") }
 
-} // impl Base for ANFBase
+  fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID {
+    let cv = nid::var(ctx);
+    if v < cv { ctx } // ctx can't contain v
+    else {
+      let x = self.fetch(ctx);
+      let (hi, lo) = (x.hi, x.lo);
+      if v == cv { expr![self, ((n & hi) ^ lo)] }
+      else {
+        let rhi = self.sub(v,n,hi);
+        let rlo = self.sub(v,n,lo);
+        let top = nid::nv(cv);
+        expr![self, ((top & rhi) ^ rlo)] }}}
 
+} // impl Base for ANFBase
 
 // internal ANFBase implementation
 
@@ -299,3 +311,13 @@ test_base_when!(ANFBase);
   let actual = expr![base, ((ab ^ c) & (aq ^ r))];
   let expected = expr![base, ((a & ((b & (q ^ r)) ^ (c&q)))^(c&r))];
   assert_eq!(expected, actual); }
+
+
+#[test] fn test_anf_sub() {
+  let mut base = ANFBase::new(6);
+  let a = base.var(0); let b = base.var(1); let c = base.var(2);
+  let x = base.var(3); let y = base.var(4); let z = base.var(5);
+  let ctx = expr![base, ((a & b) ^ c) ];
+  let xyz = expr![base, ((x & y) ^ z) ];
+  assert_eq!(base.sub(nid::var(a), xyz, ctx), expr![base, ((xyz & b) ^ c)]);
+  assert_eq!(base.sub(nid::var(b), xyz, ctx), expr![base, ((a & xyz) ^ c)]);}

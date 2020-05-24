@@ -378,6 +378,9 @@ impl Base for ASTBase {
 
   #[cfg(todo)]
   fn ch(&mut self, x:NID, y:NID, z:NID)->NID { self.o() }
+
+
+  fn sub(&mut self, _v:VID, _n:NID, _ctx:NID)->NID { todo!("ast::sub") }
 } // impl Base for ASTBase
 
 
