@@ -613,9 +613,6 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
   /// accessor for number of variables
   pub fn nvars(&self)->usize { self.worker.nvars() }
 
-  /// add a new tag to the tag map
-  pub fn tag(&mut self, s:String, n:NID) { self.tags.insert(s, n); }
-
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)->(NID,NID) { self.worker.tup(n) }
 
@@ -788,7 +785,7 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
 
   // TODO: these should be moved into seperate struct
   fn def(&mut self, _s:String, _i:u32)->NID { todo!("BddBase::def()") }
-  fn tag(&mut self, n:NID, s:String)->NID { self.tag(s, n); n }
+  fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
   fn get(&mut self, s:&String)->Option<NID> { Some(*self.tags.get(s)?) }
 
   fn not(&mut self, x:NID)->NID { not(x) }
