@@ -381,6 +381,12 @@ impl Base for ASTBase {
 
 
   fn sub(&mut self, _v:VID, _n:NID, _ctx:NID)->NID { todo!("ast::sub") }
+
+  fn get(&mut self, _s:&String)->Option<NID> { todo!("ast::get") }
+  fn save(&self, _path:&str)->::std::io::Result<()> { todo!("ast::save") }
+  fn save_dot(&self, _n:NID, _path:&str) { todo!("ast::save_dot") }
+  fn show_named(&self, _n:NID, _path:&str) { todo!("ast::show_named") }
+
 } // impl Base for ASTBase
 
 

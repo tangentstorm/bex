@@ -31,14 +31,14 @@ pub trait Base {
 
   fn def(&mut self, s:String, i:u32)->Self::N;
   fn tag(&mut self, n:Self::N, s:String)->Self::N;
-  fn get(&mut self, _s:&String)->Option<Self::N> { None } // TODO
+  fn get(&mut self, _s:&String)->Option<Self::N>;
 
   /// substitute node for variable in context.
-  fn sub(&mut self, v:Self::V, n:Self::N, ctx:Self::N)->Self::N;  // TODO
+  fn sub(&mut self, v:Self::V, n:Self::N, ctx:Self::N)->Self::N;
 
-  fn save(&self, _path:&str)->::std::io::Result<()> { unimplemented!() } // TODO
-  fn save_dot(&self, _n:Self::N, _path:&str) { unimplemented!() } // TODO
-  fn show_named(&self, _n:Self::N, _path:&str) { unimplemented!() } // TODO
+  fn save(&self, path:&str)->::std::io::Result<()>;
+  fn save_dot(&self, n:Self::N, path:&str);
+  fn show_named(&self, n:Self::N, path:&str);
 }
 
 /*

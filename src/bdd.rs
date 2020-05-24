@@ -616,9 +616,6 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
   /// add a new tag to the tag map
   pub fn tag(&mut self, s:String, n:NID) { self.tags.insert(s, n); }
 
-  /// retrieve a NID by tag
-  pub fn get(&self, s:&String)->Option<NID> { Some(*self.tags.get(s)?) }
-
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)->(NID,NID) { self.worker.tup(n) }
 
@@ -792,6 +789,7 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   // TODO: these should be moved into seperate struct
   fn def(&mut self, _s:String, _i:u32)->NID { todo!("BddBase::def()") }
   fn tag(&mut self, n:NID, s:String)->NID { self.tag(s, n); n }
+  fn get(&mut self, s:&String)->Option<NID> { Some(*self.tags.get(s)?) }
 
   fn not(&mut self, x:NID)->NID { not(x) }
   fn and(&mut self, x:NID, y:NID)->NID { self.and(x, y) }
@@ -802,7 +800,12 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   }
   #[cfg(todo)] fn ch(&mut self, x:NID, y:NID, z:NID)->NID { self.ite(x, y, z) }
 
-	fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID { self.replace(v,n,ctx) }
+  fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID { self.replace(v,n,ctx) }
+
+  fn save(&self, path:&str)->::std::io::Result<()> { self.save(path) }
+  fn save_dot(&self, n:NID, path:&str) { self.save_dot(n, path) }
+  fn show_named(&self, n:NID, path:&str) { self.show_named(n, path) }
+
 }
 
 
