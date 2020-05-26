@@ -937,13 +937,20 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
 
 
 #[cfg(test)]
-use std::iter::FromIterator;
+use std::iter::FromIterator; //   Vec::from_iter( ...)
 
 /// Test cases for SolutionIterator.
-#[test] fn test_bdd_solutions_const() {
-  let mut base = BDDBase::new(1); let (a, na) = (nid::nv(0), nid::not(nid::nv(0)));
-  assert_eq!(base.nidsols(nid::O).next(), None, "const false should yield no solutions.");
-  assert_eq!(Vec::from_iter(base.nidsols(nid::I)), vec![vec![na], vec![a]],
+#[test] fn test_bdd_solutions_O() {
+  let mut base = BDDBase::new(2);  let mut it = base.nidsols(nid::O);
+  assert!(it.done, "nidsols should be empty for const O");
+  assert_eq!(it.next(), None, "const O should yield no solutions.") }
+
+#[test] fn test_bdd_solutions_I() {
+  let mut base = BDDBase::new(2);
+  let it = base.nidsols(nid::I);
+  assert_eq!(Vec::from_iter(it), vec![
+    vec![not(nv(0)), not(nv(1))],  vec![not(nv(0)), nv(1)],
+    vec![nv(0),      not(nv(1))],  vec![    nv(0),  nv(1)]],
              "const true should yield all solutions"); }
 
 #[test] fn test_bdd_solutions_simple() {
@@ -982,19 +989,22 @@ struct VidSolIterator<'a> {
   stack: Vec<NID>,    // the path of nodes we have traversed
   scope: Vec<NID>,    // the current variable assignments
   invert: bool,       // whether to invert the results
-  done: bool,         // whether we've reached the end
-  over: bool,         // whether we overflowed on last increment()
-}
+  done: bool}         // whether we've reached the end
+
+
+fn var_hi(n:NID)->bool { !nid::is_inv(n) }
+fn var_lo(n:NID)->bool {  nid::is_inv(n) }
+
 
 impl<'a> VidSolIterator<'a> {
   fn from_state(state: &'a S, n:NID)->VidSolIterator<'a> {
     println!("\n## from-state(n:{:?}) ##", n);
     // init scope with all variables assigned to 0
     let scope = (0..state.nvars() as VID).map(|n| nid::not(nid::nv(n))).collect();
-    let mut res = VidSolIterator{
-      node:n, state, stack:vec![], scope, invert: false, done: false, over: false };
-    res.descend();
-    if !res.in_solution() { res.advance() }
+    let mut res = VidSolIterator{node:n, state, stack:vec![], scope, invert:false, done:n==nid::O };
+    if ! res.done {
+      res.descend();
+      if !res.in_solution() { res.advance() }}
     res }
 
   /// are we currently pointing at a span of 1 or more solutions?
@@ -1020,8 +1030,8 @@ impl<'a> VidSolIterator<'a> {
       self.scope[j] = nid::not(self.scope[j]);
       // somewhat confusingly, the '0' here is represented as inv(bit)=1.
       // it's not really a '0', it's adding a "not" to an input var that would otherwise be 1.
-      // also, we just flipped it. so... if the inv bit is now CLEAR, we're done carrying.
-      if !nid::is_inv(self.scope[j]) { break }
+      // also, we just flipped it. so... if the var is now HI, we're done carrying.
+      if var_hi(self.scope[j]) { break }
       else { i-=1 }
     }
     println!("{:?}, overflow: {:?}", self.scope, i <0);
@@ -1029,28 +1039,29 @@ impl<'a> VidSolIterator<'a> {
   }
 
   /// walk depth-first from lo to hi until we arrive at the next solution
-  /// in the process, we also reset relevant assignments to the lo side:
-  fn find_next_leaf(&mut self) {
+  fn find_next_leaf(&mut self)->Option<NID> {
     println!("      - find_next_leaf: n:{:?} st:{:?} sc:{:?}", self.node, self.stack, self.scope);
     assert!(nid::is_const(self.node), "find_next_leaf should always start by looking at a leaf");
-    if self.stack.len() == 0 { // special case for solutions of const
-      if self.node==O { self.done = true; println!("DONE!<1>") }
-      return }
-    self.node = self.stack.pop().expect("should have worked, as len!=0");
-    let mut i = (self.stack.len() as i64) -1;
-    // now we are looking at a branching node rather than a leaf.
+    if self.stack.len() == 0 { // we are looking at the root.
+      if nid::is_const(self.node) { return None }
+      // if we've already exhausted the right side, we're done:
+      let bv = nid::var(self.node) as usize;
+      if var_hi(self.scope[bv]) { return None }
+      else { self.scope[bv] = nid::not(self.scope[bv]); }
+    }
+    // move up one to the lowest branch where the corresponding variable is still negated.
     // scope[i] is inverted when we're exploring the low branch.
     // so move up the tree until we're back on a low branch or reach the top
+    let mut i = (self.scope.len() as i64) -1;
     while self.stack.len() > 0 && !nid::is_inv(self.scope[i as usize]) {
-      if nid::is_inv(self.node) { self.invert = !self.invert }
       self.node = self.stack.pop().expect("should have worked, as len>0!");
-      i -= 1 }
+      if nid::is_inv(self.node) { self.invert = !self.invert }
+      let bv = nid::var(self.node) as i64; // branching var for current node
+      while i > bv { i-= 1; }} // ascend
     // if we're at the top, and the top variable is high, we're done.
-    // TODO: handle variables lower than the top node's branching var.
-    if self.stack.len() == 0 {
-      if nid::is_inv(self.scope[0]) { i=0 } // halfway there...
-      else { println!("DONE!<2>"); self.done = true }}
-    if !self.done {
+    // TODO: handle variables "above" the top node's branching var.
+    if self.stack.len() == 0 && var_hi(self.scope[0]) { None }
+    else {
       // flip the output bit in the answer.
       // we don't need to flip self.invert because it hasn't changed.
       self.scope[i as usize] = nid::not(self.scope[i as usize]);
@@ -1058,24 +1069,29 @@ impl<'a> VidSolIterator<'a> {
       let (hi, _) = self.state.tup(self.node);
       self.node = hi;
       self.descend();
+      Some(self.node)
     }
   }
 
   /// walk depth-first from lo to hi until we arrive at the next solution
   fn advance(&mut self) {
-    println!("  -- advance(node:{:?}, over:{:?})", self.node, self.over);
+    println!("  -- advance(node:{:?})", self.node);
     assert!(nid::is_const(self.node), "advance should always start by looking at a leaf");
     loop {
       println!("  \\\\ loop (node:{:?})", self.node);
       if self.in_solution() {
-        // TODO: handle fast forwarding over things that aren't the top node
-        if self.over { println!("DONE!<3>"); self.done = true; self.over = false; }
-        else { self.over = self.increment(0, self.state.nvars()); }
-      }
-      else { self.find_next_leaf() }
-      println!("  // loop end: done: {:?}, in_solution: {:?}", self.done, self.in_solution());
+        let overflow = self.increment(0, self.state.nvars());
+        if !overflow {
+          println!("  // BREAK (INCREMENT OK)! done: {:?}, in_sol: {:?}, n: {:?}, st: {:?}, sc:{:?}",
+                   self.done, self.in_solution(), self.node, self.stack, self.scope);
+          return }}
+      self.done = (self.find_next_leaf()==None);
+      println!("  // loop end: done: {:?}, in_sol: {:?}, n: {:?}, st: {:?}, sc:{:?}",
+               self.done, self.in_solution(), self.node, self.stack, self.scope);
+
+      // let mut input = String::new(); std::io::stdin().read_line(&mut input).expect("??");
       if self.done || self.in_solution() { break } }
-    println!("  --> (node:{:?}, over:{:?})", self.node, self.over); }
+    println!("  --> (node:{:?}", self.node); }
 } // impl VidSolIterator
 
 
