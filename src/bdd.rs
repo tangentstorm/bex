@@ -957,10 +957,11 @@ use std::iter::FromIterator; //   Vec::from_iter( ...)
   let mut base = BDDBase::new(1); let (a, _na) = (nid::nv(0), nid::not(nid::nv(0)));
   let mut it = base.nidsols(a);
   // it should be sitting on first solution, which is a=1
-  assert_eq!(it.node, nid::I,    "nid should be pointing at first solution");
-  assert_eq!(it.stack, vec![a],  "stack should contain all branch nodes");
-  assert_eq!(it.scope, vec![a],  "scope should contain all variables");
-  assert!(it.in_solution());
+  assert!(!it.done,  "should be a solution");
+  assert!(it.in_solution(), "should be looking at the solution");
+  assert_eq!(it.stack, vec![a],  "stack should contain root node");
+  assert_eq!(it.scope, vec![a],  "a should be set to high (first solution)");
+  assert_eq!(it.node, nid::I,    "current node should be hi side of root (a.hi -> I)");
   assert_eq!(it.next().expect("expected solution!"), vec![a]);
   assert_eq!(it.next(), None);
   assert!(it.done); }
@@ -970,10 +971,10 @@ use std::iter::FromIterator; //   Vec::from_iter( ...)
   let (a, b, c) = (nv(0), nv(1), nv(2));
   let n = base.xor(a, b);
   let mut it = base.nidsols(n);
-  assert_eq!(it.next().expect("0"), vec![not(a), b, not(c)]);
-  assert_eq!(it.next().expect("1"), vec![not(a), b, c]);
-  assert_eq!(it.next().expect("2"), vec![a, not(b), not(c)]);
-  assert_eq!(it.next().expect("3"), vec![a, not(b), c]);
+  assert_eq!(it.next().expect("0"), vec![not(a), b, not(c)]  ,"0");
+  assert_eq!(it.next().expect("1"), vec![not(a), b, c]       ,"1");
+  assert_eq!(it.next().expect("2"), vec![a, not(b), not(c)]  ,"2");
+  assert_eq!(it.next().expect("3"), vec![a, not(b), c]       ,"3");
   assert_eq!(it.next(), None);
 }
 
@@ -1001,7 +1002,8 @@ impl<'a> VidSolIterator<'a> {
     println!("\n## from-state(n:{:?}) ##", n);
     // init scope with all variables assigned to 0
     let scope = (0..state.nvars() as VID).map(|n| nid::not(nid::nv(n))).collect();
-    let mut res = VidSolIterator{node:n, state, stack:vec![], scope, invert:false, done:n==nid::O };
+    let done = n==nid::O || state.nvars() == 0;
+    let mut res = VidSolIterator{node:n, state, stack:vec![], scope, invert:false, done };
     if ! res.done {
       res.descend();
       if !res.in_solution() { res.advance() }}
@@ -1041,36 +1043,49 @@ impl<'a> VidSolIterator<'a> {
   /// walk depth-first from lo to hi until we arrive at the next solution
   fn find_next_leaf(&mut self)->Option<NID> {
     println!("      - find_next_leaf: n:{:?} st:{:?} sc:{:?}", self.node, self.stack, self.scope);
+
+    // we always start at a leaf and move up, with the one exception of root=I
     assert!(nid::is_const(self.node), "find_next_leaf should always start by looking at a leaf");
-    if self.stack.len() == 0 { // we are looking at the root.
-      if nid::is_const(self.node) { return None }
-      // if we've already exhausted the right side, we're done:
-      let bv = nid::var(self.node) as usize;
-      if var_hi(self.scope[bv]) { return None }
-      else { self.scope[bv] = nid::not(self.scope[bv]); }
-    }
-    // move up one to the lowest branch where the corresponding variable is still negated.
-    // scope[i] is inverted when we're exploring the low branch.
-    // so move up the tree until we're back on a low branch or reach the top
-    let mut i = (self.scope.len() as i64) -1;
-    while self.stack.len() > 0 && !nid::is_inv(self.scope[i as usize]) {
-      self.node = self.stack.pop().expect("should have worked, as len>0!");
-      if nid::is_inv(self.node) { self.invert = !self.invert }
-      let bv = nid::var(self.node) as i64; // branching var for current node
-      while i > bv { i-= 1; }} // ascend
-    // if we're at the top, and the top variable is high, we're done.
-    // TODO: handle variables "above" the top node's branching var.
-    if self.stack.len() == 0 && var_hi(self.scope[0]) { None }
-    else {
-      // flip the output bit in the answer.
-      // we don't need to flip self.invert because it hasn't changed.
-      self.scope[i as usize] = nid::not(self.scope[i as usize]);
-      self.stack.push(self.node);
-      let (hi, _) = self.state.tup(self.node);
-      self.node = hi;
-      self.descend();
-      Some(self.node)
-    }
+    if self.stack.len() == 0 { assert!(self.node == nid::I); return None }
+
+    // now we are definitely at a leaf node with a branch above us.
+    self.node = self.stack.pop().expect("should have worked as len>0!");
+    if nid::is_inv(self.node) { self.invert = !self.invert }
+
+    // if we've already walked the hi branch, then ascend
+    let bv = nid::var(self.node) as usize; // branching var for current node
+    if var_hi(self.scope[bv]) {
+      // move up one to the deepest node where the branch variable is still lo.
+      // scope[i] is inverted when we're exploring the low branch.
+      // so move up the tree until we're back on a low branch or reach the top
+      let mut iv = (self.scope.len() as i64) -1;
+      while self.stack.len() > 0 && var_hi(self.scope[iv as usize]) {
+        println!("POP!");
+        self.node = self.stack.pop().expect("should have worked, as len>0!");
+        if nid::is_inv(self.node) { self.invert = !self.invert }
+        let bv = nid::var(self.node) as i64; // branching var for current node
+        while iv > bv { iv-= 1; }} // ascend
+
+      // if we're back at the top and we already explored the hi branch, we're done
+      if self.stack.len() == 0 && var_hi(self.scope[bv]) { return None }}
+
+    // flip the output bit in the answer. (it was lo, make it hi)
+    let bv = nid::var(self.node) as usize;
+    assert!(var_lo(self.scope[bv]));
+    self.scope[bv] = nid::raw(self.scope[bv]); // ensure it's hi
+
+    // now set all variables after that branch to lo
+    for i in ((bv+1)..self.state.nvars()) { self.scope[i] = nid::not(nid::raw(self.scope[i])) }
+
+    // we don't need to flip self.invert because it hasn't changed.
+    self.stack.push(self.node);
+
+    // now descend into the hi branch
+    let (hi, _) = self.state.tup(self.node);
+    self.node = hi;
+
+    self.descend();
+    Some(self.node)
   }
 
   /// walk depth-first from lo to hi until we arrive at the next solution
@@ -1080,8 +1095,16 @@ impl<'a> VidSolIterator<'a> {
     loop {
       println!("  \\\\ loop (node:{:?})", self.node);
       if self.in_solution() {
+        // if we're in the solution, we're going to increment the "counter".
+        // but if it overflows, the current node is no good, and we want to find the next leaf.
+        // If we're *not* in the solution, we find_next_leaf *without* an increment.
+        // To keep find_next_leaf simple, it should assume there was no increment.
+        // therefore, if the increment overflows here, we'll just roll it back.
+        let backup = self.scope.clone();
         let overflow = self.increment(0, self.state.nvars());
-        if !overflow {
+        if overflow { self.scope = backup }
+        // else increment was ok, and we've alreday done everything necessary to advance.
+        else {
           println!("  // BREAK (INCREMENT OK)! done: {:?}, in_sol: {:?}, n: {:?}, st: {:?}, sc:{:?}",
                    self.done, self.in_solution(), self.node, self.stack, self.scope);
           return }}
