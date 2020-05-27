@@ -813,7 +813,7 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
 
 
 struct SolutionIterator<'a> {
-  item: &'a Vec<bool>,
+  item: PhantomData<&'a ()>
 }
 
 impl<'a> Iterator for SolutionIterator<'a> {
@@ -940,12 +940,12 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
 use std::iter::FromIterator; //   Vec::from_iter( ...)
 
 /// Test cases for SolutionIterator.
-#[test] fn test_bdd_solutions_O() {
+#[test] fn test_bdd_solutions_o() {
   let mut base = BDDBase::new(2);  let mut it = base.nidsols(nid::O);
   assert!(it.done, "nidsols should be empty for const O");
   assert_eq!(it.next(), None, "const O should yield no solutions.") }
 
-#[test] fn test_bdd_solutions_I() {
+#[test] fn test_bdd_solutions_i() {
   let mut base = BDDBase::new(2);
   let it = base.nidsols(nid::I);
   assert_eq!(Vec::from_iter(it), vec![
@@ -980,12 +980,12 @@ use std::iter::FromIterator; //   Vec::from_iter( ...)
 }
 
 impl<W:BddWorker<S>> BddBase<S,W> {
-  fn nidsols<'a>(&'a mut self, n:NID)->VidSolIterator<'a> {
+  pub fn nidsols<'a>(&'a mut self, n:NID)->VidSolIterator<'a> {
     VidSolIterator::from_state(self.worker.get_state(), n)
   }
 }
 
-struct VidSolIterator<'a> {
+pub struct VidSolIterator<'a> {
   node: NID,
   state: &'a S,
   nstack: Vec<NID>,   // the path of nodes we have traversed
@@ -1000,7 +1000,7 @@ fn var_lo(n:NID)->bool {  nid::is_inv(n) }
 
 
 impl<'a> VidSolIterator<'a> {
-  fn from_state(state: &'a S, n:NID)->VidSolIterator<'a> {
+  pub fn from_state(state: &'a S, n:NID)->VidSolIterator<'a> {
     // init scope with all variables assigned to 0
     let mut res = VidSolIterator{
       node: n, //if n == nid::I { n } else { nid::raw(n) },
@@ -1016,7 +1016,7 @@ impl<'a> VidSolIterator<'a> {
       if !res.in_solution() { res.advance() }}
     res }
 
-  fn log(&self, msg: &str) {
+  fn log(&self, _msg: &str) {
     print!(""); // no-op
     //print!("{}", msg);
     //println!(": n:{:?} inv:{:?} st:{:?} sc:{:?}", self.node, self.invert, self.nstack, self.scope);
@@ -1051,7 +1051,7 @@ impl<'a> VidSolIterator<'a> {
   /// this is like adding 1 in binary: flip rightmost bit, and carry left until we hit a 0 or overflow.
   /// returns true iff we overflowed
   fn increment(&mut self, left:usize, right:usize)->bool {
-    println!("      - increment({:?},{:?},{:?}) -> ", left, right, self.scope);
+    //println!("      - increment({:?},{:?},{:?}) -> ", left, right, self.scope);
     let mut i = (right as i64) - 1;
     while i > (left as i64) {
       let j = i as usize;
@@ -1095,13 +1095,16 @@ impl<'a> VidSolIterator<'a> {
 
     // flip the output bit in the answer. (it was lo, make it hi)
     let bv = nid::var(self.node) as usize;
+    // !! I have a feeling this can happen when we're not yet done...
+    // In particular, it may happen when there are more variables to explore
+    // *above* the top node in the bdd.
     if var_hi(self.scope[bv]) { self.log("DONE WITH NODE"); return None }
     self.scope[bv] = nid::raw(self.scope[bv]); // ensure it's hi
 
     // now set all variables after that branch to lo
     self.log(">>>FLIP LO!");
 
-    for i in ((bv+1)..self.state.nvars()) { self.scope[i] = nid::not(nid::raw(self.scope[i])); println!("|||||||| i: {:?} sc: {:?}",i,self.scope); }
+    for i in (bv+1)..self.state.nvars() { self.scope[i] = nid::not(nid::raw(self.scope[i])); }
     self.log(">>>DONE FLIPPIN!");
 
     // we don't need to flip self.invert because it hasn't changed.
@@ -1144,7 +1147,7 @@ impl<'a> VidSolIterator<'a> {
         // else increment was ok, and we've alreday done everything necessary to advance.
         // but... we may have moved out of the solution space, so double check:
         else if self.in_solution() { self.log("  // RETURN (INCREMENT OK) "); return }}
-      self.done = (self.find_next_leaf()==None);
+      self.done = self.find_next_leaf()==None;
       self.log("  // loop end. ");
       // let mut input = String::new(); std::io::stdin().read_line(&mut input).expect("??");
       if self.done || self.in_solution() { break } }
@@ -1155,12 +1158,11 @@ impl<'a> VidSolIterator<'a> {
 impl<'a> Iterator for VidSolIterator<'a> {
   type Item = Vec<NID>;
   fn next(&mut self)->Option<Self::Item> {
-    println!("-- next(done:{:?}) --", self.done);
+    println!("|  next   |");
     if self.done { return None }
     assert!(self.in_solution());
-    let mut result = self.scope.clone();
-    // if self.invert { result = result.iter().map(|&n| nid::not(n)).collect() }
-    print!("-- yield: {:?}", result); self.log(" |");
+    let result = self.scope.clone();
+    self.log("|  yield  |");
     self.advance();
     return Some(result) }
 } // impl Iterator
