@@ -14,10 +14,10 @@ also construct and manipulate BDDs directly.
 
 ### 0.1.4 (upcoming)
 
-** BDDBase::nidsols() **
-- You can now call nidsols() on a BDDBase to iterate through solutions of the BDD.
-  Each solution is presented as a Vec<NID> of length nvars(). The nid::var() of each
-  NID tells you which input variable it describes, and the nid::inv() is 1 if the
+**BDDBase**
+- You can now call `nidsols()` on a `BDDBase` to iterate through solutions of the BDD.
+  Each solution is presented as a `Vec<NID>` of length `nvars()`. The `nid::var()` of each
+  NID tells you which input variable it describes, and the `nid::inv()` is 1 if the
   input should be LO. (I'll probably add a more ergonomic representation in the future.)
 
 **ANFBase**
