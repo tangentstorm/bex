@@ -12,7 +12,19 @@ also construct and manipulate BDDs directly.
 
 ## changelog
 
-### 0.1.4 (upcoming. 2019-10-01?)
+### 0.1.4 (upcoming)
+
+** BDDBase::nidsols() **
+- You can now call nidsols() on a BDDBase to iterate through solutions of the BDD.
+  Each solution is presented as a Vec<NID> of length nvars(). The nid::var() of each
+  NID tells you which input variable it describes, and the nid::inv() is 1 if the
+  input should be LO. (I'll probably add a more ergonomic representation in the future.)
+
+**ANFBase**
+- The new `anf` module contains the beginnings of a BDD-like structure for working
+  with expressions in algebraic normal form (XOR-of-ANDs). These two operations
+  plus the constant `I` give a complete functional base. The implementation does
+  not yet take advantage of multiple cores.
 
 **code cleanup**
 - Swarming is now enabled by default for BDDBase. (#7)
@@ -31,12 +43,6 @@ also construct and manipulate BDDs directly.
     These macros allow re-using the same test code for each `Base` implementation.
 - The `bdd::NID` type and associated helper functions have been moved into `nid`
   so the same scheme can be reused for other `Base` implementations.
-
-**ANFBase**
-- The new `anf` module contains the beginnings of a BDD-like structure for working
-  with expressions in algebraic normal form (XOR-of-ANDs). These two operations
-  plus the constant `I` give a complete functional base. The implementation does
-  not yet take advantage of multiple cores.
 
 **documentation**
 - Began writing/collecting more documentation in the
