@@ -965,6 +965,22 @@ use std::iter::FromIterator; //   Vec::from_iter( ...)
   assert_eq!(it.next().expect("expected solution!"), vec![a]);
   assert_eq!(it.next(), None);
   assert!(it.done); }
+
+#[test] fn test_bdd_solutions_extra() {
+  let mut base = BDDBase::new(5);
+  let (a, b, c, d, e) = (nv(0), nv(1), nv(2), nv(3), nv(4));
+  // the idea here is that we have "don't care" above, below, and between the used vars:
+  let n = base.and(b,d);
+  assert_eq!(Vec::from_iter(base.nidsols(n)),
+             vec![ vec![ not(a), b, not(c), d, not(e) ],
+                   vec![ not(a), b, not(c), d,     e  ],
+                   vec![ not(a), b,     c , d, not(e) ],
+                   vec![ not(a), b,     c , d,     e  ],
+                   vec![     a , b, not(c), d, not(e) ],
+                   vec![     a , b, not(c), d,     e  ],
+                   vec![     a , b,     c , d, not(e) ],
+                   vec![     a , b,     c , d,     e  ]])}
+
 
 #[test] fn test_bdd_solutions_xor() {
   let mut base = BDDBase::new(3);
@@ -978,13 +994,13 @@ use std::iter::FromIterator; //   Vec::from_iter( ...)
   assert_eq!(it.next().expect("expect answer 3"), vec![a, not(b), c]       ,"3");
   assert_eq!(it.next(), None);
 }
-
+
 impl<W:BddWorker<S>> BddBase<S,W> {
   pub fn nidsols<'a>(&'a mut self, n:NID)->VidSolIterator<'a> {
     VidSolIterator::from_state(self.worker.get_state(), n)
   }
 }
-
+
 pub struct VidSolIterator<'a> {
   node: NID,
   state: &'a S,
@@ -995,8 +1011,8 @@ pub struct VidSolIterator<'a> {
   done: bool}         // whether we've reached the end
 
 
-fn var_hi(n:NID)->bool { !nid::is_inv(n) }
-fn var_lo(n:NID)->bool {  nid::is_inv(n) }
+pub fn var_hi(n:NID)->bool { !nid::is_inv(n) }
+pub fn var_lo(n:NID)->bool {  nid::is_inv(n) }
 
 
 impl<'a> VidSolIterator<'a> {
@@ -1017,43 +1033,41 @@ impl<'a> VidSolIterator<'a> {
     res }
 
   fn log(&self, _msg: &str) {
-    print!(""); // no-op
-    //print!("{}", msg);
-    //println!(": n:{:?} inv:{:?} st:{:?} sc:{:?}", self.node, self.invert, self.nstack, self.scope);
-  }
+    #[cfg(test)]{
+      print!("{}", _msg);
+      println!(": n:{:?} inv:{:?} st:{:?} sc:{:?}", self.node, self.invert, self.nstack, self.scope);}}
 
+
 
   /// are we currently pointing at a span of 1 or more solutions?
   fn in_solution(&self)->bool { (self.node == nid::I && !self.invert) ||
                                 (self.node == nid::O && self.invert) }
 
   fn move_down(&mut self, which:BddPart) {
-      println!("push({:?} {:?})", self.node, self.invert);
-      self.istack.push(self.invert);
-      self.nstack.push(self.node);
-      let (hi, lo) = self.state.tup(self.node);
-      self.node = if which == BddPart::HiPart { hi } else { lo };
-      self.invert = nid::is_inv(self.node) && !nid::is_const(self.node);}
+    self.istack.push(self.invert);
+    self.nstack.push(self.node);
+    let (hi, lo) = self.state.tup(self.node);
+    self.node = if which == BddPart::HiPart { hi } else { lo };
+    self.invert = nid::is_inv(self.node) && !nid::is_const(self.node);}
 
   fn move_up(&mut self) {
-      assert!(self.nstack.len() > 0);
-      self.invert = self.istack.pop().expect("istack.pop() should have worked, as len>0");
-      self.node = self.nstack.pop().expect("nstack.pop() should have worked, as len>0");
-      println!("pop({:?} {:?})", self.node, self.invert); }
+    assert!(self.nstack.len() > 0);
+    self.invert = self.istack.pop().expect("istack.pop() should have worked, as len>0");
+    self.node = self.nstack.pop().expect("nstack.pop() should have worked, as len>0"); }
 
   /// descend along the "lo" path into the bdd until we find a constant node
   fn descend(&mut self) {
     while !nid::is_const(self.node) {
-      self.move_down(BddPart::LoPart);
-   }}
+      self.move_down(BddPart::LoPart); }}
+
 
   /// increments the slice like an odmeter, looking only at the 'inv' bit
   /// this is like adding 1 in binary: flip rightmost bit, and carry left until we hit a 0 or overflow.
   /// returns true iff we overflowed
-  fn increment(&mut self, left:usize, right:usize)->bool {
+  fn increment(&mut self)->Option<VID> {
     //println!("      - increment({:?},{:?},{:?}) -> ", left, right, self.scope);
-    let mut i = (right as i64) - 1;
-    while i > (left as i64) {
+    let mut i = (self.state.nvars() as i32) - 1;
+    while i >= 0 {
       let j = i as usize;
       self.scope[j] = nid::not(self.scope[j]);
       println!("i: {:?} scope: {:?}", i, self.scope);
@@ -1064,8 +1078,7 @@ impl<'a> VidSolIterator<'a> {
       else { i -= 1 }
     }
     self.log("");
-    i <= left as i64 // if we carried all the way
-  }
+    if i < 0 { None } else { Some(i as VID) }}
 
   /// walk depth-first from lo to hi until we arrive at the next solution
   fn find_next_leaf(&mut self)->Option<NID> {
@@ -1080,7 +1093,6 @@ impl<'a> VidSolIterator<'a> {
     // if we've already walked the hi branch, then ascend
     let bv = nid::var(self.node) as usize; // branching var for current node
     if var_hi(self.scope[bv]) {
-        self.log("!!!!ASCENDING!!!!");
       // move up one to the deepest node where the branch variable is still lo.
       // scope[i] is inverted when we're exploring the low branch.
       // so move up the tree until we're back on a low branch or reach the top
@@ -1095,74 +1107,60 @@ impl<'a> VidSolIterator<'a> {
 
     // flip the output bit in the answer. (it was lo, make it hi)
     let bv = nid::var(self.node) as usize;
-    // !! I have a feeling this can happen when we're not yet done...
-    // In particular, it may happen when there are more variables to explore
-    // *above* the top node in the bdd.
     if var_hi(self.scope[bv]) { self.log("DONE WITH NODE"); return None }
     self.scope[bv] = nid::raw(self.scope[bv]); // ensure it's hi
 
     // now set all variables after that branch to lo
-    self.log(">>>FLIP LO!");
-
     for i in (bv+1)..self.state.nvars() { self.scope[i] = nid::not(nid::raw(self.scope[i])); }
-    self.log(">>>DONE FLIPPIN!");
 
     // we don't need to flip self.invert because it hasn't changed.
     self.move_down(BddPart::HiPart);
     self.descend();
-    Some(self.node)
-  }
+    Some(self.node) }
+
 
   /// walk depth-first from lo to hi until we arrive at the next solution
   fn advance(&mut self) {
-    println!("  -- advance(node:{:?})", self.node);
+    self.log("  -- advance");
     assert!(!self.done, "advance() called on iterator that's already done!");
     assert!(nid::is_const(self.node), "advance should always start by looking at a leaf");
     loop {
-      println!("  \\\\ loop (node:{:?})", self.node);
       if self.in_solution() {
         // if we're in the solution, we're going to increment the "counter".
-        // but if it overflows, the current node is no good, and we want to find the next leaf.
-        // If we're *not* in the solution, we find_next_leaf *without* an increment.
-        // To keep find_next_leaf simple, it should assume there was no increment.
-        // therefore, if the increment overflows here, we'll just roll it back.
-        let backup = self.scope.clone();
-        let bv = if self.nstack.len() == 0 { 0 } else {
-          let peek = self.nstack[self.nstack.len()-1];
-          if is_const(peek) { 0 } else { nid::var(peek) }};
-        let overflow = self.increment(bv as usize, self.state.nvars());
-        if overflow {
-            // if we're looking at the lo branch, the overflow means move to hi side
-            if var_lo(backup[bv as usize]) {
-                if self.nstack.len() > 0 {
-                  self.move_up();
-                  self.move_down(BddPart::HiPart);
-                  self.descend();
-                  if self.in_solution() { self.log("// OVERFLOW TO NEW LEAF"); return }
-               }
-               else {
-                   self.scope[bv as usize] = nid::raw(self.scope[bv as usize]);
-                   self.log("// OVERFLOW AT TOP LEVEL"); return }}
-            else { self.scope = backup; self.log("~~~~~~~overflow!"); }}
-        // else increment was ok, and we've alreday done everything necessary to advance.
-        // but... we may have moved out of the solution space, so double check:
-        else if self.in_solution() { self.log("  // RETURN (INCREMENT OK) "); return }}
+        if let Some(lmz) = self.increment() { // lmz = the leftmost "zero" (lo input variable)
+          // climb the bdd until we find the layer where the lmz would be.
+          while self.nstack.len() > 0 && nid::var(self.nstack[self.nstack.len()-1]) >= lmz {
+            self.move_up(); }
+          // The 'lmz' variable exists in the solution space, but there might or might
+          // not be a branch node for that variable in the current bdd path.
+          // Whether we follow the hi or lo branch depends on which variable we're looking at.
+          if nid::is_const(self.node) { return } // special case for topmost I (all solutions)
+          let bv = nid::var(self.node) as usize;
+          let part = if var_hi(self.scope[bv]) { BddPart::HiPart } else { BddPart::LoPart };
+          self.move_down(part);
+          self.descend();
+          if self.in_solution() { self.log("// increment ok"); return }}
+        // else there's no lmz, so we've counted all the way to 2^nvars-1, and we're done.
+        else { self.log("// found all solutions!"); self.done = true; return }}
+      // If still here, we are looking at a leaf that isn't a solution (out=0 in truth table)
       self.done = self.find_next_leaf()==None;
       self.log("  // loop end. ");
       // let mut input = String::new(); std::io::stdin().read_line(&mut input).expect("??");
-      if self.done || self.in_solution() { break } }
-    println!("  --> (node:{:?}", self.node); }
-} // impl VidSolIterator
+      if self.done || self.in_solution() { break } }}
 
+} // impl VidSolIterator
+
 
 impl<'a> Iterator for VidSolIterator<'a> {
+
   type Item = Vec<NID>;
+
   fn next(&mut self)->Option<Self::Item> {
-    println!("|  next   |");
     if self.done { return None }
     assert!(self.in_solution());
     let result = self.scope.clone();
     self.log("|  yield  |");
     self.advance();
     return Some(result) }
+
 } // impl Iterator
