@@ -2,7 +2,7 @@
 use std::fs::File;
 use std::io::BufReader;
 use std::io::prelude::*;
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::BuildHasher};
 
 
 // these functions treat typed slices as raw bytes, making them easier to read/write
@@ -21,9 +21,9 @@ unsafe fn u8s_to_slice<T: Sized>(p: &[u8]) -> &[T] {
 
 
 /// write the vector, as bytes, to a file at the specified path.
-pub fn put<T:Sized>(path:&str, v:&Vec<T>) -> ::std::io::Result<()> {
+pub fn put<T:Sized>(path:&str, v:&[T]) -> ::std::io::Result<()> {
   let mut f = File::create(path)?;
-  f.write_all( unsafe{ slice_to_u8s(v.as_slice()) }) }
+  f.write_all( unsafe{ slice_to_u8s(v) }) }
 
 /// attempt to parse the file at the specified path as a binary Vec<T>.
 pub fn get<T:Sized+Clone>(path:&str) -> ::std::io::Result<Vec<T>> {
@@ -35,7 +35,7 @@ pub fn get<T:Sized+Clone>(path:&str) -> ::std::io::Result<Vec<T>> {
 
 
 /// save a hashmap
-pub fn put_map(path:&str, m:&HashMap<String,usize>) -> ::std::io::Result<()> {
+pub fn put_map<S:BuildHasher>(path:&str, m:&HashMap<String,usize,S>) -> ::std::io::Result<()> {
   let mut f = File::create(path)?;
   for (k,v) in m.iter() { writeln!(&mut f, "{},{}", k, v)? }
   Ok(())}

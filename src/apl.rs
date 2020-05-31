@@ -2,7 +2,7 @@
 use std;
 use std::collections::HashMap;
 
-pub fn group<'a,T>(xs: &'a Vec<T>) -> (Vec<&T>, HashMap<&T,Vec<usize>>)
+pub fn group<T>(xs: &[T]) -> (Vec<&T>, HashMap<&T,Vec<usize>>)
 where T: std::hash::Hash, T: std::cmp::Eq {
   let mut map:HashMap<&T,Vec<usize>> = HashMap::new();
   let mut nub = vec![]; // unique xs, in the order in which they appeared
@@ -12,10 +12,10 @@ where T: std::hash::Hash, T: std::cmp::Eq {
   (nub, map) }
 
 // calculate a permutation vector that sorts array a
-pub fn gradeup<'a,T>(xs: &'a Vec<T>) -> Vec<usize>
+pub fn gradeup<T>(xs: &[T]) -> Vec<usize>
 where T: std::cmp::Ord {
   let mut ixs:Vec<(usize,&T)> = xs.iter().enumerate().collect();
   ixs.sort_by_key(|ix|ix.1); ixs.iter().map(|ix|ix.0).collect()}
 
-pub fn at<'a,T:Clone>(xs:&'a Vec<T>, ys:&'a Vec<usize>) -> Vec<T> {
+pub fn at<'a,T:Clone>(xs:&'a[T], ys:&'a[usize]) -> Vec<T> {
   ys.iter().map(|&i| xs[i].clone()).collect() }

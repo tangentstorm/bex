@@ -18,7 +18,7 @@ fn readln()->String {
 
 fn swap(data: &mut Vec<NID>) {
   let p = data.len()-1;
-  if p > 0 { let t = data[p-1]; data[p-1]=data[p]; data[p]=t; }}
+  if p > 0 { data.swap(p-1,p) }}
 
 fn pop<T>(data: &mut Vec<T>)->T {
   data.pop().expect("underflow")}
@@ -84,13 +84,13 @@ fn repl(base:&mut ASTBase) {
           // parse number:
           if let Ok(w)=usize::from_str_radix(word, 10) { data.push(w); }
           // parse input variable
-          else if word.chars().next() == Some('$') {
+          else if word.starts_with('$') {
             let s = word.to_string().split_off(1);
             if let Ok(n) = usize::from_str_radix(&s, 10) {
               data.push(base.var(n)); }
             else { println!("bad var: {}", word) } }
           // define:
-          else if word.chars().next() == Some(':') {
+          else if word.starts_with(':') {
             let var = word.to_string().split_off(1);
             let val = pop(&mut data);
             scope.insert(var,val); }

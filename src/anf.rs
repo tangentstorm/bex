@@ -13,6 +13,7 @@
 //!     ab(c(1+d) + d) + cd      (after factoring)
 //! ```
 //! In addition, identical suffixes after factoring always refer to the same node.
+use std::cmp::Ordering;
 use base::Base;
 use nid;
 use nid::{NID,VID,I,O};
@@ -71,26 +72,28 @@ impl Base for ANFBase {
   fn def(&mut self, _s:String, _v:u32)->NID { todo!("anf::def"); }
   // TODO: tag and get are copied verbatim from bdd
   fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
-  fn get(&mut self, s:&String)->Option<NID> { Some(*self.tags.get(s)?) }
+  fn get(&mut self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 
   fn when_lo(&mut self, v:VID, n:NID)->NID {
     let nv = nid::var(n);
-    if nv > v { n }  // n independent of v
-    else if nv == v {
-      if nid::is_lit(n) {
-        // a leaf node should never be inverted... unless it's also the root.
-        if nid::is_inv(n) { I } else { O }}
-      else { self.fetch(n).lo }}
-    else { panic!("TODO: anf::when_lo") }}
+    match nv.cmp(&v) {
+      Ordering::Greater => n, // n independent of v
+      Ordering::Equal => {
+        if nid::is_lit(n) {
+          // a leaf node should never be inverted... unless it's also the root.
+          if nid::is_inv(n) { I } else { O }}
+        else { self.fetch(n).lo }}
+      Ordering::Less => panic!("TODO: anf::when_lo var(n)<v") }}
 
   fn when_hi(&mut self, v:VID, n:NID)->NID {
     let nv = nid::var(n);
-    if nv > v { return n }  // n independent of v
-    if nv == v {
-      if nid::is_lit(n) {
-        if nid::is_inv(n) { O } else { I }}
-      else { self.fetch(n).hi }}
-    else { panic!("TODO: anf::when_hi") }}
+    match nv.cmp(&v) {
+      Ordering::Greater => n,  // n independent of v
+      Ordering::Equal => {
+        if nid::is_lit(n) {
+          if nid::is_inv(n) { O } else { I }}
+        else { self.fetch(n).hi }},
+      Ordering::Less => panic!("TODO: anf::when_hi") }}
 
   // logical ops
 
@@ -160,7 +163,7 @@ impl ANFBase {
     if nid::is_var(n) { // variables are (v*I)+O if normal, (v*I)+I if inverted.
       ANF{v:nid::var(n), hi:I, lo: if nid::is_inv(n) { I } else { O } }}
     else {
-      let mut anf = self.nodes[nid::idx(n)].clone();
+      let mut anf = self.nodes[nid::idx(n)];
       if nid::is_inv(n) { anf.lo = nid::not(anf.lo) }
       anf }}
 
@@ -182,49 +185,51 @@ impl ANFBase {
 
   fn calc_and(&mut self, x:NID, y:NID)->NID {
     let (vx, vy) = (nid::var(x), nid::var(y));
-    if vx < vy {
-      // base case: x:a + y:(pq+r)  a<p<q, p<r  --> a(pq+r)
-      if nid::is_var(x) { self.vhl(vx, y, O) }
-      else {
-        //     x:(ab+c) * y:(pq+r)
-        //  =  ab(pq) + ab(r) + c(pq) + c(r)
-        //  =  a(b(pq+r)) + c(pq+r)
-        //  =  a(by) + cy
-        // TODO: these can all happen in parallel.
-        let ANF{v:a, hi:b, lo:c } = self.fetch(x);
-        let hi = self.and(b, y);
-        let lo = self.and(c, y);
-        self.vhl(a, hi, lo)}}
-    else if vx > vy { self.calc_and(y, x) }
-    else {
-      // x:(ab+c) * y:(aq+r) --> abq+abr+acq+cr --> a(b(q+r) + cq)+cr
-      let ANF{ v:a, hi:b, lo:c } = self.fetch(x);
-      let ANF{ v:p, hi:q, lo:r } = self.fetch(y);
-      assert_eq!(a,p);
-      // TODO: run in in parallel:
-      let cr = self.and(c,r);
-      let cq = self.and(c,q);
-      let qxr = self.xor(q,r);
-      let a = nid::nv(a);
-      expr![self, ((a & ((b & qxr) ^ cq)) ^ cr)] }}
+    match vx.cmp(&vy) {
+      Ordering::Less =>
+        // base case: x:a + y:(pq+r)  a<p<q, p<r  --> a(pq+r)
+        if nid::is_var(x) { self.vhl(vx, y, O) }
+        else {
+          //     x:(ab+c) * y:(pq+r)
+          //  =  ab(pq) + ab(r) + c(pq) + c(r)
+          //  =  a(b(pq+r)) + c(pq+r)
+          //  =  a(by) + cy
+          // TODO: these can all happen in parallel.
+          let ANF{v:a, hi:b, lo:c } = self.fetch(x);
+          let hi = self.and(b, y);
+          let lo = self.and(c, y);
+          self.vhl(a, hi, lo)},
+      Ordering::Greater => self.calc_and(y, x),
+      Ordering::Equal => {
+        // x:(ab+c) * y:(aq+r) --> abq+abr+acq+cr --> a(b(q+r) + cq)+cr
+        let ANF{ v:a, hi:b, lo:c } = self.fetch(x);
+        let ANF{ v:p, hi:q, lo:r } = self.fetch(y);
+        assert_eq!(a,p);
+        // TODO: run in in parallel:
+        let cr = self.and(c,r);
+        let cq = self.and(c,q);
+        let qxr = self.xor(q,r);
+        let a = nid::nv(a);
+        expr![self, ((a & ((b & qxr) ^ cq)) ^ cr)] }}}
 
   /// called only by xor, so simple cases are already handled.
   fn calc_xor(&mut self, x:NID, y:NID)->NID {
     let (vx, vy) = (nid::var(x), nid::var(y));
-    if vx < vy  {
-      // x:(ab+c) + y:(pq+r) --> ab+(c+(pq+r))
-      let ANF{v, hi, lo} = self.fetch(x);
-      let lo = self.xor(lo, y);
-      self.vhl(v, hi, lo)}
-    else if vx > vy { self.calc_xor(y, x) }
-    else { // vx == vy
-      // x:(ab+c) + y:(aq+r) -> ab+c+aq+r -> ab+aq+c+r -> a(b+q)+c+r
-      let ANF{v:a, hi:b, lo:c} = self.fetch(x);
-      let ANF{v:p, hi:q, lo:r} = self.fetch(y);
-      assert_eq!(a,p);
-      let hi = self.xor(b, q);
-      let lo = self.xor(c, r);
-      self.vhl(a, hi, lo)}}
+    match vx.cmp(&vy) {
+      Ordering::Less =>  {
+        // x:(ab+c) + y:(pq+r) --> ab+(c+(pq+r))
+        let ANF{v, hi, lo} = self.fetch(x);
+        let lo = self.xor(lo, y);
+        self.vhl(v, hi, lo)},
+      Ordering::Greater => self.calc_xor(y, x),
+      Ordering::Equal => {
+        // x:(ab+c) + y:(aq+r) -> ab+c+aq+r -> ab+aq+c+r -> a(b+q)+c+r
+        let ANF{v:a, hi:b, lo:c} = self.fetch(x);
+        let ANF{v:p, hi:q, lo:r} = self.fetch(y);
+        assert_eq!(a,p);
+        let hi = self.xor(b, q);
+        let lo = self.xor(c, r);
+        self.vhl(a, hi, lo)}}}
 
 } // impl ANFBase
 

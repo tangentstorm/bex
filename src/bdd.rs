@@ -11,6 +11,7 @@ use std::process::Command;      // for creating and viewing digarams
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::thread;
+use std::cmp::Ordering;
 
 extern crate num_cpus;
 
@@ -34,8 +35,8 @@ pub struct BDDNode { pub v:VID, pub hi:NID, pub lo:NID } // if|then|else
 pub struct ITE {i:NID, t:NID, e:NID}
 impl ITE {
   /// shorthand constructor
-  pub fn new (i:NID, t:NID, e:NID)-> ITE { ITE { i:i, t:t, e:e } }
-  pub fn min_var(&self)->VID { return min(var(self.i), min(var(self.t), var(self.e))) }
+  pub fn new (i:NID, t:NID, e:NID)-> ITE { ITE { i, t, e } }
+  pub fn min_var(&self)->VID { min(var(self.i), min(var(self.t), var(self.e))) }
   // NOTE: there is a separet impl for norm(), below
 }
 
@@ -124,9 +125,9 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
 
   fn get_hilo(&self, n:NID)->HILO;
   /// load the memoized NID if it exists
-  fn get_memo<'a>(&'a self, v:VID, ite:&ITE) -> Option<&'a NID>;
+  fn get_memo(&self, v:VID, ite:&ITE) -> Option<&NID>;
   fn put_xmemo(&mut self, ite:ITE, new_nid:NID);
-  fn get_simple_node<'a>(&'a self, v:VID, hilo:HILO)-> Option<&'a NID>;
+  fn get_simple_node(&self, v:VID, hilo:HILO)-> Option<&NID>;
   fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID; }
 
 
@@ -172,7 +173,7 @@ impl BddState for SafeVarKeyedBddState {
     self.nodes[rv(var(n))][idx(n)] }
 
   /// load the memoized NID if it exists
-  #[inline] fn get_memo<'a>(&'a self, v:VID, ite:&ITE) -> Option<&'a NID> {
+  #[inline] fn get_memo(&self, v:VID, ite:&ITE) -> Option<&NID> {
     if is_var(ite.i) {
       self.vmemo[rvar(ite.i) as usize].get(&HILO::new(ite.t,ite.e)) }
     else { self.xmemo.as_slice().get(rv(v))?.get(&ite) }}
@@ -181,11 +182,11 @@ impl BddState for SafeVarKeyedBddState {
     let v = ite.min_var();
     self.xmemo[rv(v)].insert(ite, new_nid); }
 
-  #[inline] fn get_simple_node<'a>(&'a self, v:VID, hilo:HILO)-> Option<&'a NID> {
+  #[inline] fn get_simple_node(&self, v:VID, hilo:HILO)-> Option<&NID> {
     self.vmemo[rv(v)].get(&hilo) }
 
   #[inline] fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID {
-    let ref mut vnodes = self.nodes[rv(v)];
+    let vnodes = &mut self.nodes[rv(v)];
     let res = nvi(v, vnodes.len() as IDX);
     vnodes.push(hilo);
     self.vmemo[rv(v) as usize].insert(hilo,res);
@@ -210,7 +211,7 @@ impl BddState for UnsafeVarKeyedBddState {
              *bits.get_unchecked(idx(n)) }}
 
   /// load the memoized NID if it exists
-  #[inline] fn get_memo<'a>(&'a self, v:VID, ite:&ITE) -> Option<&'a NID> {
+  #[inline] fn get_memo(&self, v:VID, ite:&ITE) -> Option<&NID> {
     unsafe { if is_var(ite.i) {
       self.vmemo.as_slice().get_unchecked(rv(rvar(ite.i))).get(&HILO::new(ite.t,ite.e)) }
              else { self.xmemo.as_slice().get_unchecked(rv(v)).get(&ite) }}}
@@ -219,7 +220,7 @@ impl BddState for UnsafeVarKeyedBddState {
     let v = ite.min_var();
     self.xmemo.as_mut_slice().get_unchecked_mut(rv(v)).insert(ite, new_nid); }}
 
-  #[inline] fn get_simple_node<'a>(&'a self, v:VID, hilo:HILO)-> Option<&'a NID> {
+  #[inline] fn get_simple_node(&self, v:VID, hilo:HILO)-> Option<&NID> {
     unsafe { self.vmemo.as_slice().get_unchecked(rv(v)).get(&hilo) }}
 
   #[inline] fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID {
@@ -407,7 +408,7 @@ impl<S:BddState> BddWorker<S> for BddSwarm<S> {
     println!("warning: new_with_state probably doesn't work so well yet..."); // TODO!
     let mut res = Self::new(state.nvars());
     res.stable = Arc::new(state.clone());
-    res.recent = state.clone();
+    res.recent = state;
     res }
 
   fn get_state(&self)->&S { &self.recent }
@@ -447,11 +448,10 @@ impl<S:BddState> BddSwarm<S> {
       if let Some(dep) = opt_dep {
         trace!("*** added task #{}: {:?} invert:{}", qid, ite, dep.invert);
         self.deps.push(vec![dep]) }
-      else {
-        if qid == 0 {
-          trace!("*** added task #{}: {:?} (no deps!)", qid, ite);
-          self.deps.push(vec![]) }
-        else { panic!("non 0 qid with no deps!?") }}}}
+      else if qid == 0 {
+        trace!("*** added task #{}: {:?} (no deps!)", qid, ite);
+        self.deps.push(vec![]) }
+      else { panic!("non 0 qid with no deps!?") }}}
 
   /// called whenever the wip resolves to a single nid
   fn resolve_nid(&mut self, qid:QID, nid:NID) {
@@ -639,11 +639,11 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
 
   pub fn save(&self, path:&str)->::std::io::Result<()> {
     let s = bincode::serialize(&self).unwrap();
-    return io::put(path, &s) }
+    io::put(path, &s) }
 
   pub fn load(path:&str)->::std::io::Result<BDDBase> {
     let s = io::get(path)?;
-    return Ok(bincode::deserialize(&s).unwrap()); }
+    Ok(bincode::deserialize(&s).unwrap()) }
 
   // generate dot file (graphviz)
   pub fn dot<T>(&self, n:NID, wr: &mut T) where T : ::std::fmt::Write {
@@ -696,22 +696,24 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
   /// nid of y when x is high
   pub fn when_hi(&mut self, x:VID, y:NID)->NID {
     let yv = var(y);
-    if yv == x { self.tup(y).0 }  // x ∧ if(x,th,_) → th
-    else if yv > x { y }          // y independent of x, so no change. includes yv = I
-    else {                        // y may depend on x, so recurse.
-      let (yt, ye) = self.tup(y);
-      let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
-      self.ite(nv(yv), th, el) }}
+    match yv.cmp(&x) {
+      Ordering::Equal => self.tup(y).0,  // x ∧ if(x,th,_) → th
+      Ordering::Greater => y,            // y independent of x, so no change. includes yv = I
+      Ordering::Less => {                // y may depend on x, so recurse.
+        let (yt, ye) = self.tup(y);
+        let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
+        self.ite(nv(yv), th, el) }}}
 
   /// nid of y when x is low
   pub fn when_lo(&mut self, x:VID, y:NID)->NID {
     let yv = var(y);
-    if yv == x { self.tup(y).1 }  // ¬x ∧ if(x,_,el) → el
-    else if yv > x { y }          // y independent of x, so no change. includes yv = I
-    else {                        // y may depend on x, so recurse.
-      let (yt, ye) = self.tup(y);
-      let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
-      self.ite(nv(yv), th, el) }}
+    match yv.cmp(&x) {
+      Ordering::Equal => self.tup(y).1,  // ¬x ∧ if(x,_,el) → el
+      Ordering::Greater => y,            // y independent of x, so no change. includes yv = I
+      Ordering::Less => {                // y may depend on x, so recurse.
+        let (yt, ye) = self.tup(y);
+        let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
+        self.ite(nv(yv), th, el) }}}
 
   /// is it possible x depends on y?
   /// the goal here is to avoid exploring a subgraph if we don't have to.
@@ -790,7 +792,7 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   // TODO: these should be moved into seperate struct
   fn def(&mut self, _s:String, _i:u32)->NID { todo!("BddBase::def()") }
   fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
-  fn get(&mut self, s:&String)->Option<NID> { Some(*self.tags.get(s)?) }
+  fn get(&mut self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 
   fn not(&mut self, x:NID)->NID { not(x) }
   fn and(&mut self, x:NID, y:NID)->NID { self.and(x, y) }
@@ -818,9 +820,7 @@ struct SolutionIterator<'a> {
 
 impl<'a> Iterator for SolutionIterator<'a> {
   type Item = &'a Vec<bool>;
-  fn next(&mut self)->Option<Self::Item> {
-    return None
-  }
+  fn next(&mut self)->Option<Self::Item> { None }
 }
 
 /// The default type used by the rest of the system.
@@ -996,7 +996,7 @@ use std::iter::FromIterator; //   Vec::from_iter( ...)
 }
 
 impl<W:BddWorker<S>> BddBase<S,W> {
-  pub fn nidsols<'a>(&'a mut self, n:NID)->VidSolIterator<'a> {
+  pub fn nidsols(&mut self, n:NID)->VidSolIterator {
     VidSolIterator::from_state(self.worker.get_state(), n)
   }
 }
@@ -1051,7 +1051,7 @@ impl<'a> VidSolIterator<'a> {
     self.invert = nid::is_inv(self.node) && !nid::is_const(self.node);}
 
   fn move_up(&mut self) {
-    assert!(self.nstack.len() > 0);
+    assert!(!self.nstack.is_empty());
     self.invert = self.istack.pop().expect("istack.pop() should have worked, as len>0");
     self.node = self.nstack.pop().expect("nstack.pop() should have worked, as len>0"); }
 
@@ -1085,7 +1085,7 @@ impl<'a> VidSolIterator<'a> {
     self.log("@@@@@      - find_next_leaf");
     // we always start at a leaf and move up, with the one exception of root=I
     assert!(nid::is_const(self.node), "find_next_leaf should always start by looking at a leaf");
-    if self.nstack.len() == 0 { assert!(self.node == nid::I); return None }
+    if self.nstack.is_empty() { assert!(self.node == nid::I); return None }
 
     // now we are definitely at a leaf node with a branch above us.
     self.move_up();
@@ -1097,13 +1097,13 @@ impl<'a> VidSolIterator<'a> {
       // scope[i] is inverted when we're exploring the low branch.
       // so move up the tree until we're back on a low branch or reach the top
       let mut iv = (self.scope.len() as i64) -1;
-      while self.nstack.len() > 0 && var_hi(self.scope[iv as usize]) {
+      while !self.nstack.is_empty() && var_hi(self.scope[iv as usize]) {
         self.move_up();
         let bv = nid::var(self.node) as i64; // branching var for current node
         while iv > bv { iv-= 1; }} // ascend
 
       // if we're back at the top and we already explored the hi branch, we're done
-      if self.nstack.len() == 0 && var_hi(self.scope[iv as usize]) { return None }}
+      if self.nstack.is_empty() && var_hi(self.scope[iv as usize]) { return None }}
 
     // flip the output bit in the answer. (it was lo, make it hi)
     let bv = nid::var(self.node) as usize;
@@ -1129,7 +1129,7 @@ impl<'a> VidSolIterator<'a> {
         // if we're in the solution, we're going to increment the "counter".
         if let Some(lmz) = self.increment() { // lmz = the leftmost "zero" (lo input variable)
           // climb the bdd until we find the layer where the lmz would be.
-          while self.nstack.len() > 0 && nid::var(self.nstack[self.nstack.len()-1]) >= lmz {
+          while !self.nstack.is_empty() && nid::var(self.nstack[self.nstack.len()-1]) >= lmz {
             self.move_up(); }
           // The 'lmz' variable exists in the solution space, but there might or might
           // not be a branch node for that variable in the current bdd path.
@@ -1140,8 +1140,8 @@ impl<'a> VidSolIterator<'a> {
           self.move_down(part);
           self.descend();
           if self.in_solution() { self.log("// increment ok"); return }}
-        // else there's no lmz, so we've counted all the way to 2^nvars-1, and we're done.
-        else { self.log("// found all solutions!"); self.done = true; return }}
+        else { // there's no lmz, so we've counted all the way to 2^nvars-1, and we're done.
+          self.log("// found all solutions!"); self.done = true; return }}
       // If still here, we are looking at a leaf that isn't a solution (out=0 in truth table)
       self.done = self.find_next_leaf()==None;
       self.log("  // loop end. ");
@@ -1161,6 +1161,6 @@ impl<'a> Iterator for VidSolIterator<'a> {
     let result = self.scope.clone();
     self.log("|  yield  |");
     self.advance();
-    return Some(result) }
+    Some(result) }
 
 } // impl Iterator

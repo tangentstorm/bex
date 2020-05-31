@@ -114,7 +114,7 @@ pub struct HILO {pub hi:NID, pub lo:NID}
 
 impl HILO {
   /// constructor
-  pub fn new(hi:NID, lo:NID)->HILO { HILO { hi:hi, lo:lo } }
+  pub fn new(hi:NID, lo:NID)->HILO { HILO { hi, lo } }
 
   /// apply the not() operator to both branches
   #[inline] pub fn invert(self)-> HILO { HILO{ hi: not(self.hi), lo: not(self.lo) }} }

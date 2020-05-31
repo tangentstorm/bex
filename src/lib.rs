@@ -1,5 +1,7 @@
 //! A crate for working with boolean expressions.
 
+#![allow(clippy::many_single_char_names)]
+
 #[macro_use] extern crate log;
 extern crate bincode;
 #[macro_use] extern crate serde_derive;

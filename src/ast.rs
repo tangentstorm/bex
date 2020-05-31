@@ -39,9 +39,7 @@ impl ASTBase {
 
 
   pub fn new(bits:Vec<Op>, tags:HashMap<String, NID>, nvars:usize)->ASTBase {
-    ASTBase{bits: bits,
-            nvars:nvars,
-            tags: tags,
+    ASTBase{bits, nvars, tags,
             hash: HashMap::new(),
             vars: vec![],
             subs: vec![],
@@ -61,11 +59,11 @@ impl ASTBase {
   // TODO: extract a Trait? These are almost exactly the same in bdd.rs
   pub fn save(&self, path:&str)->::std::io::Result<()> {
     let s = bincode::serialize(&self).unwrap();
-    return io::put(path, &s) }
+    io::put(path, &s) }
 
   pub fn load(path:&str)->::std::io::Result<ASTBase> {
     let s = io::get(path)?;
-    return Ok(bincode::deserialize(&s).unwrap()); }
+    Ok(bincode::deserialize(&s).unwrap()) }
 
 
 /*  fn sid(&mut self, kv:SUB)->SID {
@@ -209,9 +207,9 @@ impl ASTBase {
   pub fn reftable(&self) -> Vec<Vec<NID>> {
     let bits = &self.bits;
     let mut res:Vec<Vec<NID>> = vec![vec![]; bits.len()];
-    for n in 0..bits.len() {
+    for (n, &bit) in bits.iter().enumerate() {
       let mut f = |x:NID| res[x].push(n);
-      match bits[n] {
+      match bit {
         Op::O | Op::I | Op::Var(_) => {}
         Op::Not(x)    => { f(x); }
         Op::And(x,y)  => { f(x); f(y); }
@@ -244,7 +242,7 @@ impl ASTBase {
   /// in the result. This is intentional, as this function is used by the garbage
   /// collector, but if a node whose nid is in `oldnids` references a node that
   /// is not in `oldnids`, the resulting generated node will reference GONE (2^64).
-  pub fn permute(&self, oldnids:&Vec<NID>)->ASTBase {
+  pub fn permute(&self, oldnids:&[NID])->ASTBase {
     let newnid = {
       let mut result = vec![GONE; self.bits.len()];
       for (i,&n) in oldnids.iter().enumerate() { result[n] = i; }
@@ -278,9 +276,9 @@ impl ASTBase {
     for i in 0..self.bits.len() {
       if deps[i] { newnids[i]=oldnids.len(); oldnids.push(i as usize); }}
 
-    return (self.permute(&oldnids), keep.iter().map(|&i| newnids[i]).collect()); }
+    (self.permute(&oldnids), keep.iter().map(|&i| newnids[i]).collect()) }
 
-} // end impl ASTBase
+} // impl ASTBase
 
 impl Index<NID> for ASTBase {
   type Output = Op;
@@ -309,7 +307,7 @@ impl Base for ASTBase {
     let vars = &mut self.vars;
     let known = self.nvars;
     if v >= known {
-      for i in known .. v+1 {
+      for i in known ..= v {
         self.nvars += 1;
         vars.push(bits.len());
         bits.push(Op::Var(i)) }}
@@ -321,7 +319,7 @@ impl Base for ASTBase {
   fn def(&mut self, s:String, i:u32)->NID {
     let next = self.vars.len();
     let nid = self.var(next);
-    self.tag(nid, format!("{}{}", s, i).to_string()) }
+    self.tag(nid, format!("{}{}", s, i)) }
 
   fn tag(&mut self, n:NID, s:String)->NID {
     self.tags.insert(s, n); n }
@@ -382,7 +380,7 @@ impl Base for ASTBase {
 
   fn sub(&mut self, _v:VID, _n:NID, _ctx:NID)->NID { todo!("ast::sub") }
 
-  fn get(&mut self, _s:&String)->Option<NID> { todo!("ast::get") }
+  fn get(&mut self, _s:&str)->Option<NID> { todo!("ast::get") }
   fn save(&self, _path:&str)->::std::io::Result<()> { todo!("ast::save") }
   fn save_dot(&self, _n:NID, _path:&str) { todo!("ast::save_dot") }
   fn show_named(&self, _n:NID, _path:&str) { todo!("ast::show_named") }

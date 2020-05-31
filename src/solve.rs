@@ -30,7 +30,7 @@ impl<'a> Progress for ProgressReport<'a> {
              oldtop:nid::NID, newtop:nid::NID) {
     println!("{:4}, {:4}, {:4}→{:3?}, {:8}",
              step, secs, oldtop, base[nid::var(oldtop) as usize], newtop);
-    if step&7 == 0 { // every so often, save the state
+    if step.trailing_zeros() >= 3 { // every so often, save the state
       // !! TODO: expected number of steps only works if sort_by_cost was called.
       { let expected_steps = base.bits.len() as f64;
         let percent_done = 100.0 * (step as f64) / expected_steps as f64;
@@ -41,8 +41,8 @@ impl<'a> Progress for ProgressReport<'a> {
 				// TODO: remove the 'bdd' suffix
         dest.save(format!("{}-{:04}.bdd", self.prefix, step).as_str())
           .expect("failed to save"); }}
-    if step &31 == 0  { println!("step, seconds, change, newtop"); }
-    if self.save_dot && (step&31 == 0) || (step==446)
+    if step.trailing_zeros() >= 5 { println!("step, seconds, change, newtop"); }
+    if self.save_dot && (step.trailing_zeros() >= 5) || (step==446)
     { // on really special occasions, output a diagram
       dest.save_dot(newtop, format!("{}-{:04}.dot", self.prefix, step).as_str()); } }
 
@@ -60,6 +60,7 @@ fn default_bitmask(_base:&ASTBase, v:ast::VID) -> u64 {
 /// This function renumbers the NIDs so that nodes with higher IDs "cost" more.
 /// Sorting your AST this way dramatically reduces the cost of converting to
 /// another form. (For example, the test_tiny benchmark drops from 5282 steps to 111 for BDDBase)
+#[allow(clippy::needless_range_loop)]
 pub fn sort_by_cost(base:&ASTBase, top:ast::NID)->(ASTBase,ast::NID) {
 
   let (mut base0,kept0) = base.repack(vec![top]);
@@ -85,7 +86,7 @@ pub fn sort_by_cost(base:&ASTBase, top:ast::NID)->(ASTBase,ast::NID) {
 pub fn refine<P:Progress>(dest: &mut B, base:&ASTBase, end:nid::NID, pr:P) {
   let mut topnid = end;
   // step is just a number. we're packing it in a nid as a kludge
-  let mut step = nid::var(dest.get(&"step".to_string()).unwrap_or(nid::nv(0)));
+  let mut step = nid::var(dest.get(&"step".to_string()).unwrap_or_else(||nid::nv(0)));
   let mut newtop = topnid;
   pr.on_start();
   while !(nid::is_rvar(topnid) || nid::is_lit(topnid)) {
@@ -121,7 +122,7 @@ fn refine_one(dest: &mut B, base:&ASTBase, oldtop:nid::NID)->nid::NID {
     // !! 'Var' should only appear in leaves, so don't need it here.
     // Op::Var(x) => nid::nvr(x as nid::VID),
     _ => { panic!("don't know how to translate {:?}", op ) }};
-  return dest.sub(otv, newdef, oldtop) }
+  dest.sub(otv, newdef, oldtop) }
 
 /// This is an example solver used by the bdd-solve example and the bench-solve benchmark.
 /// It finds all pairs of type $T0 that multiply n as a $T1. (T0 and T1 are

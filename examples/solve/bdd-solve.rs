@@ -32,10 +32,11 @@
 
 /// Product of the first 15 primes: 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
 #[cfg(not(test))]
-const K:u64 = 614889782588491410;
+const K:u64 = 614_889_782_588_491_410;
 
 /// All 3,827 ordered pairs of 32-bit ints that multiply to produce K.
 #[cfg(not(test))]
+#[allow(clippy::unreadable_literal)]
 fn factors()->Vec<(u32,u32)> {
   vec![
     (429400657, 143197215), (429319798, 143224185), (429192489, 143266669),

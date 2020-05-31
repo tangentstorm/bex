@@ -1,6 +1,5 @@
 /// This module allows you to work with vectors of bit objects
 /// as if they were plain old integers.
-
 extern crate std;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -21,7 +20,7 @@ pub trait TBit
 
 // TODO: how can i merge with mj() below?
 fn bitmaj<T:TBit>(x:T, y:T, z:T) -> T {
-  (x.clone()&y.clone()) ^ (x.clone()&z.clone()) ^ (y&z) }
+  (x.clone()&y.clone()) ^ (x&z.clone()) ^ (y&z) }
 
 
 // BaseBit implementation (u32 references into a Base)
@@ -202,6 +201,7 @@ macro_rules! xint_type {
 
       fn u(self)->$U {
         let mut u = 0; let mut i = 0;
+        #[allow(clippy::toplevel_ref_arg)]
         for ref bit in self.bits.iter() {
           if bit.clone() == &self.i() { u|=1<<i }
           // TODO : u() should return a Result

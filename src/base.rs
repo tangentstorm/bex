@@ -28,7 +28,7 @@ pub trait Base {
 
   fn def(&mut self, s:String, i:u32)->Self::N;
   fn tag(&mut self, n:Self::N, s:String)->Self::N;
-  fn get(&mut self, _s:&String)->Option<Self::N>;
+  fn get(&mut self, _s:&str)->Option<Self::N>;
 
   /// substitute node for variable in context.
   fn sub(&mut self, v:Self::V, n:Self::N, ctx:Self::N)->Self::N;
