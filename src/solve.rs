@@ -38,7 +38,7 @@ impl<'a> Progress for ProgressReport<'a> {
                  newtop, step, base.bits.len(), percent_done); }
       if self.save_dest {
         dest.tag(newtop, "top".to_string()); dest.tag(nid::nv(step), "step".to_string());
-				// TODO: remove the 'bdd' suffix
+        // TODO: remove the 'bdd' suffix
         dest.save(format!("{}-{:04}.bdd", self.prefix, step).as_str())
           .expect("failed to save"); }}
     if step.trailing_zeros() >= 5 { println!("step, seconds, change, newtop"); }
@@ -83,20 +83,20 @@ pub fn sort_by_cost(base:&ASTBase, top:ast::NID)->(ASTBase,ast::NID) {
 
 
 
-pub fn refine<P:Progress>(dest: &mut B, base:&ASTBase, end:nid::NID, pr:P) {
+pub fn refine<P:Progress>(dest: &mut B, base:&ASTBase, end:nid::NID, pr:P)->nid::NID {
   let mut topnid = end;
   // step is just a number. we're packing it in a nid as a kludge
   let mut step = nid::var(dest.get(&"step".to_string()).unwrap_or_else(||nid::nv(0)));
-  let mut newtop = topnid;
   pr.on_start();
-  while !(nid::is_rvar(topnid) || nid::is_lit(topnid)) {
+  while !(nid::is_rvar(topnid) || nid::is_const(topnid)) {
     let now = std::time::SystemTime::now();
     let oldtop = topnid;
-    newtop = refine_one(dest, &base, oldtop); topnid=newtop;
+    topnid = refine_one(dest, &base, oldtop);
     let secs = now.elapsed().expect("elapsed?").as_secs();
-    pr.on_step(base, dest, step, secs, oldtop, newtop);
+    pr.on_step(base, dest, step, secs, oldtop, topnid);
     step += 1; }
-  pr.on_done(base, dest, newtop); }
+  pr.on_done(base, dest, topnid);
+  topnid }
 
 /// map a nid from the base to a (usually virtual) variable in the destination
 fn convert_nid(base:&ASTBase, n:ast::NID)->nid::NID {
@@ -138,29 +138,32 @@ macro_rules! find_factors {
                           .map(|i| gbase_def('x'.to_string(), i as u32)).collect());
     let y = $T0::from_vec((0..$T0::n())
                           .map(|i| gbase_def('y'.to_string(), i as u32)).collect());
-    let xy:$T1 = x.times(&y);
-    let k = $T1::new($n);
-    let lt = x.lt(&y);
-    let eq = xy.eq(&k);
+    let xy:$T1 = x.times(&y); let k = $T1::new($n); let lt = x.lt(&y); let eq = xy.eq(&k);
+    let mut dest = $TDEST::new(8);
     if $show {
       GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
       GBASE.with(|gb| { gb.borrow().show_named(eq.clone().n, "eq") }); }
     let top:BaseBit = lt & eq;
-    let _answer = GBASE.with(|gb| {
+    let answer = GBASE.with(|gb| {
       let (base, newtop) = sort_by_cost(&gb.borrow(), top.n);
       // The diagram looks exactly the same before and after sort_by_cost, so I
       // only generate it once. The only difference is the internal numbering.
       // However: this sorting dramatically reduces the cost of the conversion.
       // For example, test_tiny drops from to 111 steps.
       if $show { base.show_named(newtop, "ast"); }
-      let mut dest = $TDEST::new(base.bits.len());
+      dest = $TDEST::new(base.bits.len());
       refine(&mut dest, &base, ::bex::nid::nv(newtop as bex::nid::VID),
              ProgressReport{ save_dot: $show, save_dest: false, prefix: "x",
-                             show_result: $show, save_result: $show });
-    });
+                             show_result: $show, save_result: $show }) });
     let expect = $expect;
-    let actual = expect.clone(); // TODO: this isn't actually testing anything!!
-    println!("todo: expected results are not actually tested in find_factors!");
+    let actual:Vec<(u64, u64)> = dest.nidsols_trunc(answer, 2*$T0::n() as usize).map(|nids| {
+      let mut res = (0, 0);
+      let mut it = nids.iter();
+      for (i, &n) in it.by_ref().take($T0::n() as usize).enumerate() {
+        if !::bex::nid::is_inv(n) {  res.0 |= (1 << i) }}
+      for (i, &n) in it.take($T0::n() as usize).enumerate() {
+        if !::bex::nid::is_inv(n) { res.1 |= (1 << i) }}
+      res }).collect();
     assert_eq!(actual.len(), expect.len());
     for i in 0..expect.len() {
       assert_eq!(actual[i], expect[i], "mismatch at i={}", i) }

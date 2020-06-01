@@ -997,13 +997,18 @@ use std::iter::FromIterator; //   Vec::from_iter( ...)
 
 impl<W:BddWorker<S>> BddBase<S,W> {
   pub fn nidsols(&mut self, n:NID)->VidSolIterator {
-    VidSolIterator::from_state(self.worker.get_state(), n)
-  }
+    self.nidsols_trunc(n, self.nvars())}
+
+  pub fn nidsols_trunc(&mut self, n:NID, nvars:usize)->VidSolIterator {
+    assert!(nvars <= self.nvars(), "nvars arg to nidsols_trunc must be <= self.nvars");
+    VidSolIterator::from_state(self.worker.get_state(), n, nvars)}
+
 }
 
 pub struct VidSolIterator<'a> {
   node: NID,
   state: &'a S,
+  nvars:usize,        // track our own nvars so we can ignore virtual variables
   nstack: Vec<NID>,   // the path of nodes we have traversed
   istack: Vec<bool>,  // the stack of node inversion states
   scope: Vec<NID>,    // the current variable assignments
@@ -1016,15 +1021,16 @@ pub fn var_lo(n:NID)->bool {  nid::is_inv(n) }
 
 
 impl<'a> VidSolIterator<'a> {
-  pub fn from_state(state: &'a S, n:NID)->VidSolIterator<'a> {
+  pub fn from_state(state: &'a S, n:NID, nvars:usize)->VidSolIterator<'a> {
     // init scope with all variables assigned to 0
     let mut res = VidSolIterator{
       node: n, //if n == nid::I { n } else { nid::raw(n) },
       state,
-      scope: (0..state.nvars() as VID).map(|n| nid::not(nid::nv(n))).collect(),
+      nvars,
+      scope: (0..nvars as VID).map(|n| nid::not(nid::nv(n))).collect(),
       nstack: vec![],
       istack: vec![],
-      done: n==nid::O || state.nvars() == 0,
+      done: n==nid::O || nvars == 0,
       invert: false }; // should start false and only swap when we push to stack, so that parity of nstack = invert  . nid::is_inv(n) && n!=nid::I };
     res.log("\n## from-state");
     if ! res.done {
@@ -1066,7 +1072,7 @@ impl<'a> VidSolIterator<'a> {
   /// returns true iff we overflowed
   fn increment(&mut self)->Option<VID> {
     //println!("      - increment({:?},{:?},{:?}) -> ", left, right, self.scope);
-    let mut i = (self.state.nvars() as i32) - 1;
+    let mut i = (self.nvars as i32) - 1;
     while i >= 0 {
       let j = i as usize;
       self.scope[j] = nid::not(self.scope[j]);
@@ -1091,7 +1097,7 @@ impl<'a> VidSolIterator<'a> {
     self.move_up();
 
     // if we've already walked the hi branch, then ascend
-    let bv = nid::var(self.node) as usize; // branching var for current node
+    let bv = nid::rvar(self.node) as usize; // branching var for current node
     if var_hi(self.scope[bv]) {
       // move up one to the deepest node where the branch variable is still lo.
       // scope[i] is inverted when we're exploring the low branch.
@@ -1099,19 +1105,19 @@ impl<'a> VidSolIterator<'a> {
       let mut iv = (self.scope.len() as i64) -1;
       while !self.nstack.is_empty() && var_hi(self.scope[iv as usize]) {
         self.move_up();
-        let bv = nid::var(self.node) as i64; // branching var for current node
+        let bv = nid::rvar(self.node) as i64; // branching var for current node
         while iv > bv { iv-= 1; }} // ascend
 
       // if we're back at the top and we already explored the hi branch, we're done
       if self.nstack.is_empty() && var_hi(self.scope[iv as usize]) { return None }}
 
     // flip the output bit in the answer. (it was lo, make it hi)
-    let bv = nid::var(self.node) as usize;
+    let bv = nid::rvar(self.node) as usize;
     if var_hi(self.scope[bv]) { self.log("DONE WITH NODE"); return None }
     self.scope[bv] = nid::raw(self.scope[bv]); // ensure it's hi
 
     // now set all variables after that branch to lo
-    for i in (bv+1)..self.state.nvars() { self.scope[i] = nid::not(nid::raw(self.scope[i])); }
+    for i in (bv+1)..self.nvars { self.scope[i] = nid::not(nid::raw(self.scope[i])); }
 
     // we don't need to flip self.invert because it hasn't changed.
     self.move_down(BddPart::HiPart);
@@ -1129,13 +1135,13 @@ impl<'a> VidSolIterator<'a> {
         // if we're in the solution, we're going to increment the "counter".
         if let Some(lmz) = self.increment() { // lmz = the leftmost "zero" (lo input variable)
           // climb the bdd until we find the layer where the lmz would be.
-          while !self.nstack.is_empty() && nid::var(self.nstack[self.nstack.len()-1]) >= lmz {
+          while !self.nstack.is_empty() && nid::rvar(self.nstack[self.nstack.len()-1]) >= lmz {
             self.move_up(); }
           // The 'lmz' variable exists in the solution space, but there might or might
           // not be a branch node for that variable in the current bdd path.
           // Whether we follow the hi or lo branch depends on which variable we're looking at.
           if nid::is_const(self.node) { return } // special case for topmost I (all solutions)
-          let bv = nid::var(self.node) as usize;
+          let bv = nid::rvar(self.node) as usize;
           let part = if var_hi(self.scope[bv]) { BddPart::HiPart } else { BddPart::LoPart };
           self.move_down(part);
           self.descend();
