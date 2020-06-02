@@ -26,7 +26,7 @@ pub trait Base {
   #[cfg(todo)] fn mj(&mut self, x:Self::N, y:Self::N, z:Self::N)->Self::N;
   #[cfg(todo)] fn ch(&mut self, x:Self::N, y:Self::N, z:Self::N)->Self::N;
 
-  fn def(&mut self, s:String, i:u32)->Self::N;
+  fn def(&mut self, s:String, i:Self::V)->Self::N;
   fn tag(&mut self, n:Self::N, s:String)->Self::N;
   fn get(&mut self, _s:&str)->Option<Self::N>;
 

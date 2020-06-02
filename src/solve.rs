@@ -12,7 +12,7 @@ type B = dyn Base<V=nid::VID, N=nid::NID>;
 
 pub trait Progress {
   fn on_start(&self);
-  fn on_step(&self, base:&ASTBase, dest: &mut B, step:u32, secs:u64,
+  fn on_step(&self, base:&ASTBase, dest: &mut B, step:usize, secs:u64,
              oldtop:nid::NID, newtop:nid::NID);
   fn on_done(&self, base:&ASTBase, dest: &mut B, newtop:nid::NID); }
 
@@ -26,7 +26,7 @@ pub struct ProgressReport<'a> {
 
 impl<'a> Progress for ProgressReport<'a> {
   fn on_start(&self) { } //println!("step, seconds, topnid, oldtopvar, newtopvar"); }
-  fn on_step(&self, base:&ASTBase, dest: &mut B, step:u32, secs:u64,
+  fn on_step(&self, base:&ASTBase, dest: &mut B, step:usize, secs:u64,
              oldtop:nid::NID, newtop:nid::NID) {
     println!("{:4}, {:4}, {:4}→{:3?}, {:8}",
              step, secs, oldtop, base[nid::var(oldtop) as usize], newtop);
@@ -104,7 +104,7 @@ fn convert_nid(base:&ASTBase, n:ast::NID)->nid::NID {
     Op::O => nid::O,
     Op::I => nid::I,
     Op::Var(x) => nid::nvr(x as nid::VID),
-    _ => nid::nv(n as u32) }}
+    _ => nid::nv(n as nid::VID) }}
 
 fn refine_one(dest: &mut B, base:&ASTBase, oldtop:nid::NID)->nid::NID {
   let otv = nid::var(oldtop);
@@ -135,9 +135,9 @@ macro_rules! find_factors {
     GBASE.with(|gb| gb.replace(ASTBase::empty()));
 
     let x = $T0::from_vec((0..$T0::n())
-                          .map(|i| gbase_def('x'.to_string(), i as u32)).collect());
+                          .map(|i| gbase_def('x'.to_string(), i as bex::nid::VID)).collect());
     let y = $T0::from_vec((0..$T0::n())
-                          .map(|i| gbase_def('y'.to_string(), i as u32)).collect());
+                          .map(|i| gbase_def('y'.to_string(), i as bex::nid::VID)).collect());
     let xy:$T1 = x.times(&y); let k = $T1::new($n); let lt = x.lt(&y); let eq = xy.eq(&k);
     let mut dest = $TDEST::new(8);
     if $show {

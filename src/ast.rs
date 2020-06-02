@@ -7,10 +7,11 @@ use std::process::Command;      // for creating and viewing digarams
 
 use io;
 use base::*;
-
-pub type VID = usize;
+pub use nid::{VID};
+// pub type VID = usize;
 pub type NID = usize;
 const GONE:usize = 1<<63;
+//pub const GONE:NID = NID{ n:1<<59 >> } // only used in ast.
 
 pub type SID = usize; // canned substition
 type SUB = HashMap<VID,NID>;
@@ -102,7 +103,7 @@ impl ASTBase {
         let x1 = self.when(v, val, $x);
         let y1 = self.when(v, val, $y);
         self.$f(x1,y1) }}}
-    if v >= self.vars.len() { nid }
+    if (v as usize) >= self.vars.len() { nid }
     else { match self[nid] {
       Op::Var(x) if x==v => val,
       Op::O | Op::I | Op::Var(_) => nid,
@@ -295,7 +296,7 @@ impl Base for ASTBase {
 
   fn new(n:usize)->Self {
     let mut res = ASTBase::empty();
-    for i in 0..n { println!("var({})",i); res.var(i); }
+    for i in 0..n { println!("var({})",i); res.var(i as VID); }
     res }
   fn num_vars(&self)->usize { self.nvars }
 
@@ -310,14 +311,14 @@ impl Base for ASTBase {
       for i in known ..= v {
         self.nvars += 1;
         vars.push(bits.len());
-        bits.push(Op::Var(i)) }}
-    vars[v] }
+        bits.push(Op::Var(i as usize)) }}
+    vars[v as usize] }
 
   fn when_hi(&mut self, v:VID, n:NID)->NID { self.when(v,1,n) }
   fn when_lo(&mut self, v:VID, n:NID)->NID { self.when(v,0,n) }
 
-  fn def(&mut self, s:String, i:u32)->NID {
-    let next = self.vars.len();
+  fn def(&mut self, s:String, i:VID)->NID {
+    let next = self.vars.len() as VID;
     let nid = self.var(next);
     self.tag(nid, format!("{}{}", s, i)) }
 

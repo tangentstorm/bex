@@ -6,7 +6,7 @@ use std::fmt;
 // -- core data types ---
 
 /// Variable ID: uniquely identifies an input variable in the BDD.
-pub type VID = u32;
+pub type VID = usize;
 
 /// Index into a (usually VID-specific) vector.
 pub type IDX = u32;
