@@ -44,7 +44,7 @@ pub enum Op {
 #[derive(Serialize, Deserialize)]
 pub struct ASTBase {
   pub bits: Vec<Op>,                // all known bits (simplified)     TODO: make private
-  pub nvars: usize,
+  nvars: usize,
   pub tags: HashMap<String, Old>,   // support for naming/tagging bits.  TODO: make private
   hash: HashMap<Op, Old>,           // expression cache (simple+complex)
   vars: Vec<Old>,                   // quick index of Var(n) in bits

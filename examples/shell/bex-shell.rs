@@ -47,7 +47,7 @@ fn repl(base:&mut ASTBase) {
     for word in line.split_whitespace() {
       match word {
         "vars" => { let x = pop(&mut data);
-                    for i in base.nvars..x { base.var(i); }}
+                    for i in base.num_vars()..x { base.var(i); }}
         // bdd commands
         "i"|"I" => data.push(base.i()),
         "o"|"O" => data.push(base.o()),

@@ -33,7 +33,7 @@ pub struct BaseBit {pub base:BaseRef, pub n:NID}
 impl BaseBit {
   /// perform an arbitrary operation using the base
   fn op<F:FnMut(&mut ASTBase)->ast::NID>(&self, mut op:F)->BaseBit {
-    let nvars = self.base.borrow().nvars;
+    let nvars = self.base.borrow().num_vars();
     let r = nu(op(&mut self.base.borrow_mut()), nvars);
     BaseBit{base:self.base.clone(), n:r} }}
 
@@ -75,17 +75,17 @@ pub fn gbase_ref()->BaseRef {
 
 pub fn gbase_var(v:VID)->BaseBit {
   GBASE.with(|gb| {
-    let nvars = gb.borrow().nvars;
+    let nvars = gb.borrow().num_vars();
     let vn = nu(gb.borrow_mut().var(v), nvars); BaseBit{base:gb.clone(), n:vn }}) }
 
 pub fn gbase_tag(n:NID, s:String)->NID {
   GBASE.with(|gb| {
-    let nvars = gb.borrow().nvars;
+    let nvars = gb.borrow().num_vars();
     nu(gb.borrow_mut().tag(un(n),s), nvars) })}
 
 pub fn gbase_def(s:String, i:VID)->BaseBit {
   GBASE.with(|gb| {
-    let nvars = gb.borrow().nvars;
+    let nvars = gb.borrow().num_vars();
     let vn=nu(gb.borrow_mut().def(s,i), nvars); BaseBit{base:gb.clone(), n:vn }}) }
 
 pub fn gbase_o()->BaseBit { BaseBit{base:gbase_ref(), n:nid::O} }
