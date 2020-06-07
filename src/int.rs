@@ -15,7 +15,7 @@ pub trait TBit
   + std::ops::Not<Output=Self>
   + std::ops::BitAnd<Self,Output=Self>
   + std::ops::BitXor<Self,Output=Self> {
-    fn when(self, var:u32, val:Self)->Self;
+    fn when(self, var:VID, val:Self)->Self;
     fn sub(self, s:SID)->Self;
   }
 
@@ -42,8 +42,8 @@ impl std::cmp::PartialEq for BaseBit {
     self.base.as_ptr() == other.base.as_ptr() && self.n==other.n }}
 
 impl TBit for BaseBit {
-  fn when(self, var:u32, val:Self)->Self {
-    self.op(|base| base.when(var as usize, val.n, self.n)) }
+  fn when(self, var:VID, val:Self)->Self {
+    self.op(|base| base.when(var, val.n, self.n)) }
 
   fn sub(self, s:SID)->Self {
     self.op(|base| base.sub(self.n, s)) }}
