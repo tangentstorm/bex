@@ -2,12 +2,11 @@
 ///! bex: a boolean expression library for rust
 ///! outside the base, you deal only with opaque references.
 ///! inside, it could be stored any way we like.
+use nid::VID;
+
 pub trait Base {
   /// Node identifier type. Usually mapped to xxx::NID
   type N;
-
-  /// Variable identifier type. Usually mapped to xxx::VID
-  type V;
 
   fn new(n:usize)->Self where Self:Sized; // Sized so we can use trait objects.
   fn num_vars(&self)->usize;
@@ -15,9 +14,9 @@ pub trait Base {
   fn o(&self)->Self::N;
   fn i(&self)->Self::N;
 
-  fn var(&mut self, i:Self::V)->Self::N;
-  fn when_hi(&mut self, v:Self::V, n:Self::N)->Self::N;
-  fn when_lo(&mut self, v:Self::V, n:Self::N)->Self::N;
+  fn var(&mut self, i:VID)->Self::N;
+  fn when_hi(&mut self, v:VID, n:Self::N)->Self::N;
+  fn when_lo(&mut self, v:VID, n:Self::N)->Self::N;
 
   fn not(&mut self, x:Self::N)->Self::N;
   fn and(&mut self, x:Self::N, y:Self::N)->Self::N;
@@ -26,12 +25,12 @@ pub trait Base {
   #[cfg(todo)] fn mj(&mut self, x:Self::N, y:Self::N, z:Self::N)->Self::N;
   #[cfg(todo)] fn ch(&mut self, x:Self::N, y:Self::N, z:Self::N)->Self::N;
 
-  fn def(&mut self, s:String, i:Self::V)->Self::N;
+  fn def(&mut self, s:String, i:VID)->Self::N;
   fn tag(&mut self, n:Self::N, s:String)->Self::N;
   fn get(&mut self, _s:&str)->Option<Self::N>;
 
   /// substitute node for variable in context.
-  fn sub(&mut self, v:Self::V, n:Self::N, ctx:Self::N)->Self::N;
+  fn sub(&mut self, v:VID, n:Self::N, ctx:Self::N)->Self::N;
   fn solutions(&self)->&dyn Iterator<Item=Vec<bool>>;
 
   fn save(&self, path:&str)->::std::io::Result<()>;

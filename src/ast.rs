@@ -292,7 +292,6 @@ impl ::std::fmt::Debug for ASTBase {
 impl Base for ASTBase {
 
   type N = NID;
-  type V = VID;
 
   fn new(n:usize)->Self {
     let mut res = ASTBase::empty();

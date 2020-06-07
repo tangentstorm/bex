@@ -7,7 +7,7 @@ use ast;
 use ast::{Op,ASTBase};
 use nid;
 
-type B = dyn Base<V=nid::VID, N=nid::NID>;
+type B = dyn Base<N=nid::NID>;
 
 
 pub trait Progress {
