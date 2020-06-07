@@ -138,12 +138,12 @@ macro_rules! find_factors {
                           .map(|i| gbase_def('y'.to_string(), i as bex::nid::VID)).collect());
     let xy:$T1 = x.times(&y); let k = $T1::new($k); let lt = x.lt(&y); let eq = xy.eq(&k);
     if $show {
-      GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
-      GBASE.with(|gb| { gb.borrow().show_named(eq.clone().n, "eq") }); }
+      GBASE.with(|gb| { gb.borrow().show_named(nid::un(lt.clone().n), "lt") });
+      GBASE.with(|gb| { gb.borrow().show_named(nid::un(eq.clone().n), "eq") }); }
     let top:BaseBit = lt & eq;
     let mut dest = $TDEST::new(8);
     let answer = GBASE.with(|gb| {
-      let (src, newtop) = sort_by_cost(&gb.borrow(), top.n);
+      let (src, newtop) = sort_by_cost(&gb.borrow(), nid::un(top.n));
       // The diagram looks exactly the same before and after sort_by_cost, so I
       // only generate it once. The only difference is the internal numbering.
       // However: this sorting dramatically reduces the cost of the conversion.

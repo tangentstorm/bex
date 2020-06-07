@@ -1320,6 +1320,7 @@ extern crate bex;
 use bex::int::{BInt, BaseBit, GBASE, gbase_def};
 use bex::{bdd, find_factors, solve::{ProgressReport, refine, sort_by_cost}};
 use bex::ast::ASTBase;
+use bex::nid;
 
 type BDD = bdd::BDDBase;
 

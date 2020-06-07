@@ -16,6 +16,18 @@ pub type IDX = u32;
 /// See below for helper functions that manipulate and analyze the packed bits.
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct NID { n: u64 }
+
+pub fn un(n:NID)->usize {
+  if n == O { 0 }
+  else if n == I { 1 }
+  else if is_var(n) { var(n) as usize }
+  else { idx(n) as usize }}
+pub fn nu(u:usize, nvars:usize)->NID {
+  if u == 0 { O }
+  else if u == 1 { I }
+  else if u < nvars { nv(u) }
+  else { nvi(NOVAR, u as IDX) } }
+
 
 // -- bits in the nid ---
 
@@ -40,6 +52,10 @@ pub const T:u64 = 1<<61;    // T: max VID (hack so O/I nodes show up at bottom)
 
 /// Constant used to extract the index part of a NID.
 pub const IDX_MASK:u64 = (1<<32)-1;
+
+/// temp const used while converting ASTBase (TODO: remove NOVAR)
+pub const NOVAR:VID = 1<<31;
+
 
 /// NID of the virtual node represeting the constant function 0, or "always false."
 pub const O:NID = NID{ n:T };

@@ -4,9 +4,11 @@ extern crate std;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::cmp::min;
+use ast::ASTBase;
+use ast;
 use base::{Base};
-use nid::{VID};
-use ast::{ASTBase, NID, SID};
+use nid::{VID, NID, un, nu};
+use nid;
 
 
 // TBit : for use outside the Base, by types such as X32, below.
@@ -30,8 +32,9 @@ pub struct BaseBit {pub base:BaseRef, pub n:NID}
 
 impl BaseBit {
   /// perform an arbitrary operation using the base
-  fn op<F:FnMut(&mut ASTBase)->NID>(&self, mut op:F)->BaseBit {
-    let r = op(&mut self.base.borrow_mut());
+  fn op<F:FnMut(&mut ASTBase)->ast::NID>(&self, mut op:F)->BaseBit {
+    let nvars = self.base.borrow().nvars;
+    let r = nu(op(&mut self.base.borrow_mut()), nvars);
     BaseBit{base:self.base.clone(), n:r} }}
 
 impl std::cmp::PartialEq for BaseBit {
@@ -43,22 +46,22 @@ impl TBit for BaseBit {}
 impl std::ops::Not for BaseBit {
   type Output = Self;
   fn not(self) -> Self {
-    self.op(|base| base.not(self.n)) }}
+    self.op(|base| base.not(un(self.n))) }}
 
 impl std::ops::BitAnd<BaseBit> for BaseBit {
   type Output = Self;
   fn bitand(self, other:Self) -> Self {
-    self.op(|base| base.and(self.n, other.n)) }}
+    self.op(|base| base.and(un(self.n), un(other.n))) }}
 
 impl std::ops::BitXor<BaseBit> for BaseBit {
   type Output = Self;
   fn bitxor(self, other:Self) -> Self {
-    self.op(|base| base.xor(self.n, other.n))}}
+    self.op(|base| base.xor(un(self.n), un(other.n)))}}
 
 impl std::ops::BitOr<BaseBit> for BaseBit {
   type Output = Self;
   fn bitor(self, other:Self) -> Self {
-    self.op(|base| base.or(self.n, other.n)) }}
+    self.op(|base| base.or(un(self.n), un(other.n))) }}
 
 impl std::fmt::Debug for BaseBit {
   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -72,17 +75,21 @@ pub fn gbase_ref()->BaseRef {
 
 pub fn gbase_var(v:VID)->BaseBit {
   GBASE.with(|gb| {
-    let vn = gb.borrow_mut().var(v); BaseBit{base:gb.clone(), n:vn }}) }
+    let nvars = gb.borrow().nvars;
+    let vn = nu(gb.borrow_mut().var(v), nvars); BaseBit{base:gb.clone(), n:vn }}) }
 
 pub fn gbase_tag(n:NID, s:String)->NID {
-  GBASE.with(|gb| gb.borrow_mut().tag(n,s) )}
+  GBASE.with(|gb| {
+    let nvars = gb.borrow().nvars;
+    nu(gb.borrow_mut().tag(un(n),s), nvars) })}
 
 pub fn gbase_def(s:String, i:VID)->BaseBit {
   GBASE.with(|gb| {
-    let vn=gb.borrow_mut().def(s,i); BaseBit{base:gb.clone(), n:vn }}) }
+    let nvars = gb.borrow().nvars;
+    let vn=nu(gb.borrow_mut().def(s,i), nvars); BaseBit{base:gb.clone(), n:vn }}) }
 
-pub fn gbase_o()->BaseBit { BaseBit{base:gbase_ref(), n:0} }
-pub fn gbase_i()->BaseBit { BaseBit{base:gbase_ref(), n:1} }
+pub fn gbase_o()->BaseBit { BaseBit{base:gbase_ref(), n:nid::O} }
+pub fn gbase_i()->BaseBit { BaseBit{base:gbase_ref(), n:nid::I} }
 
 
 // --- lifted u32 type -----------------------------------------
@@ -174,11 +181,7 @@ macro_rules! xint_type {
     impl std::fmt::Debug for $T {
       fn fmt(&self, f: &mut std::fmt::Formatter)->std::fmt::Result {
         write!(f, "[").expect("!");
-        for x in self.bits.iter() {
-          match x.n {
-            0 => { write!(f, "o").expect("!?"); },
-            1 => { write!(f, "I").expect("!?"); },
-            n => { write!(f, ":{}", n).expect("!?"); }}}
+        for x in self.bits.iter() { write!(f, "{:?}", x).expect("!?") }
         write!(f, "]")}}
 
 // TODO: just inline BInt here, so people don't have to import it.
