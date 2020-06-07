@@ -14,10 +14,7 @@ pub trait TBit
   : Sized + Clone
   + std::ops::Not<Output=Self>
   + std::ops::BitAnd<Self,Output=Self>
-  + std::ops::BitXor<Self,Output=Self> {
-    fn when(self, var:VID, val:Self)->Self;
-    fn sub(self, s:SID)->Self;
-  }
+  + std::ops::BitXor<Self,Output=Self> { }
 
 // TODO: how can i merge with mj() below?
 fn bitmaj<T:TBit>(x:T, y:T, z:T) -> T {
@@ -41,12 +38,7 @@ impl std::cmp::PartialEq for BaseBit {
   fn eq(&self, other:&Self)->bool {
     self.base.as_ptr() == other.base.as_ptr() && self.n==other.n }}
 
-impl TBit for BaseBit {
-  fn when(self, var:VID, val:Self)->Self {
-    self.op(|base| base.when(var, val.n, self.n)) }
-
-  fn sub(self, s:SID)->Self {
-    self.op(|base| base.sub(self.n, s)) }}
+impl TBit for BaseBit {}
 
 impl std::ops::Not for BaseBit {
   type Output = Self;
