@@ -8,8 +8,7 @@ use std::process::Command;      // for creating and viewing digarams
 use io;
 use base::*;
 use nid;
-pub use nid::{VID};
-// pub type VID = usize;
+pub use nid::{VID,NOVAR};
 pub type NID = usize;
 const GONE:usize = 1<<63;
 //pub const GONE:NID = NID{ n:1<<59 >> } // only used in ast.
@@ -17,7 +16,6 @@ const GONE:usize = 1<<63;
 // temporary scaffolding while I replace usize with nid::NID
 type Old = usize;
 type New = nid::NID;
-const NOVAR:usize = 1<<31;
 fn no1(old:Old)->New {
   if old == 0 { nid::O }
   else if old ==1 { nid::I }
@@ -57,7 +55,7 @@ type VarMaskFn = fn(&ASTBase,VID)->u64;
 impl ASTBase {
 
 
-  pub fn new(bits:Vec<Op>, tags:HashMap<String, Old>, nvars:usize)->ASTBase {
+  fn new(bits:Vec<Op>, tags:HashMap<String, Old>, nvars:usize)->ASTBase {
     ASTBase{bits, nvars, tags,
             hash: HashMap::new(),
             vars: vec![],
@@ -76,12 +74,7 @@ impl ASTBase {
         self.hash.insert(op, n);
         n }}}
 
-  // TODO: extract a Trait? These are almost exactly the same in bdd.rs
-  pub fn save(&self, path:&str)->::std::io::Result<()> {
-    let s = bincode::serialize(&self).unwrap();
-    io::put(path, &s) }
-
-  pub fn load(path:&str)->::std::io::Result<ASTBase> {
+  fn load(path:&str)->::std::io::Result<ASTBase> {
     let s = io::get(path)?;
     Ok(bincode::deserialize(&s).unwrap()) }
 
@@ -91,7 +84,7 @@ impl ASTBase {
     self.subs.push(kv); self.subc.push(HashMap::new());
     res } */
 
-  pub fn sub(&mut self, x:Old, s:SID)->Old {
+  fn sub(&mut self, x:Old, s:SID)->Old {
     macro_rules! op {
       [not $x:ident] => {{ let x1 = self.sub($x, s); self.not(x1) }};
       [$f:ident $x:ident $y:ident] => {{
@@ -114,7 +107,7 @@ impl ASTBase {
         n }}}
 
 
-  pub fn when(&mut self, v:VID, val:Old, nid:Old)->Old {
+  fn when(&mut self, v:VID, val:Old, nid:Old)->Old {
     // print!(":{}",nid);
     macro_rules! op {
       [not $x:ident] => {{ let x1 = self.when(v, val, $x); self.not(x1) }};
@@ -133,7 +126,7 @@ impl ASTBase {
 
 
 
-  pub fn walk<F>(&self, n:Old, f:&mut F) where F: FnMut(Old) {
+  fn walk<F>(&self, n:Old, f:&mut F) where F: FnMut(Old) {
     let mut seen = HashSet::new();
     self.step(n,f,&mut seen)}
 
@@ -177,13 +170,13 @@ impl ASTBase {
         _ => w!("  \"{}\"[label={}];", n, n) }});
     w!("}}"); }
 
-  pub fn save_dot(&self, n:Old, path:&str) { // !! taken from bdd.rs
+  fn save_dot(&self, n:Old, path:&str) { // !! taken from bdd.rs
     let mut s = String::new(); self.dot(n, &mut s);
     let mut txt = File::create(path).expect("couldn't create dot file");
-    txt.write_all(s.as_bytes()).expect("failet to write text to dot file"); }
+    txt.write_all(s.as_bytes()).expect("failed to write text to dot file"); }
 
 
-  pub fn show_named(&self, n:Old, s:&str) {   // !! almost exactly the same as in bdd.rs
+  fn show_named(&self, n:Old, s:&str) {   // !! almost exactly the same as in bdd.rs
     self.save_dot(n, format!("{}.dot", s).as_str());
     let out = Command::new("dot").args(&["-Tpng",format!("{}.dot",s).as_str()])
       .output().expect("failed to run 'dot' command");
@@ -224,7 +217,7 @@ impl ASTBase {
     (masks, costs)}
 
   /// this returns a raggod 2d vector of direct references for each bit in the base
-  pub fn reftable(&self) -> Vec<Vec<Old>> {
+  fn reftable(&self) -> Vec<Vec<Old>> {
     let bits = &self.bits;
     let mut res:Vec<Vec<Old>> = vec![vec![]; bits.len()];
     for (n, &bit) in bits.iter().enumerate() {
@@ -403,7 +396,9 @@ impl Base for ASTBase {
   fn sub(&mut self, _v:VID, _n:Old, _ctx:Old)->Old { todo!("ast::sub") }
 
   fn get(&self, s:&str)->Option<Old> { Some(*self.tags.get(s)?) }
-  fn save(&self, _path:&str)->::std::io::Result<()> { todo!("ast::save") }
+  fn save(&self, path:&str)->::std::io::Result<()> {
+    let s = bincode::serialize(&self).unwrap();
+    io::put(path, &s) }
   fn save_dot(&self, _n:Old, _path:&str) { todo!("ast::save_dot") }
   fn show_named(&self, _n:Old, _path:&str) { todo!("ast::show_named") }
 
