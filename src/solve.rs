@@ -32,10 +32,10 @@ impl<'a> Progress for ProgressReport<'a> {
              step, secs, oldtop, src[nid::var(oldtop) as usize], newtop);
     if step.trailing_zeros() >= 3 { // every so often, save the state
       // !! TODO: expected number of steps only works if sort_by_cost was called.
-      { let expected_steps = src.bits.len() as f64;
+      { let expected_steps = src.len() as f64;
         let percent_done = 100.0 * (step as f64) / expected_steps as f64;
         println!("\n# newtop: {}  step:{}/{} ({:.2}%)",
-                 newtop, step, src.bits.len(), percent_done); }
+                 newtop, step, src.len(), percent_done); }
       if self.save_dest {
         dest.tag(newtop, "top".to_string()); dest.tag(nid::nv(step), "step".to_string());
         // TODO: remove the 'bdd' suffix
@@ -149,7 +149,7 @@ macro_rules! find_factors {
       // However: this sorting dramatically reduces the cost of the conversion.
       // For example, test_tiny drops from to 111 steps.
       if $show { src.show_named(newtop, "ast"); }
-      dest = $TDEST::new(src.bits.len());
+      dest = $TDEST::new(src.len());
       refine(&mut dest, &src, ::bex::nid::nv(newtop as bex::nid::VID),
              ProgressReport{ save_dot: $show, save_dest: false, prefix: "x",
                              show_result: $show, save_result: $show }) });

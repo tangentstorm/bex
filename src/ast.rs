@@ -43,9 +43,9 @@ pub enum Op {
 // !! TODO: move subs/subc into external structure
 #[derive(Serialize, Deserialize)]
 pub struct ASTBase {
-  pub bits: Vec<Op>,                // all known bits (simplified)     TODO: make private
+  bits: Vec<Op>,                    // all known bits (simplified)
   nvars: usize,
-  tags: HashMap<String, Old>,       // support for naming/tagging bits.  TODO: make private
+  tags: HashMap<String, Old>,       // support for naming/tagging bits.
   hash: HashMap<Op, Old>,           // expression cache (simple+complex)
   vars: Vec<Old>,                   // quick index of Var(n) in bits
   subs: Vec<SUB>,                   // list of substitution dicts
@@ -65,6 +65,7 @@ impl ASTBase {
             subc: vec![]}}
 
   pub fn empty()->ASTBase { ASTBase::new(vec![Op::O, Op::I], HashMap::new(), 0) }
+  pub fn len(&self)->usize { self.bits.len() }
 
   fn nid(&mut self, op:Op)->Old {
     match self.hash.get(&op) {
