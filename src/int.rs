@@ -5,7 +5,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::cmp::min;
 use base::{Base};
-use ast::{ASTBase, NID, VID, SID};
+use nid::{VID};
+use ast::{ASTBase, NID, SID};
 
 
 // TBit : for use outside the Base, by types such as X32, below.
