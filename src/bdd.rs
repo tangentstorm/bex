@@ -791,7 +791,7 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   // TODO: these should be moved into seperate struct
   fn def(&mut self, _s:String, _i:VID)->NID { todo!("BddBase::def()") }
   fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
-  fn get(&mut self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
+  fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 
   fn not(&mut self, x:NID)->NID { not(x) }
   fn and(&mut self, x:NID, y:NID)->NID { self.and(x, y) }

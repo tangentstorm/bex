@@ -71,7 +71,7 @@ impl Base for ANFBase {
   fn def(&mut self, _s:String, _v:VID)->NID { todo!("anf::def"); }
   // TODO: tag and get are copied verbatim from bdd
   fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
-  fn get(&mut self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
+  fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 
   fn when_lo(&mut self, v:VID, n:NID)->NID {
     let nv = nid::var(n);

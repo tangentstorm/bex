@@ -45,7 +45,7 @@ pub enum Op {
 pub struct ASTBase {
   pub bits: Vec<Op>,                // all known bits (simplified)     TODO: make private
   nvars: usize,
-  pub tags: HashMap<String, Old>,   // support for naming/tagging bits.  TODO: make private
+  tags: HashMap<String, Old>,       // support for naming/tagging bits.  TODO: make private
   hash: HashMap<Op, Old>,           // expression cache (simple+complex)
   vars: Vec<Old>,                   // quick index of Var(n) in bits
   subs: Vec<SUB>,                   // list of substitution dicts
@@ -401,7 +401,7 @@ impl Base for ASTBase {
 
   fn sub(&mut self, _v:VID, _n:Old, _ctx:Old)->Old { todo!("ast::sub") }
 
-  fn get(&mut self, _s:&str)->Option<Old> { todo!("ast::get") }
+  fn get(&self, s:&str)->Option<Old> { Some(*self.tags.get(s)?) }
   fn save(&self, _path:&str)->::std::io::Result<()> { todo!("ast::save") }
   fn save_dot(&self, _n:Old, _path:&str) { todo!("ast::save_dot") }
   fn show_named(&self, _n:Old, _path:&str) { todo!("ast::show_named") }

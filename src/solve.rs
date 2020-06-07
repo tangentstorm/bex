@@ -77,7 +77,7 @@ pub fn sort_by_cost(src:&ASTBase, top:ast::NID)->(ASTBase,ast::NID) {
   for i in 0..min { p[i] = i }
   for i in min..p.len() { p[i] = min + (max-i) }
   let ast = src1.permute(&p);
-  let &nid = ast.tags.get("-top-").expect("what? I just put it there.");
+  let nid = ast.get("-top-").expect("what? I just put it there.");
   (ast,nid) }
 
 
