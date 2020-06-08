@@ -14,7 +14,7 @@ pub type IDX = u32;
 /// A NID represents a node in a Base. Essentially, this acts like a tuple
 /// containing a VID and IDX, but for performance reasons, it is packed into a u64.
 /// See below for helper functions that manipulate and analyze the packed bits.
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct NID { n: u64 }
 
 pub fn un(n:NID)->usize {
