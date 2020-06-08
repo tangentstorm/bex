@@ -1325,6 +1325,11 @@ use bex::nid;
 type BDD = bdd::BDDBase;
 
 
+/// nano test case: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
+#[test] pub fn test_nano_bdd() {
+  use bex::int::{X2,X4};
+  find_factors!(BDD, X2, X4, 6, vec![(2,3)], false); }
+
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny_bdd() {
   use bex::int::{X4,X8};
