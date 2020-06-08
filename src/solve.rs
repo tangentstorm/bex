@@ -1,7 +1,7 @@
 #![macro_use]
 
 /// "solve" ast-based expressions by converting to another form.
-use apl;
+//use apl;
 use base::Base;
 use ast;
 use ast::{Op,ASTBase};
@@ -29,7 +29,7 @@ impl<'a> Progress for ProgressReport<'a> {
   fn on_step(&self, src:&ASTBase, dest: &mut B, step:usize, secs:u64,
              oldtop:nid::NID, newtop:nid::NID) {
     println!("{:4}, {:4}, {:4}→{:3?}, {:8}",
-             step, secs, oldtop, src.get_op(nid::var(oldtop) as usize), newtop);
+             step, secs, oldtop, src.get_op(oldtop), newtop);
     if step.trailing_zeros() >= 3 { // every so often, save the state
       // !! TODO: expected number of steps only works if sort_by_cost was called.
       { let expected_steps = src.len() as f64;
@@ -62,7 +62,8 @@ fn default_bitmask(_src:&ASTBase, v:nid::VID) -> u64 {
 /// another form. (For example, the test_tiny benchmark drops from 5282 steps to 111 for BDDBase)
 #[allow(clippy::needless_range_loop)]
 pub fn sort_by_cost(src:&ASTBase, top:ast::NID)->(ASTBase,ast::NID) {
-
+  todo!("rebuild sort_by_cost()")
+  /*
   let (mut src0,kept0) = src.repack(vec![top]);
   src0.tag(kept0[0], "-top-".to_string());
 
@@ -78,7 +79,7 @@ pub fn sort_by_cost(src:&ASTBase, top:ast::NID)->(ASTBase,ast::NID) {
   for i in min..p.len() { p[i] = min + (max-i) }
   let ast = src1.permute(&p);
   let nid = ast.get("-top-").expect("what? I just put it there.");
-  (ast,nid) }
+  (ast,nid)*/ }
 
 
 pub fn refine<P:Progress>(dest: &mut B, src:&ASTBase, end:nid::NID, pr:P)->nid::NID {
@@ -98,15 +99,16 @@ pub fn refine<P:Progress>(dest: &mut B, src:&ASTBase, end:nid::NID, pr:P)->nid::
 
 /// map a nid from the source to a (usually virtual) variable in the destination
 fn convert_nid(src:&ASTBase, n:ast::NID)->nid::NID {
-  match src.get_op(n as usize) {
+  match src.get_op(n) {
     Op::O => nid::O,
     Op::I => nid::I,
     Op::Var(x) => nid::nvr(x as nid::VID),
-    _ => nid::nv(n as nid::VID) }}
+    _ => if nid::var(n) == nid::NOVAR { n }
+         else { todo!("convert_nid({:?})", n) }}}
 
 fn refine_one(dst: &mut B, src:&ASTBase, oldtop:nid::NID)->nid::NID {
   let otv = nid::var(oldtop);
-  let op = src.get_op(otv as usize);
+  let op = src.get_op(oldtop);
   let v = |x0:ast::NID|->nid::NID { convert_nid(src, x0) };
   let newdef:nid::NID = match op {
     // Op::Not should only occur once at the very top, if at all:
@@ -131,26 +133,26 @@ macro_rules! find_factors {
     use bex::Base;
     // reset gbase on each test
     GBASE.with(|gb| gb.replace(ASTBase::empty()));
-
     let x = $T0::from_vec((0..$T0::n())
                           .map(|i| gbase_def('x'.to_string(), i as bex::nid::VID)).collect());
     let y = $T0::from_vec((0..$T0::n())
                           .map(|i| gbase_def('y'.to_string(), i as bex::nid::VID)).collect());
     let xy:$T1 = x.times(&y); let k = $T1::new($k); let lt = x.lt(&y); let eq = xy.eq(&k);
     if $show {
-      GBASE.with(|gb| { gb.borrow().show_named(nid::un(lt.clone().n), "lt") });
-      GBASE.with(|gb| { gb.borrow().show_named(nid::un(eq.clone().n), "eq") }); }
+      GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
+      GBASE.with(|gb| { gb.borrow().show_named(eq.clone().n, "eq") }); }
     let top:BaseBit = lt & eq;
     let mut dest = $TDEST::new(8);
     let answer = GBASE.with(|gb| {
-      let (src, newtop) = sort_by_cost(&gb.borrow(), nid::un(top.n));
+      //let (src, newtop) = sort_by_cost(&gb.borrow(), nid::un(top.n));
+      let (src, newtop) = (gb.borrow(), top.n);
       // The diagram looks exactly the same before and after sort_by_cost, so I
       // only generate it once. The only difference is the internal numbering.
       // However: this sorting dramatically reduces the cost of the conversion.
       // For example, test_tiny drops from to 111 steps.
       if $show { src.show_named(newtop, "ast"); }
       dest = $TDEST::new(src.len());
-      refine(&mut dest, &src, ::bex::nid::nv(newtop as bex::nid::VID),
+      refine(&mut dest, &src, newtop,
              ProgressReport{ save_dot: $show, save_dest: false, prefix: "x",
                              show_result: $show, save_result: $show }) });
     let expect = $expect;

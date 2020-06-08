@@ -7,7 +7,7 @@ use std::cmp::min;
 use ast::ASTBase;
 use ast;
 use base::{Base};
-use nid::{VID, NID, un, nu};
+use nid::{VID, NID};
 use nid;
 
 
@@ -33,7 +33,7 @@ pub struct BaseBit {pub base:BaseRef, pub n:NID}
 impl BaseBit {
   /// perform an arbitrary operation using the base
   fn op<F:FnMut(&mut ASTBase)->ast::NID>(&self, mut op:F)->BaseBit {
-    let r = nu(op(&mut self.base.borrow_mut()));
+    let r = op(&mut self.base.borrow_mut());
     BaseBit{base:self.base.clone(), n:r} }}
 
 impl std::cmp::PartialEq for BaseBit {
@@ -45,22 +45,22 @@ impl TBit for BaseBit {}
 impl std::ops::Not for BaseBit {
   type Output = Self;
   fn not(self) -> Self {
-    self.op(|base| base.not(un(self.n))) }}
+    self.op(|base| base.not(self.n)) }}
 
 impl std::ops::BitAnd<BaseBit> for BaseBit {
   type Output = Self;
   fn bitand(self, other:Self) -> Self {
-    self.op(|base| base.and(un(self.n), un(other.n))) }}
+    self.op(|base| base.and(self.n, other.n)) }}
 
 impl std::ops::BitXor<BaseBit> for BaseBit {
   type Output = Self;
   fn bitxor(self, other:Self) -> Self {
-    self.op(|base| base.xor(un(self.n), un(other.n)))}}
+    self.op(|base| base.xor(self.n, other.n))}}
 
 impl std::ops::BitOr<BaseBit> for BaseBit {
   type Output = Self;
   fn bitor(self, other:Self) -> Self {
-    self.op(|base| base.or(un(self.n), un(other.n))) }}
+    self.op(|base| base.or(self.n, other.n)) }}
 
 impl std::fmt::Debug for BaseBit {
   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -74,15 +74,15 @@ pub fn gbase_ref()->BaseRef {
 
 pub fn gbase_var(v:VID)->BaseBit {
   GBASE.with(|gb| {
-    let vn = nu(gb.borrow_mut().var(v)); BaseBit{base:gb.clone(), n:vn }}) }
+    let vn = gb.borrow_mut().var(v); BaseBit{base:gb.clone(), n:vn }}) }
 
 pub fn gbase_tag(n:NID, s:String)->NID {
   GBASE.with(|gb| {
-    nu(gb.borrow_mut().tag(un(n),s)) })}
+    gb.borrow_mut().tag(n,s) })}
 
 pub fn gbase_def(s:String, i:VID)->BaseBit {
   GBASE.with(|gb| {
-    let vn=nu(gb.borrow_mut().def(s,i)); BaseBit{base:gb.clone(), n:vn }}) }
+    let vn=gb.borrow_mut().def(s,i); BaseBit{base:gb.clone(), n:vn }}) }
 
 pub fn gbase_o()->BaseBit { BaseBit{base:gbase_ref(), n:nid::O} }
 pub fn gbase_i()->BaseBit { BaseBit{base:gbase_ref(), n:nid::I} }
