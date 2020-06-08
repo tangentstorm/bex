@@ -672,11 +672,11 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
 
   pub fn show_named(&self, n:NID, s:&str) {   // !! almost exactly the same as in bdd.rs
     self.save_dot(n, format!("{}.dot", s).as_str());
-    let out = Command::new("dot").args(&["-Tpng",format!("{}.dot",s).as_str()])
+    let out = Command::new("dot").args(&["-Tsvg",format!("{}.dot",s).as_str()])
       .output().expect("failed to run 'dot' command");
-    let mut png = File::create(format!("{}.png",s).as_str()).expect("couldn't create png");
-    png.write_all(&out.stdout).expect("couldn't write png");
-    Command::new("firefox").args(&[format!("{}.png",s).as_str()])
+    let mut svg = File::create(format!("{}.svg",s).as_str()).expect("couldn't create svg");
+    svg.write_all(&out.stdout).expect("couldn't write svg");
+    Command::new("firefox").args(&[format!("{}.svg",s).as_str()])
       .spawn().expect("failed to launch firefox"); }
 
   pub fn show(&self, n:NID) { self.show_named(n, "+bdd") }

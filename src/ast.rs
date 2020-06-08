@@ -171,21 +171,6 @@ impl ASTBase {
         _ => w!("  \"{}\"[label={}];", n, n) }});
     w!("}}"); }
 
-  fn save_dot(&self, n:Old, path:&str) { // !! taken from bdd.rs
-    let mut s = String::new(); self.dot(n, &mut s);
-    let mut txt = File::create(path).expect("couldn't create dot file");
-    txt.write_all(s.as_bytes()).expect("failed to write text to dot file"); }
-
-
-  fn show_named(&self, n:Old, s:&str) {   // !! almost exactly the same as in bdd.rs
-    self.save_dot(n, format!("{}.dot", s).as_str());
-    let out = Command::new("dot").args(&["-Tpng",format!("{}.dot",s).as_str()])
-      .output().expect("failed to run 'dot' command");
-    let mut png = File::create(format!("{}.png",s).as_str()).expect("couldn't create png");
-    png.write_all(&out.stdout).expect("couldn't write png");
-    Command::new("firefox").args(&[format!("{}.png",s).as_str()])
-      .spawn().expect("failed to launch firefox"); }
-
   pub fn show(&self, n:Old) { self.show_named(n, "+ast+") }
 
 
@@ -399,8 +384,21 @@ impl Base for ASTBase {
   fn save(&self, path:&str)->::std::io::Result<()> {
     let s = bincode::serialize(&self).unwrap();
     io::put(path, &s) }
-  fn save_dot(&self, _n:Old, _path:&str) { todo!("ast::save_dot") }
-  fn show_named(&self, _n:Old, _path:&str) { todo!("ast::show_named") }
+
+  fn save_dot(&self, n:Old, path:&str) { // !! taken from bdd.rs
+    let mut s = String::new(); self.dot(n, &mut s);
+    let mut txt = File::create(path).expect("couldn't create dot file");
+    txt.write_all(s.as_bytes()).expect("failed to write text to dot file"); }
+
+  fn show_named(&self, n:Old, path:&str) {   // !! almost exactly the same as in bdd.rs
+    self.save_dot(n, format!("{}.dot", path).as_str());
+    let out = Command::new("dot").args(&["-Tsvg",format!("{}.dot",path).as_str()])
+      .output().expect("failed to run 'dot' command");
+    let mut svg = File::create(format!("{}.svg",path).as_str()).expect("couldn't create svg");
+    svg.write_all(&out.stdout).expect("couldn't write svg");
+    Command::new("firefox").args(&[format!("{}.svg",path).as_str()])
+      .spawn().expect("failed to launch firefox"); }
+
 
   fn solutions(&self)->&dyn Iterator<Item=Vec<bool>> { todo!("ast::solutions") }
 } // impl Base for ASTBase
