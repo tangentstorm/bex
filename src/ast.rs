@@ -6,7 +6,7 @@ use std::process::Command;      // for creating and viewing digarams
 
 use io;
 use base::*;
-pub use nid::{VID,NOVAR,OBIT,IBIT,un,nu};
+pub use nid::{VID,NOVAR,OBIT,VBIT,IBIT,un,nu};
 pub type NID = usize;
 const GONE:usize = 1<<59;
 //pub const GONE:NID = NID{ n:1<<59 } // only used in ast.
@@ -35,7 +35,6 @@ pub struct ASTBase {
   nvars: usize,
   tags: HashMap<String, Old>,       // support for naming/tagging bits.
   hash: HashMap<Op, Old>,           // expression cache (simple+complex)
-  vars: Vec<Old>,                   // quick index of Var(n) in bits
   subs: Vec<SUB>,                   // list of substitution dicts
   subc: Vec<HashMap<Old,Old>>       // cache of substiution results
 }
@@ -48,7 +47,6 @@ impl ASTBase {
   fn new(bits:Vec<Op>, tags:HashMap<String, Old>, nvars:usize)->ASTBase {
     ASTBase{bits, nvars, tags,
             hash: HashMap::new(),
-            vars: vec![],
             subs: vec![],
             subc: vec![]}}
 
@@ -58,6 +56,7 @@ impl ASTBase {
   fn nid(&mut self, op:Op)->Old {
     if op == Op::O { OBIT }
     else if op == Op::I { IBIT }
+    else if let Op::Var(x) = op { x | VBIT }
     else { match self.hash.get(&op) {
       Some(&n) => n,
       None => {
@@ -107,7 +106,8 @@ impl ASTBase {
         let x1 = self.when(v, val, $x);
         let y1 = self.when(v, val, $y);
         self.$f(x1,y1) }}}
-    if (v as usize) >= self.vars.len() { nid }
+    // if var is outside the base, it can't affect the expression
+    if (v as usize) >= self.num_vars() { nid }
     else { match self.at(nid) {
       Op::Var(x) if x==v => val,
       Op::O | Op::I | Op::Var(_) => nid,
@@ -178,9 +178,17 @@ impl ASTBase {
     let mut costs = vec![];
     for (i,&bit) in self.bits.iter().enumerate() {
       let (mask, cost) = {
+        let cost = |x:usize| {
+          if x < costs.len() { costs[x] }
+          else if (x & VBIT) == VBIT { 1 }
+          else { 0 }};
+        let mask = |x:usize| {
+          if x < masks.len() { masks[x] }
+          else if (x & VBIT) == VBIT { vm(self, x&!(VBIT|IBIT) as VID )}
+          else { 0 }};
         let mc = |x,y| {
-          let m = masks[x] | masks[y];
-          (m, if m < 32 { 1 } else { max(costs[x], costs[y]) + 1 })};
+          let m = mask(x) | mask(y);
+          (m, max(cost(x), cost(y)) + 1 )};
         match bit {
           Op::I | Op::O => (0, 0),
           Op::Var(v)    => (vm(self, v), 1),
@@ -212,6 +220,7 @@ impl ASTBase {
   /// this is part of the garbage collection system. keep is the top level nid to keep.
   /// seen gets marked true for every nid that is a dependency of keep.
   fn markdeps(&self, keep:Old, seen:&mut Vec<bool>) {
+    if (keep & VBIT) == VBIT { return }
     if !seen[keep] {
       seen[keep] = true;
       let mut f = |x:&Old| { self.markdeps(*x, seen) };
@@ -272,6 +281,7 @@ impl ASTBase {
   fn at(&self, index:usize)->Op {
     if index == OBIT { Op::O }
     else if index == IBIT { Op::I }
+    else if (index & VBIT) == VBIT { Op::Var(index ^ VBIT) }
     else { self.bits[index] }}
   pub fn get_op(&self, index:usize)->Op { self.at(index) }
 
@@ -296,20 +306,19 @@ impl Base for ASTBase {
 
   fn var(&mut self, v:VID)->Old {
     let bits = &mut self.bits;
-    let vars = &mut self.vars;
-    let known = self.nvars;
-    if v >= known {
-      for i in known ..= v {
-        self.nvars += 1;
-        vars.push(bits.len());
-        bits.push(Op::Var(i as usize)) }}
-    vars[v as usize] }
+    for i in self.nvars ..= v {
+      self.nvars += 1;
+      // TODO: stop storing explicit Op::Var, since they're redundant.
+      // the solver tests break if I remove this. Possibly something
+      // to do with permute or masks_and_costs.
+      bits.push(Op::Var(i as usize)) }
+    v | VBIT }
 
   fn when_hi(&mut self, v:VID, n:Old)->Old { on(self.when(v,no(IBIT),no(n))) }
   fn when_lo(&mut self, v:VID, n:Old)->Old { on(self.when(v,no(OBIT),no(n))) }
 
   fn def(&mut self, s:String, i:VID)->Old {
-    let next = self.vars.len() as VID;
+    let next = self.num_vars() as VID;
     let nid = no(self.var(next));
     on(self.tag(nid, format!("{}{}", s, i))) }
 
