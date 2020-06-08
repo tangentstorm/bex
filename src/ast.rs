@@ -416,3 +416,11 @@ fn ast_vars(){
   let nx0 = b.not(x0);
   assert!(nx0 == b.nid(Op::Not(x0))) }
 
+#[test]
+fn ast_and(){
+  let mut b = ASTBase::empty();
+  let x0 = b.var(0); let x1 = b.var(1);
+  let x01 = b.and(x0,x1);
+  let x10 = b.and(x1,x0);
+  assert_eq!(x01, x10, "expect $0 & $1 == $1 & $0");
+}
