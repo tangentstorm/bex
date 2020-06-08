@@ -17,17 +17,6 @@ pub type IDX = u32;
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct NID { n: u64 }
 
-pub fn un(n:NID)->usize {
-  if n == O { 0 }
-  else if n == I { 1 }
-  else if is_var(n) { var(n) as usize }
-  else { idx(n) as usize }}
-pub fn nu(u:usize, nvars:usize)->NID {
-  if u == 0 { O }
-  else if u == 1 { I }
-  else if u < nvars { nv(u) }
-  else { nvi(NOVAR, u as IDX) } }
-
 
 // -- bits in the nid ---
 
@@ -145,4 +134,21 @@ impl HILO {
   assert!(var(nv(0)) < var(nvr(0)));
   assert_eq!(nvi(0,0), NID{n:0x0000000000000000u64});
   assert_eq!(nvi(1,0), NID{n:0x0000000100000000u64}); }
+
+
+
+// scaffolding for moving ASTBase over to use NIDS
+pub const IBIT:usize = INV as usize;
+pub const VBIT:usize = VAR as usize;
+pub const OBIT:usize = T as usize;
+pub fn un(n:NID)->usize {
+  if n == O { OBIT }
+  else if n == I { IBIT }
+  else if is_var(n) { VBIT | var(n) as usize }
+  else { idx(n) as usize }}
+pub fn nu(u:usize, nvars:usize)->NID {
+  if u == OBIT { O }
+  else if u == IBIT { I }
+  else if u < nvars { nv(u) }
+  else { nvi(NOVAR, u as IDX) } }
 

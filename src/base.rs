@@ -88,7 +88,7 @@ base_test!(test_base_vars, b, 2, {
   let x0 = b.var(0); let x02 = b.var(0); let x1 = b.var(1);
   assert!(x0 == x02, "var(0) should always return the same nid.");
   assert!(x1 != x0, "different variables should have different nids.");
-  assert!(b.o() < x0, "expect O < $0");
+  // assert!(b.o() < x0, "expect O < $0");
   assert!(x0 < b.i(), "expect $0 < I");
   let nx0 = b.not(x0);
   assert!(x0 == b.not(nx0), "expected x0 = ¬¬x0"); });

@@ -2,28 +2,17 @@
 use std::collections::{HashMap,HashSet};
 use std::fs::File;
 use std::io::Write;
-use std::ops::Index;
 use std::process::Command;      // for creating and viewing digarams
 
 use io;
 use base::*;
-use nid;
-pub use nid::{VID,NOVAR,un,nu};
+pub use nid::{VID,NOVAR,OBIT,IBIT,un,nu};
 pub type NID = usize;
-const GONE:usize = 1<<63;
-//pub const GONE:NID = NID{ n:1<<59 >> } // only used in ast.
+const GONE:usize = 1<<59;
+//pub const GONE:NID = NID{ n:1<<59 } // only used in ast.
 
 // temporary scaffolding while I replace usize with nid::NID
 type Old = usize;
-type New = nid::NID;
-fn no1(old:Old)->New {
-  if old == 0 { nid::O }
-  else if old ==1 { nid::I }
-  else { nid::nvi(NOVAR, old as u32) }}
-fn on1(new:New)->Old {
-  if new == nid::O { 0 }
-  else if new == nid::I { 1 }
-  else { nid::idx(new) as Old }}
 fn on(old:Old)->Old{ old }
 fn no(old:Old)->Old{ old }
 
@@ -63,17 +52,19 @@ impl ASTBase {
             subs: vec![],
             subc: vec![]}}
 
-  pub fn empty()->ASTBase { ASTBase::new(vec![Op::O, Op::I], HashMap::new(), 0) }
+  pub fn empty()->ASTBase { ASTBase::new(vec![], HashMap::new(), 0) }
   pub fn len(&self)->usize { self.bits.len() }
 
   fn nid(&mut self, op:Op)->Old {
-    match self.hash.get(&op) {
+    if op == Op::O { OBIT }
+    else if op == Op::I { IBIT }
+    else { match self.hash.get(&op) {
       Some(&n) => n,
       None => {
         let n = self.bits.len();
         self.bits.push(op);
         self.hash.insert(op, n);
-        n }}}
+        n }}}}
 
   fn load(path:&str)->::std::io::Result<ASTBase> {
     let s = io::get(path)?;
@@ -136,7 +127,7 @@ impl ASTBase {
       seen.insert(n);
       f(n);
       let mut s = |x| self.step(x, f, seen);
-      match self.bits[n] {
+      match self.at(n) {
         Op::O | Op::I | Op::Var(_) => {  } // we already called f(n) so nothing to do
         Op::Not(x)    => { s(x); }
         Op::And(x,y)  => { s(x); s(y); }
@@ -160,7 +151,7 @@ impl ASTBase {
     w!("node[shape=circle];");
     w!("edge[style=solid];");
     self.walk(n, &mut |n| {
-      match &self.bits[n] {
+      match &self.at(n) {
         Op::O => w!(" {}[label=⊥];", n),
         Op::I => w!(" {}[label=⊤];", n),
         Op::Var(x)  => w!("{}[label=\"${}\"];", n, x),
@@ -242,23 +233,24 @@ impl ASTBase {
   /// collector, but if a node whose nid is in `oldnids` references a node that
   /// is not in `oldnids`, the resulting generated node will reference GONE (2^64).
   pub fn permute(&self, oldnids:&[Old])->ASTBase {
-    let newnid = {
+    let newnids = {
       let mut result = vec![GONE; self.bits.len()];
       for (i,&n) in oldnids.iter().enumerate() { result[n] = i; }
       result };
+    let nn = |x:Old|{ if x < newnids.len() { newnids[x] } else { x }};
     let newbits = oldnids.iter().map(|&old| {
-      match self.bits[old] {
+      match self.at(old) {
         Op::O | Op::I | Op::Var(_) => self.bits[old], // nid might change, but vid won't.
-        Op::Not(x)    => Op::Not(newnid[x]),
-        Op::And(x,y)  => Op::And(newnid[x], newnid[y]),
-        Op::Xor(x,y)  => Op::Xor(newnid[x], newnid[y]),
-        Op::Or(x,y)   => Op::Or(newnid[x], newnid[y]),
-        Op::Ch(x,y,z) => Op::Ch(newnid[x], newnid[y], newnid[z]),
-        Op::Mj(x,y,z) => Op::Mj(newnid[x], newnid[y], newnid[z]) }})
+        Op::Not(x)    => Op::Not(nn(x)),
+        Op::And(x,y)  => Op::And(nn(x), nn(y)),
+        Op::Xor(x,y)  => Op::Xor(nn(x), nn(y)),
+        Op::Or(x,y)   => Op::Or(nn(x), nn(y)),
+        Op::Ch(x,y,z) => Op::Ch(nn(x), nn(y), nn(z)),
+        Op::Mj(x,y,z) => Op::Mj(nn(x), nn(y), nn(z)) }})
       .collect();
     let mut newtags = HashMap::new();
     for (key, &val) in &self.tags {
-      if newnid[val] != GONE { newtags.insert(key.clone(), newnid[val]); }}
+      if nn(val) != GONE { newtags.insert(key.clone(), nn(val)); }}
 
     ASTBase::new(newbits, newtags, self.nvars) }
 
@@ -277,7 +269,10 @@ impl ASTBase {
 
     (self.permute(&oldnids), keep.iter().map(|&i| newnids[i]).collect()) }
 
-  fn at(&self, index:usize)->Op { self.bits[index] }
+  fn at(&self, index:usize)->Op {
+    if index == OBIT { Op::O }
+    else if index == IBIT { Op::I }
+    else { self.bits[index] }}
   pub fn get_op(&self, index:usize)->Op { self.at(index) }
 
 } // impl ASTBase
@@ -296,8 +291,8 @@ impl Base for ASTBase {
     res }
   fn num_vars(&self)->usize { self.nvars }
 
-  fn o(&self)->Old { 0 }
-  fn i(&self)->Old { 1 }
+  fn o(&self)->Old { OBIT }
+  fn i(&self)->Old { IBIT }
 
   fn var(&mut self, v:VID)->Old {
     let bits = &mut self.bits;
@@ -310,8 +305,8 @@ impl Base for ASTBase {
         bits.push(Op::Var(i as usize)) }}
     vars[v as usize] }
 
-  fn when_hi(&mut self, v:VID, n:Old)->Old { on(self.when(v,no(1),no(n))) }
-  fn when_lo(&mut self, v:VID, n:Old)->Old { on(self.when(v,no(0),no(n))) }
+  fn when_hi(&mut self, v:VID, n:Old)->Old { on(self.when(v,no(IBIT),no(n))) }
+  fn when_lo(&mut self, v:VID, n:Old)->Old { on(self.when(v,no(OBIT),no(n))) }
 
   fn def(&mut self, s:String, i:VID)->Old {
     let next = self.vars.len() as VID;
@@ -413,8 +408,7 @@ fn ast_vars(){
   let mut b = ASTBase::empty();
   let x0 = b.var(0); let x1 = b.var(1);
   assert!(x1 == x0+1);
-  let nx0 = b.not(x0);
-  assert!(nx0 == b.nid(Op::Not(x0))) }
+  assert_eq!(b.not(x0), b.nid(Op::Not(x0))) }
 
 #[test]
 fn ast_and(){
