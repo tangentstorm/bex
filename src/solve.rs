@@ -140,10 +140,8 @@ macro_rules! find_factors {
     use bex::Base;
     // reset gbase on each test
     GBASE.with(|gb| gb.replace(ASTBase::empty()));
-    let x = $T0::from_vec((0..$T0::n())
-                          .map(|i| gbase_def('x'.to_string(), i as bex::nid::VID)).collect());
-    let y = $T0::from_vec((0..$T0::n())
-                          .map(|i| gbase_def('y'.to_string(), i as bex::nid::VID)).collect());
+    let x = $T0::def("x");
+    let y = $T0::def("y");
     let xy:$T1 = x.times(&y); let k = $T1::new($k); let lt = x.lt(&y); let eq = xy.eq(&k);
     if $show {
       GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
@@ -175,4 +173,17 @@ macro_rules! find_factors {
     for i in 0..expect.len() {
       assert_eq!(actual[i], expect[i], "mismatch at i={}", i) }
   }}
+}
+
+
+/// First step of the solve procedure: do a calculation that results in a bit.
+#[test] fn test_nano_expanded() {
+  use int::*;
+  GBASE.with(|gb| gb.replace(ASTBase::empty()));
+  let x = X2::def("x"); let y = X2::def("y");
+  let xy:X4 = x.times(&y); let k = X4::new(6);
+  let lt = x.lt(&y); let eq = xy.eq(&k);
+  GBASE.with(|gb| { gb.borrow().show_named(eq.clone().n, "eq") });
+  let top:BaseBit = lt & eq;
+
 }
