@@ -95,7 +95,7 @@ impl ASTBase {
     match self.subc[s].get(&x) {
       Some(&n) => n,
       None => {
-        let n = match self[x] {
+        let n = match self.at(x) {
           Op::O | Op::I => x,
           Op::Var(v) => match self.subs[s].get(&v) {
             Some(&y) => y,
@@ -117,7 +117,7 @@ impl ASTBase {
         let y1 = self.when(v, val, $y);
         self.$f(x1,y1) }}}
     if (v as usize) >= self.vars.len() { nid }
-    else { match self[nid] {
+    else { match self.at(nid) {
       Op::Var(x) if x==v => val,
       Op::O | Op::I | Op::Var(_) => nid,
       Op::Not(x)    => op![not x],
@@ -292,15 +292,11 @@ impl ASTBase {
 
     (self.permute(&oldnids), keep.iter().map(|&i| newnids[i]).collect()) }
 
-
-  pub fn get_op(&self, index:usize)->Op { self.bits[index] }
+  fn at(&self, index:usize)->Op { self.bits[index] }
+  pub fn get_op(&self, index:usize)->Op { self.at(index) }
 
 } // impl ASTBase
 
-impl Index<Old> for ASTBase {
-  type Output = Op;
-  fn index(&self, index:Old) -> &Self::Output { &self.bits[index] } }
-
 impl ::std::fmt::Debug for ASTBase {
   fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
     write!(f,"ASTBase[{}]", self.bits.len()) } }
@@ -342,7 +338,7 @@ impl Base for ASTBase {
     self.tags.insert(s, n); on(n) }
 
   fn not(&mut self, x:Old)->Old {
-    match self[x] {
+    match self.at(x) {
       Op::O => self.i(),
       Op::I => self.o(),
       Op::Not(n) => n,
@@ -354,8 +350,8 @@ impl Base for ASTBase {
     let (x,y) = (no(x),no(y));
     if x == y { x }
     else {
-      let (lo,hi) = if self[x] < self[y] { (x,y) } else { (y,x) };
-      match (self[lo], self[hi]) {
+      let (lo,hi) = if self.at(x) < self.at(y) { (x,y) } else { (y,x) };
+      match (self.at(lo), self.at(hi)) {
         (Op::O,_) => self.o(),
         (Op::I,_) => hi,
         (Op::Not(n),_) if n==hi => self.o(),
@@ -366,8 +362,8 @@ impl Base for ASTBase {
     let (x,y) = (no(x),no(y));
     if x == y { self.o() }
     else {
-      let (lo,hi) = if self[x] < self[y] { (x,y) } else { (y,x) };
-      match (self[lo], self[hi]) {
+      let (lo,hi) = if self.at(x) < self.at(y) { (x,y) } else { (y,x) };
+      match (self.at(lo), self.at(hi)) {
         (Op::O, _) => hi,
         (Op::I, _) => self.not(hi),
         (Op::Var(_), Op::Not(n)) if n==lo => self.i(),
@@ -377,8 +373,8 @@ impl Base for ASTBase {
     let (x,y) = (no(x),no(y));
     if x == y { x }
     else {
-      let (lo,hi) = if self[x] < self[y] { (x,y) } else { (y,x) };
-      match (self[lo], self[hi]) {
+      let (lo,hi) = if self.at(x) < self.at(y) { (x,y) } else { (y,x) };
+      match (self.at(lo), self.at(hi)) {
         (Op::O, _) => hi,
         (Op::I, _) => self.i(),
         (Op::Var(_), Op::Not(n)) if n==lo => self.i(),
