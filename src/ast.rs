@@ -8,7 +8,7 @@ use std::process::Command;      // for creating and viewing digarams
 use io;
 use base::*;
 use nid;
-pub use nid::{VID,NOVAR};
+pub use nid::{VID,NOVAR,un,nu};
 pub type NID = usize;
 const GONE:usize = 1<<63;
 //pub const GONE:NID = NID{ n:1<<59 >> } // only used in ast.
@@ -26,6 +26,7 @@ fn on1(new:New)->Old {
   else { nid::idx(new) as Old }}
 fn on(old:Old)->Old{ old }
 fn no(old:Old)->Old{ old }
+
 
 
 
@@ -291,6 +292,9 @@ impl ASTBase {
 
     (self.permute(&oldnids), keep.iter().map(|&i| newnids[i]).collect()) }
 
+
+  pub fn get_op(&self, index:usize)->Op { self.bits[index] }
+
 } // impl ASTBase
 
 impl Index<Old> for ASTBase {
@@ -311,8 +315,8 @@ impl Base for ASTBase {
     res }
   fn num_vars(&self)->usize { self.nvars }
 
-  fn o(&self)->Old { on(no(0)) }
-  fn i(&self)->Old { on(no(1)) }
+  fn o(&self)->Old { 0 }
+  fn i(&self)->Old { 1 }
 
   fn var(&mut self, v:VID)->Old {
     let bits = &mut self.bits;
@@ -323,7 +327,7 @@ impl Base for ASTBase {
         self.nvars += 1;
         vars.push(bits.len());
         bits.push(Op::Var(i as usize)) }}
-    on(vars[v as usize]) }
+    vars[v as usize] }
 
   fn when_hi(&mut self, v:VID, n:Old)->Old { on(self.when(v,no(1),no(n))) }
   fn when_lo(&mut self, v:VID, n:Old)->Old { on(self.when(v,no(0),no(n))) }

@@ -29,7 +29,7 @@ impl<'a> Progress for ProgressReport<'a> {
   fn on_step(&self, src:&ASTBase, dest: &mut B, step:usize, secs:u64,
              oldtop:nid::NID, newtop:nid::NID) {
     println!("{:4}, {:4}, {:4}→{:3?}, {:8}",
-             step, secs, oldtop, src[nid::var(oldtop) as usize], newtop);
+             step, secs, oldtop, src.get_op(nid::var(oldtop) as usize), newtop);
     if step.trailing_zeros() >= 3 { // every so often, save the state
       // !! TODO: expected number of steps only works if sort_by_cost was called.
       { let expected_steps = src.len() as f64;
@@ -98,7 +98,7 @@ pub fn refine<P:Progress>(dest: &mut B, src:&ASTBase, end:nid::NID, pr:P)->nid::
 
 /// map a nid from the source to a (usually virtual) variable in the destination
 fn convert_nid(src:&ASTBase, n:ast::NID)->nid::NID {
-  match src[n as usize] {
+  match src.get_op(n as usize) {
     Op::O => nid::O,
     Op::I => nid::I,
     Op::Var(x) => nid::nvr(x as nid::VID),
@@ -106,7 +106,7 @@ fn convert_nid(src:&ASTBase, n:ast::NID)->nid::NID {
 
 fn refine_one(dst: &mut B, src:&ASTBase, oldtop:nid::NID)->nid::NID {
   let otv = nid::var(oldtop);
-  let op = src[otv as usize];
+  let op = src.get_op(otv as usize);
   let v = |x0:ast::NID|->nid::NID { convert_nid(src, x0) };
   let newdef:nid::NID = match op {
     // Op::Not should only occur once at the very top, if at all:
