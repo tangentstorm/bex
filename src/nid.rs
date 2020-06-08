@@ -42,10 +42,6 @@ pub const T:u64 = 1<<61;    // T: max VID (hack so O/I nodes show up at bottom)
 /// Constant used to extract the index part of a NID.
 pub const IDX_MASK:u64 = (1<<32)-1;
 
-/// temp const used while converting ASTBase (TODO: remove NOVAR)
-pub const NOVAR:VID = 1<<31;
-
-
 /// NID of the virtual node represeting the constant function 0, or "always false."
 pub const O:NID = NID{ n:T };
 /// NID of the virtual node represeting the constant function 1, or "always true."
@@ -138,6 +134,7 @@ impl HILO {
 
 
 // scaffolding for moving ASTBase over to use NIDS
+pub const NOVAR:VID = 1<<16;
 pub const IBIT:usize = INV as usize;
 pub const VBIT:usize = VAR as usize;
 pub const OBIT:usize = T as usize;
@@ -145,10 +142,10 @@ pub fn un(n:NID)->usize {
   if n == O { OBIT }
   else if n == I { IBIT }
   else if is_var(n) { VBIT | var(n) as usize }
-  else { idx(n) as usize }}
-pub fn nu(u:usize, nvars:usize)->NID {
+  else if var(n) == NOVAR { idx(n) as usize }
+  else { panic!("don't know how to un({:?})", n) }}
+pub fn nu(u:usize)->NID {
   if u == OBIT { O }
   else if u == IBIT { I }
-  else if u < nvars { nv(u) }
+  else if (u&VBIT)==VBIT { nv(u ^ VBIT) }
   else { nvi(NOVAR, u as IDX) } }
-

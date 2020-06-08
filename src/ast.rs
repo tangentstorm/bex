@@ -306,12 +306,7 @@ impl Base for ASTBase {
 
   fn var(&mut self, v:VID)->Old {
     let bits = &mut self.bits;
-    for i in self.nvars ..= v {
-      self.nvars += 1;
-      // TODO: stop storing explicit Op::Var, since they're redundant.
-      // the solver tests break if I remove this. Possibly something
-      // to do with permute or masks_and_costs.
-      bits.push(Op::Var(i as usize)) }
+    for i in self.nvars ..= v { self.nvars += 1 }
     v | VBIT }
 
   fn when_hi(&mut self, v:VID, n:Old)->Old { on(self.when(v,no(IBIT),no(n))) }
