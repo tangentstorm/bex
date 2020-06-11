@@ -8,8 +8,6 @@ use io;
 use base::*;
 use nid;
 pub use nid::{NID,VID,NOVAR,OBIT,VBIT,IBIT,O,I,un,nu};
-const GONE:usize = 1<<59;
-//pub const GONE:NID = NID{ n:1<<59 } // only used in ast.
 
 
 
@@ -46,6 +44,7 @@ impl ASTBase {
 
   pub fn empty()->ASTBase { ASTBase::new(vec![], HashMap::new(), 0) }
   pub fn len(&self)->usize { self.bits.len() }
+  pub fn is_empty(&self)->bool { self.bits.is_empty() }
 
   fn nid(&mut self, op:Op)->NID {
     if op == Op::O { nid::O }
@@ -258,7 +257,7 @@ impl ASTBase {
       .collect();
     let mut newtags = HashMap::new();
     for (key, &val) in &self.tags { // TODO: this retagging is almost certainly wrong. use a hashmap instead of a vector.
-      if let n = nn(val) { newtags.insert(key.clone(), n); }}
+      newtags.insert(key.clone(), nn(val)); }
 
     ASTBase::new(newbits, newtags, self.nvars) }
 
