@@ -100,6 +100,7 @@ impl fmt::Display for NID {
              if is_rvar(*self) { write!(f, "x{}", rvar(*self)) }
              else { write!(f, "v{}", var(*self)) }}
            else if is_rvar(*self) { write!(f, "@[x{}:{}]", rvar(*self), idx(*self)) }
+           else if var(*self) == NOVAR { write!(f, "#{}", idx(*self)) }
            else { write!(f, "@[v{}:{}]", var(*self), idx(*self)) }}}}
 
 /// Same as fmt::Display. Mostly so it's easier to see the problem when an assertion fails.
