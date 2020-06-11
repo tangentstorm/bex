@@ -136,8 +136,8 @@ impl ASTBase {
       ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap() }}
     macro_rules! dotop {
       ($s:expr, $n:expr $(,$xs:expr)*) => {{
-        w!("  {}[label={}];", $n, $s); // draw the node
-        $( w!(" {}->{};", $xs, $n); )* }}}  // draw the edges leading into it
+        w!("  \"{}\"[label={}];", $n, $s); // draw the node
+        $( w!(" \"{}\"->\"{}\";", $xs, $n); )* }}}  // draw the edges leading into it
 
     w!("digraph bdd {{");
     w!("rankdir=BT;"); // put root on top
@@ -145,9 +145,9 @@ impl ASTBase {
     w!("edge[style=solid];");
     self.walk(n, &mut |n| {
       match &self.op(n) {
-        Op::O => w!(" {}[label=⊥];", n),
-        Op::I => w!(" {}[label=⊤];", n),
-        Op::Var(x)  => w!("{}[label=\"${}\"];", n, x),
+        Op::O => w!(" \"{}\"[label=⊥];", n),
+        Op::I => w!(" \"{}\"[label=⊤];", n),
+        Op::Var(x)  => w!("\"{}\"[label=\"${}\"];", n, x),
         Op::And(x,y) => dotop!("∧",n,x,y),
         Op::Xor(x,y) => dotop!("≠",n,x,y),
         Op::Or(x,y)  => dotop!("∨",n,x,y),
