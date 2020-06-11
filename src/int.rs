@@ -146,6 +146,10 @@ macro_rules! xint_type {
            .map(|i| if (u&1<<i)==0 { gbase_o() } else { gbase_i() })
            .collect()}}
 
+      /// define an entire set of variables at once.
+      pub fn def(s:&str)->$T {
+        $T::from_vec((0..$n).map(|i|{ gbase_def(s.to_string(), i) }).collect()) }
+
       pub fn from_vec(v:Vec<BaseBit>)->$T {
         $T{bits: if v.len() >= $n { v.iter().take($n).map(|x|x.clone()).collect() }
            else {
