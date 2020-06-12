@@ -33,7 +33,7 @@ impl<'a> Progress for ProgressReport<'a> {
     let DstNid{ n: old } = oldtop;
     let DstNid{ n: new } = newtop;
     println!("{:4}, {:4}, {:4?}→{:3?}, {:8?}",
-             step, secs, oldtop, src.get_op(nid::nvi(nid::NOVAR, nid::idx(new) as u32)), newtop);
+             step, secs, oldtop, new, /*src.get_op(nid::nvi(nid::NOVAR, nid::var(new) as u32)),*/ newtop);
     if step.trailing_zeros() >= 3 { // every so often, save the state
       // !! TODO: expected number of steps only works if sort_by_cost was called.
       { let expected_steps = src.len() as f64;
@@ -96,11 +96,11 @@ pub fn refine<P:Progress>(dest: &mut B, src:&ASTBase, end:DstNid, pr:P)->DstNid 
   pr.on_start();
   while !(nid::is_rvar(top.n) || nid::is_const(top.n)) {
     let now = std::time::SystemTime::now();
-    let oldtop = top;
-    top = refine_one(dest, &src, oldtop);
-    assert!(oldtop != top, "top should have changed!");
+    let old = top;
+    top = refine_one(dest, &src, top);
+    assert!(old != top, "top should have changed!");
     let secs = now.elapsed().expect("elapsed?").as_secs();
-    pr.on_step(src, dest, step, secs, oldtop, top);
+    pr.on_step(src, dest, step, secs, old, top);
     step += 1; }
   pr.on_done(src, dest, top);
   top }
@@ -117,6 +117,7 @@ pub fn convert_nid(sn:SrcNid)->DstNid {
 fn refine_one(dst: &mut B, src:&ASTBase, d:DstNid)->DstNid {
   // println!("refine_one({:?})", d);
   if nid::is_const(d.n) { d }
+  else if nid::is_rvar(d.n) { d }
   else {
     let otv = nid::var(d.n);
     let op = src.get_op(nid::nvi(nid::NOVAR, otv as u32));
@@ -156,15 +157,15 @@ macro_rules! find_factors {
     let top:BaseBit = lt & eq;
     let mut dest = $TDEST::new(nid::idx(top.n));
     let answer:DstNid = GBASE.with(|gb| {
-      //let (src, newtop) = sort_by_cost(&gb.borrow(), nid::un(top.n));
-      let (src, newtop) = (gb.borrow(), convert_nid(SrcNid{n: top.n}));
+      let src = gb.borrow();
       // The diagram looks exactly the same before and after sort_by_cost, so I
       // only generate it once. The only difference is the internal numbering.
       // However: this sorting dramatically reduces the cost of the conversion.
       // For example, test_tiny drops from to 111 steps.
-      if $show { src.show_named(newtop.n, "ast"); }
+      if $show { src.show_named(top.n, "ast"); }
       dest = $TDEST::new(src.len());
-      refine(&mut dest, &src, newtop,
+      assert!(nid::var(top.n) == nid::NOVAR, "top nid seems to be a literal. (TODO: handle these already solved cases)");
+      refine(&mut dest, &src, DstNid{n: nid::nv(nid::idx(top.n))},
              ProgressReport{ save_dot: $show, save_dest: false, prefix: "x",
                              show_result: $show, save_result: $show }) });
     println!("done with refinement!");
