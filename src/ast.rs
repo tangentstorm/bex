@@ -6,37 +6,29 @@ use std::process::Command;      // for creating and viewing digarams
 
 use io;
 use base::*;
-pub use nid::{VID,NOVAR,OBIT,VBIT,IBIT,un,nu};
-pub type NID = usize;
-const GONE:usize = 1<<59;
-//pub const GONE:NID = NID{ n:1<<59 } // only used in ast.
-
-// temporary scaffolding while I replace usize with nid::NID
-type Old = usize;
-fn on(old:Old)->Old{ old }
-fn no(old:Old)->Old{ old }
+use nid;
+pub use nid::{NID,VID,NOVAR,OBIT,VBIT,IBIT,O,I,un,nu};
 
 
 
-
 pub type SID = usize; // canned substition
-type SUB = HashMap<VID,Old>;
+type SUB = HashMap<VID,NID>;
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Op {
-  O, I, Var(VID), Not(Old), And(Old,Old), Or(Old,Old), Xor(Old,Old),
-  // Eql(Old,Old), LT(Nid,Nid),
-  Ch(Old, Old, Old), Mj(Old, Old, Old) }
+  O, I, Var(VID), Not(NID), And(NID,NID), Or(NID,NID), Xor(NID,NID),
+  // Eql(NID,NID), LT(NID,NID),
+  Ch(NID, NID, NID), Mj(NID, NID, NID) }
 
 // !! TODO: move subs/subc into external structure
 #[derive(Serialize, Deserialize)]
 pub struct ASTBase {
   bits: Vec<Op>,                    // all known bits (simplified)
   nvars: usize,
-  tags: HashMap<String, Old>,       // support for naming/tagging bits.
-  hash: HashMap<Op, Old>,           // expression cache (simple+complex)
+  tags: HashMap<String, NID>,       // support for naming/tagging bits.
+  hash: HashMap<Op, NID>,           // expression cache (simple+complex)
   subs: Vec<SUB>,                   // list of substitution dicts
-  subc: Vec<HashMap<Old,Old>>       // cache of substiution results
+  subc: Vec<HashMap<NID,NID>>       // cache of substiution results
 }
 
 type VarMaskFn = fn(&ASTBase,VID)->u64;
@@ -44,7 +36,7 @@ type VarMaskFn = fn(&ASTBase,VID)->u64;
 impl ASTBase {
 
 
-  fn new(bits:Vec<Op>, tags:HashMap<String, Old>, nvars:usize)->ASTBase {
+  fn new(bits:Vec<Op>, tags:HashMap<String, NID>, nvars:usize)->ASTBase {
     ASTBase{bits, nvars, tags,
             hash: HashMap::new(),
             subs: vec![],
@@ -52,18 +44,19 @@ impl ASTBase {
 
   pub fn empty()->ASTBase { ASTBase::new(vec![], HashMap::new(), 0) }
   pub fn len(&self)->usize { self.bits.len() }
+  pub fn is_empty(&self)->bool { self.bits.is_empty() }
 
-  fn nid(&mut self, op:Op)->Old {
-    if op == Op::O { OBIT }
-    else if op == Op::I { IBIT }
-    else if let Op::Var(x) = op { x | VBIT }
+  fn nid(&mut self, op:Op)->NID {
+    if op == Op::O { nid::O }
+    else if op == Op::I { nid::I }
+    else if let Op::Var(x) = op { nid::nv(x) }
     else { match self.hash.get(&op) {
       Some(&n) => n,
       None => {
         let n = self.bits.len();
         self.bits.push(op);
-        self.hash.insert(op, n);
-        n }}}}
+        self.hash.insert(op, nu(n));
+        nu(n) }}}}
 
   fn load(path:&str)->::std::io::Result<ASTBase> {
     let s = io::get(path)?;
@@ -75,7 +68,7 @@ impl ASTBase {
     self.subs.push(kv); self.subc.push(HashMap::new());
     res } */
 
-  fn sub(&mut self, x:Old, s:SID)->Old {
+  fn sub(&mut self, x:NID, s:SID)->NID {
     macro_rules! op {
       [not $x:ident] => {{ let x1 = self.sub($x, s); self.not(x1) }};
       [$f:ident $x:ident $y:ident] => {{
@@ -85,7 +78,7 @@ impl ASTBase {
     match self.subc[s].get(&x) {
       Some(&n) => n,
       None => {
-        let n = match self.at(x) {
+        let n = match self.op(x) {
           Op::O | Op::I => x,
           Op::Var(v) => match self.subs[s].get(&v) {
             Some(&y) => y,
@@ -98,7 +91,7 @@ impl ASTBase {
         n }}}
 
 
-  fn when(&mut self, v:VID, val:Old, nid:Old)->Old {
+  fn when(&mut self, v:VID, val:NID, nid:NID)->NID {
     // print!(":{}",nid);
     macro_rules! op {
       [not $x:ident] => {{ let x1 = self.when(v, val, $x); self.not(x1) }};
@@ -108,7 +101,7 @@ impl ASTBase {
         self.$f(x1,y1) }}}
     // if var is outside the base, it can't affect the expression
     if (v as usize) >= self.num_vars() { nid }
-    else { match self.at(nid) {
+    else { match self.op(nid) {
       Op::Var(x) if x==v => val,
       Op::O | Op::I | Op::Var(_) => nid,
       Op::Not(x)    => op![not x],
@@ -118,16 +111,16 @@ impl ASTBase {
 
 
 
-  fn walk<F>(&self, n:Old, f:&mut F) where F: FnMut(Old) {
+  fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID) {
     let mut seen = HashSet::new();
     self.step(n,f,&mut seen)}
 
-  fn step<F>(&self, n:Old, f:&mut F, seen:&mut HashSet<Old>) where F:FnMut(Old) {
+  fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>) where F:FnMut(NID) {
     if !seen.contains(&n) {
       seen.insert(n);
       f(n);
       let mut s = |x| self.step(x, f, seen);
-      match self.at(n) {
+      match self.op(n) {
         Op::O | Op::I | Op::Var(_) => {  } // we already called f(n) so nothing to do
         Op::Not(x)    => { s(x); }
         Op::And(x,y)  => { s(x); s(y); }
@@ -138,23 +131,23 @@ impl ASTBase {
 
 
   // generate dot file (graphviz)
-  pub fn dot<T>(&self, n:Old, wr: &mut T) where T : ::std::fmt::Write {
+  pub fn dot<T>(&self, n:NID, wr: &mut T) where T : ::std::fmt::Write {
     macro_rules! w {
       ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap() }}
     macro_rules! dotop {
       ($s:expr, $n:expr $(,$xs:expr)*) => {{
-        w!("  {}[label={}];", $n, $s); // draw the node
-        $( w!(" {}->{};", $xs, $n); )* }}}  // draw the edges leading into it
+        w!("  \"{}\"[label={}];", $n, $s); // draw the node
+        $( w!(" \"{}\"->\"{}\";", $xs, $n); )* }}}  // draw the edges leading into it
 
     w!("digraph bdd {{");
     w!("rankdir=BT;"); // put root on top
     w!("node[shape=circle];");
     w!("edge[style=solid];");
     self.walk(n, &mut |n| {
-      match &self.at(n) {
-        Op::O => w!(" {}[label=⊥];", n),
-        Op::I => w!(" {}[label=⊤];", n),
-        Op::Var(x)  => w!("{}[label=\"${}\"];", n, x),
+      match &self.op(n) {
+        Op::O => w!(" \"{}\"[label=⊥];", n),
+        Op::I => w!(" \"{}\"[label=⊤];", n),
+        Op::Var(x)  => w!("\"{}\"[label=\"${}\"];", n, x),
         Op::And(x,y) => dotop!("∧",n,x,y),
         Op::Xor(x,y) => dotop!("≠",n,x,y),
         Op::Or(x,y)  => dotop!("∨",n,x,y),
@@ -162,7 +155,7 @@ impl ASTBase {
         _ => w!("  \"{}\"[label={}];", n, n) }});
     w!("}}"); }
 
-  pub fn show(&self, n:Old) { self.show_named(n, "+ast+") }
+  pub fn show(&self, n:NID) { self.show_named(n, "+ast+") }
 
 
   /// given a function that maps input bits to 64-bit masks, color each node
@@ -178,21 +171,23 @@ impl ASTBase {
     let mut costs = vec![];
     for (i,&bit) in self.bits.iter().enumerate() {
       let (mask, cost) = {
-        let cost = |x:usize| {
-          if x < costs.len() { costs[x] }
-          else if (x & VBIT) == VBIT { 1 }
-          else { 0 }};
-        let mask = |x:usize| {
-          if x < masks.len() { masks[x] }
-          else if (x & VBIT) == VBIT { vm(self, x&!(VBIT|IBIT) as VID )}
-          else { 0 }};
+        let cost = |x:NID| {
+          if nid::is_const(x) { 0 }
+          else if nid::is_var(x) { 1 }
+          else if nid::var(x)==nid::NOVAR { costs[nid::idx(x)] }
+          else { todo!("cost({:?})", x) }};
+        let mask = |x:NID| {
+          if nid::is_const(x) { 0 }
+          else if nid::is_var(x) { vm(self, nid::var(x)) }
+          else if nid::var(x)==nid::NOVAR { masks[nid::idx(x)] }
+          else { todo!("mask({:?})", x) }};
         let mc = |x,y| {
           let m = mask(x) | mask(y);
           (m, max(cost(x), cost(y)) + 1 )};
         match bit {
           Op::I | Op::O => (0, 0),
           Op::Var(v)    => (vm(self, v), 1),
-          Op::Not(x)    => mc(x,0),
+          Op::Not(x)    => mc(x,nid::O),
           Op::And(x,y)  => mc(x,y),
           Op::Xor(x,y)  => mc(x,y),
           Op::Or (x,y)  => mc(x,y),
@@ -201,12 +196,13 @@ impl ASTBase {
       costs.push(cost)}
     (masks, costs)}
 
-  /// this returns a raggod 2d vector of direct references for each bit in the base
-  fn reftable(&self) -> Vec<Vec<Old>> {
+  /// this returns a ragged 2d vector of direct references for each bit in the base
+  fn reftable(&self) -> Vec<Vec<NID>> {
+    todo!("test case for reftable!"); /*
     let bits = &self.bits;
-    let mut res:Vec<Vec<Old>> = vec![vec![]; bits.len()];
+    let mut res:Vec<Vec<NID>> = vec![vec![]; bits.len()];
     for (n, &bit) in bits.iter().enumerate() {
-      let mut f = |x:Old| res[x].push(n);
+      let mut f = |x:NID| res[nid::idx(x)].push(n);
       match bit {
         Op::O | Op::I | Op::Var(_) => {}
         Op::Not(x)    => { f(x); }
@@ -215,16 +211,18 @@ impl ASTBase {
         Op::Or(x,y)   => { f(x); f(y); }
         Op::Ch(x,y,z) => { f(x); f(y); f(z); }
         Op::Mj(x,y,z) => { f(x); f(y); f(z); } } }
-    res }
+    res*/ }
 
   /// this is part of the garbage collection system. keep is the top level nid to keep.
   /// seen gets marked true for every nid that is a dependency of keep.
-  fn markdeps(&self, keep:Old, seen:&mut Vec<bool>) {
-    if (keep & VBIT) == VBIT { return }
-    if !seen[keep] {
-      seen[keep] = true;
-      let mut f = |x:&Old| { self.markdeps(*x, seen) };
-      match &self.bits[keep] {
+  /// TODO:: use a HashSet for 'seen' in markdeps()
+  fn markdeps(&self, keep:NID, seen:&mut Vec<bool>) {
+    if nid::is_lit(keep) { return }
+    if nid::var(keep) != nid::NOVAR { todo!("markdeps({:?})", keep) }
+    if !seen[nid::idx(keep)] {
+      seen[nid::idx(keep)] = true;
+      let mut f = |x:&NID| { self.markdeps(*x, seen) };
+      match &self.bits[nid::idx(keep)] {
         Op::O | Op::I | Op::Var(_) => { }
         Op::Not(x)    => { f(x); }
         Op::And(x,y)  => { f(x); f(y); }
@@ -241,15 +239,15 @@ impl ASTBase {
   /// in the result. This is intentional, as this function is used by the garbage
   /// collector, but if a node whose nid is in `oldnids` references a node that
   /// is not in `oldnids`, the resulting generated node will reference GONE (2^64).
-  pub fn permute(&self, oldnids:&[Old])->ASTBase {
-    let newnids = {
-      let mut result = vec![GONE; self.bits.len()];
-      for (i,&n) in oldnids.iter().enumerate() { result[n] = i; }
+  pub fn permute(&self, oldnids:&[NID])->ASTBase {
+    let newnids:Vec<Option<NID>> = {
+      let mut result = vec![None; self.bits.len()];
+      for (i,&n) in oldnids.iter().enumerate() { result[nid::idx(n)] = Some(nid::nvi(NOVAR,i as nid::IDX)); }
       result };
-    let nn = |x:Old|{ if x < newnids.len() { newnids[x] } else { x }};
+    let nn = |x:NID|{ if nid::is_lit(x) { x } else { newnids[nid::idx(x)].expect("reference to bad nid") }};
     let newbits = oldnids.iter().map(|&old| {
-      match self.at(old) {
-        Op::O | Op::I | Op::Var(_) => self.bits[old], // nid might change, but vid won't.
+      match self.op(old) {
+        Op::O | Op::I | Op::Var(_) => panic!("o,i,var should never be in self.bits"), // nid might change, but vid won't.
         Op::Not(x)    => Op::Not(nn(x)),
         Op::And(x,y)  => Op::And(nn(x), nn(y)),
         Op::Xor(x,y)  => Op::Xor(nn(x), nn(y)),
@@ -258,32 +256,40 @@ impl ASTBase {
         Op::Mj(x,y,z) => Op::Mj(nn(x), nn(y), nn(z)) }})
       .collect();
     let mut newtags = HashMap::new();
-    for (key, &val) in &self.tags {
-      if nn(val) != GONE { newtags.insert(key.clone(), nn(val)); }}
+    for (key, &val) in &self.tags { // TODO: this retagging is almost certainly wrong. use a hashmap instead of a vector.
+      newtags.insert(key.clone(), nn(val)); }
 
     ASTBase::new(newbits, newtags, self.nvars) }
 
   /// Construct a new ASTBase with only the nodes necessary to define the given nodes.
   /// The relative order of the bits is preserved.
-  pub fn repack(&self, keep:Vec<Old>) -> (ASTBase, Vec<Old>) {
-
+  pub fn repack(&self, keep:Vec<NID>) -> (ASTBase, Vec<NID>) {
+    todo!("test case for repack!"); /*
     // garbage collection: mark dependencies of the bits we want to keep
     let mut deps = vec!(false;self.bits.len());
     for &nid in keep.iter() { self.markdeps(nid, &mut deps) }
 
     let mut newnids = vec![GONE; self.bits.len()];
-    let mut oldnids:Vec<usize> = vec![];
+    let mut oldnids:Vec<NID> = vec![];
     for i in 0..self.bits.len() {
       if deps[i] { newnids[i]=oldnids.len(); oldnids.push(i as usize); }}
 
-    (self.permute(&oldnids), keep.iter().map(|&i| newnids[i]).collect()) }
+    (self.permute(&oldnids), keep.iter().map(|&i| newnids[i]).collect())*/ }
+
+  fn op(&self, n:NID)->Op {
+    if n == nid::O { Op::O }
+    else if n == nid::I { Op::I }
+    else if nid::is_var(n) { Op::Var(nid::var(n)) }
+    else if nid::var(n) == nid::NOVAR { self.bits[nid::idx(n)] }
+    else { panic!("don't know how to op({:?})", n) }}
 
   fn at(&self, index:usize)->Op {
     if index == OBIT { Op::O }
     else if index == IBIT { Op::I }
     else if (index & VBIT) == VBIT { Op::Var(index ^ VBIT) }
     else { self.bits[index] }}
-  pub fn get_op(&self, index:usize)->Op { self.at(index) }
+
+  pub fn get_op(&self, nid:NID)->Op { self.op(nid) }
 
 } // impl ASTBase
 
@@ -293,7 +299,7 @@ impl ::std::fmt::Debug for ASTBase {
 
 impl Base for ASTBase {
 
-  type N = Old;
+  type N = NID;
 
   fn new(n:usize)->Self {
     let mut res = ASTBase::empty();
@@ -301,64 +307,59 @@ impl Base for ASTBase {
     res }
   fn num_vars(&self)->usize { self.nvars }
 
-  fn o(&self)->Old { OBIT }
-  fn i(&self)->Old { IBIT }
+  fn o(&self)->NID { O }
+  fn i(&self)->NID { I }
 
-  fn var(&mut self, v:VID)->Old {
-    let bits = &mut self.bits;
-    for i in self.nvars ..= v { self.nvars += 1 }
-    v | VBIT }
+  fn var(&mut self, v:VID)->NID {
+    for _ in self.nvars ..= v { self.nvars += 1 }
+    nid::nv(v) }
 
-  fn when_hi(&mut self, v:VID, n:Old)->Old { on(self.when(v,no(IBIT),no(n))) }
-  fn when_lo(&mut self, v:VID, n:Old)->Old { on(self.when(v,no(OBIT),no(n))) }
+  fn when_hi(&mut self, v:VID, n:NID)->NID { self.when(v, nid::I, n) }
+  fn when_lo(&mut self, v:VID, n:NID)->NID { self.when(v, nid::O, n) }
 
-  fn def(&mut self, s:String, i:VID)->Old {
+  fn def(&mut self, s:String, i:VID)->NID {
     let next = self.num_vars() as VID;
-    let nid = no(self.var(next));
-    on(self.tag(nid, format!("{}{}", s, i))) }
+    let nid = self.var(next);
+    self.tag(nid, format!("{}{}", s, i)) }
 
-  fn tag(&mut self, n:Old, s:String)->Old {
-    let n = no(n);
-    self.tags.insert(s, n); on(n) }
+  fn tag(&mut self, n:NID, s:String)->NID {
+    let n = n;
+    self.tags.insert(s, n); n }
 
-  fn not(&mut self, x:Old)->Old {
-    match self.at(x) {
+  fn not(&mut self, x:NID)->NID {
+    match self.op(x) {
       Op::O => self.i(),
       Op::I => self.o(),
       Op::Not(n) => n,
-      _ => on(self.nid(Op::Not(x))) } }
+      _ => self.nid(Op::Not(x)) } }
 
 
-
-  fn and(&mut self, x:Old, y:Old)->Old {
-    let (x,y) = (no(x),no(y));
+  fn and(&mut self, x:NID, y:NID)->NID {
     if x == y { x }
     else {
-      let (lo,hi) = if self.at(x) < self.at(y) { (x,y) } else { (y,x) };
-      match (self.at(lo), self.at(hi)) {
+      let (lo,hi) = if self.op(x) < self.op(y) { (x,y) } else { (y,x) };
+      match (self.op(lo), self.op(hi)) {
         (Op::O,_) => self.o(),
         (Op::I,_) => hi,
         (Op::Not(n),_) if n==hi => self.o(),
         (_,Op::Not(n)) if n==lo => self.o(),
         _ => self.nid(Op::And(lo,hi)) }}}
 
-  fn xor(&mut self, x:Old, y:Old)->Old {
-    let (x,y) = (no(x),no(y));
+  fn xor(&mut self, x:NID, y:NID)->NID {
     if x == y { self.o() }
     else {
-      let (lo,hi) = if self.at(x) < self.at(y) { (x,y) } else { (y,x) };
-      match (self.at(lo), self.at(hi)) {
+      let (lo,hi) = if self.op(x) < self.op(y) { (x,y) } else { (y,x) };
+      match (self.op(lo), self.op(hi)) {
         (Op::O, _) => hi,
         (Op::I, _) => self.not(hi),
         (Op::Var(_), Op::Not(n)) if n==lo => self.i(),
         _ => self.nid(Op::Xor(lo,hi)) }}}
 
-  fn or(&mut self, x:Old, y:Old)->Old {
-    let (x,y) = (no(x),no(y));
+  fn or(&mut self, x:NID, y:NID)->NID {
     if x == y { x }
     else {
-      let (lo,hi) = if self.at(x) < self.at(y) { (x,y) } else { (y,x) };
-      match (self.at(lo), self.at(hi)) {
+      let (lo,hi) = if self.op(x) < self.op(y) { (x,y) } else { (y,x) };
+      match (self.op(lo), self.op(hi)) {
         (Op::O, _) => hi,
         (Op::I, _) => self.i(),
         (Op::Var(_), Op::Not(n)) if n==lo => self.i(),
@@ -369,27 +370,27 @@ impl Base for ASTBase {
 
 
   #[cfg(todo)]
-  fn mj(&mut self, x:Old, y:Old, z:Old)->Old {
+  fn mj(&mut self, x:NID, y:NID, z:NID)->NID {
     let (a,b,c) = order3(x,y,z);
     self.nid(Op::Mj(x,y,z)) }
 
   #[cfg(todo)]
-  fn ch(&mut self, x:Old, y:Old, z:Old)->Old { self.o() }
+  fn ch(&mut self, x:NID, y:NID, z:NID)->NID { self.o() }
 
 
-  fn sub(&mut self, _v:VID, _n:Old, _ctx:Old)->Old { todo!("ast::sub") }
+  fn sub(&mut self, _v:VID, _n:NID, _ctx:NID)->NID { todo!("ast::sub") }
 
-  fn get(&self, s:&str)->Option<Old> { Some(*self.tags.get(s)?) }
+  fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
   fn save(&self, path:&str)->::std::io::Result<()> {
     let s = bincode::serialize(&self).unwrap();
     io::put(path, &s) }
 
-  fn save_dot(&self, n:Old, path:&str) { // !! taken from bdd.rs
+  fn save_dot(&self, n:NID, path:&str) { // !! taken from bdd.rs
     let mut s = String::new(); self.dot(n, &mut s);
     let mut txt = File::create(path).expect("couldn't create dot file");
     txt.write_all(s.as_bytes()).expect("failed to write text to dot file"); }
 
-  fn show_named(&self, n:Old, path:&str) {   // !! almost exactly the same as in bdd.rs
+  fn show_named(&self, n:NID, path:&str) {   // !! almost exactly the same as in bdd.rs
     self.save_dot(n, format!("{}.dot", path).as_str());
     let out = Command::new("dot").args(&["-Tsvg",format!("{}.dot",path).as_str()])
       .output().expect("failed to run 'dot' command");
@@ -411,8 +412,9 @@ test_base_when!(ASTBase);
 fn ast_vars(){
   let mut b = ASTBase::empty();
   let x0 = b.var(0); let x1 = b.var(1);
-  assert!(x1 == x0+1);
-  assert_eq!(b.not(x0), b.nid(Op::Not(x0))) }
+  assert_eq!(nid::var(x0), 0);
+  assert_eq!(nid::var(x1), 1);
+  assert_eq!(b.not(x0), b.nid(Op::Not(x0))); }
 
 #[test]
 fn ast_and(){
@@ -420,5 +422,4 @@ fn ast_and(){
   let x0 = b.var(0); let x1 = b.var(1);
   let x01 = b.and(x0,x1);
   let x10 = b.and(x1,x0);
-  assert_eq!(x01, x10, "expect $0 & $1 == $1 & $0");
-}
+  assert_eq!(x01, x10, "expect $0 & $1 == $1 & $0"); }
