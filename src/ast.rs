@@ -50,6 +50,7 @@ impl ASTBase {
     if op == Op::O { nid::O }
     else if op == Op::I { nid::I }
     else if let Op::Var(x) = op { nid::nv(x) }
+    else if let Op::Not(x) = op { nid::not(x) }
     else { match self.hash.get(&op) {
       Some(&n) => n,
       None => {
@@ -137,7 +138,9 @@ impl ASTBase {
     macro_rules! dotop {
       ($s:expr, $n:expr $(,$xs:expr)*) => {{
         w!("  \"{}\"[label={}];", $n, $s); // draw the node
-        $( w!(" \"{}\"->\"{}\";", $xs, $n); )* }}}  // draw the edges leading into it
+        $({ if nid::is_inv(*$xs) { w!("edge[style=dashed];"); }
+            else { w!("edge[style=solid];"); }
+            w!(" \"{}\"->\"{}\";", $xs, $n); })* }}}
 
     w!("digraph bdd {{");
     w!("rankdir=BT;"); // put root on top
@@ -283,7 +286,7 @@ impl ASTBase {
     else if nid::var(n) == nid::NOVAR { self.bits[nid::idx(n)] }
     else { panic!("don't know how to op({:?})", n) }}
 
-  fn at(&self, index:usize)->Op {
+  pub fn at(&self, index:usize)->Op {
     if index == OBIT { Op::O }
     else if index == IBIT { Op::I }
     else if (index & VBIT) == VBIT { Op::Var(index ^ VBIT) }
@@ -325,11 +328,7 @@ impl Base for ASTBase {
     self.tags.insert(s, n); n }
 
   fn not(&mut self, x:NID)->NID {
-    match self.op(x) {
-      Op::O => self.i(),
-      Op::I => self.o(),
-      Op::Not(n) => n,
-      _ => self.nid(Op::Not(x)) } }
+    nid::not(x) }
 
 
   fn and(&mut self, x:NID, y:NID)->NID {

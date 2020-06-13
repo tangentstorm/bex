@@ -106,16 +106,18 @@ pub fn refine<P:Progress>(dest: &mut B, src:&ASTBase, end:DstNid, pr:P)->DstNid 
 /// map a nid from the source to a (usually virtual) variable in the destination
 pub fn convert_nid(sn:SrcNid)->DstNid {
   let SrcNid{ n } = sn;
-  if nid::is_const(n) { DstNid{ n } }
-  else if nid::is_var(n) { DstNid{ n: nid::nvr(nid::var(n)) } }
-  else if nid::var(n) == nid::NOVAR { DstNid{ n: nid::nv(nid::idx(n)) }}
-  else { todo!("convert_nid({:?})", n) }}
+  let r = if nid::is_const(n) { n }
+  else {
+    let r0 = if nid::is_var(n) { nid::nvr(nid::var(n)) }
+    else if nid::var(n) == nid::NOVAR { nid::nv(nid::idx(n)) }
+    else { todo!("convert_nid({:?})", n) };
+    if nid::is_inv(n) { nid::not(r0)} else { r0 }};
+  DstNid{ n: r } }
 
 /// replace a
 fn refine_one(dst: &mut B, src:&ASTBase, d:DstNid)->DstNid {
   // println!("refine_one({:?})", d);
-  if nid::is_const(d.n) { d }
-  else if nid::is_rvar(d.n) { d }
+  if nid::is_const(d.n) || nid::is_rvar(d.n) { d }
   else {
     let otv = nid::var(d.n);
     let op = src.get_op(nid::nvi(nid::NOVAR, otv as u32));
@@ -193,4 +195,10 @@ macro_rules! find_factors {
   //GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
   //GBASE.with(|gb| { gb.borrow().show_named(eq.clone().n, "eq") });
   //GBASE.with(|gb| { gb.borrow().show_named(top.clone().n, "top") });
+  GBASE.with(|gb|{
+    let ast = gb.borrow();
+    if ast.is_empty() { println!("base is empty.") }
+    else { for i in 0..ast.len() {
+      println!("{:?}", ast.at(i));
+    }}});
 }
