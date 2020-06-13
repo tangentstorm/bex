@@ -58,8 +58,6 @@ macro_rules! expr {
 
 impl Base for ANFBase {
 
-  type N = NID;
-
   fn new(n:usize)->Self {
     ANFBase { nvars: n, nodes:vec![], cache: HashMap::new(), tags:HashMap::new() }}
   fn num_vars(&self)->usize { self.nvars }

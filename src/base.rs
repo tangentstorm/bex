@@ -2,40 +2,37 @@
 ///! bex: a boolean expression library for rust
 ///! outside the base, you deal only with opaque references.
 ///! inside, it could be stored any way we like.
-use nid::VID;
+use nid::{NID,VID};
 
 pub trait Base {
-  /// Node identifier type. Usually mapped to xxx::NID
-  type N;
-
   fn new(n:usize)->Self where Self:Sized; // Sized so we can use trait objects.
   fn num_vars(&self)->usize;
 
-  fn o(&self)->Self::N;
-  fn i(&self)->Self::N;
+  fn o(&self)->NID;
+  fn i(&self)->NID;
 
-  fn var(&mut self, i:VID)->Self::N;
-  fn when_hi(&mut self, v:VID, n:Self::N)->Self::N;
-  fn when_lo(&mut self, v:VID, n:Self::N)->Self::N;
+  fn var(&mut self, i:VID)->NID;
+  fn when_hi(&mut self, v:VID, n:NID)->NID;
+  fn when_lo(&mut self, v:VID, n:NID)->NID;
 
-  fn not(&mut self, x:Self::N)->Self::N;
-  fn and(&mut self, x:Self::N, y:Self::N)->Self::N;
-  fn xor(&mut self, x:Self::N, y:Self::N)->Self::N;
-  fn or(&mut self, x:Self::N, y:Self::N)->Self::N;
-  #[cfg(todo)] fn mj(&mut self, x:Self::N, y:Self::N, z:Self::N)->Self::N;
-  #[cfg(todo)] fn ch(&mut self, x:Self::N, y:Self::N, z:Self::N)->Self::N;
+  fn not(&mut self, x:NID)->NID;
+  fn and(&mut self, x:NID, y:NID)->NID;
+  fn xor(&mut self, x:NID, y:NID)->NID;
+  fn or(&mut self, x:NID, y:NID)->NID;
+  #[cfg(todo)] fn mj(&mut self, x:NID, y:NID, z:NID)->NID;
+  #[cfg(todo)] fn ch(&mut self, x:NID, y:NID, z:NID)->NID;
 
-  fn def(&mut self, s:String, i:VID)->Self::N;
-  fn tag(&mut self, n:Self::N, s:String)->Self::N;
-  fn get(&self, _s:&str)->Option<Self::N>;
+  fn def(&mut self, s:String, i:VID)->NID;
+  fn tag(&mut self, n:NID, s:String)->NID;
+  fn get(&self, _s:&str)->Option<NID>;
 
   /// substitute node for variable in context.
-  fn sub(&mut self, v:VID, n:Self::N, ctx:Self::N)->Self::N;
+  fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID;
   fn solutions(&self)->&dyn Iterator<Item=Vec<bool>>;
 
   fn save(&self, path:&str)->::std::io::Result<()>;
-  fn save_dot(&self, n:Self::N, path:&str);
-  fn show_named(&self, n:Self::N, path:&str);
+  fn save_dot(&self, n:NID, path:&str);
+  fn show_named(&self, n:NID, path:&str);
 }
 
 /*

@@ -3,12 +3,10 @@
 /// "solve" ast-based expressions by converting to another form.
 //use apl;
 use base::Base;
-use ast;
 use ast::{Op,ASTBase};
 use nid;
 
-type B = dyn Base<N=nid::NID>;
-
+type B = dyn Base;
 
 pub trait Progress {
   fn on_start(&self);

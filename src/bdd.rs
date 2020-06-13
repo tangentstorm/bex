@@ -776,7 +776,6 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
 // Base Trait
 
 impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
-  type N = NID;
 
   fn new(n:usize)->Self { Self::new(n) }
   fn num_vars(&self)->usize { self.nvars() }

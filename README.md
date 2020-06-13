@@ -14,6 +14,10 @@ also construct and manipulate BDDs directly.
 
 ### 0.1.4 (upcoming)
 
+**NID as universal ID**
+- `ASTBase` now uses `nid::VID` for input variable identifiers, and `nid::NID` for node identifiers, rather than using simple `usize` indices. This means we no longer need to store explicit entries for constants and literals.
+- The `Base` trait no longer takes type arguments N and V, since all implementations now use `nid::NID` and `nid::VID`.
+
 **BDDBase**
 - You can now call `nidsols()` on a `BDDBase` to iterate through solutions of the BDD.
   Each solution is presented as a `Vec<NID>` of length `nvars()`. The `nid::var()` of each
