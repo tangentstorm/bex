@@ -1,9 +1,9 @@
 #![macro_use]
 
 /// "solve" ast-based expressions by converting to another form.
-//use apl;
-use base::Base;
+use apl;
 use ast::{Op,ASTBase};
+use base::Base;
 use nid;
 
 type B = dyn Base;
@@ -64,9 +64,7 @@ fn default_bitmask(_src:&ASTBase, v:nid::VID) -> u64 {
 /// another form. (For example, the test_tiny benchmark drops from 5282 steps to 111 for BDDBase)
 #[allow(clippy::needless_range_loop)]
 pub fn sort_by_cost(src:&ASTBase, top:SrcNid)->(ASTBase,SrcNid) {
-  todo!("rebuild sort_by_cost()")
-  /*
-  let (mut src0,kept0) = src.repack(vec![top]);
+  let (mut src0,kept0) = src.repack(vec![top.n]);
   src0.tag(kept0[0], "-top-".to_string());
 
   // m:mask (which input vars are required?); c:cost (in steps before we can calculate)
@@ -80,8 +78,8 @@ pub fn sort_by_cost(src:&ASTBase, top:SrcNid)->(ASTBase,SrcNid) {
   for i in 0..min { p[i] = i }
   for i in min..p.len() { p[i] = min + (max-i) }
   let ast = src1.permute(&p);
-  let nid = ast.get("-top-").expect("what? I just put it there.");
-  (ast,nid)*/ }
+  let n = ast.get("-top-").expect("what? I just put it there.");
+  (ast,SrcNid{n}) }
 
 
 pub fn refine<P:Progress>(dest: &mut B, src:&ASTBase, end:DstNid, pr:P)->DstNid {
@@ -124,18 +122,14 @@ fn refine_one(dst: &mut B, src:&ASTBase, d:DstNid)->DstNid {
     let cn = |x0:nid::NID|->nid::NID { convert_nid(SrcNid{n:x0}).n };
     // println!("op: {:?}", op);
     let newdef:nid::NID = match op {
-      // Op::Not should only occur once at the very top, if at all:
-      Op::Not(x) => dst.not(cn(x)),
+      Op::O | Op::I | Op::Var(_) | Op::Not(_) => panic!("Src base should not contain {:?}", op),
       // the VIDs on the right here are because we're treating each step in the
       // calculation as a 'virtual' input variable, and just slowly simplifying
       // until the virtual variables are all gone.
       Op::And(x,y) => dst.and(cn(x), cn(y)),
       Op::Xor(x,y) => dst.xor(cn(x), cn(y)),
       Op::Or(x,y) => dst.or(cn(x), cn(y)),
-      // !! 'Var' should only appear in leaves, so don't need it here.
-      //Op::Var(x) => nid::nvr(x as nid::VID),
       _ => { panic!("don't know how to translate {:?}", op ) }};
-    // println!("sub(otv:{:?}, new:{:?}, old:{:?})", otv, newdef, d);
     DstNid{n: dst.sub(otv, newdef, d.n) }}}
 
 
@@ -148,19 +142,15 @@ macro_rules! find_factors {
     use bex::{Base,nid, solve::{SrcNid, DstNid, convert_nid}};
     // reset gbase on each test
     GBASE.with(|gb| gb.replace(ASTBase::empty()));
-    let (x, y) = ($T0::def("x"), $T0::def("y"));
-    let xy:$T1 = x.times(&y); let k = $T1::new($k); let lt = x.lt(&y); let eq = xy.eq(&k);
+    let (x, y) = ($T0::def("x"), $T0::def("y")); let lt = x.lt(&y);
+    let xy:$T1 = x.times(&y); let k = $T1::new($k); let eq = xy.eq(&k);
     if $show {
       GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
       GBASE.with(|gb| { gb.borrow().show_named(eq.clone().n, "eq") }); }
-    let top:BaseBit = lt & eq;
+    let mut top:BaseBit = lt & eq;
     let mut dest = $TDEST::new(nid::idx(top.n));
     let answer:DstNid = GBASE.with(|gb| {
-      let src = gb.borrow();
-      // The diagram looks exactly the same before and after sort_by_cost, so I
-      // only generate it once. The only difference is the internal numbering.
-      // However: this sorting dramatically reduces the cost of the conversion.
-      // For example, test_tiny drops from to 111 steps.
+      let (src, top) = sort_by_cost(&gb.borrow(), SrcNid{n:top.n});
       if $show { src.show_named(top.n, "ast"); }
       dest = $TDEST::new(src.len());
       assert!(nid::var(top.n) == nid::NOVAR, "top nid seems to be a literal. (TODO: handle these already solved cases)");
@@ -189,16 +179,20 @@ macro_rules! find_factors {
   use int::*;
   GBASE.with(|gb| gb.replace(ASTBase::empty()));
   let x = X2::def("x"); let y = X2::def("y");
+  let lt = x.lt(&y);
   let xy:X4 = x.times(&y); let k = X4::new(6);
-  let lt = x.lt(&y); let eq = xy.eq(&k);
+  let eq = xy.eq(&k);
   let top = lt.clone() & eq.clone();
   //GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
   //GBASE.with(|gb| { gb.borrow().show_named(eq.clone().n, "eq") });
   //GBASE.with(|gb| { gb.borrow().show_named(top.clone().n, "top") });
+  println!("lt: {:?}", lt);
+  println!("eq: {:?}", eq);
+  println!("top: {:?}", top);
   GBASE.with(|gb|{
     let ast = gb.borrow();
     if ast.is_empty() { println!("base is empty.") }
     else { for i in 0..ast.len() {
-      println!("{:?}", ast.at(i));
+      println!("{} {:?}", i, ast.at(i));
     }}});
 }

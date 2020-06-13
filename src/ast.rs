@@ -233,24 +233,25 @@ impl ASTBase {
         Op::Ch(x,y,z) => { f(x); f(y); f(z); }
         Op::Mj(x,y,z) => { f(x); f(y); f(z); } } } }
 
-  /// Construct a copy of the base, with the selected nodes in the given order.
-  /// The nodes will be re-numbered according to their position in the vector.
-  /// NOTE: if the `oldnids` parameter is not a proper permutation vector, it is
-  /// possible to create an invalid Base. In particular, if the vector is shorter
-  /// than the number of bits in self, then unaccounted-for bits will be discarded
-  /// in the result. This is intentional, as this function is used by the garbage
-  /// collector, but if a node whose nid is in `oldnids` references a node that
-  /// is not in `oldnids`, the resulting generated node will reference GONE (2^64).
-  pub fn permute(&self, oldnids:&[NID])->ASTBase {
-    let newnids:Vec<Option<NID>> = {
-      let mut result = vec![None; self.bits.len()];
-      for (i,&n) in oldnids.iter().enumerate() { result[nid::idx(n)] = Some(nid::nvi(NOVAR,i as nid::IDX)); }
-      result };
-    let nn = |x:NID|{ if nid::is_lit(x) { x } else { newnids[nid::idx(x)].expect("reference to bad nid") }};
-    let newbits = oldnids.iter().map(|&old| {
-      match self.op(old) {
-        Op::O | Op::I | Op::Var(_) => panic!("o,i,var should never be in self.bits"), // nid might change, but vid won't.
-        Op::Not(x)    => Op::Not(nn(x)),
+  /// Construct a copy of the base, with the nodes reordered according to
+  /// permutation vector pv. That is, pv is a vector of unique node indices
+  /// that we want to keep, in the order we want them. (It might actually be
+  /// shorter than bits.len() and thus not technically a permutation vector,
+  /// but I don't have a better name for this concept.)
+  pub fn permute(&self, pv:&[usize])->ASTBase {
+    // map each kept node in self.bits to Some(new position)
+    let new:Vec<Option<usize>> = {
+      let mut res = vec![None; self.bits.len()];
+      for (i,&n) in pv.iter().enumerate() { res[n] = Some(i) }
+      res };
+    let nn = |x:NID|{
+      if nid::is_lit(x) { x }
+      else {
+        let r = nid::nvi(NOVAR, new[nid::idx(x) as usize].expect("bad index in AST::permute") as u32);
+        if nid::is_inv(x) { nid::not(r) } else { r }}};
+    let newbits = pv.iter().map(|&old| {
+      match self.at(old) {
+        Op::O | Op::I | Op::Var(_) | Op::Not(_) => panic!("o,i,var,not should never be in self.bits"),
         Op::And(x,y)  => Op::And(nn(x), nn(y)),
         Op::Xor(x,y)  => Op::Xor(nn(x), nn(y)),
         Op::Or(x,y)   => Op::Or(nn(x), nn(y)),
@@ -258,25 +259,23 @@ impl ASTBase {
         Op::Mj(x,y,z) => Op::Mj(nn(x), nn(y), nn(z)) }})
       .collect();
     let mut newtags = HashMap::new();
-    for (key, &val) in &self.tags { // TODO: this retagging is almost certainly wrong. use a hashmap instead of a vector.
-      newtags.insert(key.clone(), nn(val)); }
-
+    for (key, &val) in &self.tags { newtags.insert(key.clone(), nn(val)); }
     ASTBase::new(newbits, newtags, self.nvars) }
 
   /// Construct a new ASTBase with only the nodes necessary to define the given nodes.
   /// The relative order of the bits is preserved.
   pub fn repack(&self, keep:Vec<NID>) -> (ASTBase, Vec<NID>) {
-    todo!("test case for repack!"); /*
     // garbage collection: mark dependencies of the bits we want to keep
     let mut deps = vec!(false;self.bits.len());
     for &nid in keep.iter() { self.markdeps(nid, &mut deps) }
 
-    let mut newnids = vec![GONE; self.bits.len()];
-    let mut oldnids:Vec<NID> = vec![];
+    let mut new:Vec<Option<usize>> = vec![None; self.bits.len()];
+    let mut old:Vec<usize> = vec![];
     for i in 0..self.bits.len() {
-      if deps[i] { newnids[i]=oldnids.len(); oldnids.push(i as usize); }}
+      if deps[i] { new[i]=Some(old.len()); old.push(i); }}
 
-    (self.permute(&oldnids), keep.iter().map(|&i| newnids[i]).collect())*/ }
+    (self.permute(&old), keep.iter().map(|&i|
+      nid::nvi(nid::NOVAR, new[nid::idx(i) as usize].expect("?!") as u32)).collect()) }
 
   fn op(&self, n:NID)->Op {
     if n == nid::O { Op::O }
