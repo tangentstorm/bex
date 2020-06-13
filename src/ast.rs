@@ -117,8 +117,8 @@ impl ASTBase {
     self.step(n,f,&mut seen)}
 
   fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>) where F:FnMut(NID) {
-    if !seen.contains(&n) {
-      seen.insert(n);
+    if !seen.contains(&nid::raw(n)) {
+      seen.insert(nid::raw(n));
       f(n);
       let mut s = |x| self.step(x, f, seen);
       match self.op(n) {
@@ -137,10 +137,10 @@ impl ASTBase {
       ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap() }}
     macro_rules! dotop {
       ($s:expr, $n:expr $(,$xs:expr)*) => {{
-        w!("  \"{}\"[label={}];", $n, $s); // draw the node
+        w!("  \"{}\"[label={}];", nid::raw($n), $s); // draw the node
         $({ if nid::is_inv(*$xs) { w!("edge[style=dashed];"); }
             else { w!("edge[style=solid];"); }
-            w!(" \"{}\"->\"{}\";", $xs, $n); })* }}}
+            w!(" \"{}\"->\"{}\";", nid::raw(*$xs), nid::raw($n)); })* }}}
 
     w!("digraph bdd {{");
     w!("rankdir=BT;"); // put root on top
@@ -150,12 +150,11 @@ impl ASTBase {
       match &self.op(n) {
         Op::O => w!(" \"{}\"[label=⊥];", n),
         Op::I => w!(" \"{}\"[label=⊤];", n),
-        Op::Var(x)  => w!("\"{}\"[label=\"${}\"];", n, x),
+        Op::Var(x)  => w!("\"{}\"[label=\"${}\"];", nid::raw(n), x),
         Op::And(x,y) => dotop!("∧",n,x,y),
         Op::Xor(x,y) => dotop!("≠",n,x,y),
         Op::Or(x,y)  => dotop!("∨",n,x,y),
-        Op::Not(x)  => dotop!("¬",n,x),
-        _ => w!("  \"{}\"[label={}];", n, n) }});
+        _ => panic!("unexpected node: {:?}", n) }});
     w!("}}"); }
 
   pub fn show(&self, n:NID) { self.show_named(n, "+ast+") }
