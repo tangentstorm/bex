@@ -47,7 +47,7 @@ fn repl(base:&mut ASTBase) {
     for word in line.split_whitespace() {
       match word {
         "vars" => { let x = pop(&mut data);
-                    for i in base.nvars..x { base.var(i); }}
+                    for i in base.num_vars()..nid::idx(x) { base.var(i); }}
         // bdd commands
         "i"|"I" => data.push(base.i()),
         "o"|"O" => data.push(base.o()),
@@ -82,7 +82,7 @@ fn repl(base:&mut ASTBase) {
         //todo "load" => base.load("saved.bdd").expect("failed to load bdd"),
         _ => {
           // parse number:
-          if let Ok(w)=usize::from_str_radix(word, 10) { data.push(w); }
+          if let Ok(w)=usize::from_str_radix(word, 10) { data.push(nid::nu(w)); }
           // parse input variable
           else if word.starts_with('$') {
             let s = word.to_string().split_off(1);

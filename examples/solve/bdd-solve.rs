@@ -37,7 +37,7 @@ const K:u64 = 614_889_782_588_491_410;
 /// All 3,827 ordered pairs of 32-bit ints that multiply to produce K.
 #[cfg(not(test))]
 #[allow(clippy::unreadable_literal)]
-fn factors()->Vec<(u32,u32)> {
+fn factors()->Vec<(u64,u64)> {
   vec![
     (429400657, 143197215), (429319798, 143224185), (429192489, 143266669),
     (429092163, 143300166), (428929966, 143354354), (428759840, 143411235),
@@ -1317,13 +1317,18 @@ fn factors()->Vec<(u32,u32)> {
     (785341095,782958878), (785147363,783152070) ] }
 
 extern crate bex;
-use bex::int::{BInt, BaseBit, GBASE, gbase_def};
-use bex::{bdd, find_factors, solve::{ProgressReport, refine, sort_by_cost}};
+use bex::int::{BInt, BaseBit, GBASE};
+use bex::{bdd, find_factors, solve::*};
 use bex::ast::ASTBase;
 
 type BDD = bdd::BDDBase;
 
 
+/// nano test case: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
+#[test] pub fn test_nano_bdd() {
+  use bex::int::{X2,X4};
+  find_factors!(BDD, X2, X4, 6, vec![(2,3)], true); }
+
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny_bdd() {
   use bex::int::{X4,X8};

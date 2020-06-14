@@ -1,0 +1,137 @@
+#+title: find_factors! benchmark for bex
+
+* Overview
+
+=find_factors= is a macro in [[../src/solve.rs][solve.rs]] that defines a generic benchmark, in which we try and find all factorings of a particular anti-prime (product of many primes) where the factors fit into a certain sized type.
+
+There are several instances of this test in [[../examples/solve/bdd-solve.rs][bdd-solve.rs]], ranging from =test_nano_bdd=, which tries to find all 2-bit factorings of the number 6 (one answer: 2 * 3 = 6), to the =main= test, which attempts to factor the 64-bit product of the first 15 primes into two 32-bit numbers.
+
+Currently, this =main= test is far beyond the reach of the algorithm. It only serves as a long running process that can be used to generate profile information.
+
+* Method
+
+The way it works is to create some =xints=, which are objects that support the same operations as n-bit integers, but the bits are NIDs -- that is, references to nodes in a particular =Base=. If you populate these =xints= with constant nids, they perform the same arithmetic calculations that integers would, just much slower. However, if you populate them with nids corresponding to input variables, the each NID will point to whatever function over the input bits produces that output bit.
+(The function is a (usually quite large) boolean expression, represented by a graph of nodes inside the base.)
+
+So, in general, we create two =xint= values (x and y) consisting of nothing but input bits, assert that x < y, multiply them together, and compare the answer to the bits of the desired product. The result is a function that takes a certain number of input bits, conceptually grouped into two integer "registers", and returns =true= only when the product of the two registers are the number we're looking for.
+
+The next step is to simplify the expression and attempt to generate the answers. Currently, this is done by translating the =Base= we got as the result of our calculation into a =BDDBase=.
+
+
+
+* Impact of ast-nids, =repack=, =sort_by_cost=
+
+** Metrics
+
+| branch   | version | test     | nodes | steps | note                          |
+|----------+---------+----------+-------+-------+-------------------------------|
+| master   | c7b56b7 | tiny-bdd |   120 |   111 | no nids, but repack           |
+| ast-nids | 434c4f2 | nano-bdd |    26 |    27 | nids for var,i,o; no repack   |
+| ast-nids | 434c4f2 | tiny-bdd |   118 |  5170 |                               |
+| ast-nids | cf904a4 | nano-bdd |    18 |    22 | INV bit rather than Op::not() |
+| ast-nids | cf904a4 | tiny-bdd |   102 |  5188 |                               |
+| ast-nids | 2c72a32 | nano-bdd |    17 |    17 | restore repack / sort-by-cost |
+| ast-nids | 2c72a32 | tiny-bdd |   101 |   101 |                               |
+
+** Nids for ASTBase
+As I write this, I just finished converting ASTBase to use NIDs instead of simple array indices.
+In the process I've temporarily disabled a couple of transformations meant to optimize the ASTBase before converting it to a BDD.
+
+On the main branch (with indices instead of nids, but using the transformations), =test_tiny_bdd= results in 120 bits and it actually takes 111 steps to compute the answer. (There were 2 constant bits in the structure, plus 8 input bits, so it makes sense that the number of steps should be almost equal to bits.len() - 10).
+
+On the ast-nids branch, =test_tiny_bdd= results in 118 bits, and it actually takes a whopping 5170 steps to compute the answer. The 118 number contains no variables, but there was no optimization/garbage collection because I didn't call repack().
+
+With commit ~cf904a4~, =ASTBase= no longer stores =Op::Not= (using the =INV= bit on the NID instead). This replaces a bunch of explicit "NOT" nodes in the graph with a property on the edge. As a result, =tiny= shrinks from 118 nodes to 102 but its steps increase from 5170 to 5188. Meanwhile =nano= shrinks from 26 nodes to 18, and 27 steps to 22.
+
+** =repack= and =sort_by_cost=
+
+*** aside what these functions accomplish
+
+Without these two functions, there are uusually more steps than nodes.
+This is because ASTBase attempts to reuse nodes that correspond to the same expression (but only in simple cases, as this is a hard problem).
+
+With the nano case, there's not much going on. Assuming you do the < before the *, you get this structure:
+
+#+begin_src text
+lt: [##5]
+eq: [##16]
+top: [##17]
+0 Xor(v0, v2)
+1 And(¬v0, v2)
+2 Xor(v1, v3)
+3 And(¬v1, v3)
+4 And(#1, ¬#2)
+5 Or(#4, #3)
+6 And(v0, v2)
+7 And(v1, v2)
+8 And(v0, v3)
+9 And(v1, v3)
+10 Xor(#8, #7)
+11 And(#8, #7)
+12 Xor(#11, #9)
+13 And(#11, #9)
+14 And(¬#6, #10)
+15 And(#14, #12)
+16 And(¬#13, #15)
+17 And(#16, #5)
+#+end_src
+
+The final "top" bit uses 17 of the 18 generated nodes (there's no reference to #0).
+
+Here's the trace when we do the substitutions:
+
+#+begin_src text
+step, seconds, change, newtop
+   0,    0, DstNid { n: v17 }→@[v5:0], DstNid { n: @[v5:0] }
+   1,    0, DstNid { n: @[v5:0] }→@[v3:1], DstNid { n: @[v3:1] }
+   2,    0, DstNid { n: @[v3:1] }→@[v4:1], DstNid { n: @[v4:1] }
+   3,    0, DstNid { n: @[v4:1] }→@[v1:2], DstNid { n: @[v1:2] }
+   4,    0, DstNid { n: @[v1:2] }→@[v2:2], DstNid { n: @[v2:2] }
+   5,    0, DstNid { n: @[v2:2] }→@[v16:2], DstNid { n: @[v16:2] }
+   6,    0, DstNid { n: @[v16:2] }→@[v13:1], DstNid { n: @[v13:1] }
+   7,    0, DstNid { n: @[v13:1] }→@[v9:1], DstNid { n: @[v9:1] }
+   8,    0, DstNid { n: @[v9:1] }→@[v11:1], DstNid { n: @[v11:1] }
+   9,    0, DstNid { n: @[v11:1] }→@[v7:1], DstNid { n: @[v7:1] }
+  10,    0, DstNid { n: @[v7:1] }→@[v8:0], DstNid { n: @[v8:0] }
+  11,    0, DstNid { n: @[v8:0] }→@[v15:0], DstNid { n: @[v15:0] }
+  12,    0, DstNid { n: @[v15:0] }→@[v12:1], DstNid { n: @[v12:1] }
+  13,    0, DstNid { n: @[v12:1] }→@[v9:3], DstNid { n: @[v9:3] }
+  14,    0, DstNid { n: @[v9:3] }→@[v11:4], DstNid { n: @[v11:4] }
+  15,    0, DstNid { n: @[v11:4] }→@[v7:2], DstNid { n: @[v7:2] }
+  16,    0, DstNid { n: @[v7:2] }→@[v8:2], DstNid { n: @[v8:2] }
+  17,    0, DstNid { n: @[v8:2] }→@[v14:2], DstNid { n: @[v14:2] }
+  18,    0, DstNid { n: @[v14:2] }→@[v6:1], DstNid { n: @[v6:1] }
+  19,    0, DstNid { n: @[v6:1] }→@[v10:0], DstNid { n: @[v10:0] }
+  20,    0, DstNid { n: @[v10:0] }→@[v7:4], DstNid { n: @[v7:4] }
+  21,    0, DstNid { n: @[v7:4] }→@[v8:3], DstNid { n: @[v8:3] }
+  22,    0, DstNid { n: @[v8:3] }→@[x0:5], DstNid { n: @[x0:5] }
+#+end_src
+
+This output is a little clunky to look at, but the thing to see is that the leftmost nid is the "top" of the BDD, and it always branches on some virtual variable that corresponds to a node in the AST. Usually it decreases from line to line, but sometimes it goes up.
+
+We can trace the top for the 22 lines like so:
+
+: step: 00 01 02 03 04 05 06 07 08 09 10 11 12 13 14 15 16 17 18 19 20 21 22
+:  top: 17  5  3  4  1  2 16 13  9 11  7  8 15 12  9 11  7  8 14  6 10  7  8
+
+The issue is that in the BDD, the topmost node is always the lowest numbered input variable.
+But while we are in the process of solving, we have two kinds of  "input variables" -- true variables which appear as v0, v1, etc in the AST but x0, x1, etc in the BDD, and virtual variables, which appear as normal nodes indexed nodes in the AST (#0, #1, etc) and v0, v1 etc in the BDD.
+
+A virtual variable is always above a real variable in the BDD: the point of solving is to remove all the virtual variables. The algorithm is:
+
+:  while topmost(bdd) is virtual:
+:     replace topmost node with its definition
+
+The problem is that the the topmost virtual variable always refers back to two lesser numbers, the lesser of of which winds up at the top of the BDD. We're basically just doing a depth-first walk of the AST, but we revisit the same shared nodes over and over.
+
+What we can do instead is renumber the nodes, so that the top node in the AST becomes v0 rather than (in this case) v17.
+Now, every node in the AST will refer to two nodes with *higher* numbers, and when we move that definition over to the BDD, the lower of those two high numbers will be at the top. So now we have a guarantee that at each step, the virtual variable at the top will be replaced either by a virtual variable with a higher number, *or* a non-virtual variable (in which case we're done). This will make the number of substitution steps equal to the number of internal nodes in the AST.
+
+*** results of re-adding these functions
+
+With repack, we garbage collect the AST. The find-factors thing uses all but one of the generated bits, so it's not that impressive: 18->17 for nano, 102->101 for tiny.
+
+With =sort_by_cost= we guarantee that #steps = #nodes, so 22->17 for nano, 5188->101 for tiny.
+
+A huge improvement!
+

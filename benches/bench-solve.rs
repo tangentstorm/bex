@@ -4,7 +4,7 @@ use bencher::Bencher;
 
 extern crate bex;
 use bex::bdd;
-use bex::int::{BInt, BaseBit, GBASE, gbase_def};
+use bex::int::{BInt, BaseBit, GBASE};
 use bex::{find_factors, solve::{ProgressReport, refine, sort_by_cost}};
 use bex::ast::ASTBase;
 

@@ -4,8 +4,11 @@ extern crate std;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::cmp::min;
+use ast::ASTBase;
+use ast;
 use base::{Base};
-use ast::{ASTBase, NID, VID, SID};
+use nid::{VID, NID};
+use nid;
 
 
 // TBit : for use outside the Base, by types such as X32, below.
@@ -13,10 +16,7 @@ pub trait TBit
   : Sized + Clone
   + std::ops::Not<Output=Self>
   + std::ops::BitAnd<Self,Output=Self>
-  + std::ops::BitXor<Self,Output=Self> {
-    fn when(self, var:u32, val:Self)->Self;
-    fn sub(self, s:SID)->Self;
-  }
+  + std::ops::BitXor<Self,Output=Self> { }
 
 // TODO: how can i merge with mj() below?
 fn bitmaj<T:TBit>(x:T, y:T, z:T) -> T {
@@ -32,7 +32,7 @@ pub struct BaseBit {pub base:BaseRef, pub n:NID}
 
 impl BaseBit {
   /// perform an arbitrary operation using the base
-  fn op<F:FnMut(&mut ASTBase)->NID>(&self, mut op:F)->BaseBit {
+  fn op<F:FnMut(&mut ASTBase)->ast::NID>(&self, mut op:F)->BaseBit {
     let r = op(&mut self.base.borrow_mut());
     BaseBit{base:self.base.clone(), n:r} }}
 
@@ -40,12 +40,7 @@ impl std::cmp::PartialEq for BaseBit {
   fn eq(&self, other:&Self)->bool {
     self.base.as_ptr() == other.base.as_ptr() && self.n==other.n }}
 
-impl TBit for BaseBit {
-  fn when(self, var:u32, val:Self)->Self {
-    self.op(|base| base.when(var as usize, val.n, self.n)) }
-
-  fn sub(self, s:SID)->Self {
-    self.op(|base| base.sub(self.n, s)) }}
+impl TBit for BaseBit {}
 
 impl std::ops::Not for BaseBit {
   type Output = Self;
@@ -82,14 +77,15 @@ pub fn gbase_var(v:VID)->BaseBit {
     let vn = gb.borrow_mut().var(v); BaseBit{base:gb.clone(), n:vn }}) }
 
 pub fn gbase_tag(n:NID, s:String)->NID {
-  GBASE.with(|gb| gb.borrow_mut().tag(n,s) )}
+  GBASE.with(|gb| {
+    gb.borrow_mut().tag(n,s) })}
 
 pub fn gbase_def(s:String, i:VID)->BaseBit {
   GBASE.with(|gb| {
     let vn=gb.borrow_mut().def(s,i); BaseBit{base:gb.clone(), n:vn }}) }
 
-pub fn gbase_o()->BaseBit { BaseBit{base:gbase_ref(), n:0} }
-pub fn gbase_i()->BaseBit { BaseBit{base:gbase_ref(), n:1} }
+pub fn gbase_o()->BaseBit { BaseBit{base:gbase_ref(), n:nid::O} }
+pub fn gbase_i()->BaseBit { BaseBit{base:gbase_ref(), n:nid::I} }
 
 
 // --- lifted u32 type -----------------------------------------
@@ -113,10 +109,11 @@ pub trait BInt<U, T:TBit> : Sized {
   // TODO: this doesn't actually wrap! (should it??)
   fn wrapping_add(&self, y:Self) -> Self {
     let mut res = Self::zero(); let mut carry = self.o();
-    for i in 0..Self::n() { match (self.get(i), y.get(i), carry) {
-      (a,b,c) => { res.set(i, a.clone() ^ b.clone() ^ c.clone());
-                   carry = bitmaj(a, b, c) }}}
-      res}
+    for i in 0..Self::n() {
+      let (a,b,c) = (self.get(i), y.get(i), carry);
+      res.set(i, a.clone() ^ b.clone() ^ c.clone());
+      carry = bitmaj(a, b, c);}
+    res}
 
   fn from<B:BInt<U2,T>,U2>(other:&B) -> Self {
     let mut res = Self::zero();
@@ -150,6 +147,10 @@ macro_rules! xint_type {
            .map(|i| if (u&1<<i)==0 { gbase_o() } else { gbase_i() })
            .collect()}}
 
+      /// define an entire set of variables at once.
+      pub fn def(s:&str)->$T {
+        $T::from_vec((0..$n).map(|i|{ gbase_def(s.to_string(), i) }).collect()) }
+
       pub fn from_vec(v:Vec<BaseBit>)->$T {
         $T{bits: if v.len() >= $n { v.iter().take($n).map(|x|x.clone()).collect() }
            else {
@@ -181,11 +182,7 @@ macro_rules! xint_type {
     impl std::fmt::Debug for $T {
       fn fmt(&self, f: &mut std::fmt::Formatter)->std::fmt::Result {
         write!(f, "[").expect("!");
-        for x in self.bits.iter() {
-          match x.n {
-            0 => { write!(f, "o").expect("!?"); },
-            1 => { write!(f, "I").expect("!?"); },
-            n => { write!(f, ":{}", n).expect("!?"); }}}
+        for x in self.bits.iter() { write!(f, "{:?}", x).expect("!?") }
         write!(f, "]")}}
 
 // TODO: just inline BInt here, so people don't have to import it.
@@ -245,6 +242,7 @@ macro_rules! xint_type {
 
 // actual type implementations:
 
+xint_type!( 2,  x2,  X2,  u8);  // there's no u2
 xint_type!( 4,  x4,  X4,  u8);  // there's no u4
 xint_type!( 8,  x8,  X8,  u8);
 xint_type!(16, x16, X16, u16);

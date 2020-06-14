@@ -14,8 +14,9 @@ pub type IDX = u32;
 /// A NID represents a node in a Base. Essentially, this acts like a tuple
 /// containing a VID and IDX, but for performance reasons, it is packed into a u64.
 /// See below for helper functions that manipulate and analyze the packed bits.
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct NID { n: u64 }
+
 
 // -- bits in the nid ---
 
@@ -99,6 +100,7 @@ impl fmt::Display for NID {
              if is_rvar(*self) { write!(f, "x{}", rvar(*self)) }
              else { write!(f, "v{}", var(*self)) }}
            else if is_rvar(*self) { write!(f, "@[x{}:{}]", rvar(*self), idx(*self)) }
+           else if var(*self) == NOVAR { write!(f, "#{}", idx(*self)) }
            else { write!(f, "@[v{}:{}]", var(*self), idx(*self)) }}}}
 
 /// Same as fmt::Display. Mostly so it's easier to see the problem when an assertion fails.
@@ -130,3 +132,21 @@ impl HILO {
   assert_eq!(nvi(0,0), NID{n:0x0000000000000000u64});
   assert_eq!(nvi(1,0), NID{n:0x0000000100000000u64}); }
 
+
+
+// scaffolding for moving ASTBase over to use NIDS
+pub const NOVAR:VID = 1<<16;
+pub const IBIT:usize = INV as usize;
+pub const VBIT:usize = VAR as usize;
+pub const OBIT:usize = T as usize;
+pub fn un(n:NID)->usize {
+  if n == O { OBIT }
+  else if n == I { IBIT }
+  else if is_var(n) { VBIT | var(n) as usize }
+  else if var(n) == NOVAR { idx(n) as usize }
+  else { panic!("don't know how to un({:?})", n) }}
+pub fn nu(u:usize)->NID {
+  if u == OBIT { O }
+  else if u == IBIT { I }
+  else if (u&VBIT)==VBIT { nv(u ^ VBIT) }
+  else { nvi(NOVAR, u as IDX) } }
