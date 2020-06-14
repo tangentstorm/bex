@@ -28,7 +28,6 @@ pub struct ProgressReport<'a> {
 impl<'a> Progress for ProgressReport<'a> {
   fn on_start(&self) { } //println!("step, seconds, topnid, oldtopvar, newtopvar"); }
   fn on_step(&self, src:&ASTBase, dest: &mut B, step:usize, secs:u64, oldtop:DstNid, newtop:DstNid) {
-    let DstNid{ n: old } = oldtop;
     let DstNid{ n: new } = newtop;
     println!("{:4}, {:4}, {:4?}→{:3?}, {:8?}",
              step, secs, oldtop, new, /*src.get_op(nid::nvi(nid::NOVAR, nid::var(new) as u32)),*/ newtop);
@@ -157,7 +156,6 @@ macro_rules! find_factors {
       refine(&mut dest, &src, DstNid{n: nid::nv(nid::idx(top.n))},
              ProgressReport{ save_dot: $show, save_dest: false, prefix: "x",
                              show_result: $show, save_result: $show }) });
-    println!("done with refinement!");
     let expect = $expect;
     let answer = answer.n;
     let actual:Vec<(u64, u64)> = dest.nidsols_trunc(answer, 2*$T0::n() as usize).map(|nids| {

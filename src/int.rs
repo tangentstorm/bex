@@ -109,10 +109,11 @@ pub trait BInt<U, T:TBit> : Sized {
   // TODO: this doesn't actually wrap! (should it??)
   fn wrapping_add(&self, y:Self) -> Self {
     let mut res = Self::zero(); let mut carry = self.o();
-    for i in 0..Self::n() { match (self.get(i), y.get(i), carry) {
-      (a,b,c) => { res.set(i, a.clone() ^ b.clone() ^ c.clone());
-                   carry = bitmaj(a, b, c) }}}
-      res}
+    for i in 0..Self::n() {
+      let (a,b,c) = (self.get(i), y.get(i), carry);
+      res.set(i, a.clone() ^ b.clone() ^ c.clone());
+      carry = bitmaj(a, b, c);}
+    res}
 
   fn from<B:BInt<U2,T>,U2>(other:&B) -> Self {
     let mut res = Self::zero();

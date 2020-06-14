@@ -37,7 +37,7 @@ const K:u64 = 614_889_782_588_491_410;
 /// All 3,827 ordered pairs of 32-bit ints that multiply to produce K.
 #[cfg(not(test))]
 #[allow(clippy::unreadable_literal)]
-fn factors()->Vec<(u32,u32)> {
+fn factors()->Vec<(u64,u64)> {
   vec![
     (429400657, 143197215), (429319798, 143224185), (429192489, 143266669),
     (429092163, 143300166), (428929966, 143354354), (428759840, 143411235),
@@ -1317,10 +1317,9 @@ fn factors()->Vec<(u32,u32)> {
     (785341095,782958878), (785147363,783152070) ] }
 
 extern crate bex;
-use bex::int::{BInt, BaseBit, GBASE, gbase_def};
+use bex::int::{BInt, BaseBit, GBASE};
 use bex::{bdd, find_factors, solve::*};
 use bex::ast::ASTBase;
-use bex::nid;
 
 type BDD = bdd::BDDBase;
 

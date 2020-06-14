@@ -59,7 +59,7 @@ impl ASTBase {
         self.hash.insert(op, nu(n));
         nu(n) }}}}
 
-  fn load(path:&str)->::std::io::Result<ASTBase> {
+  pub fn load(path:&str)->::std::io::Result<ASTBase> {
     let s = io::get(path)?;
     Ok(bincode::deserialize(&s).unwrap()) }
 
@@ -69,7 +69,7 @@ impl ASTBase {
     self.subs.push(kv); self.subc.push(HashMap::new());
     res } */
 
-  fn sub(&mut self, x:NID, s:SID)->NID {
+  pub fn sub(&mut self, x:NID, s:SID)->NID {
     macro_rules! op {
       [not $x:ident] => {{ let x1 = self.sub($x, s); self.not(x1) }};
       [$f:ident $x:ident $y:ident] => {{
@@ -199,7 +199,7 @@ impl ASTBase {
     (masks, costs)}
 
   /// this returns a ragged 2d vector of direct references for each bit in the base
-  fn reftable(&self) -> Vec<Vec<NID>> {
+  pub fn reftable(&self) -> Vec<Vec<NID>> {
     todo!("test case for reftable!"); /*
     let bits = &self.bits;
     let mut res:Vec<Vec<NID>> = vec![vec![]; bits.len()];
