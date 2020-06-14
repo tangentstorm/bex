@@ -14,9 +14,9 @@ readme = "README.md"
 name = "bex"
 path = "src/lib.rs"
 
-#[[bin]]
-#name = "bex-shell"
-#path = "examples/shell/bex-shell.rs"
+[[bin]]
+name = "bex-shell"
+path = "examples/shell/bex-shell.rs"
 
 [[bin]]
 name = "bdd-solve"
