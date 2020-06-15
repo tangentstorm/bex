@@ -24,7 +24,7 @@ use hashbrown::HashMap;
 /// (v AND hi) XOR lo
 // TODO /// (ALL(v0..v1) AND hi) XOR lo
 // TODO: /// The v0..v1 thing is used to collapse long chains of nodes where lo=O.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 struct ANF {
   /// v is the variable in the head.
   v: VID,
@@ -87,11 +87,11 @@ impl Base for ANFBase {
       ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap(); }}
     w!("digraph anf {{");
     w!("node[shape=circle];");
-    self.walk(n, &mut |n,v,_h,_l| w!("  \"{}\"[label=\"{}\"];", n, v));
+    self.walk(n, &mut |n,_,_h,_l| w!("  \"{:?}\";", n));
     w!("edge[style=solid];");
-    self.walk(n, &mut |n,_,hi,_l| w!("  \"{}\"->\"{}\";", n, hi));
+    self.walk(n, &mut |n,_,hi,_l| w!("  \"{:?}\"->\"{:?}\";", n, hi));
     w!("edge[style=dashed];");
-    self.walk(n, &mut |n,_,__,lo| w!("  \"{}\"->\"{}\";", n, lo));
+    self.walk(n, &mut |n,_,__,lo| w!("  \"{:?}\"->\"{:?}\";", n, lo));
     w!("}}"); }
 
   fn def(&mut self, _s:String, _v:VID)->NID { todo!("anf::def"); }
@@ -192,7 +192,7 @@ impl ANFBase {
     // this is technically an xor operation, so if we want to call it directly,
     // we need to do the same logic as xor() to handle the 'not' bit.
     // note that the cache only ever contains 'raw' nodes, except hi=I
-    let (hi,lo) = (if hi0 == I {I} else {nid::raw(hi0)}, nid::raw(lo0));
+    let (hi,lo) = (hi0, nid::raw(lo0));
     let res =
       if let Some(&nid) = self.cache.get(&ANF{v, hi, lo}) { nid }
       else {
@@ -201,8 +201,7 @@ impl ANFBase {
         self.cache.insert(anf, nid);
         self.nodes.push(anf);
         nid };
-    let invert = if hi == I { nid::is_inv(lo) } else { nid::is_inv(hi) != nid::is_inv(lo) };
-    if invert { nid::not( res )} else { res }}
+    if nid::is_inv(lo) { nid::not( res )} else { res }}
 
   fn calc_and(&mut self, x:NID, y:NID)->NID {
     let (vx, vy) = (nid::var(x), nid::var(y));
@@ -220,9 +219,13 @@ impl ANFBase {
           let hi = self.and(b, y);
           let lo = self.and(c, y);
           self.vhl(a, hi, lo)},
-      Ordering::Greater => self.calc_and(y, x),
+      Ordering::Greater => self.and(y, x),
       Ordering::Equal => {
         // x:(ab+c) * y:(aq+r) --> abq+abr+acq+cr --> a(b(q+r) + cq)+cr
+        // xy = (ab+c)(aq+r)
+        //       abaq + abr + caq +cr
+        //       abq  + abr + acq + cr
+        //       a(b(q+r)+cq)+cr
         let ANF{ v:a, hi:b, lo:c } = self.fetch(x);
         let ANF{ v:p, hi:q, lo:r } = self.fetch(y);
         assert_eq!(a,p);
@@ -242,8 +245,11 @@ impl ANFBase {
         let ANF{v, hi, lo} = self.fetch(x);
         let lo = self.xor(lo, y);
         self.vhl(v, hi, lo)},
-      Ordering::Greater => self.calc_xor(y, x),
+      Ordering::Greater => self.xor(y, x),
       Ordering::Equal => {
+        // a + aq
+        // a(1+0) + a(q+0)
+        // a((1+0) + (q+0))
         // x:(ab+c) + y:(aq+r) -> ab+c+aq+r -> ab+aq+c+r -> a(b+q)+c+r
         let ANF{v:a, hi:b, lo:c} = self.fetch(x);
         let ANF{v:p, hi:q, lo:r} = self.fetch(y);
@@ -252,7 +258,40 @@ impl ANFBase {
         let lo = self.xor(c, r);
         self.vhl(a, hi, lo)}}}
 
+
+/// nidsols: this only returns the *very first* solution for now.
+
+  pub fn nidsols(&mut self, n:NID)->VidSolIterator {
+    self.nidsols_trunc(n, self.num_vars())}
+
+  pub fn nidsols_trunc(&mut self, n:NID, nvars:usize)->VidSolIterator {
+    assert!(nvars <= self.num_vars(), "nvars arg to nidsols_trunc must be <= self.nvars");
+    VidSolIterator::from_anf_base(self, n, nvars)}
 } // impl ANFBase
+
+pub struct VidSolIterator<'a> {
+  nid: NID,
+  base: &'a ANFBase,
+  nvars: usize,
+  done: bool}
+
+impl<'a>  VidSolIterator<'a> {
+  pub fn from_anf_base(base: &'a ANFBase, nid:NID, nvars:usize)->VidSolIterator<'a> {
+    VidSolIterator{ nid, base, nvars, done:false } }}
+
+impl<'a> Iterator for VidSolIterator<'a> {
+
+  type Item = Vec<NID>;
+
+  fn next(&mut self)->Option<Self::Item> {
+    if self.done { None }
+    else {
+      self.done = true;
+      let mut res = vec![];
+      let mut nid = self.nid;
+      let mut vhl = self.base.fetch(nid);
+      println!("vhl: {:?}", vhl);
+      Some(res) }}} // impl Iterator
 
 
 // test suite
@@ -320,6 +359,17 @@ test_base_when!(ANFBase);
   assert_eq!(hi, b);
   assert_eq!(lo, O);}
 
+  #[test] fn test_anf_axab() {
+    let mut base = ANFBase::new(2);
+    let a = base.var(0); let b = base.var(1);
+    let ab = base.and(a,b);
+    let axab = expr![base, (a ^ (a&b))];
+    // a ^ ab = a((b+1)+0)
+    assert_eq!(base.fetch(a), ANF{ v:0, hi:I, lo:nid::O}, "structure for a=v0");
+    assert_eq!(base.fetch(ab), ANF{ v:0, hi:b, lo:nid::O}, "structure for ab");
+    assert_eq!(base.fetch(axab), ANF{ v:0, hi:nid::not(b), lo:nid::O});
+  }
+
 #[test] fn test_anf_and3() {
   let mut base = ANFBase::new(4);
   let a = base.var(0); let b = base.var(1); let c = base.var(2);
@@ -357,3 +407,20 @@ test_base_when!(ANFBase);
   let xyz = expr![base, ((x & y) ^ z) ];
   assert_eq!(base.sub(nid::var(a), xyz, ctx), expr![base, ((xyz & b) ^ c)]);
   assert_eq!(base.sub(nid::var(b), xyz, ctx), expr![base, ((a & xyz) ^ c)]);}
+
+#[test] fn test_anf_sub_inv() {
+    let mut base = ANFBase::new(7);
+    let (v1,v2,v4,v6) = (nid::nv(1), nid::nv(2), nid::nv(4), nid::nv(6));
+    let ctx = expr![base, (v1 & v6) ];
+    let top = expr![base, ((I^v4) & v2)];
+    assert_eq!(top, base.and(nid::not(v4), v2), "sanity check");
+    // v1 * v6 ; v1->(~v4 * v2)
+    // -> (v2 * (v4 + 1)) *v6
+    // -> (v2v4 +v2) & v6
+    // -> v2v4v6 + v2v6
+    let expect = expr![base, ((v2 & (v4 & v6)) ^ (v2 & v6))];
+    let actual = base.sub(nid::var(v1), top, ctx);
+    // base.show_named(top, "newtop");
+    // base.show_named(expect, "expect");
+    // base.show_named(actual, "actual");
+    assert_eq!(expect, actual);}
