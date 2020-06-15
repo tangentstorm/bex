@@ -4,10 +4,7 @@ use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
-use std::fs::File;
-use std::io::Write;
 use std::marker::PhantomData;
-use std::process::Command;      // for creating and viewing digarams
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::thread;
@@ -645,43 +642,6 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
     let s = io::get(path)?;
     Ok(bincode::deserialize(&s).unwrap()) }
 
-  // generate dot file (graphviz)
-  pub fn dot<T>(&self, n:NID, wr: &mut T) where T : ::std::fmt::Write {
-    macro_rules! w {
-      ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap() }}
-
-    let fmt = |n:NID| {
-      if is_rvar(n) { format!("x{}", rvar(n)) }
-      else { format!("{}", n) }};
-
-    w!("digraph bdd {{");
-    w!("  I[label=⊤; shape=square];");
-    w!("  O[label=⊥; shape=square];");
-    w!("node[shape=circle];");
-    self.walk(n, &mut |n,_,_,_| w!("  \"{}\"[label=\"{}\"];", n, fmt(n)));
-    w!("edge[style=solid];");
-    self.walk(n, &mut |n,_,t,_| w!("  \"{}\"->\"{}\";", n, t));
-    w!("edge[style=dashed];");
-    self.walk(n, &mut |n,_,_,e| w!("  \"{}\"->\"{}\";", n, e));
-    w!("}}"); }
-
-  pub fn save_dot(&self, n:NID, path:&str) {
-    let mut s = String::new(); self.dot(n, &mut s);
-    let mut txt = File::create(path).expect("couldn't create dot file");
-    txt.write_all(s.as_bytes()).expect("failed to write text to dot file"); }
-
-  pub fn show_named(&self, n:NID, s:&str) {   // !! almost exactly the same as in bdd.rs
-    self.save_dot(n, format!("{}.dot", s).as_str());
-    let out = Command::new("dot").args(&["-Tsvg",format!("{}.dot",s).as_str()])
-      .output().expect("failed to run 'dot' command");
-    let mut svg = File::create(format!("{}.svg",s).as_str()).expect("couldn't create svg");
-    svg.write_all(&out.stdout).expect("couldn't write svg");
-    Command::new("firefox").args(&[format!("{}.svg",s).as_str()])
-      .spawn().expect("failed to launch firefox"); }
-
-  pub fn show(&self, n:NID) { self.show_named(n, "+bdd") }
-
-
   // public node constructors
 
   pub fn and(&mut self, x:NID, y:NID)->NID { self.ite(x,  y, O) }
@@ -804,10 +764,27 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID { self.replace(v,n,ctx) }
 
   fn save(&self, path:&str)->::std::io::Result<()> { self.save(path) }
-  fn save_dot(&self, n:NID, path:&str) { self.save_dot(n, path) }
-  fn show_named(&self, n:NID, path:&str) { self.show_named(n, path) }
+
+  // generate dot file (graphviz)
+  fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {
+    macro_rules! w {
+      ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap(); }}
 
-  fn solutions(&self)->&dyn Iterator<Item=Vec<bool>> { todo!("bdd::solutions") }
+    let fmt = |n:NID| {
+      if is_rvar(n) { format!("x{}", rvar(n)) }
+      else { format!("{}", n) }};
+
+    w!("digraph bdd {{");
+    w!("  I[label=⊤; shape=square];");
+    w!("  O[label=⊥; shape=square];");
+    w!("node[shape=circle];");
+    self.walk(n, &mut |n,_,_,_| w!("  \"{}\"[label=\"{}\"];", n, fmt(n)));
+    w!("edge[style=solid];");
+    self.walk(n, &mut |n,_,t,_| w!("  \"{}\"->\"{}\";", n, t));
+    w!("edge[style=dashed];");
+    self.walk(n, &mut |n,_,_,e| w!("  \"{}\"->\"{}\";", n, e));
+    w!("}}"); }
+
 }
 
 

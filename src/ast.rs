@@ -1,8 +1,5 @@
 // a concrete implemetation:
 use std::collections::{HashMap,HashSet};
-use std::fs::File;
-use std::io::Write;
-use std::process::Command;      // for creating and viewing digarams
 
 use io;
 use base::*;
@@ -129,33 +126,6 @@ impl ASTBase {
         Op::Or(x,y)   => { s(x); s(y); }
         Op::Ch(x,y,z) => { s(x); s(y); s(z); }
         Op::Mj(x,y,z) => { s(x); s(y); s(z); } }}}
-
-
-  // generate dot file (graphviz)
-  pub fn dot<T>(&self, n:NID, wr: &mut T) where T : ::std::fmt::Write {
-    macro_rules! w {
-      ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap() }}
-    macro_rules! dotop {
-      ($s:expr, $n:expr $(,$xs:expr)*) => {{
-        w!("  \"{}\"[label={}];", nid::raw($n), $s); // draw the node
-        $({ if nid::is_inv(*$xs) { w!("edge[style=dashed];"); }
-            else { w!("edge[style=solid];"); }
-            w!(" \"{}\"->\"{}\";", nid::raw(*$xs), nid::raw($n)); })* }}}
-
-    w!("digraph bdd {{");
-    w!("rankdir=BT;"); // put root on top
-    w!("node[shape=circle];");
-    w!("edge[style=solid];");
-    self.walk(n, &mut |n| {
-      match &self.op(n) {
-        Op::O => w!(" \"{}\"[label=⊥];", n),
-        Op::I => w!(" \"{}\"[label=⊤];", n),
-        Op::Var(x)  => w!("\"{}\"[label=\"${}\"];", nid::raw(n), x),
-        Op::And(x,y) => dotop!("∧",n,x,y),
-        Op::Xor(x,y) => dotop!("≠",n,x,y),
-        Op::Or(x,y)  => dotop!("∨",n,x,y),
-        _ => panic!("unexpected node: {:?}", n) }});
-    w!("}}"); }
 
   pub fn show(&self, n:NID) { self.show_named(n, "+ast+") }
 
@@ -362,8 +332,6 @@ impl Base for ASTBase {
           let a = self.and(m,n); self.not(a)},
         _ => self.nid(Op::Or(lo,hi)) }}}
 
-
-
   #[cfg(todo)]
   fn mj(&mut self, x:NID, y:NID, z:NID)->NID {
     let (a,b,c) = order3(x,y,z);
@@ -380,22 +348,31 @@ impl Base for ASTBase {
     let s = bincode::serialize(&self).unwrap();
     io::put(path, &s) }
 
-  fn save_dot(&self, n:NID, path:&str) { // !! taken from bdd.rs
-    let mut s = String::new(); self.dot(n, &mut s);
-    let mut txt = File::create(path).expect("couldn't create dot file");
-    txt.write_all(s.as_bytes()).expect("failed to write text to dot file"); }
+  // generate dot file (graphviz)
+  fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {
+    macro_rules! w {
+      ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap() }}
+    macro_rules! dotop {
+      ($s:expr, $n:expr $(,$xs:expr)*) => {{
+        w!("  \"{}\"[label={}];", nid::raw($n), $s); // draw the node
+        $({ if nid::is_inv(*$xs) { w!("edge[style=dashed];"); }
+            else { w!("edge[style=solid];"); }
+            w!(" \"{}\"->\"{}\";", nid::raw(*$xs), nid::raw($n)); })* }}}
 
-  fn show_named(&self, n:NID, path:&str) {   // !! almost exactly the same as in bdd.rs
-    self.save_dot(n, format!("{}.dot", path).as_str());
-    let out = Command::new("dot").args(&["-Tsvg",format!("{}.dot",path).as_str()])
-      .output().expect("failed to run 'dot' command");
-    let mut svg = File::create(format!("{}.svg",path).as_str()).expect("couldn't create svg");
-    svg.write_all(&out.stdout).expect("couldn't write svg");
-    Command::new("firefox").args(&[format!("{}.svg",path).as_str()])
-      .spawn().expect("failed to launch firefox"); }
-
-
-  fn solutions(&self)->&dyn Iterator<Item=Vec<bool>> { todo!("ast::solutions") }
+    w!("digraph bdd {{");
+    w!("rankdir=BT;"); // put root on top
+    w!("node[shape=circle];");
+    w!("edge[style=solid];");
+    self.walk(n, &mut |n| {
+      match &self.op(n) {
+        Op::O => w!(" \"{}\"[label=⊥];", n),
+        Op::I => w!(" \"{}\"[label=⊤];", n),
+        Op::Var(x)  => w!("\"{}\"[label=\"${}\"];", nid::raw(n), x),
+        Op::And(x,y) => dotop!("∧",n,x,y),
+        Op::Xor(x,y) => dotop!("≠",n,x,y),
+        Op::Or(x,y)  => dotop!("∨",n,x,y),
+        _ => panic!("unexpected node: {:?}", n) }});
+    w!("}}"); }
 } // impl Base for ASTBase
 
 

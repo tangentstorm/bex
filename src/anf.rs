@@ -14,6 +14,7 @@
 //! ```
 //! In addition, identical suffixes after factoring always refer to the same node.
 use std::cmp::Ordering;
+use std::collections::HashSet;
 use base::Base;
 use nid;
 use nid::{NID,VID,I,O};
@@ -38,6 +39,23 @@ pub struct ANFBase {
   cache:HashMap<ANF,NID>,
   tags:HashMap<String,NID>}
 
+
+impl ANFBase {
+  // !! TODO: unify walk/step for ANFBase, BDDBase
+
+  /// walk node recursively, without revisiting shared nodes
+  pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
+    let mut seen = HashSet::new();
+    self.step(n,f,&mut seen)}
+
+  /// internal helper: one step in the walk.
+  fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>)
+  where F: FnMut(NID,VID,NID,NID) {
+    if !seen.contains(&n) {
+      seen.insert(n); let ANF{ v, hi, lo, } = self.fetch(n); f(n,v,hi,lo);
+      if !nid::is_const(hi) { self.step(hi, f, seen); }
+      if !nid::is_const(lo) { self.step(lo, f, seen); }}}
+}
 
 
 // macros for building expressions
@@ -65,6 +83,18 @@ impl Base for ANFBase {
   #[inline] fn o(&self)->NID { O }
   #[inline] fn i(&self)->NID { I }
   #[inline] fn var(&mut self, v:VID)->NID { nid::nv(v) }
+
+  fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {
+    macro_rules! w {
+      ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap(); }}
+    w!("digraph anf {{");
+    w!("node[shape=circle];");
+    self.walk(n, &mut |n,v,_h,_l| w!("  \"{}\"[label=\"{}\"];", n, v));
+    w!("edge[style=solid];");
+    self.walk(n, &mut |n,_,hi,_l| w!("  \"{}\"->\"{}\";", n, hi));
+    w!("edge[style=dashed];");
+    self.walk(n, &mut |n,_,__,lo| w!("  \"{}\"->\"{}\";", n, lo));
+    w!("}}"); }
 
   fn def(&mut self, _s:String, _v:VID)->NID { todo!("anf::def"); }
   // TODO: tag and get are copied verbatim from bdd
@@ -144,11 +174,7 @@ impl Base for ANFBase {
         let top = nid::nv(cv);
         expr![self, ((top & rhi) ^ rlo)] }}}
 
-  fn solutions(&self)->&dyn Iterator<Item=Vec<bool>> { todo!("anf::solutions") }
-
   fn save(&self, _path:&str)->::std::io::Result<()> { todo!("anf::save") }
-  fn save_dot(&self, _n:NID, _path:&str) { todo!("anf::save_dot") }
-  fn show_named(&self, _n:NID, _path:&str) { todo!("anf::show_named") }
 
 } // impl Base for ANFBase
 

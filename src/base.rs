@@ -2,6 +2,9 @@
 ///! bex: a boolean expression library for rust
 ///! outside the base, you deal only with opaque references.
 ///! inside, it could be stored any way we like.
+use std::fs::File;
+use std::io::Write;
+use std::process::Command;      // for creating and viewing digarams
 use nid::{NID,VID};
 
 pub trait Base {
@@ -28,11 +31,29 @@ pub trait Base {
 
   /// substitute node for variable in context.
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID;
-  fn solutions(&self)->&dyn Iterator<Item=Vec<bool>>;
 
   fn save(&self, path:&str)->::std::io::Result<()>;
-  fn save_dot(&self, n:NID, path:&str);
-  fn show_named(&self, n:NID, path:&str);
+
+  /// implement this to render a node and its descendents in graphviz *.dot format.
+  fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write);
+
+  /// render to graphviz *.dot file
+  fn save_dot(&self, n:NID, path:&str) {
+    let mut s = String::new(); self.dot(n, &mut s);
+    let mut txt = File::create(path).expect("couldn't create dot file");
+    txt.write_all(s.as_bytes()).expect("failed to write text to dot file"); }
+
+  /// call save_dot, use graphviz to convert to svg, and open result in firefox
+  fn show_named(&self, n:NID, s:&str) {
+    self.save_dot(n, format!("{}.dot", s).as_str());
+    let out = Command::new("dot").args(&["-Tsvg",format!("{}.dot",s).as_str()])
+      .output().expect("failed to run 'dot' command");
+    let mut svg = File::create(format!("{}.svg",s).as_str()).expect("couldn't create svg");
+    svg.write_all(&out.stdout).expect("couldn't write svg");
+    Command::new("firefox").args(&[format!("{}.svg",s).as_str()])
+      .spawn().expect("failed to launch firefox"); }
+
+  fn show(&self, n:NID) { self.show_named(n, "+bdd") }
 }
 
 /*
@@ -114,4 +135,3 @@ base_test!(test_base_when, b, 2, {
   let mut res = [x,y,z];
   res.sort();
   (res[0].clone(), res[1].clone(), res[2].clone())}
-
