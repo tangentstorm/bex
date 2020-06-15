@@ -80,8 +80,6 @@ impl Base for ANFBase {
     ANFBase { nvars: n, nodes:vec![], cache: HashMap::new(), tags:HashMap::new() }}
   fn num_vars(&self)->usize { self.nvars }
 
-  #[inline] fn o(&self)->NID { O }
-  #[inline] fn i(&self)->NID { I }
   #[inline] fn var(&mut self, v:VID)->NID { nid::nv(v) }
 
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {

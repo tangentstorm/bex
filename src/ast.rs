@@ -276,9 +276,6 @@ impl Base for ASTBase {
     res }
   fn num_vars(&self)->usize { self.nvars }
 
-  fn o(&self)->NID { O }
-  fn i(&self)->NID { I }
-
   fn var(&mut self, v:VID)->NID {
     for _ in self.nvars ..= v { self.nvars += 1 }
     nid::nv(v) }

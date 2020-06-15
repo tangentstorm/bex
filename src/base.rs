@@ -5,14 +5,14 @@
 use std::fs::File;
 use std::io::Write;
 use std::process::Command;      // for creating and viewing digarams
-use nid::{NID,VID};
+use {nid, nid::{NID,VID}};
 
 pub trait Base {
   fn new(n:usize)->Self where Self:Sized; // Sized so we can use trait objects.
   fn num_vars(&self)->usize;
 
-  fn o(&self)->NID;
-  fn i(&self)->NID;
+  fn o(&self)->NID { nid::O }
+  fn i(&self)->NID { nid::I }
 
   fn var(&mut self, i:VID)->NID;
   fn when_hi(&mut self, v:VID, n:NID)->NID;

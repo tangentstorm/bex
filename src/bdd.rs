@@ -740,8 +740,6 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   fn new(n:usize)->Self { Self::new(n) }
   fn num_vars(&self)->usize { self.nvars() }
 
-  fn o(&self)->NID { O }
-  fn i(&self)->NID { I }
   fn var(&mut self, v:VID)->NID { nid::nv(v) }
 
   fn when_hi(&mut self, v:VID, n:NID)->NID { self.when_hi(v,n) }
