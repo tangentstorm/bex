@@ -73,9 +73,8 @@ pub fn sort_by_cost(src:&ASTBase, top:SrcNid)->(ASTBase,SrcNid) {
 
   // now permute so that vars are on bottom and everything else is flipped
   // this is purely so that the node we want to replace remains on top in the destination
-  let max = p.len()-1; let min = src1.num_vars()+1;
-  for i in 0..min { p[i] = i }
-  for i in min..p.len() { p[i] = min + (max-i) }
+  let max = p.len()-1;
+  for i in 0..p.len() { p[i] = max-i }
   let ast = src1.permute(&p);
   let n = ast.get("-top-").expect("what? I just put it there.");
   (ast,SrcNid{n}) }
