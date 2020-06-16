@@ -1323,16 +1323,19 @@ use bex::ast::ASTBase;
 
 type BDD = bdd::BDDBase;
 
-/// nano test case: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
+
+/// nano test case for BDD: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
 #[test] pub fn test_nano_bdd() {
   use bex::int::{BInt, BaseBit, GBASE,X2,X4}; use bex::bdd::BDDBase;
   find_factors!(BDDBase, X2, X4, 6, vec![(2,3)], false); }
 
+/// nano test case for ANF: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
+#[test] pub fn test_nano_anf() {
+   use bex::anf;
+   use bex::int::{X2,X4};
+   type ANF = anf::ANFBase;
+   find_factors!(ANF, X2, X4, 6, vec![(2,3)], false); }
 
-  /// nano test case: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
-//#[test] pub fn test_nano_anf() {
-//  use bex::int::{BInt, BaseBit, GBASE,X2,X4}; use bex::anf::ANFBase;
-//  find_factors!(ANFBase, X2, X4, 6, vec![(2,3)], true); }
 
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny_bdd() {

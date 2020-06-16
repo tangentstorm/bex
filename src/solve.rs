@@ -31,6 +31,7 @@ impl<'a> Progress for ProgressReport<'a> {
     let DstNid{ n: new } = newtop;
     println!("{:4}, {:4}, {:4?}→{:3?}, {:8?}",
              step, secs, oldtop, new, /*src.get_op(nid::nvi(nid::NOVAR, nid::var(new) as u32)),*/ newtop);
+    // dest.show_named(newtop.n, format!("step-{}", step).as_str());
     if step.trailing_zeros() >= 3 { // every so often, save the state
       // !! TODO: expected number of steps only works if sort_by_cost was called.
       { let expected_steps = src.len() as f64;

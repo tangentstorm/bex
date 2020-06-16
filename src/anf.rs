@@ -277,7 +277,7 @@ pub struct VidSolIterator<'a> {
 
 impl<'a>  VidSolIterator<'a> {
   pub fn from_anf_base(base: &'a ANFBase, nid:NID, nvars:usize)->VidSolIterator<'a> {
-    VidSolIterator{ nid, base, nvars, done:false } }}
+    VidSolIterator{ nid, base, nvars, done: nid==nid::O } }}
 
 impl<'a> Iterator for VidSolIterator<'a> {
 
@@ -286,12 +286,29 @@ impl<'a> Iterator for VidSolIterator<'a> {
   fn next(&mut self)->Option<Self::Item> {
     if self.done { None }
     else {
-      self.done = true;
-      let mut res = vec![];
-      let mut nid = self.nid;
-      let mut vhl = self.base.fetch(nid);
-      println!("vhl: {:?}", vhl);
-      Some(res) }}} // impl Iterator
+      self.done = true; println!("warning: ANFBase::nidsols currently only finds first solution!");
+      let mut res:Vec<NID> = (0..self.nvars).map(nid::nv).map(nid::not).collect();
+      let mut n = self.nid;
+      if nid::is_inv(n) { return Some(res) } // 1 term in ANF means f(0,0,0,..)=1
+      // else walk down to lowest term, if we're not already there.
+      loop {
+        let ANF{ v:_, hi:_, lo } = self.base.fetch(n);
+        if nid::is_const(lo) { break }
+        else { n = lo }}
+      // now we're at the first factor of the first term. collect the others.
+      loop {
+        if nid::is_const(n) { break }
+        let ANF{ v, hi, lo } = self.base.fetch(n);
+        // TODO: there should be a better way to check this:
+        // TODO: this doesn't cope with a mix of real/virtual variables
+        let v = if nid::is_rvar(n) { nid::rvar(n) } else { v };
+        res[v] = nid::raw(res[v]); // flip it to hi
+        // move to the xored (lo) term, if present, else use the hi term
+        if nid::is_const(lo) {
+          if nid::is_const(hi) { break }
+          else { n = hi }}
+        else { n = lo }}
+      Some(res) }}} // else, fn, impl Iterator
 
 
 // test suite
