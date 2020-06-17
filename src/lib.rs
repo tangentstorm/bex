@@ -29,8 +29,10 @@ pub mod solve;
 pub mod apl;
 /// Helpers for working with arrays of bit structures as if they were integers.
 pub mod int;
+/// Registers -- arbitrarily large arrays of bits.
+pub mod reg;
 /// Input/output helpers.
 pub mod io;
 
-/// (Experimental/Unfinished) support for algebraic normal form (XOR of AND).
+/// (Experimental) support for algebraic normal form (XOR of AND).
 pub mod anf;
