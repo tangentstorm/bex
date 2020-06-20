@@ -937,7 +937,7 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
 
 #[test] fn test_bdd_solutions_extra() {
   let mut base = BDDBase::new(5);
-  let (a, b, c, d, e) = (nv(0), nv(1), nv(2), nv(3), nv(4));
+  let (b, d) = (nv(1), nv(3));
   // the idea here is that we have "don't care" above, below, and between the used vars:
   let n = base.and(b,d);
   let actual:Vec<_> = base.solutions(n).map(|r| r.as_usize()).collect();
