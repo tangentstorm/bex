@@ -1,6 +1,7 @@
 /// Registers (bit vectors)
 use std::mem::size_of;
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Reg { nvars: usize, data: Vec<usize> }
 
 const USIZE:usize = size_of::<usize>() * 8;
@@ -19,7 +20,9 @@ impl Reg {
       if v { x |  (1 << (ix%USIZE)) }
       else { x & !(1 << (ix%USIZE)) }}
 
-  pub fn num_vars(&self)->usize { self.nvars }}
+  pub fn as_usize(&self)->usize { self.data[0] }
+  pub fn len(&self)->usize { self.nvars }
+  pub fn is_empty(&self)->bool { self.nvars == 0 }}
 
 
 #[test]

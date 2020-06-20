@@ -18,6 +18,7 @@ use std::collections::HashSet;
 use base::Base;
 use nid;
 use nid::{NID,VID,I,O};
+use reg::Reg;
 use hashbrown::HashMap;
 
 
@@ -259,12 +260,12 @@ impl ANFBase {
         self.vhl(a, hi, lo)}}}
 
 
-/// nidsols: this only returns the *very first* solution for now.
+/// solutions: this only returns the *very first* solution for now.
 
-  pub fn nidsols(&mut self, n:NID)->VidSolIterator {
-    self.nidsols_trunc(n, self.num_vars())}
+  pub fn solutions(&mut self, n:NID)->VidSolIterator {
+    self.solutions_trunc(n, self.num_vars())}
 
-  pub fn nidsols_trunc(&mut self, n:NID, nvars:usize)->VidSolIterator {
+  pub fn solutions_trunc(&mut self, n:NID, nvars:usize)->VidSolIterator {
     assert!(nvars <= self.num_vars(), "nvars arg to nidsols_trunc must be <= self.nvars");
     VidSolIterator::from_anf_base(self, n, nvars)}
 } // impl ANFBase
@@ -281,13 +282,13 @@ impl<'a>  VidSolIterator<'a> {
 
 impl<'a> Iterator for VidSolIterator<'a> {
 
-  type Item = Vec<NID>;
+  type Item = Reg;
 
   fn next(&mut self)->Option<Self::Item> {
     if self.done { None }
     else {
       self.done = true; println!("warning: ANFBase::nidsols currently only finds first solution!");
-      let mut res:Vec<NID> = (0..self.nvars).map(nid::nv).map(nid::not).collect();
+      let mut res = Reg::new(self.nvars);
       let mut n = self.nid;
       if nid::is_inv(n) { return Some(res) } // 1 term in ANF means f(0,0,0,..)=1
       // else walk down to lowest term, if we're not already there.
@@ -302,7 +303,7 @@ impl<'a> Iterator for VidSolIterator<'a> {
         // TODO: there should be a better way to check this:
         // TODO: this doesn't cope with a mix of real/virtual variables
         let v = if nid::is_rvar(n) { nid::rvar(n) } else { v };
-        res[v] = nid::raw(res[v]); // flip it to hi
+        res.put(v, true); // flip it to hi
         // move to the xored (lo) term, if present, else use the hi term
         if nid::is_const(lo) {
           if nid::is_const(hi) { break }

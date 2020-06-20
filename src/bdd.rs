@@ -17,6 +17,7 @@ use bincode;
 use base;
 use io;
 use nid;
+use reg::Reg;
 pub use nid::*;
 
 
@@ -908,34 +909,29 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
   assert_eq!(anb, anb2);
 }
 
-
-#[cfg(test)]
-use std::iter::FromIterator; //   Vec::from_iter( ...)
-
-/// Test cases for SolutionIterator.
+/// Test cases for SolutionIterator.
 #[test] fn test_bdd_solutions_o() {
-  let mut base = BDDBase::new(2);  let mut it = base.nidsols(nid::O);
+  let mut base = BDDBase::new(2);  let mut it = base.solutions(nid::O);
   assert!(it.done, "nidsols should be empty for const O");
   assert_eq!(it.next(), None, "const O should yield no solutions.") }
 
 #[test] fn test_bdd_solutions_i() {
   let mut base = BDDBase::new(2);
-  let it = base.nidsols(nid::I);
-  assert_eq!(Vec::from_iter(it), vec![
-    vec![not(nv(0)), not(nv(1))],  vec![not(nv(0)), nv(1)],
-    vec![nv(0),      not(nv(1))],  vec![    nv(0),  nv(1)]],
-             "const true should yield all solutions"); }
+  let actual:Vec<usize> = base.solutions(nid::I).map(|r| r.as_usize()).collect();
+  assert_eq!(actual, vec![0b00, 0b10, 0b01, 0b11  ],
+     "const true should yield all solutions"); }
 
 #[test] fn test_bdd_solutions_simple() {
   let mut base = BDDBase::new(1); let (a, _na) = (nid::nv(0), nid::not(nid::nv(0)));
-  let mut it = base.nidsols(a);
+  let mut it = base.solutions(a);
   // it should be sitting on first solution, which is a=1
   assert!(!it.done,  "should be a solution");
   assert!(it.in_solution(), "should be looking at the solution");
   assert_eq!(it.nstack, vec![a], "stack should contain root node");
-  assert_eq!(it.scope, vec![a],  "a should be set to high (first solution)");
+  assert_eq!(it.scope.len(), 1);
+  assert_eq!(it.scope.get(0), true,  "scope[0] should be set to high (first solution)");
   assert_eq!(it.node, nid::I,    "current node should be hi side of root (a.hi -> I)");
-  assert_eq!(it.next().expect("expected solution!"), vec![a]);
+  assert_eq!(it.next().expect("expected solution!").as_usize(), 0b1);
   assert_eq!(it.next(), None);
   assert!(it.done); }
 
@@ -944,35 +940,34 @@ use std::iter::FromIterator; //   Vec::from_iter( ...)
   let (a, b, c, d, e) = (nv(0), nv(1), nv(2), nv(3), nv(4));
   // the idea here is that we have "don't care" above, below, and between the used vars:
   let n = base.and(b,d);
-  assert_eq!(Vec::from_iter(base.nidsols(n)),
-             vec![ vec![ not(a), b, not(c), d, not(e) ],
-                   vec![ not(a), b, not(c), d,     e  ],
-                   vec![ not(a), b,     c , d, not(e) ],
-                   vec![ not(a), b,     c , d,     e  ],
-                   vec![     a , b, not(c), d, not(e) ],
-                   vec![     a , b, not(c), d,     e  ],
-                   vec![     a , b,     c , d, not(e) ],
-                   vec![     a , b,     c , d,     e  ]])}
-
+  let actual:Vec<_> = base.solutions(n).map(|r| r.as_usize()).collect();
+                          //edcba
+  assert_eq!(actual, vec![0b01010,
+                          0b11010,
+                          0b01110,
+                          0b11110,
+                          0b01011,
+                          0b11011,
+                          0b01111,
+                          0b11111])}
 
 #[test] fn test_bdd_solutions_xor() {
   let mut base = BDDBase::new(3);
-  let (a, b, c) = (nv(0), nv(1), nv(2));
+  let (a, b) = (nv(0), nv(1));
   let n = base.xor(a, b);
-  // base.show_named(n, "ok");
-  let mut it = base.nidsols(n);
-  assert_eq!(it.next().expect("expect answer 0"), vec![not(a), b, not(c)]  ,"0");
-  assert_eq!(it.next().expect("expect answer 1"), vec![not(a), b, c]       ,"1");
-  assert_eq!(it.next().expect("expect answer 2"), vec![a, not(b), not(c)]  ,"2");
-  assert_eq!(it.next().expect("expect answer 3"), vec![a, not(b), c]       ,"3");
+  let mut it = base.solutions(n);                            //cba
+  assert_eq!(it.next().expect("expect answer 0").as_usize(), 0b010, "0");
+  assert_eq!(it.next().expect("expect answer 1").as_usize(), 0b110, "1");
+  assert_eq!(it.next().expect("expect answer 2").as_usize(), 0b001, "2");
+  assert_eq!(it.next().expect("expect answer 3").as_usize(), 0b101, "3");
   assert_eq!(it.next(), None);
 }
 
 impl<W:BddWorker<S>> BddBase<S,W> {
-  pub fn nidsols(&mut self, n:NID)->VidSolIterator {
-    self.nidsols_trunc(n, self.nvars())}
+  pub fn solutions(&mut self, n:NID)->VidSolIterator {
+    self.solutions_trunc(n, self.nvars())}
 
-  pub fn nidsols_trunc(&mut self, n:NID, nvars:usize)->VidSolIterator {
+  pub fn solutions_trunc(&mut self, n:NID, nvars:usize)->VidSolIterator {
     assert!(nvars <= self.nvars(), "nvars arg to nidsols_trunc must be <= self.nvars");
     VidSolIterator::from_state(self.worker.get_state(), n, nvars)}
 
@@ -984,7 +979,7 @@ pub struct VidSolIterator<'a> {
   nvars:usize,        // track our own nvars so we can ignore virtual variables
   nstack: Vec<NID>,   // the path of nodes we have traversed
   istack: Vec<bool>,  // the stack of node inversion states
-  scope: Vec<NID>,    // the current variable assignments
+  scope: Reg,    // the current variable assignments
   invert: bool,       // whether to invert the results
   done: bool}         // whether we've reached the end
 
@@ -1000,7 +995,7 @@ impl<'a> VidSolIterator<'a> {
       node: n, //if n == nid::I { n } else { nid::raw(n) },
       state,
       nvars,
-      scope: (0..nvars as VID).map(|n| nid::not(nid::nv(n))).collect(),
+      scope: Reg::new(nvars),
       nstack: vec![],
       istack: vec![],
       done: n==nid::O || nvars == 0,
@@ -1048,12 +1043,12 @@ impl<'a> VidSolIterator<'a> {
     let mut i = (self.nvars as i32) - 1;
     while i >= 0 {
       let j = i as usize;
-      self.scope[j] = nid::not(self.scope[j]);
+      self.scope.put(j, !self.scope.get(j));
       println!("i: {:?} scope: {:?}", i, self.scope);
       // somewhat confusingly, the '0' here is represented as inv(bit)=1.
       // it's not really a '0', it's adding a "not" to an input var that would otherwise be 1.
       // also, we just flipped it. so... if the var is now HI, we're done carrying.
-      if var_hi(self.scope[j]) { break }
+      if self.scope.get(j) { break }
       else { i -= 1 }
     }
     self.log("");
@@ -1071,26 +1066,26 @@ impl<'a> VidSolIterator<'a> {
 
     // if we've already walked the hi branch, then ascend
     let bv = nid::rvar(self.node) as usize; // branching var for current node
-    if var_hi(self.scope[bv]) {
+    if self.scope.get(bv) {
       // move up one to the deepest node where the branch variable is still lo.
       // scope[i] is inverted when we're exploring the low branch.
       // so move up the tree until we're back on a low branch or reach the top
       let mut iv = (self.scope.len() as i64) -1;
-      while !self.nstack.is_empty() && var_hi(self.scope[iv as usize]) {
+      while !self.nstack.is_empty() && self.scope.get(iv as usize) {
         self.move_up();
         let bv = nid::rvar(self.node) as i64; // branching var for current node
         while iv > bv { iv-= 1; }} // ascend
 
       // if we're back at the top and we already explored the hi branch, we're done
-      if self.nstack.is_empty() && var_hi(self.scope[iv as usize]) { return None }}
+      if self.nstack.is_empty() && self.scope.get(iv as usize) { return None }}
 
     // flip the output bit in the answer. (it was lo, make it hi)
     let bv = nid::rvar(self.node) as usize;
-    if var_hi(self.scope[bv]) { self.log("DONE WITH NODE"); return None }
-    self.scope[bv] = nid::raw(self.scope[bv]); // ensure it's hi
+    if self.scope.get(bv) { self.log("DONE WITH NODE"); return None }
+    self.scope.put(bv, true);
 
     // now set all variables after that branch to lo
-    for i in (bv+1)..self.nvars { self.scope[i] = nid::not(nid::raw(self.scope[i])); }
+    for i in (bv+1)..self.nvars { self.scope.put(i, false); }
 
     // we don't need to flip self.invert because it hasn't changed.
     self.move_down(BddPart::HiPart);
@@ -1115,7 +1110,7 @@ impl<'a> VidSolIterator<'a> {
           // Whether we follow the hi or lo branch depends on which variable we're looking at.
           if nid::is_const(self.node) { return } // special case for topmost I (all solutions)
           let bv = nid::rvar(self.node) as usize;
-          let part = if var_hi(self.scope[bv]) { BddPart::HiPart } else { BddPart::LoPart };
+          let part = if self.scope.get(bv) { BddPart::HiPart } else { BddPart::LoPart };
           self.move_down(part);
           self.descend();
           if self.in_solution() { self.log("// increment ok"); return }}
@@ -1132,14 +1127,13 @@ impl<'a> VidSolIterator<'a> {
 
 impl<'a> Iterator for VidSolIterator<'a> {
 
-  type Item = Vec<NID>;
+  type Item = Reg;
 
   fn next(&mut self)->Option<Self::Item> {
     if self.done { return None }
     assert!(self.in_solution());
     let result = self.scope.clone();
-    self.log("|  yield  |");
     self.advance();
-    Some(result) }
+    Some(result)}
 
 } // impl Iterator

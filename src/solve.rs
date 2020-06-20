@@ -158,14 +158,12 @@ macro_rules! find_factors {
                              show_result: $show, save_result: $show }) });
     let expect = $expect;
     let answer = answer.n;
-    let actual:Vec<(u64, u64)> = dest.nidsols_trunc(answer, 2*$T0::n() as usize).map(|nids| {
-      let mut res = (0, 0);
-      let mut it = nids.iter();
-      for (i, &n) in it.by_ref().take($T0::n() as usize).enumerate() {
-        if !::bex::nid::is_inv(n) {  res.0 |= (1 << i) }}
-      for (i, &n) in it.take($T0::n() as usize).enumerate() {
-        if !::bex::nid::is_inv(n) { res.1 |= (1 << i) }}
-      res }).collect();
+    let actual:Vec<(u64, u64)> = dest.solutions_trunc(answer, 2*$T0::n() as usize).map(|r|{
+      let t = r.as_usize();
+      let x = t & ((1<<$T0::n())-1);
+      let y = t >> $T0::n();
+      (x as u64, y as u64)
+    }).collect();
     assert_eq!(actual.len(), expect.len());
     for i in 0..expect.len() {
       assert_eq!(actual[i], expect[i], "mismatch at i={}", i) }
