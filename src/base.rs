@@ -127,6 +127,16 @@ base_test!(test_base_when, b, 2, {
   assert_eq!(b.when_lo(0, x1), x1, "x0=O should not affect x1");
   assert_eq!(b.when_hi(0, x1), x1, "x0=I should not affect x1"); });
 
+
+base_test!(test_base_solutions_odd, base, 3, {
+  let f = nid::nv(0);
+  let actual:Vec<usize> = base.solutions(f).map(|r| r.as_usize_rev()).collect();
+  assert_eq!(actual, vec![1,3,5,7])});
+
+base_test!(test_base_solutions_even, base, 3, {
+  let f = nid::not(nid::nv(0));
+  let actual:Vec<usize> = base.solutions(f).map(|r| r.as_usize_rev()).collect();
+  assert_eq!(actual, vec![0,2,4,6])});
 
 
 // TODO: put these elsewhere.

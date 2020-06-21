@@ -316,6 +316,8 @@ impl<'a> Iterator for VidSolIterator<'a> {
 test_base_consts!(ANFBase);
 test_base_vars!(ANFBase);
 test_base_when!(ANFBase);
+test_base_solutions_even!(ANFBase);
+test_base_solutions_odd!(ANFBase);
 
 #[test] fn test_anf_hilo() {
   let mut base = ANFBase::new(1);

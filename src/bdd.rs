@@ -815,6 +815,8 @@ pub type BDDBase = BddBase<S,BddSwarm<S>>;
 test_base_consts!(BDDBase);
 test_base_vars!(BDDBase);
 test_base_when!(BDDBase);
+test_base_solutions_even!(BDDBase);
+test_base_solutions_odd!(BDDBase);
 
 
 // basic test suite
@@ -963,6 +965,7 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
   assert_eq!(it.next(), None);
 }
 
+
 impl<W:BddWorker<S>> BddBase<S,W> {
   pub fn solutions(&mut self, n:NID)->VidSolIterator {
     self.solutions_trunc(n, self.nvars())}
