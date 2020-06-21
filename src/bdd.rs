@@ -918,7 +918,7 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
 #[test] fn test_bdd_solutions_i() {
   let mut base = BDDBase::new(2);
   let actual:Vec<usize> = base.solutions(nid::I).map(|r| r.as_usize()).collect();
-  assert_eq!(actual, vec![0b00, 0b10, 0b01, 0b11  ],
+  assert_eq!(actual, vec![0b00, 0b01, 0b10, 0b11],
      "const true should yield all solutions"); }
 
 #[test] fn test_bdd_solutions_simple() {
@@ -941,24 +941,24 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
   // the idea here is that we have "don't care" above, below, and between the used vars:
   let n = base.and(b,d);
   let actual:Vec<_> = base.solutions(n).map(|r| r.as_usize()).collect();
-                          //edcba
+                          //abcde
   assert_eq!(actual, vec![0b01010,
-                          0b11010,
-                          0b01110,
-                          0b11110,
                           0b01011,
-                          0b11011,
+                          0b01110,
                           0b01111,
+                          0b11010,
+                          0b11011,
+                          0b11110,
                           0b11111])}
 
 #[test] fn test_bdd_solutions_xor() {
   let mut base = BDDBase::new(3);
   let (a, b) = (nv(0), nv(1));
   let n = base.xor(a, b);
-  let mut it = base.solutions(n);                            //cba
+  let mut it = base.solutions(n);                            //abc
   assert_eq!(it.next().expect("expect answer 0").as_usize(), 0b010, "0");
-  assert_eq!(it.next().expect("expect answer 1").as_usize(), 0b110, "1");
-  assert_eq!(it.next().expect("expect answer 2").as_usize(), 0b001, "2");
+  assert_eq!(it.next().expect("expect answer 1").as_usize(), 0b011, "1");
+  assert_eq!(it.next().expect("expect answer 2").as_usize(), 0b100, "2");
   assert_eq!(it.next().expect("expect answer 3").as_usize(), 0b101, "3");
   assert_eq!(it.next(), None);
 }

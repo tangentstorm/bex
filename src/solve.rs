@@ -159,7 +159,7 @@ macro_rules! find_factors {
     let expect = $expect;
     let answer = answer.n;
     let actual:Vec<(u64, u64)> = dest.solutions_trunc(answer, 2*$T0::n() as usize).map(|r|{
-      let t = r.as_usize();
+      let t = r.as_usize_rev();
       let x = t & ((1<<$T0::n())-1);
       let y = t >> $T0::n();
       (x as u64, y as u64)
