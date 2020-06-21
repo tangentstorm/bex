@@ -21,26 +21,26 @@ pub struct NID { n: u64 }
 // -- bits in the nid ---
 
 /// Single-bit mask representing that a NID is inverted.
-pub const INV:u64 = 1<<63;  // is inverted?
+const INV:u64 = 1<<63;  // is inverted?
 
 /// Single-bit mask indicating that a NID represents a variable. (The corresponding
 /// "virtual" nodes have I as their hi branch and O as their lo branch. They're simple
 /// and numerous enough that we don't bother actually storing them.)
-pub const VAR:u64 = 1<<62;   // is variable?
+const VAR:u64 = 1<<62;   // is variable?
 
 /// In addition, for solving, we want to distinguish between "virtual" variables which
 /// represent some intermediate, unsimplified calculation, and "real" variables, which
 /// represent actual input variables. That's what this bit does.
-pub const RVAR:u64 = 1<<60;  // is *real* variable?
+const RVAR:u64 = 1<<60;  // is *real* variable?
 
 /// Single-bit mask indicating that the NID represents a constant. The corresponding
 /// virtual node branches on constant "true" value, hence the letter T. There is only
 /// one such node -- O (I is its inverse) but having this bit in the NID lets us
 /// easily detect and optimize the cases.
-pub const T:u64 = 1<<61;    // T: max VID (hack so O/I nodes show up at bottom)
+const T:u64 = 1<<61;    // T: max VID (hack so O/I nodes show up at bottom)
 
 /// Constant used to extract the index part of a NID.
-pub const IDX_MASK:u64 = (1<<32)-1;
+const IDX_MASK:u64 = (1<<32)-1;
 
 /// NID of the virtual node represeting the constant function 0, or "always false."
 pub const O:NID = NID{ n:T };
