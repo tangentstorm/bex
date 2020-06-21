@@ -32,6 +32,22 @@ impl Reg {
       tmp >>= 1;}
     res }
 
+  /// increment the register, returning None on overflow, or Some position of the leftmost changed bit.
+  // !! the positions sem "backwards" becasue they're numbered according to how variables are named in BDD/ANF
+  //    Thus bit 0 is the MOST significant bit. I think this is dumb, and I plan to reverse the order, but
+  //    that's a large undertaking and I want to get anf::solutions working before I take that on. So for
+  //    now, yeah, the numbering is backward. Sorry.
+  pub fn increment(&mut self)->Option<usize> {
+    let mut i = self.nvars - 1;
+    loop {
+      let j = i as usize;
+      let old = self.get(j);
+      self.put(j, !old);
+      if !old { break } // it was a 0 and now it's a 1 so we're done carrying
+      else if i == 0 { return None }
+      else { i -= 1 }}
+    Some(i as usize) }
+
   pub fn len(&self)->usize { self.nvars }
   pub fn is_empty(&self)->bool { self.nvars == 0 }}
 
@@ -49,3 +65,15 @@ fn test_reg_mut() {
   reg.put(1, true);
   assert_eq!(reg.data[1], 3);
   assert_eq!(reg.get(1), true);}
+
+#[test] fn test_reg_inc() {
+  let mut reg = Reg::new(2);
+  assert_eq!(0, reg.as_usize());
+  assert_eq!(Some(1), reg.increment(), "00 -> 01");
+  assert_eq!(1, reg.as_usize());
+  assert_eq!(Some(0), reg.increment(), "01 -> 10");
+  assert_eq!(2, reg.as_usize());
+  assert_eq!(Some(1), reg.increment(), "10 -> 11");
+  assert_eq!(3, reg.as_usize());
+  assert_eq!(None, reg.increment(), "11 -> 00");
+}

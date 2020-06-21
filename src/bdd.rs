@@ -1033,26 +1033,6 @@ impl<'a> VidSolIterator<'a> {
   fn descend(&mut self) {
     while !nid::is_const(self.node) {
       self.move_down(BddPart::LoPart); }}
-
-
-  /// increments the slice like an odmeter, looking only at the 'inv' bit
-  /// this is like adding 1 in binary: flip rightmost bit, and carry left until we hit a 0 or overflow.
-  /// returns true iff we overflowed
-  fn increment(&mut self)->Option<VID> {
-    //println!("      - increment({:?},{:?},{:?}) -> ", left, right, self.scope);
-    let mut i = (self.nvars as i32) - 1;
-    while i >= 0 {
-      let j = i as usize;
-      self.scope.put(j, !self.scope.get(j));
-      println!("i: {:?} scope: {:?}", i, self.scope);
-      // somewhat confusingly, the '0' here is represented as inv(bit)=1.
-      // it's not really a '0', it's adding a "not" to an input var that would otherwise be 1.
-      // also, we just flipped it. so... if the var is now HI, we're done carrying.
-      if self.scope.get(j) { break }
-      else { i -= 1 }
-    }
-    self.log("");
-    if i < 0 { None } else { Some(i as VID) }}
 
   /// walk depth-first from lo to hi until we arrive at the next solution
   fn find_next_leaf(&mut self)->Option<NID> {
@@ -1101,7 +1081,7 @@ impl<'a> VidSolIterator<'a> {
     loop {
       if self.in_solution() {
         // if we're in the solution, we're going to increment the "counter".
-        if let Some(lmz) = self.increment() { // lmz = the leftmost "zero" (lo input variable)
+        if let Some(lmz) = self.scope.increment() { // lmz = the leftmost "zero" (lo input variable)
           // climb the bdd until we find the layer where the lmz would be.
           while !self.nstack.is_empty() && nid::rvar(self.nstack[self.nstack.len()-1]) >= lmz {
             self.move_up(); }
