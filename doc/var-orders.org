@@ -1,0 +1,49 @@
+#+title: variable orders
+
+Traditionally, ROBDDs order the variables so that the lowest numbered variable is at the top. This makes sense: to navigate the structure, you consider the input bits "in order", so the "first" bit goes at the top.
+
+But, internally, it makes sense to number the nodes in the opposite direction.
+
+Imagine a number line in binary. You want input bit n to map to the bit in the 2^n place of the binary number.
+
+:     |           111111
+:     | 0123456789012345 ...
+: ----+---------------------
+: 2^3 | ░░░░░░░░▓▓▓▓▓▓▓▓ ...
+: 2^2 | ░░░░▓▓▓▓░░░░▓▓▓▓ ...
+: 2^1 | ░░▓▓░░▓▓░░▓▓░░▓▓ ...
+: 2^0 | ░▓░▓░▓░▓░▓░▓░▓░▓ ...
+
+The advantage for a BDD is that if you see the same node in two different functions, it always corresponds to the same truth table.
+
+For example, in a "bottom up" scheme like this, the normal node "nv(0)" would always correspond to a truth table of length 2, with a 0 on the left and a 1 on the right.
+
+But in the traditional "top down" scheme, nv(0) represents a truth table of length 2^n where n is however many input variables there are.
+
+Further, if you are program looking at a node that branches on variable n in a top-down scheme, you have no idea how far down the structure goes, nor can you compare the maximum possible depths of the two branches.
+
+In a bottom-up scheme, a node that branches on variable n has a truth table of size 2^n, and a depth of at most (n). You still can't tell for sure which of the branches has the bigger sub-graph, but you can compare the two branch variables to compare the maximum possible depth.
+
+Also, if you take the view that every boolean function is just an XOR-sum of infinite repeating patterns, you want those repeating patterns to always have the same names:
+
+
+: ░░░░░░░░░░░░░░░░... -> o
+: ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓... -> i
+: ░▓░▓░▓░▓░▓░▓░▓░▓... -> x...0
+: ░░▓▓░░▓▓░░▓▓░░▓▓... -> x..1.
+: ░░░▓░░░▓░░░▓░░░▓... -> x..10
+: ░░░░▓▓▓▓░░░░▓▓▓▓... -> x.2..
+: ░░░░░▓░▓░░░░░▓░▓... -> x.2.0
+: ░░░░░░▓▓░░░░░░▓▓... -> x.21.
+: ░░░░░░░▓░░░░░░░▓... -> x.210
+: ░░░░░░░░▓▓▓▓▓▓▓▓... -> x3...
+: ░░░░░░░░░▓░▓░▓░▓... -> x3..0
+: ░░░░░░░░░░▓▓░░▓▓... -> x3.1.
+: ░░░░░░░░░░░▓░░░▓... -> x..10
+: ░░░░░░░░░░░░▓▓▓▓... -> x32..
+: ░░░░░░░░░░░░░▓░▓... -> x32.0
+: ░░░░░░░░░░░░░░▓▓... -> x321.
+: ░░░░░░░░░░░░░░░▓... -> x3210
+
+In any case, if we want to maximize the chance of hitting the cache with many different functions of different numbers of variables, we should probably keep lower numbers at the bottom. I haven't actually tested this, but it stands to reason that the most-reused nodes are likely to be the ones closer to the bottom, so it makes sense if they always get the same number.
+
