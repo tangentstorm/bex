@@ -6,8 +6,8 @@ use std::rc::Rc;
 use std::cmp::min;
 use ast::ASTBase;
 use base::{Base};
-use nid::{VID, NID};
-use nid;
+use {nid, nid::NID};
+use vid;
 
 
 // TBit : for use outside the Base, by types such as X32, below.
@@ -71,7 +71,7 @@ thread_local!{ pub static GBASE:BaseRef = Rc::new(RefCell::new(ASTBase::empty())
 pub fn gbase_ref()->BaseRef {
   GBASE.with(|gb| gb.clone()) }
 
-pub fn gbase_var(v:VID)->BaseBit {
+pub fn gbase_var(v:u32)->BaseBit {
   GBASE.with(|gb| {
     let vn = gb.borrow_mut().var(v); BaseBit{base:gb.clone(), n:vn }}) }
 
@@ -79,7 +79,7 @@ pub fn gbase_tag(n:NID, s:String)->NID {
   GBASE.with(|gb| {
     gb.borrow_mut().tag(n,s) })}
 
-pub fn gbase_def(s:String, i:VID)->BaseBit {
+pub fn gbase_def(s:String, i:vid::VID)->BaseBit {
   GBASE.with(|gb| {
     let vn=gb.borrow_mut().def(s,i); BaseBit{base:gb.clone(), n:vn }}) }
 
@@ -148,7 +148,7 @@ macro_rules! xint_type {
 
       /// define an entire set of variables at once.
       pub fn def(s:&str)->$T {
-        $T::from_vec((0..$n).map(|i|{ gbase_def(s.to_string(), i) }).collect()) }
+        $T::from_vec((0..$n).map(|i|{ gbase_def(s.to_string(), nid::old_to_vid(i)) }).collect()) }
 
       pub fn from_vec(v:Vec<BaseBit>)->$T {
         $T{bits: if v.len() >= $n { v.iter().take($n).map(|x|x.clone()).collect() }

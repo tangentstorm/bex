@@ -139,3 +139,18 @@ const NOVAR:VID = 1<<16;
 pub fn no_var(x:NID)->bool { var(x)==NOVAR }
 /// return a nid that is not tied to a variable
 pub fn ixn(ix:IDX)->NID { nvi(NOVAR, ix) }
+
+use vid;
+#[deprecated(note="VID scaffolding")]
+pub fn vid_to_old(v:vid::VID)->VID {
+  match v {
+    vid::VID::NOVAR =>  NOVAR,
+    vid::VID::Var(v) => v as VID | (RVAR>>32) as VID,
+    vid::VID::Vir(v) => v as VID }}
+
+#[deprecated(note="VID scaffolding")]
+pub fn old_to_vid(o:VID)->vid::VID {
+  if o == NOVAR { vid::VID::NOVAR }
+  else if o & (RVAR>>32) as VID > 0 {
+     vid::VID::Var((o & !(RVAR>>32) as VID) as u32) }
+  else { vid::VID::Vir(o as u32) }}

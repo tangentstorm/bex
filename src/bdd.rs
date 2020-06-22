@@ -18,7 +18,8 @@ use base;
 use io;
 use nid;
 use reg::Reg;
-pub use nid::*;
+use nid::*;
+use vid;
 
 
 /// A BDDNode is a triple consisting of a VID, which references an input variable,
@@ -655,25 +656,27 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
   #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID { self.worker.ite(f,g,h) }
 
   /// nid of y when x is high
-  pub fn when_hi(&mut self, x:VID, y:NID)->NID {
+  pub fn when_hi(&mut self, x0:vid::VID, y:NID)->NID {
+    let x = nid::vid_to_old(x0);
     let yv = var(y);
     match yv.cmp(&x) {
       Ordering::Equal => self.tup(y).0,  // x ∧ if(x,th,_) → th
       Ordering::Greater => y,            // y independent of x, so no change. includes yv = I
       Ordering::Less => {                // y may depend on x, so recurse.
         let (yt, ye) = self.tup(y);
-        let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
+        let (th,el) = (self.when_hi(x0,yt), self.when_hi(x0,ye));
         self.ite(nv(yv), th, el) }}}
 
   /// nid of y when x is low
-  pub fn when_lo(&mut self, x:VID, y:NID)->NID {
+  pub fn when_lo(&mut self, x0:vid::VID, y:NID)->NID {
+    let x = nid::vid_to_old(x0);
     let yv = var(y);
     match yv.cmp(&x) {
       Ordering::Equal => self.tup(y).1,  // ¬x ∧ if(x,_,el) → el
       Ordering::Greater => y,            // y independent of x, so no change. includes yv = I
       Ordering::Less => {                // y may depend on x, so recurse.
         let (yt, ye) = self.tup(y);
-        let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
+        let (th,el) = (self.when_lo(x0,yt), self.when_lo(x0,ye));
         self.ite(nv(yv), th, el) }}}
 
   /// is it possible x depends on y?
@@ -702,25 +705,28 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
         :   \    :  \                 :   \    :   \
         ll   lh  hl  hh               ll   hl  lh   hh
      */
+    let x32=x; let x = nid::old_to_vid(x);
+    let y32=y; let y = nid::old_to_vid(y);
     let (xlo, xhi) = (self.when_lo(x,n), self.when_hi(x,n));
     let (xlo_ylo, xlo_yhi) = (self.when_lo(y,xlo), self.when_hi(y,xlo));
     let (xhi_ylo, xhi_yhi) = (self.when_lo(y,xhi), self.when_hi(y,xhi));
-    let lo = self.ite(nv(y), xlo_ylo, xhi_ylo);
-    let hi = self.ite(nv(y), xlo_yhi, xhi_yhi);
-    self.ite(nv(x), lo, hi) }
+    let lo = self.ite(nv(x32), xlo_ylo, xhi_ylo);
+    let hi = self.ite(nv(y32), xlo_yhi, xhi_yhi);
+    self.ite(nv(x32), lo, hi) }
 
   pub fn node_count(&self, n:NID)->usize {
     let mut c = 0; self.walk(n, &mut |_,_,_,_| c+=1); c }
 
   /// helper for truth table builder
-  fn tt_aux(&mut self, res:&mut Vec<u8>, v:VID, n:NID, i:usize) {
-    if v as usize == self.nvars() { match self.when_lo(v, n) {
+  fn tt_aux(&mut self, res:&mut Vec<u8>, v0:VID, n:NID, i:usize) {
+    let v = nid::old_to_vid(v0);
+    if v0 as usize == self.nvars() { match self.when_lo(v, n) {
       O => {} // res[i] = 0; but this is already the case.
       I => { res[i] = 1; }
       x => panic!("expected a leaf nid, got {}", x) }}
     else {
-      let lo = self.when_lo(v,n); self.tt_aux(res, v+1, lo, i*2);
-      let hi = self.when_hi(v,n); self.tt_aux(res, v+1, hi, i*2+1); }}
+      let lo = self.when_lo(v,n); self.tt_aux(res, v0+1, lo, i*2);
+      let hi = self.when_hi(v,n); self.tt_aux(res, v0+1, hi, i*2+1); }}
 
   /// Truth table. Could have been Vec<bool> but this is mostly for testing
   /// and the literals are much smaller when you type '1' and '0' instead of
@@ -741,13 +747,13 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   fn new(n:usize)->Self { Self::new(n) }
   fn num_vars(&self)->usize { self.nvars() }
 
-  fn var(&mut self, v:VID)->NID { nid::nv(v) }
+  fn var(&mut self, v:u32)->NID { nid::nv(v as usize) }
 
-  fn when_hi(&mut self, v:VID, n:NID)->NID { self.when_hi(v,n) }
-  fn when_lo(&mut self, v:VID, n:NID)->NID { self.when_lo(v,n) }
+  fn when_hi(&mut self, v:vid::VID, n:NID)->NID { self.when_hi(v,n) }
+  fn when_lo(&mut self, v:vid::VID, n:NID)->NID { self.when_lo(v,n) }
 
   // TODO: these should be moved into seperate struct
-  fn def(&mut self, _s:String, _i:VID)->NID { todo!("BddBase::def()") }
+  fn def(&mut self, _s:String, _i:vid::VID)->NID { todo!("BddBase::def()") }
   fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
   fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 
@@ -760,7 +766,9 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   }
   #[cfg(todo)] fn ch(&mut self, x:NID, y:NID, z:NID)->NID { self.ite(x, y, z) }
 
-  fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID { self.replace(v,n,ctx) }
+  fn sub(&mut self, v:vid::VID, n:NID, ctx:NID)->NID {
+    let v = nid::vid_to_old(v);
+    self.replace(v,n,ctx) }
 
   fn save(&self, path:&str)->::std::io::Result<()> { self.save(path) }
 
@@ -828,30 +836,32 @@ test_base_when!(BDDBase);
   assert_eq!((I,O), base.tup(v1));
   assert_eq!((I,O), base.tup(v2));
   assert_eq!((I,O), base.tup(v3));
-  assert_eq!(I, base.when_hi(3,v3));
-  assert_eq!(O, base.when_lo(3,v3))}
+  assert_eq!(I, base.when_hi(vid::VID::Vir(3),v3));
+  assert_eq!(O, base.when_lo(vid::VID::Vir(3),v3))}
 
 #[test] fn test_and() {
   let mut base = BDDBase::new(3);
   let (v1, v2) = (nv(1), nv(2));
   let a = base.and(v1, v2);
-  assert_eq!(O,  base.when_lo(1,a));
-  assert_eq!(v2, base.when_hi(1,a));
-  assert_eq!(O,  base.when_lo(2,a));
-  assert_eq!(v1, base.when_hi(2,a));
-  assert_eq!(a,  base.when_hi(3,a));
-  assert_eq!(a,  base.when_lo(3,a))}
+  use vid::VID::Vir;
+  assert_eq!(O,  base.when_lo(Vir(1),a));
+  assert_eq!(v2, base.when_hi(Vir(1),a));
+  assert_eq!(O,  base.when_lo(Vir(2),a));
+  assert_eq!(v1, base.when_hi(Vir(2),a));
+  assert_eq!(a,  base.when_hi(Vir(3),a));
+  assert_eq!(a,  base.when_lo(Vir(3),a))}
 
 #[test] fn test_xor() {
   let mut base = BDDBase::new(3);
   let (v1, v2) = (nv(1), nv(2));
   let x = base.xor(v1, v2);
-  assert_eq!(v2,      base.when_lo(1,x));
-  assert_eq!(not(v2), base.when_hi(1,x));
-  assert_eq!(v1,      base.when_lo(2,x));
-  assert_eq!(not(v1), base.when_hi(2,x));
-  assert_eq!(x,       base.when_lo(3,x));
-  assert_eq!(x,       base.when_hi(3,x))}
+  use vid::VID::Vir;
+  assert_eq!(v2,      base.when_lo(Vir(1),x));
+  assert_eq!(not(v2), base.when_hi(Vir(1),x));
+  assert_eq!(v1,      base.when_lo(Vir(2),x));
+  assert_eq!(not(v1), base.when_hi(Vir(2),x));
+  assert_eq!(x,       base.when_lo(Vir(3),x));
+  assert_eq!(x,       base.when_hi(Vir(3),x))}
 
 // swarm test suite
 pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddState>>;
@@ -860,23 +870,25 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
   let mut base = BddSwarmBase::new(2);
   let (x0, x1) = (nv(0), nv(1));
   let x = base.xor(x0, x1);
-  assert_eq!(x1,      base.when_lo(0,x));
-  assert_eq!(not(x1), base.when_hi(0,x));
-  assert_eq!(x0,      base.when_lo(1,x));
-  assert_eq!(not(x0), base.when_hi(1,x));
-  assert_eq!(x,       base.when_lo(2,x));
-  assert_eq!(x,       base.when_hi(2,x))}
+  use vid::VID::Vir;
+  assert_eq!(x1,      base.when_lo(Vir(0),x));
+  assert_eq!(not(x1), base.when_hi(Vir(0),x));
+  assert_eq!(x0,      base.when_lo(Vir(1),x));
+  assert_eq!(not(x0), base.when_hi(Vir(1),x));
+  assert_eq!(x,       base.when_lo(Vir(2),x));
+  assert_eq!(x,       base.when_hi(Vir(2),x))}
 
 #[test] fn test_swarm_and() {
   let mut base = BddSwarmBase::new(2);
   let (x0, x1) = (nv(0), nv(1));
   let a = base.and(x0, x1);
-  assert_eq!(O,  base.when_lo(0,a));
-  assert_eq!(x1, base.when_hi(0,a));
-  assert_eq!(O,  base.when_lo(1,a));
-  assert_eq!(x0, base.when_hi(1,a));
-  assert_eq!(a,  base.when_hi(2,a));
-  assert_eq!(a,  base.when_lo(2,a))}
+  use vid::VID::Vir;
+  assert_eq!(O,  base.when_lo(Vir(0),a));
+  assert_eq!(x1, base.when_hi(Vir(0),a));
+  assert_eq!(O,  base.when_lo(Vir(1),a));
+  assert_eq!(x0, base.when_hi(Vir(1),a));
+  assert_eq!(a,  base.when_hi(Vir(2),a));
+  assert_eq!(a,  base.when_lo(Vir(2),a))}
 
 /// slightly harder test case that requires ite() to recurse
 #[test] fn test_swarm_ite() {

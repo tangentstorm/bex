@@ -14,6 +14,9 @@ extern crate simplelog;
 pub mod base;
 pub use base::*;
 
+/// Variable IDs (used interally by Base implementations)
+pub mod vid;
+
 /// Node IDs (shared by various Base implementations)
 pub mod nid;
 

@@ -18,6 +18,7 @@ use std::collections::HashSet;
 use base::Base;
 use nid;
 use nid::{NID,VID,I,O};
+use vid;
 use reg::Reg;
 use hashbrown::HashMap;
 
@@ -81,8 +82,6 @@ impl Base for ANFBase {
     ANFBase { nvars: n, nodes:vec![], cache: HashMap::new(), tags:HashMap::new() }}
   fn num_vars(&self)->usize { self.nvars }
 
-  #[inline] fn var(&mut self, v:VID)->NID { nid::nv(v) }
-
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {
     macro_rules! w {
       ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap(); }}
@@ -95,12 +94,13 @@ impl Base for ANFBase {
     self.walk(n, &mut |n,_,__,lo| w!("  \"{:?}\"->\"{:?}\";", n, lo));
     w!("}}"); }
 
-  fn def(&mut self, _s:String, _v:VID)->NID { todo!("anf::def"); }
+  fn def(&mut self, _s:String, _v:vid::VID)->NID { todo!("anf::def"); }
   // TODO: tag and get are copied verbatim from bdd
   fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
   fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 
-  fn when_lo(&mut self, v:VID, n:NID)->NID {
+  fn when_lo(&mut self, v:vid::VID, n:NID)->NID {
+    let v = nid::vid_to_old(v);
     let nv = nid::var(n);
     match nv.cmp(&v) {
       Ordering::Greater => n, // n independent of v
@@ -111,7 +111,8 @@ impl Base for ANFBase {
         else { self.fetch(n).lo }}
       Ordering::Less => panic!("TODO: anf::when_lo var(n)<v") }}
 
-  fn when_hi(&mut self, v:VID, n:NID)->NID {
+  fn when_hi(&mut self, v:vid::VID, n:NID)->NID {
+    let v = nid::vid_to_old(v);
     let nv = nid::var(n);
     match nv.cmp(&v) {
       Ordering::Greater => n,  // n independent of v
@@ -160,7 +161,8 @@ impl Base for ANFBase {
 
   fn or(&mut self, x:NID, y:NID)->NID { expr![self, ((x & y) ^ (x ^ y))] }
 
-  fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID {
+  fn sub(&mut self, v:vid::VID, n:NID, ctx:NID)->NID {
+    let v = nid::vid_to_old(v);
     let cv = nid::var(ctx);
     if v < cv { ctx } // ctx can't contain v
     else {
@@ -168,8 +170,8 @@ impl Base for ANFBase {
       let (hi, lo) = (x.hi, x.lo);
       if v == cv { expr![self, ((n & hi) ^ lo)] }
       else {
-        let rhi = self.sub(v,n,hi);
-        let rlo = self.sub(v,n,lo);
+        let rhi = self.sub(nid::old_to_vid(v),n,hi);
+        let rlo = self.sub(nid::old_to_vid(v),n,lo);
         let top = nid::nv(cv);
         expr![self, ((top & rhi) ^ rlo)] }}}
 
@@ -423,8 +425,8 @@ test_base_when!(ANFBase);
   let x = base.var(3); let y = base.var(4); let z = base.var(5);
   let ctx = expr![base, ((a & b) ^ c) ];
   let xyz = expr![base, ((x & y) ^ z) ];
-  assert_eq!(base.sub(nid::var(a), xyz, ctx), expr![base, ((xyz & b) ^ c)]);
-  assert_eq!(base.sub(nid::var(b), xyz, ctx), expr![base, ((a & xyz) ^ c)]);}
+  assert_eq!(base.sub(nid::old_to_vid(nid::var(a)), xyz, ctx), expr![base, ((xyz & b) ^ c)]);
+  assert_eq!(base.sub(nid::old_to_vid(nid::var(b)), xyz, ctx), expr![base, ((a & xyz) ^ c)]);}
 
 #[test] fn test_anf_sub_inv() {
     let mut base = ANFBase::new(7);
@@ -437,7 +439,7 @@ test_base_when!(ANFBase);
     // -> (v2v4 +v2) & v6
     // -> v2v4v6 + v2v6
     let expect = expr![base, ((v2 & (v4 & v6)) ^ (v2 & v6))];
-    let actual = base.sub(nid::var(v1), top, ctx);
+    let actual = base.sub(nid::old_to_vid(nid::var(v1)), top, ctx);
     // base.show_named(top, "newtop");
     // base.show_named(expect, "expect");
     // base.show_named(actual, "actual");

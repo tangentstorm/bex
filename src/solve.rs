@@ -1,4 +1,4 @@
-#![macro_use]
+  #![macro_use]
 
 /// "solve" ast-based expressions by converting to another form.
 use apl;
@@ -129,7 +129,7 @@ fn refine_one(dst: &mut B, src:&ASTBase, d:DstNid)->DstNid {
       Op::Xor(x,y) => dst.xor(cn(x), cn(y)),
       Op::Or(x,y) => dst.or(cn(x), cn(y)),
       _ => { panic!("don't know how to translate {:?}", op ) }};
-    DstNid{n: dst.sub(otv, newdef, d.n) }}}
+    DstNid{n: dst.sub(nid::old_to_vid(otv), newdef, d.n) }}}
 
 
 /// This is an example solver used by the bdd-solve example and the bench-solve benchmark.

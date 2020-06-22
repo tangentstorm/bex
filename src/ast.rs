@@ -5,6 +5,7 @@ use io;
 use base::*;
 use nid;
 use nid::{NID,VID};
+use vid;
 
 
 
@@ -266,21 +267,25 @@ impl Base for ASTBase {
 
   fn new(n:usize)->Self {
     let mut res = ASTBase::empty();
-    for i in 0..n { println!("var({})",i); res.var(i as VID); }
+    for i in 0..n { println!("var({})",i); res.var(i as u32); }
     res }
   fn num_vars(&self)->usize { self.nvars }
 
-  fn var(&mut self, v:VID)->NID {
-    for _ in self.nvars ..= v { self.nvars += 1 }
-    nid::nv(v) }
+  fn var(&mut self, v:u32)->NID {
+    for _ in self.nvars as u32 ..= v { self.nvars += 1 }
+    nid::nv(v as usize) }
 
-  fn when_hi(&mut self, v:VID, n:NID)->NID { self.when(v, nid::I, n) }
-  fn when_lo(&mut self, v:VID, n:NID)->NID { self.when(v, nid::O, n) }
+  fn when_hi(&mut self, v:vid::VID, n:NID)->NID {
+    let v = nid::vid_to_old(v);
+    self.when(v, nid::I, n) }
+  fn when_lo(&mut self, v:vid::VID, n:NID)->NID {
+    let v = nid::vid_to_old(v);
+    self.when(v, nid::O, n) }
 
-  fn def(&mut self, s:String, i:VID)->NID {
-    let next = self.num_vars() as VID;
+  fn def(&mut self, s:String, i:vid::VID)->NID {
+    let next = self.num_vars() as u32;
     let nid = self.var(next);
-    self.tag(nid, format!("{}{}", s, i)) }
+    self.tag(nid, format!("{}{:?}", s, i)) }
 
   fn tag(&mut self, n:NID, s:String)->NID {
     let n = n;
@@ -332,7 +337,7 @@ impl Base for ASTBase {
   fn ch(&mut self, x:NID, y:NID, z:NID)->NID { self.o() }
 
 
-  fn sub(&mut self, _v:VID, _n:NID, _ctx:NID)->NID { todo!("ast::sub") }
+  fn sub(&mut self, _v:vid::VID, _n:NID, _ctx:NID)->NID { todo!("ast::sub") }
 
   fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
   fn save(&self, path:&str)->::std::io::Result<()> {

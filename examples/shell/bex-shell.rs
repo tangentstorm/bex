@@ -48,7 +48,7 @@ fn repl(base:&mut ASTBase) {
     for word in line.split_whitespace() {
       match word {
         "vars" => { let x = pop(&mut data);
-                    for i in base.num_vars()..nid::idx(x) { base.var(i); }}
+                    for i in base.num_vars()..nid::idx(x) { base.var(i as u32); }}
         // bdd commands
         "i"|"I" => data.push(base.i()),
         "o"|"O" => data.push(base.o()),
@@ -88,7 +88,7 @@ fn repl(base:&mut ASTBase) {
           else if word.starts_with('$') {
             let s = word.to_string().split_off(1);
             if let Ok(n) = usize::from_str_radix(&s, 10) {
-              data.push(base.var(n)); }
+              data.push(base.var(n as u32)); }
             else { println!("bad var: {}", word) } }
           // define:
           else if word.starts_with(':') {

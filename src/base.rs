@@ -5,7 +5,8 @@
 use std::fs::File;
 use std::io::Write;
 use std::process::Command;      // for creating and viewing digarams
-use {nid, nid::{NID,VID}};
+use {nid, nid::{NID}};
+use vid::VID;
 
 pub trait Base {
   fn new(n:usize)->Self where Self:Sized; // Sized so we can use trait objects.
@@ -14,7 +15,8 @@ pub trait Base {
   fn o(&self)->NID { nid::O }
   fn i(&self)->NID { nid::I }
 
-  fn var(&mut self, i:VID)->NID;
+  fn var(&mut self, v:u32)->NID { nid::nv(v as usize) }
+
   fn when_hi(&mut self, v:VID, n:NID)->NID;
   fn when_lo(&mut self, v:VID, n:NID)->NID;
 
@@ -115,17 +117,18 @@ base_test!(test_base_vars, b, 2, {
 // Test when_lo and when_hi for the simple cases.
 base_test!(test_base_when, b, 2, {
   let (o, i, x0, x1) = (b.o(), b.i(), b.var(0), b.var(1));
+  let v = nid::old_to_vid(0);
 
-  assert_eq!(b.when_lo(0, o), o, "x0=O should not affect O");
-  assert_eq!(b.when_hi(0, o), o, "x0=I should not affect O");
-  assert_eq!(b.when_lo(0, i), i, "x0=O should not affect I");
-  assert_eq!(b.when_hi(0, i), i, "x0=I should not affect I");
+  assert_eq!(b.when_lo(v, o), o, "x0=O should not affect O");
+  assert_eq!(b.when_hi(v, o), o, "x0=I should not affect O");
+  assert_eq!(b.when_lo(v, i), i, "x0=O should not affect I");
+  assert_eq!(b.when_hi(v, i), i, "x0=I should not affect I");
 
-  assert_eq!(b.when_lo(0, x0), o, "when_lo(0,x0) should be O");
-  assert_eq!(b.when_hi(0, x0), i, "when_hi(0,x0) should not I");
+  assert_eq!(b.when_lo(v, x0), o, "when_lo(0,x0) should be O");
+  assert_eq!(b.when_hi(v, x0), i, "when_hi(0,x0) should not I");
 
-  assert_eq!(b.when_lo(0, x1), x1, "x0=O should not affect x1");
-  assert_eq!(b.when_hi(0, x1), x1, "x0=I should not affect x1"); });
+  assert_eq!(b.when_lo(v, x1), x1, "x0=O should not affect x1");
+  assert_eq!(b.when_hi(v, x1), x1, "x0=I should not affect x1"); });
 
 
 
