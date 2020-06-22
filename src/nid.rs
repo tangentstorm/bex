@@ -139,12 +139,3 @@ const NOVAR:VID = 1<<16;
 pub fn no_var(x:NID)->bool { var(x)==NOVAR }
 /// return a nid that is not tied to a variable
 pub fn ixn(ix:IDX)->NID { nvi(NOVAR, ix) }
-
-pub const IBIT:usize = INV as usize;
-pub const VBIT:usize = VAR as usize;
-pub const OBIT:usize = T as usize;
-pub fn nu(u:usize)->NID {
-  if u == OBIT { O }
-  else if u == IBIT { I }
-  else if (u&VBIT)==VBIT { nv(u ^ VBIT) }
-  else { nvi(NOVAR, u as IDX) } }

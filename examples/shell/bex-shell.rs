@@ -4,7 +4,8 @@ use std::collections::HashMap;
 
 extern crate bex;
 use bex::*;
-use bex::ast::{ASTBase,NID}; //,VID};
+use bex::nid::NID;
+use bex::ast::{ASTBase};
 
 
 // forth-like REPL for the BDD  (helper routines)
@@ -82,7 +83,7 @@ fn repl(base:&mut ASTBase) {
         //todo "load" => base.load("saved.bdd").expect("failed to load bdd"),
         _ => {
           // parse number:
-          if let Ok(w)=usize::from_str_radix(word, 10) { data.push(nid::nu(w)); }
+          if let Ok(w)=usize::from_str_radix(word, 10) { data.push(nid::ixn(w as u32)); }
           // parse input variable
           else if word.starts_with('$') {
             let s = word.to_string().split_off(1);

@@ -4,7 +4,7 @@ use std::collections::{HashMap,HashSet};
 use io;
 use base::*;
 use nid;
-pub use nid::{NID,VID,OBIT,VBIT,IBIT,O,I,nu};
+use nid::{NID,VID};
 
 
 
@@ -51,10 +51,10 @@ impl ASTBase {
     else { match self.hash.get(&op) {
       Some(&n) => n,
       None => {
-        let n = self.bits.len();
+        let nid = nid::ixn(self.bits.len() as u32);
         self.bits.push(op);
-        self.hash.insert(op, nu(n));
-        nu(n) }}}}
+        self.hash.insert(op, nid);
+        nid }}}}
 
   pub fn load(path:&str)->::std::io::Result<ASTBase> {
     let s = io::get(path)?;
@@ -220,7 +220,7 @@ impl ASTBase {
         let r = nid::ixn(new[nid::idx(x) as usize].expect("bad index in AST::permute") as u32);
         if nid::is_inv(x) { nid::not(r) } else { r }}};
     let newbits = pv.iter().map(|&old| {
-      match self.at(old) {
+      match self.bits[old] {
         Op::O | Op::I | Op::Var(_) | Op::Not(_) => panic!("o,i,var,not should never be in self.bits"),
         Op::And(x,y)  => Op::And(nn(x), nn(y)),
         Op::Xor(x,y)  => Op::Xor(nn(x), nn(y)),
@@ -253,12 +253,6 @@ impl ASTBase {
     else if nid::is_var(n) { Op::Var(nid::var(n)) }
     else if nid::no_var(n) { self.bits[nid::idx(n)] }
     else { panic!("don't know how to op({:?})", n) }}
-
-  pub fn at(&self, index:usize)->Op {
-    if index == OBIT { Op::O }
-    else if index == IBIT { Op::I }
-    else if (index & VBIT) == VBIT { Op::Var(index ^ VBIT) }
-    else { self.bits[index] }}
 
   pub fn get_op(&self, nid:NID)->Op { self.op(nid) }
 

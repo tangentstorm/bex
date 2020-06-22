@@ -185,10 +185,4 @@ macro_rules! find_factors {
   println!("lt: {:?}", lt);
   println!("eq: {:?}", eq);
   println!("top: {:?}", top);
-  GBASE.with(|gb|{
-    let ast = gb.borrow();
-    if ast.is_empty() { println!("base is empty.") }
-    else { for i in 0..ast.len() {
-      println!("{} {:?}", i, ast.at(i));
-    }}});
 }

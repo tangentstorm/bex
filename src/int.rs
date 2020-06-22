@@ -5,7 +5,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::cmp::min;
 use ast::ASTBase;
-use ast;
 use base::{Base};
 use nid::{VID, NID};
 use nid;
@@ -32,7 +31,7 @@ pub struct BaseBit {pub base:BaseRef, pub n:NID}
 
 impl BaseBit {
   /// perform an arbitrary operation using the base
-  fn op<F:FnMut(&mut ASTBase)->ast::NID>(&self, mut op:F)->BaseBit {
+  fn op<F:FnMut(&mut ASTBase)->NID>(&self, mut op:F)->BaseBit {
     let r = op(&mut self.base.borrow_mut());
     BaseBit{base:self.base.clone(), n:r} }}
 
