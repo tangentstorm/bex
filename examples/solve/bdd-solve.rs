@@ -1352,8 +1352,10 @@ type BDD = bdd::BDDBase;
 
 /// same as tiny test, but multiply 2 bytes to get 210. There are 8 distinct answers.
 /// this was intended as a unit test but is *way* too slow.
+/// (11m17.768s on rincewind (hex-core Intel i7-8700K @ 3.70 GHz with 16GB ram) as of 6/16/2020)
+/// (that's with debug information and no optimizations enabled in rustc)
 #[cfg(feature="slowtests")]
-#[test] pub fn test_small() {
+#[test] pub fn test_small_bdd() {
   use bex::int::{X8,X16};
   let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
                       (6, 35), (7, 30), (10,21), (14,15)];
