@@ -106,7 +106,7 @@ pub fn convert_nid(sn:SrcNid)->DstNid {
   let r = if nid::is_const(n) { n }
   else {
     let r0 = if nid::is_var(n) { nid::nvr(nid::var(n)) }
-    else if nid::var(n) == nid::NOVAR { nid::nv(nid::idx(n)) }
+    else if nid::no_var(n) { nid::nv(nid::idx(n)) }
     else { todo!("convert_nid({:?})", n) };
     if nid::is_inv(n) { nid::not(r0)} else { r0 }};
   DstNid{ n: r } }
@@ -117,7 +117,7 @@ fn refine_one(dst: &mut B, src:&ASTBase, d:DstNid)->DstNid {
   if nid::is_const(d.n) || nid::is_rvar(d.n) { d }
   else {
     let otv = nid::var(d.n);
-    let op = src.get_op(nid::nvi(nid::NOVAR, otv as u32));
+    let op = src.get_op(nid::ixn(otv as u32));
     let cn = |x0:nid::NID|->nid::NID { convert_nid(SrcNid{n:x0}).n };
     // println!("op: {:?}", op);
     let newdef:nid::NID = match op {
@@ -152,7 +152,7 @@ macro_rules! find_factors {
       let (src, top) = sort_by_cost(&gb.borrow(), SrcNid{n:top.n});
       if $show { src.show_named(top.n, "ast"); }
       dest = $TDEST::new(src.len());
-      assert!(nid::var(top.n) == nid::NOVAR, "top nid seems to be a literal. (TODO: handle these already solved cases)");
+      assert!(nid::no_var(top.n), "top nid seems to be a literal. (TODO: handle these already solved cases)");
       refine(&mut dest, &src, DstNid{n: nid::nv(nid::idx(top.n))},
              ProgressReport{ save_dot: $show, save_dest: false, prefix: "x",
                              show_result: $show, save_result: $show }) });

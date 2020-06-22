@@ -4,7 +4,7 @@ use std::collections::{HashMap,HashSet};
 use io;
 use base::*;
 use nid;
-pub use nid::{NID,VID,NOVAR,OBIT,VBIT,IBIT,O,I,un,nu};
+pub use nid::{NID,VID,OBIT,VBIT,IBIT,O,I,nu};
 
 
 
@@ -146,12 +146,12 @@ impl ASTBase {
         let cost = |x:NID| {
           if nid::is_const(x) { 0 }
           else if nid::is_var(x) { 1 }
-          else if nid::var(x)==nid::NOVAR { costs[nid::idx(x)] }
+          else if nid::no_var(x) { costs[nid::idx(x)] }
           else { todo!("cost({:?})", x) }};
         let mask = |x:NID| {
           if nid::is_const(x) { 0 }
           else if nid::is_var(x) { vm(self, nid::var(x)) }
-          else if nid::var(x)==nid::NOVAR { masks[nid::idx(x)] }
+          else if nid::no_var(x) { masks[nid::idx(x)] }
           else { todo!("mask({:?})", x) }};
         let mc = |x,y| {
           let m = mask(x) | mask(y);
@@ -190,7 +190,7 @@ impl ASTBase {
   /// TODO:: use a HashSet for 'seen' in markdeps()
   fn markdeps(&self, keep:NID, seen:&mut Vec<bool>) {
     if nid::is_lit(keep) { return }
-    if nid::var(keep) != nid::NOVAR { todo!("markdeps({:?})", keep) }
+    if !nid::no_var(keep) { todo!("markdeps({:?})", keep) }
     if !seen[nid::idx(keep)] {
       seen[nid::idx(keep)] = true;
       let mut f = |x:&NID| { self.markdeps(*x, seen) };
@@ -217,7 +217,7 @@ impl ASTBase {
     let nn = |x:NID|{
       if nid::is_lit(x) { x }
       else {
-        let r = nid::nvi(NOVAR, new[nid::idx(x) as usize].expect("bad index in AST::permute") as u32);
+        let r = nid::ixn(new[nid::idx(x) as usize].expect("bad index in AST::permute") as u32);
         if nid::is_inv(x) { nid::not(r) } else { r }}};
     let newbits = pv.iter().map(|&old| {
       match self.at(old) {
@@ -245,13 +245,13 @@ impl ASTBase {
       if deps[i] { new[i]=Some(old.len()); old.push(i); }}
 
     (self.permute(&old), keep.iter().map(|&i|
-      nid::nvi(nid::NOVAR, new[nid::idx(i) as usize].expect("?!") as u32)).collect()) }
+      nid::ixn(new[nid::idx(i) as usize].expect("?!") as u32)).collect()) }
 
   fn op(&self, n:NID)->Op {
     if n == nid::O { Op::O }
     else if n == nid::I { Op::I }
     else if nid::is_var(n) { Op::Var(nid::var(n)) }
-    else if nid::var(n) == nid::NOVAR { self.bits[nid::idx(n)] }
+    else if nid::no_var(n) { self.bits[nid::idx(n)] }
     else { panic!("don't know how to op({:?})", n) }}
 
   pub fn at(&self, index:usize)->Op {

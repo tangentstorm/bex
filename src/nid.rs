@@ -135,16 +135,14 @@ impl HILO {
 
 
 // scaffolding for moving ASTBase over to use NIDS
-pub const NOVAR:VID = 1<<16;
+const NOVAR:VID = 1<<16;
+pub fn no_var(x:NID)->bool { var(x)==NOVAR }
+/// return a nid that is not tied to a variable
+pub fn ixn(ix:IDX)->NID { nvi(NOVAR, ix) }
+
 pub const IBIT:usize = INV as usize;
 pub const VBIT:usize = VAR as usize;
 pub const OBIT:usize = T as usize;
-pub fn un(n:NID)->usize {
-  if n == O { OBIT }
-  else if n == I { IBIT }
-  else if is_var(n) { VBIT | var(n) as usize }
-  else if var(n) == NOVAR { idx(n) as usize }
-  else { panic!("don't know how to un({:?})", n) }}
 pub fn nu(u:usize)->NID {
   if u == OBIT { O }
   else if u == IBIT { I }
