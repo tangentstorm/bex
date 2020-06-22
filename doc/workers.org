@@ -1,0 +1,80 @@
+#+title: BDDWorkers
+
+* The BDDWorker trait
+** interface
+#+begin_src rust
+pub trait BddWorker<S:BddState> : Sized + Serialize {
+  fn new(nvars:usize)->Self;
+  fn new_with_state(state: S)->Self;
+  fn nvars(&self)->usize;
+  fn tup(&self, n:NID)->(NID,NID);
+  fn ite(&mut self, f:NID, g:NID, h:NID)->NID;
+}
+#+end_src
+
+** implementations
+*** SimpleBddWorker
+This is just a refactoring of my original implementation of the BDD algorithm -- a straightforward, single-threaded, recursive implementation. The "work to be done" is implicit in the call stack, so the top-level =ite= function doesn't return until the entire BDD is constructed.
+
+*** BddSwarm
+This implementation reifies work-in-progress so that work can be farmed out to multiple threads.
+
+Each thread is running =swarm_loop=, which just listens for =QMsg= queries. These are either =Ite= messages, containing new work to be done, or =Cache= messages, which update the local thread's cache of known BDD nodes.
+
+=BddSwarm::swarm=, then, is just a vector of channels for sending =QMsg= structs -- one channel per thread.
+
+=BddSwarm::ite= calls =BddSwarm::run_swarm=. This is something like a trampoline function: it adds the top level task to its internal work queue by calling =BddSwarm::add_task=, then waits for a response to come back over the receiving channel.
+
+=add_task= checks whether we're already working on an identical =ite= task. If so, it marks the new request as being dependent on completion of the original task, otherwise it adds the request to =.ites= and stores the new index in =.qid= (a hashmap of =ITE= =-> =QID=, where a =QID= is just an index into =.ites=)... Then it adds a fresh =BddWIP= struct to =.wip= to hold the result.
+
+Each =swarm_loop= thread calls =swarm_ite= for each =QMsg= it receives. =swarm_ite= normalizes the ITE, then calls =swarm_ite_norm=. This either immediately resolves to a =NID=, or else creates a =WIP= node. Either way, it gets sent back as an =RMsg= to the main thread and processed in =run_swarm=.
+
+When =run_swarm= gets the =RMsg=, it either processes the finished result or adds tasks for whichever sides of the =WIP= need to be processed.
+
+So... The overall effect is that we're still building the BDD from top to bottom, but the work happens in parallel, spread out across the various threads.
+
+*** Idea: a new depth-first worker.
+
+The problem with building a BDD top-down is that it can be really really slow, and you have to wait for the whole thing to finish before you can use it. A bottom up approach would be nicer, since leaf nodes are usable as soon as they're generated.
+
+Instead of having =run_swarm= add tasks for both the high and low branches of an =RMsg::Wip=, it might only add one to the queue at a time: If =lo= is a fully resolved =NID=, it adds a task for =hi=, and otherwise it adds a task for =lo=. (They're never both resolved, or it wouldn't be WIP).
+
+The result should be a WIP BDD whose leftmost (if you visualize =lo= branches on the left) path is a chain of real input variables, in the proper order, with many un-expanded WIP nodes branching off to the right.
+
+Originally, I had pictured assembling this structure via substitution into an AST. but it seems like this algorithm /ought/ to be fast enough to use for intermediate nodes. In fact, it may actually wind up being faster than substitution, because building the chain is just one long sequence that can't be done in parallel... But since we're working with =BInt= structures, we could perform the operations for different intermediate bits in parallel.
+
+Either way we build it, our final result tells us at least the leftmost entry in the function's truth table, and possibly much more (if any =lo= branches along the leftmost path resolved to a NID, we know everything to the left of that point in the truth table.)
+
+The final "WIP" result of this process would incorporate /all/ the work that needs to be done to generate the complete truth table, /and/ the work would be ordered by input variable.
+
+Whether we used substitution or not, this mechanism would preserve the main /benefit/ of substitution: not having to fully expand a BDD until the maximal number of constraints were applied.
+
+Using this method for all intermediate nodes seems like it would offer an important benefit for repeated search when some of the input bits are fixed during each run: the fixed bits could be numbered so they appear at the bottom of the BDD, and when we start the bottom-up search process on the final node, we could have two kinds of workers: one group for fixed variables, and one for search variables.
+
+In other words, the initial process for each node gives us a "BDD spine", with a complete path through all variables on the left, and a bunch of WIP nodes off to the right. (Most of these would be compositions of other, intermediate WIP nodes, collectively representing all work to be done to generate the complete truth table.)
+
+The search process walks the spine from the top until it reaches the first fixed node. We know that everything below this point is made of constant values. There's no "searching" to be done: only on-the-fly calculation and substitution of constants for the fixed variables. Conceptually, these entire sub-graphs are constant.
+
+So, the search would branch at this point: some workers would start substituting constants into the 'fixed' part. Other workers would walk up the spine and start refining the next node up.
+
+Eventually over many runs, we would arrive at a situation where we had a complete binary tree of the search variables, leading to many, many partially-defined functions of only the fixed variables. (There would be 2^n of them in the worst case, where n = the number of search variables.)
+
+What could we do with this? I see several options:
+
+ - Evaluate them all in batch mode on the fly, so we just construct the sub-bdd on the fly, but only the branches that match the actual fixed input values. This essentially is no better than a linear brute force search through the inputs to the original function.
+
+ - We could "or" them all together, giving us a new function of the fixed variables, which told us whether or not a solution existed at all. This could also be constructed on the fly, given the fixed variables we're actually presented with. (Since we know the value of the branching value of each WIP node, it ought to be possible to "instantiate" and evaluate this function in O(n_fixed) time, no matter how messy and complicated it would be to flesh out the whole BDD. This "existential" function either tells us there's no answer, in which case we move on to the next set of fixed inputs, /or/ it tells us that an answer exists, and we do the search. But: we don't have to brute force the search, because we can construct the existential for a truth table by "or"-ing the existentials for the two halves of the truth table. So our binary tree of search variables (the upper, expanded part of the full BDD) becomes a blueprint for constructing a binary tree of existentials... A binary tree of existentials means:
+
+   - We know /almost immediately/ whether an answer exists for the run.
+   - /If/ it exists, we can perform a binary search to quickly find it.
+
+This second option makes an incredible amount of sense to me.
+
+
+
+
+
+* Test suite
+swarm test suite is in bdd.rs:
+
+- =test_swarm_xor=

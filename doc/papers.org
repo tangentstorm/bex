@@ -1,0 +1,15 @@
+
+
+
+our conversion from cnf to anf:
+  http://ceur-ws.org/Vol-1974/RP1.pdf
+
+  talks about grobner bases
+
+introductory grobner bases:
+ http://www.math.utah.edu/~preszler/research/grobner.pdf
+
+
+cube testers and key recovery attacks on reduced-round md6 and trivium
+  https://link.springer.com/content/pdf/10.1007%2F978-3-642-03317-9_1.pdf
+
