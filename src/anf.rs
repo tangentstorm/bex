@@ -17,10 +17,10 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use base::Base;
 use {nid, nid::{NID,I,O}};
-use {vid, vid::VID};
+use {vid::VID};
+#[cfg(test)] use vid;
 use reg::Reg;
 use hashbrown::HashMap;
-
 
 /// (v AND hi) XOR lo
 // TODO /// (ALL(v0..v1) AND hi) XOR lo
@@ -28,7 +28,7 @@ use hashbrown::HashMap;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 struct ANF {
   /// v is the variable in the head.
-  v: vid::VID,
+  v: VID,
   /// the hi subgraph gets ANDed to the head.
   hi: NID,
   /// the lo subgraph gets XORed to the hi node.
@@ -45,13 +45,13 @@ impl ANFBase {
   // !! TODO: unify walk/step for ANFBase, BDDBase
 
   /// walk node recursively, without revisiting shared nodes
-  pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,vid::VID,NID,NID) {
+  pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
     let mut seen = HashSet::new();
     self.step(n,f,&mut seen)}
 
   /// internal helper: one step in the walk.
   fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>)
-  where F: FnMut(NID,vid::VID,NID,NID) {
+  where F: FnMut(NID,VID,NID,NID) {
     if !seen.contains(&n) {
       seen.insert(n); let ANF{ v, hi, lo, } = self.fetch(n); f(n,v,hi,lo);
       if !nid::is_const(hi) { self.step(hi, f, seen); }
@@ -93,12 +93,12 @@ impl Base for ANFBase {
     self.walk(n, &mut |n,_,__,lo| w!("  \"{:?}\"->\"{:?}\";", n, lo));
     w!("}}"); }
 
-  fn def(&mut self, _s:String, _v:vid::VID)->NID { todo!("anf::def"); }
+  fn def(&mut self, _s:String, _v:VID)->NID { todo!("anf::def"); }
   // TODO: tag and get are copied verbatim from bdd
   fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
   fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 
-  fn when_lo(&mut self, v:vid::VID, n:NID)->NID {
+  fn when_lo(&mut self, v:VID, n:NID)->NID {
     let nv = n.vid();
     match nv.cmp(&v) {
       Ordering::Greater => n, // n independent of v
@@ -109,7 +109,7 @@ impl Base for ANFBase {
         else { self.fetch(n).lo }}
       Ordering::Less => panic!("TODO: anf::when_lo var(n)<v") }}
 
-  fn when_hi(&mut self, v:vid::VID, n:NID)->NID {
+  fn when_hi(&mut self, v:VID, n:NID)->NID {
     let nv = n.vid();
     match nv.cmp(&v) {
       Ordering::Greater => n,  // n independent of v
@@ -158,18 +158,17 @@ impl Base for ANFBase {
 
   fn or(&mut self, x:NID, y:NID)->NID { expr![self, ((x & y) ^ (x ^ y))] }
 
-  fn sub(&mut self, v:vid::VID, n:NID, ctx:NID)->NID {
-    let v = nid::vid_to_old(v);
-    let cv = nid::var(ctx);
+  fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID {
+    let cv = ctx.vid();
     if v < cv { ctx } // ctx can't contain v
     else {
       let x = self.fetch(ctx);
       let (hi, lo) = (x.hi, x.lo);
       if v == cv { expr![self, ((n & hi) ^ lo)] }
       else {
-        let rhi = self.sub(nid::old_to_vid(v),n,hi);
-        let rlo = self.sub(nid::old_to_vid(v),n,lo);
-        let top = nid::nv(cv);
+        let rhi = self.sub(v,n,hi);
+        let rlo = self.sub(v,n,lo);
+        let top = NID::from_vid(cv);
         expr![self, ((top & rhi) ^ rlo)] }}}
 
   fn save(&self, _path:&str)->::std::io::Result<()> { todo!("anf::save") }
@@ -188,7 +187,7 @@ impl ANFBase {
       if nid::is_inv(n) { anf.lo = nid::not(anf.lo) }
       anf }}
 
-  fn vhl(&mut self, v:vid::VID, hi0:NID, lo0:NID)->NID {
+  fn vhl(&mut self, v:VID, hi0:NID, lo0:NID)->NID {
     // this is technically an xor operation, so if we want to call it directly,
     // we need to do the same logic as xor() to handle the 'not' bit.
     // note that the cache only ever contains 'raw' nodes, except hi=I
@@ -197,7 +196,7 @@ impl ANFBase {
       if let Some(&nid) = self.cache.get(&ANF{v, hi, lo}) { nid }
       else {
         let anf = ANF{ v, hi, lo };
-        let nid = nid::nvi(nid::vid_to_old(v), self.nodes.len() as u32);
+        let nid = NID::from_vid_idx(v, self.nodes.len() as u32);
         self.cache.insert(anf, nid);
         self.nodes.push(anf);
         nid };
@@ -208,7 +207,7 @@ impl ANFBase {
     match vx.cmp(&vy) {
       Ordering::Less =>
         // base case: x:a + y:(pq+r)  a<p<q, p<r  --> a(pq+r)
-        if nid::is_var(x) { self.vhl(nid::old_to_vid(vx), y, O) }
+        if nid::is_var(x) { self.vhl(x.vid(), y, O) }
         else {
           //     x:(ab+c) * y:(pq+r)
           //  =  ab(pq) + ab(r) + c(pq) + c(r)
@@ -233,8 +232,8 @@ impl ANFBase {
         let cr = self.and(c,r);
         let cq = self.and(c,q);
         let qxr = self.xor(q,r);
-        let a = nid::nv(nid::vid_to_old(a));
-        expr![self, ((a & ((b & qxr) ^ cq)) ^ cr)] }}}
+        let n = NID::from_vid(a);
+        expr![self, ((n & ((b & qxr) ^ cq)) ^ cr)] }}}
 
   /// called only by xor, so simple cases are already handled.
   fn calc_xor(&mut self, x:NID, y:NID)->NID {
@@ -423,8 +422,8 @@ test_base_when!(ANFBase);
   let x = base.var(3); let y = base.var(4); let z = base.var(5);
   let ctx = expr![base, ((a & b) ^ c) ];
   let xyz = expr![base, ((x & y) ^ z) ];
-  assert_eq!(base.sub(nid::old_to_vid(nid::var(a)), xyz, ctx), expr![base, ((xyz & b) ^ c)]);
-  assert_eq!(base.sub(nid::old_to_vid(nid::var(b)), xyz, ctx), expr![base, ((a & xyz) ^ c)]);}
+  assert_eq!(base.sub(a.vid(), xyz, ctx), expr![base, ((xyz & b) ^ c)]);
+  assert_eq!(base.sub(b.vid(), xyz, ctx), expr![base, ((a & xyz) ^ c)]);}
 
 #[test] fn test_anf_sub_inv() {
     let mut base = ANFBase::new(7);
@@ -437,7 +436,7 @@ test_base_when!(ANFBase);
     // -> (v2v4 +v2) & v6
     // -> v2v4v6 + v2v6
     let expect = expr![base, ((v2 & (v4 & v6)) ^ (v2 & v6))];
-    let actual = base.sub(nid::old_to_vid(nid::var(v1)), top, ctx);
+    let actual = base.sub(v1.vid(), top, ctx);
     // base.show_named(top, "newtop");
     // base.show_named(expect, "expect");
     // base.show_named(actual, "actual");
