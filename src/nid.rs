@@ -143,14 +143,14 @@ pub fn ixn(ix:IDX)->NID { nvi(NOVAR, ix) }
 use vid;
 #[deprecated(note="VID scaffolding")]
 pub fn vid_to_old(v:vid::VID)->VID {
-  match v {
-    vid::VID::NOVAR =>  NOVAR,
-    vid::VID::Var(v) => v as VID | (RVAR>>32) as VID,
-    vid::VID::Vir(v) => v as VID }}
+  if vid::is_nov(v) { NOVAR }
+  else if vid::is_var(v) { v.u() | (RVAR>>32) as VID }
+  else if vid::is_vir(v) { v.u() as VID }
+  else { panic!("unknown vid::VID {:?}?", v) }}
 
 #[deprecated(note="VID scaffolding")]
 pub fn old_to_vid(o:VID)->vid::VID {
-  if o == NOVAR { vid::VID::NOVAR }
+  if o == NOVAR { vid::nov() }
   else if o & (RVAR>>32) as VID > 0 {
-     vid::VID::Var((o & !(RVAR>>32) as VID) as u32) }
-  else { vid::VID::Vir(o as u32) }}
+     vid::var((o & !(RVAR>>32) as VID) as u32) }
+  else { vid::vir(o as u32) }}
