@@ -118,8 +118,8 @@ fn refine_one(dst: &mut B, src:&ASTBase, d:DstNid)->DstNid {
   // println!("refine_one({:?})", d);
   if nid::is_const(d.n) || nid::is_rvar(d.n) { d }
   else {
-    let otv = nid::var(d.n);
-    let op = src.get_op(nid::ixn(otv as u32));
+    let otv = d.n.vid();
+    let op = src.get_op(nid::ixn(otv.u() as u32));
     let cn = |x0:nid::NID|->nid::NID { convert_nid(SrcNid{n:x0}).n };
     // println!("op: {:?}", op);
     let newdef:nid::NID = match op {
@@ -131,7 +131,7 @@ fn refine_one(dst: &mut B, src:&ASTBase, d:DstNid)->DstNid {
       Op::Xor(x,y) => dst.xor(cn(x), cn(y)),
       Op::Or(x,y) => dst.or(cn(x), cn(y)),
       _ => { panic!("don't know how to translate {:?}", op ) }};
-    DstNid{n: dst.sub(nid::old_to_vid(otv), newdef, d.n) }}}
+    DstNid{n: dst.sub(otv, newdef, d.n) }}}
 
 
 /// This is an example solver used by the bdd-solve example and the bench-solve benchmark.
