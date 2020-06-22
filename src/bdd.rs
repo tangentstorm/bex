@@ -16,9 +16,8 @@ use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use bincode;
 use base;
 use io;
-use nid;
 use reg::Reg;
-use nid::*;
+use {nid, nid::{NID,O,I,var,nv,not,idx,rvar,rv,is_var,is_const,is_rvar,HILO,IDX,nvi,is_inv}};
 use vid;
 
 
@@ -26,7 +25,7 @@ use vid;
 /// and high and low branches, each pointing at other nodes in the BDD. The
 /// associated variable's value determines which branch to take.
 #[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct BDDNode { pub v:VID, pub hi:NID, pub lo:NID } // if|then|else
+pub struct BDDNode { pub v:nid::VID, pub hi:NID, pub lo:NID } // if|then|else
 
 /// An if/then/else triple. This is similar to an individual BDDNode, but the 'if' part
 /// part represents a node, not a variable
@@ -35,7 +34,7 @@ pub struct ITE {i:NID, t:NID, e:NID}
 impl ITE {
   /// shorthand constructor
   pub fn new (i:NID, t:NID, e:NID)-> ITE { ITE { i, t, e } }
-  pub fn min_var(&self)->VID { min(var(self.i), min(var(self.t), var(self.e))) }
+  pub fn min_var(&self)->nid::VID { min(var(self.i), min(var(self.t), var(self.e))) }
   // NOTE: there is a separet impl for norm(), below
 }
 
@@ -113,7 +112,7 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
 
   /// fetch or create a "simple" node, where the hi and lo branches are both
   /// already fully computed pointers to existing nodes.
-  #[inline] fn simple_node(&mut self, v:VID, hilo:HILO)->NID {
+  #[inline] fn simple_node(&mut self, v:nid::VID, hilo:HILO)->NID {
     match self.get_simple_node(v, hilo) {
       Some(&n) => n,
       None => { self.put_simple_node(v, hilo) }}}
@@ -124,10 +123,10 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
 
   fn get_hilo(&self, n:NID)->HILO;
   /// load the memoized NID if it exists
-  fn get_memo(&self, v:VID, ite:&ITE) -> Option<&NID>;
+  fn get_memo(&self, v:nid::VID, ite:&ITE) -> Option<&NID>;
   fn put_xmemo(&mut self, ite:ITE, new_nid:NID);
-  fn get_simple_node(&self, v:VID, hilo:HILO)-> Option<&NID>;
-  fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID; }
+  fn get_simple_node(&self, v:nid::VID, hilo:HILO)-> Option<&NID>;
+  fn put_simple_node(&mut self, v:nid::VID, hilo:HILO)->NID; }
 
 
 /// Groups everything by variable. I thought this would be useful, but it probably is not.
@@ -172,7 +171,7 @@ impl BddState for SafeVarKeyedBddState {
     self.nodes[rv(var(n))][idx(n)] }
 
   /// load the memoized NID if it exists
-  #[inline] fn get_memo(&self, v:VID, ite:&ITE) -> Option<&NID> {
+  #[inline] fn get_memo(&self, v:nid::VID, ite:&ITE) -> Option<&NID> {
     if is_var(ite.i) {
       self.vmemo[rvar(ite.i) as usize].get(&HILO::new(ite.t,ite.e)) }
     else { self.xmemo.as_slice().get(rv(v))?.get(&ite) }}
@@ -181,10 +180,10 @@ impl BddState for SafeVarKeyedBddState {
     let v = ite.min_var();
     self.xmemo[rv(v)].insert(ite, new_nid); }
 
-  #[inline] fn get_simple_node(&self, v:VID, hilo:HILO)-> Option<&NID> {
+  #[inline] fn get_simple_node(&self, v:nid::VID, hilo:HILO)-> Option<&NID> {
     self.vmemo[rv(v)].get(&hilo) }
 
-  #[inline] fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID {
+  #[inline] fn put_simple_node(&mut self, v:nid::VID, hilo:HILO)->NID {
     let vnodes = &mut self.nodes[rv(v)];
     let res = nvi(v, vnodes.len() as IDX);
     vnodes.push(hilo);
@@ -210,7 +209,7 @@ impl BddState for UnsafeVarKeyedBddState {
              *bits.get_unchecked(idx(n)) }}
 
   /// load the memoized NID if it exists
-  #[inline] fn get_memo(&self, v:VID, ite:&ITE) -> Option<&NID> {
+  #[inline] fn get_memo(&self, v:nid::VID, ite:&ITE) -> Option<&NID> {
     unsafe { if is_var(ite.i) {
       self.vmemo.as_slice().get_unchecked(rv(rvar(ite.i))).get(&HILO::new(ite.t,ite.e)) }
              else { self.xmemo.as_slice().get_unchecked(rv(v)).get(&ite) }}}
@@ -219,10 +218,10 @@ impl BddState for UnsafeVarKeyedBddState {
     let v = ite.min_var();
     self.xmemo.as_mut_slice().get_unchecked_mut(rv(v)).insert(ite, new_nid); }}
 
-  #[inline] fn get_simple_node(&self, v:VID, hilo:HILO)-> Option<&NID> {
+  #[inline] fn get_simple_node(&self, v:nid::VID, hilo:HILO)-> Option<&NID> {
     unsafe { self.vmemo.as_slice().get_unchecked(rv(v)).get(&hilo) }}
 
-  #[inline] fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID {
+  #[inline] fn put_simple_node(&mut self, v:nid::VID, hilo:HILO)->NID {
     unsafe {
       let vnodes = self.nodes.as_mut_slice().get_unchecked_mut(rv(v));
       let res = nvi(v, vnodes.len() as IDX);
@@ -308,9 +307,9 @@ enum RMsg {
   /// resolved to a nid
   Nid(NID),
   /// a simple node needs to be constructed:
-  Vhl{v:VID, hi:NID, lo:NID, invert:bool},
+  Vhl{v:nid::VID, hi:NID, lo:NID, invert:bool},
   /// other work in progress
-  Wip{v:VID, hi:Norm, lo:Norm, invert:bool},
+  Wip{v:nid::VID, hi:Norm, lo:Norm, invert:bool},
   /// We've solved the whole problem, so exit the loop and return this nid.
   Ret(NID)}
 
@@ -337,7 +336,7 @@ enum BddPart { HiPart, LoPart }
 
 /// Work in progress for BddSwarm.
 #[derive(PartialEq,Debug,Copy,Clone)]
-struct BddParts{ v:VID, hi:Option<NID>, lo:Option<NID>, invert:bool}
+struct BddParts{ v:nid::VID, hi:Option<NID>, lo:Option<NID>, invert:bool}
 impl BddParts {
   fn hilo(&self)->Option<HILO> {
     if let (Some(hi), Some(lo)) = (self.hi, self.lo) { Some(HILO{hi,lo}) } else { None }}}
@@ -468,7 +467,7 @@ impl<S:BddState> BddSwarm<S> {
       if qid == 0 { self.me.send((0, RMsg::Ret(nid))).expect("failed to send Ret"); }}}
 
   /// called whenever the wip resolves to a new simple (v/hi/lo) node.
-  fn resolve_vhl(&mut self, qid:QID, v:VID, hilo:HILO, invert:bool) {
+  fn resolve_vhl(&mut self, qid:QID, v:nid::VID, hilo:HILO, invert:bool) {
     trace!("resolve_vhl(q{}, v{}, {:?}, invert:{}", qid, v, hilo, invert);
     let HILO{hi:h0,lo:l0} = hilo;
     // we apply invert first so it normalizes correctly.
@@ -624,13 +623,13 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
     let t=self.tup(n); BDDNode{v:var(n), hi:t.0, lo:t.1 }}
 
   /// walk node recursively, without revisiting shared nodes
-  pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
+  pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,nid::VID,NID,NID) {
     let mut seen = HashSet::new();
     self.step(n,f,&mut seen)}
 
   /// internal helper: one step in the walk.
   fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>)
-  where F: FnMut(NID,VID,NID,NID) {
+  where F: FnMut(NID,nid::VID,NID,NID) {
     if !seen.contains(&n) {
       seen.insert(n); let (hi,lo) = self.tup(n); f(n,var(n),hi,lo);
       if !is_const(hi) { self.step(hi, f, seen); }
@@ -656,36 +655,34 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
   #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID { self.worker.ite(f,g,h) }
 
   /// nid of y when x is high
-  pub fn when_hi(&mut self, x0:vid::VID, y:NID)->NID {
-    let x = nid::vid_to_old(x0);
-    let yv = var(y);
+  pub fn when_hi(&mut self, x:vid::VID, y:NID)->NID {
+    let yv = y.vid();
     match yv.cmp(&x) {
       Ordering::Equal => self.tup(y).0,  // x ∧ if(x,th,_) → th
       Ordering::Greater => y,            // y independent of x, so no change. includes yv = I
       Ordering::Less => {                // y may depend on x, so recurse.
         let (yt, ye) = self.tup(y);
-        let (th,el) = (self.when_hi(x0,yt), self.when_hi(x0,ye));
-        self.ite(nv(yv), th, el) }}}
+        let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
+        self.ite(NID::from_vid(yv), th, el) }}}
 
   /// nid of y when x is low
-  pub fn when_lo(&mut self, x0:vid::VID, y:NID)->NID {
-    let x = nid::vid_to_old(x0);
-    let yv = var(y);
+  pub fn when_lo(&mut self, x:vid::VID, y:NID)->NID {
+    let yv = y.vid();
     match yv.cmp(&x) {
       Ordering::Equal => self.tup(y).1,  // ¬x ∧ if(x,_,el) → el
       Ordering::Greater => y,            // y independent of x, so no change. includes yv = I
       Ordering::Less => {                // y may depend on x, so recurse.
         let (yt, ye) = self.tup(y);
-        let (th,el) = (self.when_lo(x0,yt), self.when_lo(x0,ye));
-        self.ite(nv(yv), th, el) }}}
+        let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
+        self.ite(NID::from_vid(yv), th, el) }}}
 
   /// is it possible x depends on y?
   /// the goal here is to avoid exploring a subgraph if we don't have to.
-  #[inline] pub fn might_depend(&mut self, x:NID, y:VID)->bool {
+  #[inline] pub fn might_depend(&mut self, x:NID, y:nid::VID)->bool {
     if is_var(x) { var(x)==y } else { var(x) <= y }}
 
   /// replace var x with y in z
-  pub fn replace(&mut self, x:VID, y:NID, z:NID)->NID {
+  pub fn replace(&mut self, x:nid::VID, y:NID, z:NID)->NID {
     if self.might_depend(z, x) {
       let (zt,ze) = self.tup(z); let zv = var(z);
       if x==zv { self.ite(y, zt, ze) }
@@ -696,7 +693,7 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
     else { z }}
 
   /// swap input variables x and y within bdd n
-  pub fn swap(&mut self, n:NID, x:VID, y:VID)-> NID {
+  pub fn swap(&mut self, n:NID, x:vid::VID, y:vid::VID)-> NID {
     if y>x { return self.swap(n,y,x) }
     /*
         x ____                        x'____
@@ -705,20 +702,18 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
         :   \    :  \                 :   \    :   \
         ll   lh  hl  hh               ll   hl  lh   hh
      */
-    let x32=x; let x = nid::old_to_vid(x);
-    let y32=y; let y = nid::old_to_vid(y);
     let (xlo, xhi) = (self.when_lo(x,n), self.when_hi(x,n));
     let (xlo_ylo, xlo_yhi) = (self.when_lo(y,xlo), self.when_hi(y,xlo));
     let (xhi_ylo, xhi_yhi) = (self.when_lo(y,xhi), self.when_hi(y,xhi));
-    let lo = self.ite(nv(x32), xlo_ylo, xhi_ylo);
-    let hi = self.ite(nv(y32), xlo_yhi, xhi_yhi);
-    self.ite(nv(x32), lo, hi) }
+    let lo = self.ite(NID::from_vid(x), xlo_ylo, xhi_ylo);
+    let hi = self.ite(NID::from_vid(y), xlo_yhi, xhi_yhi);
+    self.ite(NID::from_vid(x), lo, hi) }
 
   pub fn node_count(&self, n:NID)->usize {
     let mut c = 0; self.walk(n, &mut |_,_,_,_| c+=1); c }
 
   /// helper for truth table builder
-  fn tt_aux(&mut self, res:&mut Vec<u8>, v0:VID, n:NID, i:usize) {
+  fn tt_aux(&mut self, res:&mut Vec<u8>, v0:nid::VID, n:NID, i:usize) {
     let v = nid::old_to_vid(v0);
     if v0 as usize == self.nvars() { match self.when_lo(v, n) {
       O => {} // res[i] = 0; but this is already the case.
