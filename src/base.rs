@@ -15,7 +15,8 @@ pub trait Base {
   fn o(&self)->NID { nid::O }
   fn i(&self)->NID { nid::I }
 
-  fn var(&mut self, v:u32)->NID { nid::nv(v as usize) }
+  fn var(&mut self, v:u32)->NID { nid::nvr(v as usize) }
+  fn vir(&mut self, v:u32)->NID { nid::nv(v as usize) }
 
   fn when_hi(&mut self, v:VID, n:NID)->NID;
   fn when_lo(&mut self, v:VID, n:NID)->NID;
@@ -117,7 +118,7 @@ base_test!(test_base_vars, b, 2, {
 // Test when_lo and when_hi for the simple cases.
 base_test!(test_base_when, b, 2, {
   let (o, i, x0, x1) = (b.o(), b.i(), b.var(0), b.var(1));
-  let v = nid::old_to_vid(0);
+  let v = x0.vid();
 
   assert_eq!(b.when_lo(v, o), o, "x0=O should not affect O");
   assert_eq!(b.when_hi(v, o), o, "x0=I should not affect O");

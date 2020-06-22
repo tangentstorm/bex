@@ -16,9 +16,8 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use base::Base;
-use nid;
-use nid::{NID,VID,I,O};
-use vid;
+use {nid, nid::{NID,I,O}};
+use {vid, vid::VID};
 use reg::Reg;
 use hashbrown::HashMap;
 
@@ -29,7 +28,7 @@ use hashbrown::HashMap;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 struct ANF {
   /// v is the variable in the head.
-  v: VID,
+  v: vid::VID,
   /// the hi subgraph gets ANDed to the head.
   hi: NID,
   /// the lo subgraph gets XORed to the hi node.
@@ -46,13 +45,13 @@ impl ANFBase {
   // !! TODO: unify walk/step for ANFBase, BDDBase
 
   /// walk node recursively, without revisiting shared nodes
-  pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
+  pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,vid::VID,NID,NID) {
     let mut seen = HashSet::new();
     self.step(n,f,&mut seen)}
 
   /// internal helper: one step in the walk.
   fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>)
-  where F: FnMut(NID,VID,NID,NID) {
+  where F: FnMut(NID,vid::VID,NID,NID) {
     if !seen.contains(&n) {
       seen.insert(n); let ANF{ v, hi, lo, } = self.fetch(n); f(n,v,hi,lo);
       if !nid::is_const(hi) { self.step(hi, f, seen); }
@@ -100,8 +99,7 @@ impl Base for ANFBase {
   fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 
   fn when_lo(&mut self, v:vid::VID, n:NID)->NID {
-    let v = nid::vid_to_old(v);
-    let nv = nid::var(n);
+    let nv = n.vid();
     match nv.cmp(&v) {
       Ordering::Greater => n, // n independent of v
       Ordering::Equal => {
@@ -112,8 +110,7 @@ impl Base for ANFBase {
       Ordering::Less => panic!("TODO: anf::when_lo var(n)<v") }}
 
   fn when_hi(&mut self, v:vid::VID, n:NID)->NID {
-    let v = nid::vid_to_old(v);
-    let nv = nid::var(n);
+    let nv = n.vid();
     match nv.cmp(&v) {
       Ordering::Greater => n,  // n independent of v
       Ordering::Equal => {
@@ -185,13 +182,13 @@ impl ANFBase {
 
   fn fetch(&self, n:NID)->ANF {
     if nid::is_var(n) { // variables are (v*I)+O if normal, (v*I)+I if inverted.
-      ANF{v:nid::var(n), hi:I, lo: if nid::is_inv(n) { I } else { O } }}
+      ANF{v:n.vid(), hi:I, lo: if nid::is_inv(n) { I } else { O } }}
     else {
       let mut anf = self.nodes[nid::idx(n)];
       if nid::is_inv(n) { anf.lo = nid::not(anf.lo) }
       anf }}
 
-  fn vhl(&mut self, v:VID, hi0:NID, lo0:NID)->NID {
+  fn vhl(&mut self, v:vid::VID, hi0:NID, lo0:NID)->NID {
     // this is technically an xor operation, so if we want to call it directly,
     // we need to do the same logic as xor() to handle the 'not' bit.
     // note that the cache only ever contains 'raw' nodes, except hi=I
@@ -200,7 +197,7 @@ impl ANFBase {
       if let Some(&nid) = self.cache.get(&ANF{v, hi, lo}) { nid }
       else {
         let anf = ANF{ v, hi, lo };
-        let nid = nid::nvi(v, self.nodes.len() as u32);
+        let nid = nid::nvi(nid::vid_to_old(v), self.nodes.len() as u32);
         self.cache.insert(anf, nid);
         self.nodes.push(anf);
         nid };
@@ -211,7 +208,7 @@ impl ANFBase {
     match vx.cmp(&vy) {
       Ordering::Less =>
         // base case: x:a + y:(pq+r)  a<p<q, p<r  --> a(pq+r)
-        if nid::is_var(x) { self.vhl(vx, y, O) }
+        if nid::is_var(x) { self.vhl(nid::old_to_vid(vx), y, O) }
         else {
           //     x:(ab+c) * y:(pq+r)
           //  =  ab(pq) + ab(r) + c(pq) + c(r)
@@ -236,7 +233,7 @@ impl ANFBase {
         let cr = self.and(c,r);
         let cq = self.and(c,q);
         let qxr = self.xor(q,r);
-        let a = nid::nv(a);
+        let a = nid::nv(nid::vid_to_old(a));
         expr![self, ((a & ((b & qxr) ^ cq)) ^ cr)] }}}
 
   /// called only by xor, so simple cases are already handled.
@@ -304,7 +301,7 @@ impl<'a> Iterator for VidSolIterator<'a> {
         let ANF{ v, hi, lo } = self.base.fetch(n);
         // TODO: there should be a better way to check this:
         // TODO: this doesn't cope with a mix of real/virtual variables
-        let v = if nid::is_rvar(n) { nid::rvar(n) } else { v };
+        let v:usize = if nid::is_rvar(n) { nid::rvar(n) } else { v.u() };
         res.put(v, true); // flip it to hi
         // move to the xored (lo) term, if present, else use the hi term
         if nid::is_const(lo) {
@@ -323,7 +320,7 @@ test_base_when!(ANFBase);
   let mut base = ANFBase::new(1);
   let a = base.var(0);
   let ANF{ v, hi, lo } = base.fetch(a);
-  assert_eq!(v, nid::var(a));
+  assert_eq!(v, a.vid());
   assert_eq!(hi, I);
   assert_eq!(lo, O); }
 
@@ -331,7 +328,7 @@ test_base_when!(ANFBase);
   let mut base = ANFBase::new(1);
   let a = base.var(0);
   let ANF{ v, hi, lo } = base.fetch(nid::not(a));
-  assert_eq!(v, nid::var(a));
+  assert_eq!(v, a.vid());
   assert_eq!(hi, I);
   assert_eq!(lo, I); // the final I never appears in the stored structure,
   // but if fetch is given an inverted nid, it inverts the lo branch.
@@ -347,7 +344,7 @@ test_base_when!(ANFBase);
   assert_eq!(axb, bxa, "xor should be order-independent");
 
   let ANF{ v, hi, lo } = base.fetch(axb);
-  assert_eq!(v, nid::var(a));
+  assert_eq!(v, a.vid());
   assert_eq!(hi, I);
   assert_eq!(lo, b); }
 
@@ -375,7 +372,7 @@ test_base_when!(ANFBase);
   let a = base.var(0); let b = base.var(1);
   let ab = base.and(a, b);
   let ANF{v, hi, lo} = base.fetch(ab);
-  assert_eq!(v, nid::var(a));
+  assert_eq!(v, a.vid());
   assert_eq!(hi, b);
   assert_eq!(lo, O);}
 
@@ -385,9 +382,10 @@ test_base_when!(ANFBase);
     let ab = base.and(a,b);
     let axab = expr![base, (a ^ (a&b))];
     // a ^ ab = a((b+1)+0)
-    assert_eq!(base.fetch(a), ANF{ v:0, hi:I, lo:nid::O}, "structure for a=v0");
-    assert_eq!(base.fetch(ab), ANF{ v:0, hi:b, lo:nid::O}, "structure for ab");
-    assert_eq!(base.fetch(axab), ANF{ v:0, hi:nid::not(b), lo:nid::O});
+    let v0 = vid::var(0);
+    assert_eq!(base.fetch(a), ANF{ v:v0, hi:I, lo:nid::O}, "structure for a=v0");
+    assert_eq!(base.fetch(ab), ANF{ v:v0, hi:b, lo:nid::O}, "structure for ab");
+    assert_eq!(base.fetch(axab), ANF{ v:v0, hi:nid::not(b), lo:nid::O});
   }
 
 #[test] fn test_anf_and3() {

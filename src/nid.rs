@@ -154,3 +154,7 @@ pub fn old_to_vid(o:VID)->vid::VID {
   else if o & (RVAR>>32) as VID > 0 {
      vid::var((o & !(RVAR>>32) as VID) as u32) }
   else { vid::vir(o as u32) }}
+
+  impl NID {
+    pub fn vid(&self)->vid::VID { old_to_vid(var(*self)) }
+  }
