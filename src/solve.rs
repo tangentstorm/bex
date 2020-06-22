@@ -5,6 +5,7 @@ use apl;
 use ast::{Op,ASTBase};
 use base::Base;
 use nid;
+use vid;
 
 type B = dyn Base;
 
@@ -56,7 +57,8 @@ impl<'a> Progress for ProgressReport<'a> {
     else {}}}
 
 
-fn default_bitmask(_src:&ASTBase, v:nid::VID) -> u64 {
+fn default_bitmask(_src:&ASTBase, v0:vid::VID) -> u64 {
+  let v = v0.u();
   if v < 64 { 1u64 << v } else { 0 }}
 
 /// This function renumbers the NIDs so that nodes with higher IDs "cost" more.
