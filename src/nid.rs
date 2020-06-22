@@ -156,5 +156,6 @@ pub fn old_to_vid(o:VID)->vid::VID {
   else { vid::vir(o as u32) }}
 
   impl NID {
+    pub fn from_vid(v:vid::VID)->Self { nv(vid_to_old(v)) }
     pub fn vid(&self)->vid::VID { old_to_vid(var(*self)) }
   }

@@ -13,7 +13,7 @@ type SUB = HashMap<VID,NID>;
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Op {
-  O, I, Var(nid::VID), Not(NID), And(NID,NID), Or(NID,NID), Xor(NID,NID),
+  O, I, Var(VID), Not(NID), And(NID,NID), Or(NID,NID), Xor(NID,NID),
   // Eql(NID,NID), LT(NID,NID),
   Ch(NID, NID, NID), Mj(NID, NID, NID) }
 
@@ -46,7 +46,7 @@ impl ASTBase {
   fn nid(&mut self, op:Op)->NID {
     if op == Op::O { nid::O }
     else if op == Op::I { nid::I }
-    else if let Op::Var(x) = op { nid::nv(x) }
+    else if let Op::Var(x) = op { NID::from_vid(x) }
     else if let Op::Not(x) = op { nid::not(x) }
     else { match self.hash.get(&op) {
       Some(&n) => n,
@@ -78,8 +78,7 @@ impl ASTBase {
       None => {
         let n = match self.op(x) {
           Op::O | Op::I => x,
-          Op::Var(o) => {
-            let v = nid::old_to_vid(o);
+          Op::Var(v) => {
             match self.subs[s].get(&v) {
               Some(&y) => y,
               None => x }},
@@ -91,17 +90,16 @@ impl ASTBase {
         n }}}
 
 
-  fn when(&mut self, v0:vid::VID, val:NID, nid:NID)->NID {
-    let v = nid::vid_to_old(v0);
+  fn when(&mut self, v:vid::VID, val:NID, nid:NID)->NID {
     // print!(":{}",nid);
     macro_rules! op {
-      [not $x:ident] => {{ let x1 = self.when(v0, val, $x); self.not(x1) }};
+      [not $x:ident] => {{ let x1 = self.when(v, val, $x); self.not(x1) }};
       [$f:ident $x:ident $y:ident] => {{
-        let x1 = self.when(v0, val, $x);
-        let y1 = self.when(v0, val, $y);
+        let x1 = self.when(v, val, $x);
+        let y1 = self.when(v, val, $y);
         self.$f(x1,y1) }}}
     // if var is outside the base, it can't affect the expression
-    if (v as usize) >= self.num_vars() { nid }
+    if (nid::vid_to_old(v)) >= self.num_vars() { nid }
     else { match self.op(nid) {
       Op::Var(x) if x==v => val,
       Op::O | Op::I | Op::Var(_) => nid,
@@ -153,7 +151,7 @@ impl ASTBase {
           else { todo!("cost({:?})", x) }};
         let mask = |x:NID| {
           if nid::is_const(x) { 0 }
-          else if nid::is_var(x) { vm(self, vid::var(nid::var(x) as u32)) }
+          else if nid::is_var(x) { vm(self, x.vid()) }
           else if nid::no_var(x) { masks[nid::idx(x)] }
           else { todo!("mask({:?})", x) }};
         let mc = |x,y| {
@@ -161,7 +159,7 @@ impl ASTBase {
           (m, max(cost(x), cost(y)) + 1 )};
         match bit {
           Op::I | Op::O => (0, 0),
-          Op::Var(v)    => (vm(self, vid::var(v as u32)), 1),
+          Op::Var(v)    => (vm(self, v), 1),
           Op::Not(x)    => mc(x,nid::O),
           Op::And(x,y)  => mc(x,y),
           Op::Xor(x,y)  => mc(x,y),
@@ -253,7 +251,7 @@ impl ASTBase {
   fn op(&self, n:NID)->Op {
     if n == nid::O { Op::O }
     else if n == nid::I { Op::I }
-    else if nid::is_var(n) { Op::Var(nid::var(n)) }
+    else if nid::is_var(n) { Op::Var(n.vid()) }
     else if nid::no_var(n) { self.bits[nid::idx(n)] }
     else { panic!("don't know how to op({:?})", n) }}
 
@@ -361,7 +359,7 @@ impl Base for ASTBase {
       match &self.op(n) {
         Op::O => w!(" \"{}\"[label=⊥];", n),
         Op::I => w!(" \"{}\"[label=⊤];", n),
-        Op::Var(x)  => w!("\"{}\"[label=\"${}\"];", nid::raw(n), x),
+        Op::Var(x)  => w!("\"{}\"[label=\"${:?}\"];", nid::raw(n), x),
         Op::And(x,y) => dotop!("∧",n,x,y),
         Op::Xor(x,y) => dotop!("≠",n,x,y),
         Op::Or(x,y)  => dotop!("∨",n,x,y),
