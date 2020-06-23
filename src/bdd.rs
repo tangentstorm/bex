@@ -625,15 +625,15 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
     let t=self.tup(n); BDDNode{v:var(n), hi:t.0, lo:t.1 }}
 
   /// walk node recursively, without revisiting shared nodes
-  pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,nid::VID,NID,NID) {
+  pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,vid::VID,NID,NID) {
     let mut seen = HashSet::new();
     self.step(n,f,&mut seen)}
 
   /// internal helper: one step in the walk.
   fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>)
-  where F: FnMut(NID,nid::VID,NID,NID) {
+  where F: FnMut(NID,vid::VID,NID,NID) {
     if !seen.contains(&n) {
-      seen.insert(n); let (hi,lo) = self.tup(n); f(n,var(n),hi,lo);
+      seen.insert(n); let (hi,lo) = self.tup(n); f(n,n.vid(),hi,lo);
       if !is_const(hi) { self.step(hi, f, seen); }
       if !is_const(lo) { self.step(lo, f, seen); }}}
 
