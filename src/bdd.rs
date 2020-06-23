@@ -17,7 +17,7 @@ use bincode;
 use base;
 use io;
 use reg::Reg;
-use {nid, nid::{NID,O,I,var,nv,not,idx,rvar,rv,is_var,is_const,is_rvar,HILO,IDX,is_inv}};
+use {nid, nid::{NID,O,I,var,not,idx,rvar,rv,is_var,is_const,is_rvar,HILO,IDX,is_inv}};
 use vid;
 
 
@@ -302,9 +302,9 @@ enum RMsg {
   /// resolved to a nid
   Nid(NID),
   /// a simple node needs to be constructed:
-  Vhl{v:nid::VID, hi:NID, lo:NID, invert:bool},
+  Vhl{v:vid::VID, hi:NID, lo:NID, invert:bool},
   /// other work in progress
-  Wip{v:nid::VID, hi:Norm, lo:Norm, invert:bool},
+  Wip{v:vid::VID, hi:Norm, lo:Norm, invert:bool},
   /// We've solved the whole problem, so exit the loop and return this nid.
   Ret(NID)}
 
@@ -331,7 +331,7 @@ enum BddPart { HiPart, LoPart }
 
 /// Work in progress for BddSwarm.
 #[derive(PartialEq,Debug,Copy,Clone)]
-struct BddParts{ v:nid::VID, hi:Option<NID>, lo:Option<NID>, invert:bool}
+struct BddParts{ v:vid::VID, hi:Option<NID>, lo:Option<NID>, invert:bool}
 impl BddParts {
   fn hilo(&self)->Option<HILO> {
     if let (Some(hi), Some(lo)) = (self.hi, self.lo) { Some(HILO{hi,lo}) } else { None }}}
@@ -462,12 +462,12 @@ impl<S:BddState> BddSwarm<S> {
       if qid == 0 { self.me.send((0, RMsg::Ret(nid))).expect("failed to send Ret"); }}}
 
   /// called whenever the wip resolves to a new simple (v/hi/lo) node.
-  fn resolve_vhl(&mut self, qid:QID, v:nid::VID, hilo:HILO, invert:bool) {
-    trace!("resolve_vhl(q{}, v{}, {:?}, invert:{}", qid, v, hilo, invert);
+  fn resolve_vhl(&mut self, qid:QID, v:vid::VID, hilo:HILO, invert:bool) {
+    trace!("resolve_vhl(q{}, {:?}, {:?}, invert:{}", qid, v, hilo, invert);
     let HILO{hi:h0,lo:l0} = hilo;
     // we apply invert first so it normalizes correctly.
     let (h1,l1) = if invert { (not(h0), not(l0)) } else { (h0, l0) };
-    let nid = match ITE::norm(nv(v), h1, l1) {
+    let nid = match ITE::norm(NID::from_vid(v), h1, l1) {
       Norm::Nid(n) => n,
       Norm::Ite(ITE{i:vv,t:hi,e:lo}) =>     self.recent.simple_node(vv.vid(), HILO{hi,lo}),
       Norm::Not(ITE{i:vv,t:hi,e:lo}) => not(self.recent.simple_node(vv.vid(), HILO{hi,lo})) };
@@ -551,12 +551,12 @@ fn swarm_vhl_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
   let ITE{i:vv,t:hi,e:lo} = ite; let v = vv.vid();
   debug_assert!(is_var(vv)); debug_assert_eq!(v, ite.min_vid());
   if let Some(&n) = state.get_simple_node(vv.vid(), HILO{hi,lo}) { RMsg::Nid(n) }
-  else { RMsg::Vhl{ v:var(vv), hi, lo, invert:false } }}
+  else { RMsg::Vhl{ v:v, hi, lo, invert:false } }}
 
 fn swarm_ite_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
   let ITE { i, t, e } = ite;
-  let (vi, vt, ve) = (var(i), var(t), var(e));
-  let v = min(vi, min(vt, ve));
+  let (vi, vt, ve) = (i.vid(), t.vid(), e.vid());
+  let v = ite.min_vid();
   match state.get_memo(&ite) {
     Some(&n) => RMsg::Nid(n),
     None => {
@@ -568,7 +568,7 @@ fn swarm_ite_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
       let lo = ITE::norm(lo_i, lo_t, lo_e);
       // if they're both simple nids, we're guaranteed to have a vhl, so check cache
       if let (Norm::Nid(hn), Norm::Nid(ln)) = (hi,lo) {
-        match ITE::norm(nv(v), hn, ln) {
+        match ITE::norm(NID::from_vid(v), hn, ln) {
           // first, it might normalize to a nid directly:
           Norm::Nid(n) => { RMsg::Nid(n) }
           // otherwise, the normalized triple might already be in cache:
@@ -669,18 +669,18 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
 
   /// is it possible x depends on y?
   /// the goal here is to avoid exploring a subgraph if we don't have to.
-  #[inline] pub fn might_depend(&mut self, x:NID, y:nid::VID)->bool {
-    if is_var(x) { var(x)==y } else { var(x) <= y }}
+  #[inline] pub fn might_depend(&mut self, x:NID, y:vid::VID)->bool {
+    if is_var(x) { x.vid()==y } else { x.vid() <= y }}
 
   /// replace var x with y in z
-  pub fn replace(&mut self, x:nid::VID, y:NID, z:NID)->NID {
+  pub fn replace(&mut self, x:vid::VID, y:NID, z:NID)->NID {
     if self.might_depend(z, x) {
-      let (zt,ze) = self.tup(z); let zv = var(z);
+      let (zt,ze) = self.tup(z); let zv = z.vid();
       if x==zv { self.ite(y, zt, ze) }
       else {
         let th = self.replace(x, y, zt);
         let el = self.replace(x, y, ze);
-        self.ite(nv(zv), th, el) }}
+        self.ite(NID::from_vid(zv), th, el) }}
     else { z }}
 
   /// swap input variables x and y within bdd n
@@ -754,9 +754,7 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   }
   #[cfg(todo)] fn ch(&mut self, x:NID, y:NID, z:NID)->NID { self.ite(x, y, z) }
 
-  fn sub(&mut self, v:vid::VID, n:NID, ctx:NID)->NID {
-    let v = nid::vid_to_old(v);
-    self.replace(v,n,ctx) }
+  fn sub(&mut self, v:vid::VID, n:NID, ctx:NID)->NID { self.replace(v,n,ctx) }
 
   fn save(&self, path:&str)->::std::io::Result<()> { self.save(path) }
 
@@ -817,7 +815,7 @@ test_base_when!(BDDBase);
 
 #[test] fn test_base() {
   let mut base = BDDBase::new(3);
-  let (v1, v2, v3) = (nv(1), nv(2), nv(3));
+  let (v1, v2, v3) = (nid::nv(1), nid::nv(2), nid::nv(3));
   assert_eq!(base.nvars(), 3);
   assert_eq!((I,O), base.tup(I));
   assert_eq!((O,I), base.tup(O));
@@ -829,7 +827,7 @@ test_base_when!(BDDBase);
 
 #[test] fn test_and() {
   let mut base = BDDBase::new(3);
-  let (v1, v2) = (nv(1), nv(2));
+  let (v1, v2) = (nid::nv(1), nid::nv(2));
   let a = base.and(v1, v2);
   assert_eq!(O,  base.when_lo(vid::vir(1),a));
   assert_eq!(v2, base.when_hi(vid::vir(1),a));
@@ -840,7 +838,7 @@ test_base_when!(BDDBase);
 
 #[test] fn test_xor() {
   let mut base = BDDBase::new(3);
-  let (v1, v2) = (nv(1), nv(2));
+  let (v1, v2) = (nid::nv(1), nid::nv(2));
   let x = base.xor(v1, v2);
   assert_eq!(v2,      base.when_lo(vid::vir(1),x));
   assert_eq!(not(v2), base.when_hi(vid::vir(1),x));
@@ -854,7 +852,7 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
 
 #[test] fn test_swarm_xor() {
   let mut base = BddSwarmBase::new(2);
-  let (x0, x1) = (nv(0), nv(1));
+  let (x0, x1) = (nid::nv(0), nid::nv(1));
   let x = base.xor(x0, x1);
   assert_eq!(x1,      base.when_lo(vid::vir(0),x));
   assert_eq!(not(x1), base.when_hi(vid::vir(0),x));
@@ -865,7 +863,7 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
 
 #[test] fn test_swarm_and() {
   let mut base = BddSwarmBase::new(2);
-  let (x0, x1) = (nv(0), nv(1));
+  let (x0, x1) = (nid::nv(0), nid::nv(1));
   let a = base.and(x0, x1);
   assert_eq!(O,  base.when_lo(vid::vir(0),a));
   assert_eq!(x1, base.when_hi(vid::vir(0),a));
@@ -878,7 +876,7 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
 #[test] fn test_swarm_ite() {
   //use simplelog::*;  TermLogger::init(LevelFilter::Trace, Config::default()).unwrap();
   let mut base = BddSwarmBase::new(3);
-  let (x0,x1,x2) = (nv(0), nv(1), nv(2));
+  let (x0,x1,x2) = (nid::nv(0), nid::nv(1), nid::nv(2));
   assert_eq!(vec![0,0,0,0,1,1,1,1], base.tt(x0));
   assert_eq!(vec![0,0,1,1,0,0,1,1], base.tt(x1));
   assert_eq!(vec![0,1,0,1,0,1,0,1], base.tt(x2));
@@ -894,7 +892,7 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
 #[test] fn test_swarm_another() {
   use simplelog::*;  TermLogger::init(LevelFilter::Trace, Config::default()).unwrap();
   let mut base = BddSwarmBase::new(4);
-  let (a,b) = (nv(0), nv(1));
+  let (a,b) = (nid::nv(0), nid::nv(1));
   let anb = base.and(a,not(b));
   assert_eq!(vec![0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0], base.tt(anb));
 
@@ -933,7 +931,7 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
 
 #[test] fn test_bdd_solutions_extra() {
   let mut base = BDDBase::new(5);
-  let (b, d) = (nv(1), nv(3));
+  let (b, d) = (nid::nv(1), nid::nv(3));
   // the idea here is that we have "don't care" above, below, and between the used vars:
   let n = base.and(b,d);
   let actual:Vec<_> = base.solutions(n).map(|r| r.as_usize()).collect();
@@ -949,7 +947,7 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
 
 #[test] fn test_bdd_solutions_xor() {
   let mut base = BDDBase::new(3);
-  let (a, b) = (nv(0), nv(1));
+  let (a, b) = (nid::nv(0), nid::nv(1));
   let n = base.xor(a, b);
   let mut it = base.solutions(n);                            //abc
   assert_eq!(it.next().expect("expect answer 0").as_usize(), 0b010, "0");
