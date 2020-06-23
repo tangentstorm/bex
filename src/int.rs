@@ -7,7 +7,7 @@ use std::cmp::min;
 use ast::ASTBase;
 use base::{Base};
 use {nid, nid::NID};
-use vid;
+use {vid, vid::VID};
 
 
 // TBit : for use outside the Base, by types such as X32, below.
@@ -79,7 +79,7 @@ pub fn gbase_tag(n:NID, s:String)->NID {
   GBASE.with(|gb| {
     gb.borrow_mut().tag(n,s) })}
 
-pub fn gbase_def(s:String, i:vid::VID)->BaseBit {
+pub fn gbase_def(s:String, i:VID)->BaseBit {
   GBASE.with(|gb| {
     let vn=gb.borrow_mut().def(s,i); BaseBit{base:gb.clone(), n:vn }}) }
 

@@ -5,8 +5,9 @@ use std::fmt;
 
 // -- core data types ---
 
-/// Variable ID: uniquely identifies an input variable in the BDD.
-pub type VID = usize;
+/// (OLD) Variable ID: uniquely identifies an input variable in the BDD.
+/// This name is private to the nid module since vid::VID supercedes it.
+type VID = usize;
 
 /// Index into a (usually VID-specific) vector.
 pub type IDX = u32;
@@ -76,6 +77,7 @@ pub const I:NID = NID{ n:(T|INV) };
 #[inline(always)] pub fn rvar(x:NID)->VID { ((x.n & !(INV|VAR|RVAR)) >> 32) as VID}
 
 /// internal function to strip rvar bit and convert to usize
+#[deprecated(note="use vid::VID instead")]
 #[inline(always)] pub fn rv(v:VID)->usize { (v&!((RVAR>>32) as VID)) as usize}
 
 /// Toggle the INV bit, applying a logical "NOT" operation to the corressponding node.

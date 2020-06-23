@@ -4,8 +4,8 @@
 use apl;
 use ast::{Op,ASTBase};
 use base::Base;
-use nid;
-use vid;
+use {nid, nid::NID};
+use {vid::VID};
 
 type B = dyn Base;
 
@@ -22,8 +22,8 @@ pub struct ProgressReport<'a> {
   pub save_result: bool }
 
 /// these are wrappers so the type system can help us keep the src and dest nids separate
-#[derive(Clone, Copy, Debug, PartialEq)] pub struct SrcNid { pub n: nid::NID }
-#[derive(Clone, Copy, Debug, PartialEq)] pub struct DstNid { pub n: nid::NID }
+#[derive(Clone, Copy, Debug, PartialEq)] pub struct SrcNid { pub n: NID }
+#[derive(Clone, Copy, Debug, PartialEq)] pub struct DstNid { pub n: NID }
 
 
 impl<'a> Progress for ProgressReport<'a> {
@@ -57,7 +57,7 @@ impl<'a> Progress for ProgressReport<'a> {
     else {}}}
 
 
-fn default_bitmask(_src:&ASTBase, v0:vid::VID) -> u64 {
+fn default_bitmask(_src:&ASTBase, v0:VID) -> u64 {
   let v = v0.u();
   if v < 64 { 1u64 << v } else { 0 }}
 
@@ -120,9 +120,9 @@ fn refine_one(dst: &mut B, src:&ASTBase, d:DstNid)->DstNid {
   else {
     let otv = d.n.vid();
     let op = src.get_op(nid::ixn(otv.u() as u32));
-    let cn = |x0:nid::NID|->nid::NID { convert_nid(SrcNid{n:x0}).n };
+    let cn = |x0:NID|->NID { convert_nid(SrcNid{n:x0}).n };
     // println!("op: {:?}", op);
-    let newdef:nid::NID = match op {
+    let newdef:NID = match op {
       Op::O | Op::I | Op::Var(_) | Op::Not(_) => panic!("Src base should not contain {:?}", op),
       // the VIDs on the right here are because we're treating each step in the
       // calculation as a 'virtual' input variable, and just slowly simplifying
