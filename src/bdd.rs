@@ -123,7 +123,7 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
 
   fn get_hilo(&self, n:NID)->HILO;
   /// load the memoized NID if it exists
-  fn get_memo(&self, v:nid::VID, ite:&ITE) -> Option<&NID>;
+  fn get_memo(&self, ite:&ITE) -> Option<&NID>;
   fn put_xmemo(&mut self, ite:ITE, new_nid:NID);
   fn get_simple_node(&self, v:vid::VID, hilo:HILO)-> Option<&NID>;
   fn put_simple_node(&mut self, v:vid::VID, hilo:HILO)->NID; }
@@ -171,10 +171,12 @@ impl BddState for SafeVarKeyedBddState {
     self.nodes[rv(var(n))][idx(n)] }
 
   /// load the memoized NID if it exists
-  #[inline] fn get_memo(&self, v:nid::VID, ite:&ITE) -> Option<&NID> {
+  #[inline] fn get_memo(&self, ite:&ITE) -> Option<&NID> {
     if is_var(ite.i) {
       self.vmemo[rvar(ite.i) as usize].get(&HILO::new(ite.t,ite.e)) }
-    else { self.xmemo.as_slice().get(rv(v))?.get(&ite) }}
+    else {
+      let v = ite.min_var();
+      self.xmemo.as_slice().get(rv(v))?.get(&ite) }}
 
   #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID) {
     let v = ite.min_var();
@@ -209,10 +211,13 @@ impl BddState for UnsafeVarKeyedBddState {
              *bits.get_unchecked(idx(n)) }}
 
   /// load the memoized NID if it exists
-  #[inline] fn get_memo(&self, v:nid::VID, ite:&ITE) -> Option<&NID> {
-    unsafe { if is_var(ite.i) {
-      self.vmemo.as_slice().get_unchecked(rv(rvar(ite.i))).get(&HILO::new(ite.t,ite.e)) }
-             else { self.xmemo.as_slice().get_unchecked(rv(v)).get(&ite) }}}
+  #[inline] fn get_memo(&self, ite:&ITE) -> Option<&NID> {
+    unsafe {
+      if is_var(ite.i) {
+        self.vmemo.as_slice().get_unchecked(rv(rvar(ite.i))).get(&HILO::new(ite.t,ite.e)) }
+      else {
+        let v = ite.min_var();
+        self.xmemo.as_slice().get_unchecked(rv(v)).get(&ite) }}}
 
   #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID) { unsafe {
     let v = ite.min_var();
@@ -268,7 +273,7 @@ impl<S:BddState> SimpleBddWorker<S> {
     let ITE { i, t, e } = ite;
     let (vi, vt, ve) = (var(i), var(t), var(e));
     let v = min(vi, min(vt, ve));
-    match self.state.get_memo(v, &ite) {
+    match self.state.get_memo(&ite) {
       Some(&n) => n,
       None => {
         // We know we're going to branch on v, and v is either the branch var
@@ -564,7 +569,7 @@ fn swarm_ite_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
   let ITE { i, t, e } = ite;
   let (vi, vt, ve) = (var(i), var(t), var(e));
   let v = min(vi, min(vt, ve));
-  match state.get_memo(v, &ite) {
+  match state.get_memo(&ite) {
     Some(&n) => RMsg::Nid(n),
     None => {
       let (hi_i, lo_i) = if v == vi {state.tup(i)} else {(i,i)};
