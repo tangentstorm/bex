@@ -17,7 +17,7 @@ use bincode;
 use base;
 use io;
 use reg::Reg;
-use {nid, nid::{NID,O,I,var,nv,not,idx,rvar,rv,is_var,is_const,is_rvar,HILO,IDX,nvi,is_inv}};
+use {nid, nid::{NID,O,I,var,nv,not,idx,rvar,rv,is_var,is_const,is_rvar,HILO,IDX,is_inv}};
 use vid;
 
 
@@ -34,9 +34,8 @@ pub struct ITE {i:NID, t:NID, e:NID}
 impl ITE {
   /// shorthand constructor
   pub fn new (i:NID, t:NID, e:NID)-> ITE { ITE { i, t, e } }
-  pub fn min_var(&self)->nid::VID { min(var(self.i), min(var(self.t), var(self.e))) }
-  // NOTE: there is a separet impl for norm(), below
-}
+  pub fn min_vid(&self)->vid::VID {
+    nid::old_to_vid(min(var(self.i), min(var(self.t), var(self.e)))) }}
 
 /// This represents the result of normalizing an ITE. There are three conditions:
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -175,12 +174,10 @@ impl BddState for SafeVarKeyedBddState {
     if is_var(ite.i) {
       self.vmemo[rvar(ite.i) as usize].get(&HILO::new(ite.t,ite.e)) }
     else {
-      let v = ite.min_var();
-      self.xmemo.as_slice().get(rv(v))?.get(&ite) }}
+      self.xmemo.as_slice().get(ite.min_vid().u())?.get(&ite) }}
 
   #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID) {
-    let v = ite.min_var();
-    self.xmemo[rv(v)].insert(ite, new_nid); }
+    self.xmemo[ite.min_vid().u()].insert(ite, new_nid); }
 
   #[inline] fn get_simple_node(&self, v:vid::VID, hilo:HILO)-> Option<&NID> {
     self.vmemo[v.u()].get(&hilo) }
@@ -216,12 +213,10 @@ impl BddState for UnsafeVarKeyedBddState {
       if is_var(ite.i) {
         self.vmemo.as_slice().get_unchecked(rv(rvar(ite.i))).get(&HILO::new(ite.t,ite.e)) }
       else {
-        let v = ite.min_var();
-        self.xmemo.as_slice().get_unchecked(rv(v)).get(&ite) }}}
+        self.xmemo.as_slice().get_unchecked(ite.min_vid().u()).get(&ite) }}}
 
   #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID) { unsafe {
-    let v = ite.min_var();
-    self.xmemo.as_mut_slice().get_unchecked_mut(rv(v)).insert(ite, new_nid); }}
+    self.xmemo.as_mut_slice().get_unchecked_mut(ite.min_vid().u()).insert(ite, new_nid); }}
 
   #[inline] fn get_simple_node(&self, v:vid::VID, hilo:HILO)-> Option<&NID> {
     unsafe { self.vmemo.as_slice().get_unchecked(v.u()).get(&hilo) }}
@@ -560,10 +555,10 @@ fn swarm_ite<S:BddState>(state: &Arc<S>, ite0:ITE)->RMsg {
       Norm::Not(ite) => rmsg_not(swarm_ite_norm(state, ite)) }}
 
 fn swarm_vhl_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
-  let ITE{i:vv,t:hi,e:lo} = ite; let v = var(vv);
-  debug_assert!(is_var(vv)); debug_assert_eq!(v, ite.min_var());
+  let ITE{i:vv,t:hi,e:lo} = ite; let v = vv.vid();
+  debug_assert!(is_var(vv)); debug_assert_eq!(v, ite.min_vid());
   if let Some(&n) = state.get_simple_node(vv.vid(), HILO{hi,lo}) { RMsg::Nid(n) }
-  else { RMsg::Vhl{ v, hi, lo, invert:false } }}
+  else { RMsg::Vhl{ v:var(vv), hi, lo, invert:false } }}
 
 fn swarm_ite_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
   let ITE { i, t, e } = ite;
