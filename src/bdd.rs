@@ -112,7 +112,7 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
 
   /// fetch or create a "simple" node, where the hi and lo branches are both
   /// already fully computed pointers to existing nodes.
-  #[inline] fn simple_node(&mut self, v:nid::VID, hilo:HILO)->NID {
+  #[inline] fn simple_node(&mut self, v:vid::VID, hilo:HILO)->NID {
     match self.get_simple_node(v, hilo) {
       Some(&n) => n,
       None => { self.put_simple_node(v, hilo) }}}
@@ -125,8 +125,8 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
   /// load the memoized NID if it exists
   fn get_memo(&self, v:nid::VID, ite:&ITE) -> Option<&NID>;
   fn put_xmemo(&mut self, ite:ITE, new_nid:NID);
-  fn get_simple_node(&self, v:nid::VID, hilo:HILO)-> Option<&NID>;
-  fn put_simple_node(&mut self, v:nid::VID, hilo:HILO)->NID; }
+  fn get_simple_node(&self, v:vid::VID, hilo:HILO)-> Option<&NID>;
+  fn put_simple_node(&mut self, v:vid::VID, hilo:HILO)->NID; }
 
 
 /// Groups everything by variable. I thought this would be useful, but it probably is not.
@@ -180,14 +180,14 @@ impl BddState for SafeVarKeyedBddState {
     let v = ite.min_var();
     self.xmemo[rv(v)].insert(ite, new_nid); }
 
-  #[inline] fn get_simple_node(&self, v:nid::VID, hilo:HILO)-> Option<&NID> {
-    self.vmemo[rv(v)].get(&hilo) }
+  #[inline] fn get_simple_node(&self, v:vid::VID, hilo:HILO)-> Option<&NID> {
+    self.vmemo[v.u()].get(&hilo) }
 
-  #[inline] fn put_simple_node(&mut self, v:nid::VID, hilo:HILO)->NID {
-    let vnodes = &mut self.nodes[rv(v)];
-    let res = nvi(v, vnodes.len() as IDX);
+  #[inline] fn put_simple_node(&mut self, v:vid::VID, hilo:HILO)->NID {
+    let vnodes = &mut self.nodes[v.u()];
+    let res = NID::from_vid_idx(v, vnodes.len() as IDX);
     vnodes.push(hilo);
-    self.vmemo[rv(v) as usize].insert(hilo,res);
+    self.vmemo[v.u()].insert(hilo,res);
     res } }
 
 
@@ -218,15 +218,15 @@ impl BddState for UnsafeVarKeyedBddState {
     let v = ite.min_var();
     self.xmemo.as_mut_slice().get_unchecked_mut(rv(v)).insert(ite, new_nid); }}
 
-  #[inline] fn get_simple_node(&self, v:nid::VID, hilo:HILO)-> Option<&NID> {
-    unsafe { self.vmemo.as_slice().get_unchecked(rv(v)).get(&hilo) }}
+  #[inline] fn get_simple_node(&self, v:vid::VID, hilo:HILO)-> Option<&NID> {
+    unsafe { self.vmemo.as_slice().get_unchecked(v.u()).get(&hilo) }}
 
-  #[inline] fn put_simple_node(&mut self, v:nid::VID, hilo:HILO)->NID {
+  #[inline] fn put_simple_node(&mut self, v:vid::VID, hilo:HILO)->NID {
     unsafe {
-      let vnodes = self.nodes.as_mut_slice().get_unchecked_mut(rv(v));
-      let res = nvi(v, vnodes.len() as IDX);
+      let vnodes = self.nodes.as_mut_slice().get_unchecked_mut(v.u());
+      let res = NID::from_vid_idx(v, vnodes.len() as IDX);
       vnodes.push(hilo);
-      self.vmemo.as_mut_slice().get_unchecked_mut(rv(v) as usize).insert(hilo,res);
+      self.vmemo.as_mut_slice().get_unchecked_mut(v.u()).insert(hilo,res);
       res }} }
 
 pub trait BddWorker<S:BddState> : Sized + Serialize {
@@ -281,7 +281,9 @@ impl<S:BddState> SimpleBddWorker<S> {
           // TODO: push one of these off into a queue for other threads
           let hi = self.ite(hi_i, hi_t, hi_e);
           let lo = self.ite(lo_i, lo_t, lo_e);
-          if hi == lo {hi} else { self.state.simple_node(v, HILO::new(hi,lo)) }};
+          if hi == lo {hi} else {
+            let v = nid::old_to_vid(v);
+            self.state.simple_node(v, HILO::new(hi,lo)) }};
         // now add the triple to the generalized memo store
         if !is_var(i) { self.state.put_xmemo(ite, new_nid) }
         new_nid }}} }
@@ -474,8 +476,8 @@ impl<S:BddState> BddSwarm<S> {
     let (h1,l1) = if invert { (not(h0), not(l0)) } else { (h0, l0) };
     let nid = match ITE::norm(nv(v), h1, l1) {
       Norm::Nid(n) => n,
-      Norm::Ite(ITE{i:vv,t:hi,e:lo}) =>     self.recent.simple_node(var(vv), HILO{hi,lo}),
-      Norm::Not(ITE{i:vv,t:hi,e:lo}) => not(self.recent.simple_node(var(vv), HILO{hi,lo})) };
+      Norm::Ite(ITE{i:vv,t:hi,e:lo}) =>     self.recent.simple_node(vv.vid(), HILO{hi,lo}),
+      Norm::Not(ITE{i:vv,t:hi,e:lo}) => not(self.recent.simple_node(vv.vid(), HILO{hi,lo})) };
     trace!("resolved vhl: q{}=>{}. #deps: {}", qid, nid, self.deps[qid].len());
     self.resolve_nid(qid, nid); }
 
@@ -555,7 +557,7 @@ fn swarm_ite<S:BddState>(state: &Arc<S>, ite0:ITE)->RMsg {
 fn swarm_vhl_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
   let ITE{i:vv,t:hi,e:lo} = ite; let v = var(vv);
   debug_assert!(is_var(vv)); debug_assert_eq!(v, ite.min_var());
-  if let Some(&n) = state.get_simple_node(v, HILO{hi,lo}) { RMsg::Nid(n) }
+  if let Some(&n) = state.get_simple_node(vv.vid(), HILO{hi,lo}) { RMsg::Nid(n) }
   else { RMsg::Vhl{ v, hi, lo, invert:false } }}
 
 fn swarm_ite_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
