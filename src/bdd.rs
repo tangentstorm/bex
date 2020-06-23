@@ -21,14 +21,7 @@ use {nid, nid::{NID,O,I,var,nv,not,idx,rvar,rv,is_var,is_const,is_rvar,HILO,IDX,
 use vid;
 
 
-/// A BDDNode is a triple consisting of a VID, which references an input variable,
-/// and high and low branches, each pointing at other nodes in the BDD. The
-/// associated variable's value determines which branch to take.
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct BDDNode { pub v:nid::VID, pub hi:NID, pub lo:NID } // if|then|else
-
-/// An if/then/else triple. This is similar to an individual BDDNode, but the 'if' part
-/// part represents a node, not a variable
+/// An if/then/else triple. Like VHL, but all three slots are NIDs.
 #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
 pub struct ITE {i:NID, t:NID, e:NID}
 impl ITE {
@@ -619,10 +612,6 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
 
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)->(NID,NID) { self.worker.tup(n) }
-
-  /// retrieve a node by its id.
-  pub fn bdd(&self, n:NID)->BDDNode {
-    let t=self.tup(n); BDDNode{v:var(n), hi:t.0, lo:t.1 }}
 
   /// walk node recursively, without revisiting shared nodes
   pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,vid::VID,NID,NID) {
