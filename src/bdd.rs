@@ -704,24 +704,26 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
     let mut c = 0; self.walk(n, &mut |_,_,_,_| c+=1); c }
 
   /// helper for truth table builder
-  fn tt_aux(&mut self, res:&mut Vec<u8>, v0:nid::VID, n:NID, i:usize) {
-    let v = nid::old_to_vid(v0);
-    if v0 as usize == self.nvars() { match self.when_lo(v, n) {
+  fn tt_aux(&mut self, res:&mut Vec<u8>, v:vid::VID, n:NID, i:usize) {
+    let o = v.u();
+    if o == self.nvars() { match self.when_lo(v, n) {
       O => {} // res[i] = 0; but this is already the case.
       I => { res[i] = 1; }
       x => panic!("expected a leaf nid, got {}", x) }}
     else {
-      let lo = self.when_lo(v,n); self.tt_aux(res, v0+1, lo, i*2);
-      let hi = self.when_hi(v,n); self.tt_aux(res, v0+1, hi, i*2+1); }}
+      let lo = self.when_lo(v,n); self.tt_aux(res, vid::vir(1+o as u32), lo, i*2);
+      let hi = self.when_hi(v,n); self.tt_aux(res, vid::vir(1+o as u32), hi, i*2+1); }}
 
   /// Truth table. Could have been Vec<bool> but this is mostly for testing
   /// and the literals are much smaller when you type '1' and '0' instead of
   /// 'true' and 'false'.
   pub fn tt(&mut self, n0:NID)->Vec<u8> {
+    // !! once the high vars are at the top, we can compare to nid.vid().u() and count down instead of up
+    if !vid::is_vir(n0.vid()) { todo!("tt only works for virtual variables at the moment. :("); }
     if self.nvars() > 16 {
       panic!("refusing to generate a truth table of 2^{} bytes", self.nvars()) }
     let mut res = vec![0;(1 << self.nvars()) as usize];
-    self.tt_aux(&mut res, 0, n0, 0);
+    self.tt_aux(&mut res, vid::vir(0), n0, 0);
     res }
 
 } // end impl BddBase
