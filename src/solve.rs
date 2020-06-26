@@ -57,9 +57,7 @@ impl<'a> Progress for ProgressReport<'a> {
     else {}}}
 
 
-fn default_bitmask(_src:&ASTBase, v0:VID) -> u64 {
-  let v = v0.u();
-  if v < 64 { 1u64 << v } else { 0 }}
+fn default_bitmask(_src:&ASTBase, v:VID) -> u64 { v.bitmask() }
 
 /// This function renumbers the NIDs so that nodes with higher IDs "cost" more.
 /// Sorting your AST this way dramatically reduces the cost of converting to
@@ -119,7 +117,7 @@ fn refine_one(dst: &mut B, src:&ASTBase, d:DstNid)->DstNid {
   if nid::is_const(d.n) || nid::is_rvar(d.n) { d }
   else {
     let otv = d.n.vid();
-    let op = src.get_op(nid::ixn(otv.u() as u32));
+    let op = src.get_op(nid::ixn(otv.vir_ix() as u32));
     let cn = |x0:NID|->NID { convert_nid(SrcNid{n:x0}).n };
     // println!("op: {:?}", op);
     let newdef:NID = match op {

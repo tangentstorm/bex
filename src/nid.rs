@@ -145,21 +145,23 @@ pub fn ixn(ix:IDX)->NID { nvi(NOVAR, ix) }
 use vid;
 #[deprecated(note="VID scaffolding")]
 pub fn vid_to_old(v:vid::VID)->VID {
-  if vid::is_nov(v) { NOVAR }
-  else if vid::is_var(v) { v.u() | (RVAR>>32) as VID }
-  else if vid::is_vir(v) { v.u() as VID }
+  if v.is_nov() { NOVAR }
+  else if v.is_var() { v.u() | (RVAR>>32) as VID }
+  else if v.is_vir() { v.u() as VID }
   else { panic!("unknown vid::VID {:?}?", v) }}
 
 #[deprecated(note="VID scaffolding")]
 pub fn old_to_vid(o:VID)->vid::VID {
-  if o == NOVAR { vid::nov() }
+  if o == NOVAR { vid::VID::nov() }
   else if o & (RVAR>>32) as VID > 0 {
-     vid::var((o & !(RVAR>>32) as VID) as u32) }
-  else { vid::vir(o as u32) }}
+     vid::VID::var((o & !(RVAR>>32) as VID) as u32) }
+  else { vid::VID::vir(o as u32) }}
 
 impl NID {
-  pub fn var(v:u32)->Self { Self::from_vid(vid::var(v)) }
-  pub fn vir(v:u32)->Self { Self::from_vid(vid::vir(v)) }
+  pub fn var(v:u32)->Self { Self::from_vid(vid::VID::var(v)) }
+  pub fn vir(v:u32)->Self { Self::from_vid(vid::VID::vir(v)) }
+  pub fn from_var(v:vid::VID)->Self { nv(v.var_ix())}
+  pub fn from_vir(v:vid::VID)->Self { nv(v.vir_ix())}
   pub fn from_vid(v:vid::VID)->Self { nv(vid_to_old(v)) }
   pub fn from_vid_idx(v:vid::VID, i:IDX)->Self { nvi(vid_to_old(v), i) }
   pub fn vid(&self)->vid::VID { old_to_vid(var(*self)) }}

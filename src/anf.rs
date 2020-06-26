@@ -18,7 +18,6 @@ use std::collections::HashSet;
 use base::Base;
 use {nid, nid::{NID,I,O}};
 use {vid::VID};
-#[cfg(test)] use vid;
 use reg::Reg;
 use hashbrown::HashMap;
 
@@ -378,7 +377,7 @@ test_base_when!(ANFBase);
     let ab = base.and(a,b);
     let axab = expr![base, (a ^ (a&b))];
     // a ^ ab = a((b+1)+0)
-    let v0 = vid::var(0);
+    let v0 = VID::var(0);
     assert_eq!(base.fetch(a), ANF{ v:v0, hi:I, lo:nid::O}, "structure for a=v0");
     assert_eq!(base.fetch(ab), ANF{ v:v0, hi:b, lo:nid::O}, "structure for ab");
     assert_eq!(base.fetch(axab), ANF{ v:v0, hi:nid::not(b), lo:nid::O});

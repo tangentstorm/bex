@@ -7,7 +7,7 @@ use std::cmp::min;
 use ast::ASTBase;
 use base::{Base};
 use {nid, nid::NID};
-use {vid, vid::VID};
+use {vid::VID};
 
 
 // TBit : for use outside the Base, by types such as X32, below.
@@ -148,7 +148,7 @@ macro_rules! xint_type {
 
       /// define an entire set of variables at once.
       pub fn def(s:&str)->$T {
-        $T::from_vec((0..$n).map(|i|{ gbase_def(s.to_string(), vid::var(i)) }).collect()) }
+        $T::from_vec((0..$n).map(|i|{ gbase_def(s.to_string(), VID::var(i)) }).collect()) }
 
       pub fn from_vec(v:Vec<BaseBit>)->$T {
         $T{bits: if v.len() >= $n { v.iter().take($n).map(|x|x.clone()).collect() }

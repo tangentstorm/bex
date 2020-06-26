@@ -99,7 +99,7 @@ impl ASTBase {
         let y1 = self.when(v, val, $y);
         self.$f(x1,y1) }}}
     // if var is outside the base, it can't affect the expression
-    if (nid::vid_to_old(v)) >= self.num_vars() { nid }
+    if v.vid_ix() >= self.num_vars() { nid }
     else { match self.op(nid) {
       Op::Var(x) if x==v => val,
       Op::O | Op::I | Op::Var(_) => nid,
