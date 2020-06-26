@@ -154,7 +154,7 @@ impl BddState for SafeBddState {
   /// load the memoized NID if it exists
   #[inline] fn get_memo(&self, ite:&ITE) -> Option<NID> {
     if is_var(ite.i) {
-      self.vmemo[rvar(ite.i) as usize].get(&HILO::new(ite.t,ite.e)).copied() }
+      self.get_simple_node(ite.i.vid(), HILO::new(ite.t,ite.e)) }
     else { self.xmemo.get(&ite).copied() }}
 
   #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID) {
