@@ -18,6 +18,9 @@ pub type IDX = u32;
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct NID { n: u64 }
 
+/// Just a constructor so I can add extra temp fields in development without breaking code.
+const fn new (n:u64)->NID { NID{n} }
+
 
 // -- bits in the nid ---
 
@@ -44,9 +47,9 @@ const T:u64 = 1<<61;    // T: max VID (hack so O/I nodes show up at bottom)
 const IDX_MASK:u64 = (1<<32)-1;
 
 /// NID of the virtual node represeting the constant function 0, or "always false."
-pub const O:NID = NID{ n:T };
+pub const O:NID = new(T);
 /// NID of the virtual node represeting the constant function 1, or "always true."
-pub const I:NID = NID{ n:(T|INV) };
+pub const I:NID = new(T|INV);
 
 // NID support routines
 
@@ -63,7 +66,7 @@ pub const I:NID = NID{ n:(T|INV) };
 
 /// Return the NID with the 'INV' flag removed.
 // !! pos()? abs()? I don't love any of these names.
-#[inline(always)] pub fn raw(x:NID)->NID { NID{ n: x.n & !INV }}
+#[inline(always)] pub fn raw(x:NID)->NID { new(x.n & !INV) }
 
 /// Does the NID refer to one of the two constant nodes (O or I)?
 #[inline(always)] pub fn is_const(x:NID)->bool { (x.n & T) != 0 }
@@ -90,7 +93,7 @@ pub const I:NID = NID{ n:(T|INV) };
 #[inline(always)] pub fn nvr(v:VID)->NID { NID { n:((v as u64) << 32)|VAR|RVAR }}
 
 /// Construct a NID with the given variable and index.
-#[inline(always)] pub fn nvi(v:VID,i:IDX)->NID { NID{ n:((v as u64) << 32) + i as u64 }}
+#[inline(always)] pub fn nvi(v:VID,i:IDX)->NID { new(((v as u64) << 32) + i as u64) }
 
 
 /// Pretty-printer for NIDS that reveal some of their internal data.
@@ -125,14 +128,14 @@ impl HILO {
 
 
 #[test] fn test_nids() {
-  assert_eq!(O, NID{n:0x2000000000000000u64});
-  assert_eq!(I, NID{n:0xa000000000000000u64});
-  assert_eq!(nv(0),  NID{n:0x4000000000000000u64});
-  assert_eq!(nvr(0), NID{n:0x5000000000000000u64});
-  assert_eq!(nv(1),  NID{n:0x4000000100000000u64});
+  assert_eq!(O, new(0x2000000000000000u64));
+  assert_eq!(I, new(0xa000000000000000u64));
+  assert_eq!(nv(0),  new(0x4000000000000000u64));
+  assert_eq!(nvr(0), new(0x5000000000000000u64));
+  assert_eq!(nv(1),  new(0x4000000100000000u64));
   assert!(var(nv(0)) < var(nvr(0)));
-  assert_eq!(nvi(0,0), NID{n:0x0000000000000000u64});
-  assert_eq!(nvi(1,0), NID{n:0x0000000100000000u64}); }
+  assert_eq!(nvi(0,0), new(0x0000000000000000u64));
+  assert_eq!(nvi(1,0), new(0x0000000100000000u64)); }
 
 
 
