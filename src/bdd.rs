@@ -106,7 +106,7 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
   /// already fully computed pointers to existing nodes.
   #[inline] fn simple_node(&mut self, v:VID, hilo:HILO)->NID {
     match self.get_simple_node(v, hilo) {
-      Some(&n) => n,
+      Some(n) => n,
       None => { self.put_simple_node(v, hilo) }}}
 
   // --- implement these --------------------------------------------
@@ -115,9 +115,9 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
 
   fn get_hilo(&self, n:NID)->HILO;
   /// load the memoized NID if it exists
-  fn get_memo(&self, ite:&ITE) -> Option<&NID>;
+  fn get_memo(&self, ite:&ITE) -> Option<NID>;
   fn put_xmemo(&mut self, ite:ITE, new_nid:NID);
-  fn get_simple_node(&self, v:VID, hilo:HILO)-> Option<&NID>;
+  fn get_simple_node(&self, v:VID, hilo:HILO)-> Option<NID>;
   fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID; }
 
 
@@ -151,17 +151,17 @@ impl BddState for SafeVarKeyedBddState {
     self.nodes[rv(var(n))][idx(n)] }
 
   /// load the memoized NID if it exists
-  #[inline] fn get_memo(&self, ite:&ITE) -> Option<&NID> {
+  #[inline] fn get_memo(&self, ite:&ITE) -> Option<NID> {
     if is_var(ite.i) {
-      self.vmemo[rvar(ite.i) as usize].get(&HILO::new(ite.t,ite.e)) }
+      self.vmemo[rvar(ite.i) as usize].get(&HILO::new(ite.t,ite.e)).copied() }
     else {
-      self.xmemo.as_slice().get(ite.min_vid().u())?.get(&ite) }}
+      self.xmemo.as_slice().get(ite.min_vid().u())?.get(&ite).copied() }}
 
   #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID) {
     self.xmemo[ite.min_vid().u()].insert(ite, new_nid); }
 
-  #[inline] fn get_simple_node(&self, v:VID, hilo:HILO)-> Option<&NID> {
-    self.vmemo[v.u()].get(&hilo) }
+  #[inline] fn get_simple_node(&self, v:VID, hilo:HILO)-> Option<NID> {
+    self.vmemo[v.u()].get(&hilo).copied() }
 
   #[inline] fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID {
     let vnodes = &mut self.nodes[v.u()];
@@ -211,7 +211,7 @@ impl<S:BddState> SimpleBddWorker<S> {
     let (vi, vt, ve) = (var(i), var(t), var(e));
     let v = min(vi, min(vt, ve));
     match self.state.get_memo(&ite) {
-      Some(&n) => n,
+      Some(n) => n,
       None => {
         // We know we're going to branch on v, and v is either the branch var
         // or not relevant to each of i,t,e. So we either retrieve the hilo pair
@@ -499,15 +499,15 @@ fn swarm_ite<S:BddState>(state: &Arc<S>, ite0:ITE)->RMsg {
 fn swarm_vhl_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
   let ITE{i:vv,t:hi,e:lo} = ite; let v = vv.vid();
   debug_assert!(is_var(vv)); debug_assert_eq!(v, ite.min_vid());
-  if let Some(&n) = state.get_simple_node(vv.vid(), HILO{hi,lo}) { RMsg::Nid(n) }
-  else { RMsg::Vhl{ v:v, hi, lo, invert:false } }}
+  if let Some(n) = state.get_simple_node(vv.vid(), HILO{hi,lo}) { RMsg::Nid(n) }
+  else { RMsg::Vhl{ v, hi, lo, invert:false } }}
 
 fn swarm_ite_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
   let ITE { i, t, e } = ite;
   let (vi, vt, ve) = (i.vid(), t.vid(), e.vid());
   let v = ite.min_vid();
   match state.get_memo(&ite) {
-    Some(&n) => RMsg::Nid(n),
+    Some(n) => RMsg::Nid(n),
     None => {
       let (hi_i, lo_i) = if v == vi {state.tup(i)} else {(i,i)};
       let (hi_t, lo_t) = if v == vt {state.tup(t)} else {(t,t)};
