@@ -298,10 +298,7 @@ impl<'a> Iterator for VidSolIterator<'a> {
       loop {
         if nid::is_const(n) { break }
         let ANF{ v, hi, lo } = self.base.fetch(n);
-        // TODO: there should be a better way to check this:
-        // TODO: this doesn't cope with a mix of real/virtual variables
-        let v:usize = if nid::is_rvar(n) { nid::rvar(n) } else { v.u() };
-        res.put(v, true); // flip it to hi
+        res.var_put(v, true); // flip it to hi    TODO: allow vir. (vid_put?)
         // move to the xored (lo) term, if present, else use the hi term
         if nid::is_const(lo) {
           if nid::is_const(hi) { break }

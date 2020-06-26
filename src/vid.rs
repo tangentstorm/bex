@@ -18,6 +18,9 @@ pub fn is_var(v:VID)->bool { if let VID{ v:Var(_) } = v { true } else { false } 
 pub fn is_vir(v:VID)->bool { if let VID{ v:Vir(_) } = v { true } else { false } }
 
 impl VID {
+  pub fn var_ix(&self)->usize {
+    if let Var(x) = self.v { x as usize } else { panic!("var_ix({:?})", self) }}
+
   #[deprecated(note="VID scaffolding")]
   pub fn u(&self)->usize { match self.v {
     NoV => panic!("can't turn NoV into a number"),

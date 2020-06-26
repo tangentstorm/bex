@@ -931,7 +931,7 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
 
 #[test] fn test_bdd_solutions_extra() {
   let mut base = BDDBase::new(5);
-  let (b, d) = (nid::nv(1), nid::nv(3));
+  let (b, d) = (NID::var(1), NID::var(3));
   // the idea here is that we have "don't care" above, below, and between the used vars:
   let n = base.and(b,d);
   let actual:Vec<_> = base.solutions(n).map(|r| r.as_usize()).collect();
@@ -947,7 +947,7 @@ pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddSta
 
 #[test] fn test_bdd_solutions_xor() {
   let mut base = BDDBase::new(3);
-  let (a, b) = (nid::nv(0), nid::nv(1));
+  let (a, b) = (NID::var(0), NID::var(1));
   let n = base.xor(a, b);
   let mut it = base.solutions(n);                            //abc
   assert_eq!(it.next().expect("expect answer 0").as_usize(), 0b010, "0");
@@ -1083,8 +1083,8 @@ impl<'a> VidSolIterator<'a> {
           // not be a branch node for that variable in the current bdd path.
           // Whether we follow the hi or lo branch depends on which variable we're looking at.
           if nid::is_const(self.node) { return } // special case for topmost I (all solutions)
-          let bv = nid::rvar(self.node) as usize;
-          let part = if self.scope.get(bv) { BddPart::HiPart } else { BddPart::LoPart };
+          let hi = self.scope.var_get(self.node.vid());
+          let part = if hi { BddPart::HiPart } else { BddPart::LoPart };
           self.move_down(part);
           self.descend();
           if self.in_solution() { self.log("// increment ok"); return }}

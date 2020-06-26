@@ -1,5 +1,6 @@
 /// Registers (bit vectors)
 use std::mem::size_of;
+use vid::VID;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Reg { nvars: usize, data: Vec<usize> }
@@ -21,6 +22,9 @@ impl Reg {
     self.data[i] =
       if v { x |  (1 << (ix%USIZE)) }
       else { x & !(1 << (ix%USIZE)) }}
+
+  pub fn var_get(&self, v:VID)->bool { self.get(v.var_ix()) }
+  pub fn var_put(&mut self, v:VID, val:bool) { self.put(v.var_ix(), val) }
 
   pub fn as_usize(&self)->usize { self.data[0] }
   pub fn as_usize_rev(&self)->usize {
@@ -50,7 +54,6 @@ impl Reg {
 
   pub fn len(&self)->usize { self.nvars }
   pub fn is_empty(&self)->bool { self.nvars == 0 }}
-
 
 #[test]
 fn test_reg_mut() {
