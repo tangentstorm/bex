@@ -146,8 +146,8 @@ use vid;
 #[deprecated(note="VID scaffolding")]
 pub fn vid_to_old(v:vid::VID)->VID {
   if v.is_nov() { NOVAR }
-  else if v.is_var() { v.u() | (RVAR>>32) as VID }
-  else if v.is_vir() { v.u() as VID }
+  else if v.is_var() { v.var_ix() | (RVAR>>32) as VID }
+  else if v.is_vir() { v.vir_ix() as VID }
   else { panic!("unknown vid::VID {:?}?", v) }}
 
 #[deprecated(note="VID scaffolding")]
