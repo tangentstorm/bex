@@ -123,28 +123,29 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
 
 /// Groups everything by variable. I thought this would be useful, but it probably is not.
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SafeVarKeyedBddState {
+pub struct SafeBddState {
+  /// number of variables
+  nvars: usize,
   /// variable-specific hi/lo pairs for individual bdd nodes.
   nodes: Vec<Vec<HILO>>,
   /// variable-specific memoization. These record (v,hilo) lookups.
   vmemo: Vec<BDDHashMap<HILO,NID>>,
-  /// arbitrary memoization. These record normalized (f,g,h) lookups,
-  /// and are indexed at three layers: v,f,(g h); where v is the
-  /// branching variable.
-  xmemo: Vec<BDDHashMap<ITE, NID>> }
+  /// arbitrary memoization. These record normalized (f,g,h) lookups.
+  xmemo: BDDHashMap<ITE, NID> }
 
 
-impl BddState for SafeVarKeyedBddState {
+impl BddState for SafeBddState {
 
   /// constructor
-  fn new(nvars:usize)->SafeVarKeyedBddState {
-    SafeVarKeyedBddState{
+  fn new(nvars:usize)->SafeBddState {
+    SafeBddState{
+      nvars,
       nodes: (0..nvars).map(|_| vec![]).collect(),
       vmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
-      xmemo:(0..nvars).map(|_| BDDHashMap::default()).collect() }}
+      xmemo: BDDHashMap::default() }}
 
   /// return the number of variables
-  fn nvars(&self)->usize { self.nodes.len() }
+  fn nvars(&self)->usize { self.nvars }
 
   /// the "put" for this one is put_simple_node
   #[inline] fn get_hilo(&self, n:NID)->HILO {
@@ -154,11 +155,10 @@ impl BddState for SafeVarKeyedBddState {
   #[inline] fn get_memo(&self, ite:&ITE) -> Option<NID> {
     if is_var(ite.i) {
       self.vmemo[rvar(ite.i) as usize].get(&HILO::new(ite.t,ite.e)).copied() }
-    else {
-      self.xmemo.as_slice().get(ite.min_vid().u())?.get(&ite).copied() }}
+    else { self.xmemo.get(&ite).copied() }}
 
   #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID) {
-    self.xmemo[ite.min_vid().u()].insert(ite, new_nid); }
+    self.xmemo.insert(ite, new_nid); }
 
   #[inline] fn get_simple_node(&self, v:VID, hilo:HILO)-> Option<NID> {
     self.vmemo[v.u()].get(&hilo).copied() }
@@ -740,7 +740,7 @@ impl<'a> Iterator for SolutionIterator<'a> {
   fn next(&mut self)->Option<Self::Item> { None }
 }
 
-type S = SafeVarKeyedBddState;
+type S = SafeBddState;
 
 /// The default type used by the rest of the system.
 /// (Note the first three letters in uppercase).
@@ -794,7 +794,7 @@ test_base_when!(BDDBase);
   assert_eq!(x,       base.when_hi(VID::vir(3),x))}
 
 // swarm test suite
-pub type BddSwarmBase = BddBase<SafeVarKeyedBddState,BddSwarm<SafeVarKeyedBddState>>;
+pub type BddSwarmBase = BddBase<SafeBddState,BddSwarm<SafeBddState>>;
 
 #[test] fn test_swarm_xor() {
   let mut base = BddSwarmBase::new(2);
