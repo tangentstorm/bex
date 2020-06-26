@@ -164,7 +164,7 @@ macro_rules! find_factors {
       let y = t >> $T0::n();
       (x as u64, y as u64)
     }).collect();
-    assert_eq!(actual.len(), expect.len());
+    assert_eq!(actual.len(), expect.len(), "check number of solutions");
     for i in 0..expect.len() {
       assert_eq!(actual[i], expect[i], "mismatch at i={}", i) }
   }}
