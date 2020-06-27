@@ -13,7 +13,6 @@
 //!     ab(c(1+d) + d) + cd      (after factoring)
 //! ```
 //! In addition, identical suffixes after factoring always refer to the same node.
-use std::cmp::Ordering;
 use std::collections::HashSet;
 use base::Base;
 use {nid, nid::{NID,I,O}};
@@ -202,9 +201,9 @@ impl ANFBase {
     if nid::is_inv(lo) { nid::not( res )} else { res }}
 
   fn calc_and(&mut self, x:NID, y:NID)->NID {
-    let (vx, vy) = (nid::var(x), nid::var(y));
-    match vx.cmp(&vy) {
-      Ordering::Less =>
+    let (xv, yv) = (x.vid(), y.vid());
+    match xv.cmp_depth(&yv) {
+      VidOrdering::Above =>
         // base case: x:a + y:(pq+r)  a<p<q, p<r  --> a(pq+r)
         if nid::is_var(x) { self.vhl(x.vid(), y, O) }
         else {
@@ -217,8 +216,8 @@ impl ANFBase {
           let hi = self.and(b, y);
           let lo = self.and(c, y);
           self.vhl(a, hi, lo)},
-      Ordering::Greater => self.and(y, x),
-      Ordering::Equal => {
+      VidOrdering::Below => self.and(y, x),
+      VidOrdering::Level => {
         // x:(ab+c) * y:(aq+r) --> abq+abr+acq+cr --> a(b(q+r) + cq)+cr
         // xy = (ab+c)(aq+r)
         //       abaq + abr + caq +cr
@@ -236,15 +235,15 @@ impl ANFBase {
 
   /// called only by xor, so simple cases are already handled.
   fn calc_xor(&mut self, x:NID, y:NID)->NID {
-    let (vx, vy) = (nid::var(x), nid::var(y));
-    match vx.cmp(&vy) {
-      Ordering::Less =>  {
+    let (xv, yv) = (x.vid(), y.vid());
+    match xv.cmp_depth(&yv) {
+      VidOrdering::Above =>  {
         // x:(ab+c) + y:(pq+r) --> ab+(c+(pq+r))
         let ANF{v, hi, lo} = self.fetch(x);
         let lo = self.xor(lo, y);
         self.vhl(v, hi, lo)},
-      Ordering::Greater => self.xor(y, x),
-      Ordering::Equal => {
+      VidOrdering::Below => self.xor(y, x),
+      VidOrdering::Level => {
         // a + aq
         // a(1+0) + a(q+0)
         // a((1+0) + (q+0))
