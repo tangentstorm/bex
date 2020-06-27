@@ -1,6 +1,17 @@
 //! Defines a common NID scheme for bases whose nodes follow a
 //! (var, lo, hi) structure. Used by BDD, ANF, and eventually ZDD.
 
+/* Bitmask diagram:
+
+   NID | VAR
+   ----+----------------------
+   63  | 31  : INV
+   62  | 30  : VAR
+   61  | 29  : T (const / max vid)
+   60  | 28  : RVAR
+
+*/
+
 use std::fmt;
 
 // -- core data types ---
@@ -128,8 +139,8 @@ impl HILO {
 
 
 #[test] fn test_nids() {
-  assert_eq!(O, new(0x2000000000000000u64));
-  assert_eq!(I, new(0xa000000000000000u64));
+  assert_eq!(O.n,   2305843009213693952); assert_eq!(O, new(0x2000000000000000));
+  assert_eq!(I.n,  11529215046068469760); assert_eq!(I, new(0xa000000000000000));
   assert_eq!(nv(0),  new(0x4000000000000000u64));
   assert_eq!(nvr(0), new(0x5000000000000000u64));
   assert_eq!(nv(1),  new(0x4000000100000000u64));
@@ -137,10 +148,26 @@ impl HILO {
   assert_eq!(nvi(0,0), new(0x0000000000000000u64));
   assert_eq!(nvi(1,0), new(0x0000000100000000u64)); }
 
+  #[test] fn test_var() {
+    assert_eq!(var(O), 536870912, "var(O)");
+    assert_eq!(var(I), var(O), "INV bit shouldn't be part of variable");
+    assert_eq!(var(nv(0)), 0);
+    assert_eq!(var(nvr(0)), 268435456);
+  }
+
+  #[test] fn test_cmp() {
+    let v = |x|nv(x);  let x=|x|nvr(x);  let o=|x:NID|var(x);   let n=|x:NID|x.vid();
+    assert!(o(O) == o(I),      "old:no=no");  assert!(n(O) == n(I),       "new:no=no");
+    assert!(o(O)    > o(v(0)), "old:no>v0");  assert!(n(O)    >  n(v(0)), "new:no>v0");
+    assert!(o(O)    > o(x(0)), "old:no>x0");  assert!(n(O)    >  n(x(0)), "new:no>x0, {:?} {:?}", n(O), n(x(0)));
+    assert!(o(v(0)) < o(x(0)), "old:v0>x0");  assert!(n(v(0)) < n(x(0)),  "new:v0>x0");
+    assert!(o(v(1)) < o(x(0)), "old:v1<x0");  assert!(n(v(1)) < n(x(0)),  "new:v1>x0");
+  }
 
 
 // scaffolding for moving ASTBase over to use NIDS
-const NOVAR:VID = 1<<16;
+const NOVAR:VID = (1<<27) as VID;
+const TOP:VID = (T>>32) as VID; // 536870912, // 1<<29, same as nid::T
 pub fn no_var(x:NID)->bool { var(x)==NOVAR }
 /// return a nid that is not tied to a variable
 pub fn ixn(ix:IDX)->NID { nvi(NOVAR, ix) }
@@ -149,13 +176,15 @@ use vid;
 #[deprecated(note="VID scaffolding")]
 pub fn vid_to_old(v:vid::VID)->VID {
   if v.is_nov() { NOVAR }
+  else if v.is_top() { TOP }
   else if v.is_var() { v.var_ix() | (RVAR>>32) as VID }
   else if v.is_vir() { v.vir_ix() as VID }
   else { panic!("unknown vid::VID {:?}?", v) }}
 
 #[deprecated(note="VID scaffolding")]
 pub fn old_to_vid(o:VID)->vid::VID {
-  if o == NOVAR { vid::VID::nov() }
+  if o == TOP { vid::VID::top() }
+  else if o == NOVAR { vid::VID::nov() }
   else if o & (RVAR>>32) as VID > 0 {
      vid::VID::var((o & !(RVAR>>32) as VID) as u32) }
   else { vid::VID::vir(o as u32) }}
