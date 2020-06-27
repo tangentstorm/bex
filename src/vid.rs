@@ -48,6 +48,7 @@ impl VID {
         NoV|T => Above }}}}
 
 pub fn topmost(x:VID, y:VID)->VID { if x.is_above(&y) { x } else { y }}
+pub fn botmost(x:VID, y:VID)->VID { if x.is_below(&y) { x } else { y }}
 pub fn topmost_of3(x:VID, y:VID, z:VID)->VID { topmost(x, topmost(y, z)) }
 
 impl VID {

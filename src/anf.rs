@@ -19,6 +19,7 @@ use {nid, nid::{NID,I,O}};
 use vid::{VID,VidOrdering};
 use reg::Reg;
 use hashbrown::HashMap;
+#[cfg(test)] use vid::{topmost, botmost};
 
 /// (v AND hi) XOR lo
 // TODO /// (ALL(v0..v1) AND hi) XOR lo
@@ -100,22 +101,27 @@ impl Base for ANFBase {
     let nv = n.vid();
     match v.cmp_depth(&nv) {
       VidOrdering::Above => n, // n independent of v
-      VidOrdering::Level => {
-        if nid::is_lit(n) {
-          // a leaf node should never be inverted... unless it's also the root.
-          if nid::is_inv(n) { I } else { O }}
-        else { self.fetch(n).lo }}
-      VidOrdering::Below => panic!("TODO: anf::when_lo v below var(n)") }}
+      VidOrdering::Level => self.fetch(n).lo,
+      VidOrdering::Below => {
+        let ANF{ v:_, hi, lo } = self.fetch(nid::raw(n));
+        let hi1 = self.when_lo(v, hi);
+        let lo1 = self.when_lo(v, lo);
+        let mut res = self.vhl(nv, hi1, lo1);
+        if nid::is_inv(n) != nid::is_inv(res) { res = nid::not(res)}
+        res }}}
 
   fn when_hi(&mut self, v:VID, n:NID)->NID {
     let nv = n.vid();
     match v.cmp_depth(&nv) {
       VidOrdering::Above => n,  // n independent of v
-      VidOrdering::Level => {
-        if nid::is_lit(n) {
-          if nid::is_inv(n) { O } else { I }}
-        else { self.fetch(n).hi }},
-      VidOrdering::Below => todo!("anf::when_hi(v below n.vid)") }}
+      VidOrdering::Level => self.fetch(n).hi,
+      VidOrdering::Below => {
+        let ANF{ v:_, hi, lo } = self.fetch(nid::raw(n));
+        let hi1 = self.when_hi(v, hi);
+        let lo1 = self.when_hi(v, lo);
+        let mut res = self.vhl(nv, hi1, lo1);
+        if nid::is_inv(n) != nid::is_inv(res) { res = nid::not(res)}
+        res }}}
 
   // logical ops
 
@@ -189,6 +195,7 @@ impl ANFBase {
     // this is technically an xor operation, so if we want to call it directly,
     // we need to do the same logic as xor() to handle the 'not' bit.
     // note that the cache only ever contains 'raw' nodes, except hi=I
+    if hi0 == I && lo0 == O { return NID::from_vid(v) }
     let (hi,lo) = (hi0, nid::raw(lo0));
     let res =
       if let Some(&nid) = self.cache.get(&ANF{v, hi, lo}) { nid }
@@ -338,9 +345,12 @@ test_base_when!(ANFBase);
   assert_eq!(axb, bxa, "xor should be order-independent");
 
   let ANF{ v, hi, lo } = base.fetch(axb);
-  assert_eq!(v, a.vid());
+  // I want this to work regardless of which direction the graph goes:
+  let topv = topmost(a.vid(), b.vid());
+  let botv = botmost(a.vid(), b.vid());
+  assert_eq!(v, topv);
   assert_eq!(hi, I);
-  assert_eq!(lo, b); }
+  assert_eq!(lo, NID::from_vid(botv)); }
 
 #[test] fn test_anf_xor_inv() {
   let mut base = ANFBase::new(2);
@@ -366,20 +376,27 @@ test_base_when!(ANFBase);
   let a = base.var(0); let b = base.var(1);
   let ab = base.and(a, b);
   let ANF{v, hi, lo} = base.fetch(ab);
-  assert_eq!(v, a.vid());
-  assert_eq!(hi, b);
+  let topv = topmost(a.vid(), b.vid());
+  let botv = botmost(a.vid(), b.vid());
+  assert_eq!(v, topv);
+  assert_eq!(hi, NID::from_vid(botv));
   assert_eq!(lo, O);}
 
-  #[test] fn test_anf_axab() {
+  #[test] fn test_anf_xtb() {
     let mut base = ANFBase::new(2);
-    let a = base.var(0); let b = base.var(1);
-    let ab = base.and(a,b);
-    let axab = expr![base, (a ^ (a&b))];
-    // a ^ ab = a((b+1)+0)
-    let v0 = VID::var(0);
-    assert_eq!(base.fetch(a), ANF{ v:v0, hi:I, lo:nid::O}, "structure for a=v0");
-    assert_eq!(base.fetch(ab), ANF{ v:v0, hi:b, lo:nid::O}, "structure for ab");
-    assert_eq!(base.fetch(axab), ANF{ v:v0, hi:nid::not(b), lo:nid::O});
+    let (x0, x1) = (VID::var(0), VID::var(1));
+    let t = NID::from_vid(topmost(x0,x1));
+    let b = NID::from_vid(botmost(x0,x1));
+    let tb = base.and(b,t);
+    let bxtb = base.xor(b, tb); // b ^ tb = t(b ^ a)
+    let txtb = base.xor(t, tb); // b ^ ba = b((a+1)+0)
+
+    let (bv, tv) = (b.vid(), t.vid());
+    assert_eq!(base.fetch(b), ANF{ v:bv, hi:I, lo:nid::O}, "b = b(1)+0");
+    assert_eq!(base.fetch(t), ANF{ v:tv, hi:I, lo:nid::O}, "t = t(1)+0");
+    assert_eq!(base.fetch(tb), ANF{ v:tv, hi:b, lo:nid::O}, "tb = t(b)+0");
+    assert_eq!(base.fetch(bxtb), ANF{ v:tv, hi:b, lo:b}, "b + tb = t(b)+b");
+    assert_eq!(base.fetch(txtb), ANF{ v:tv, hi:nid::not(b), lo:nid::O}, "t+tb = t(b+1)+0");
   }
 
 #[test] fn test_anf_and3() {
