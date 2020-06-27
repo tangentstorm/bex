@@ -187,55 +187,6 @@ pub trait BddWorker<S:BddState> : Sized + Serialize {
   fn get_state(&self)->&S;
 }
 
-
-
-// ----------------------------------------------------------------
-/// SimpleBddWorker: a single-threaded worker implementation
-// ----------------------------------------------------------------
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SimpleBddWorker<S:BddState> { state:S }
-
-impl<S:BddState> BddWorker<S> for SimpleBddWorker<S> {
-  fn new(nvars:usize)->Self { Self{ state: S::new(nvars) }}
-  fn new_with_state(state: S)->Self { Self{ state }}
-  fn nvars(&self)->usize { self.state.nvars() }
-  fn tup(&self, n:NID)->(NID,NID) { self.state.tup(n) }
-  fn get_state(&self)->&S { &self.state }
-
-  /// if-then-else routine. all-purpose node creation/lookup tool.
-  fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
-    match ITE::norm(f,g,h) {
-      Norm::Nid(x) => x,
-      Norm::Ite(ite) => self.ite_norm(ite),
-      Norm::Not(ite) => not(self.ite_norm(ite)) }} }
-
-impl<S:BddState> SimpleBddWorker<S> {
-  /// helper for ite to work on the normalized i,t,e triple
-  #[inline] fn ite_norm(&mut self, ite:ITE)->NID {
-    // !! this is one of the most time-consuming bottlenecks, so we inline a lot.
-    // it should only be called from ite() on pre-normalized triples
-    let ITE { i, t, e } = ite;
-    let (vi, vt, ve) = (var(i), var(t), var(e));
-    let v = min(vi, min(vt, ve));
-    match self.state.get_memo(&ite) {
-      Some(n) => n,
-      None => {
-        // We know we're going to branch on v, and v is either the branch var
-        // or not relevant to each of i,t,e. So we either retrieve the hilo pair
-        // or just pass the nid directly to each side of the branch.
-        let (hi_i, lo_i) = if v == vi {self.tup(i)} else {(i,i)};
-        let (hi_t, lo_t) = if v == vt {self.tup(t)} else {(t,t)};
-        let (hi_e, lo_e) = if v == ve {self.tup(e)} else {(e,e)};
-        let new_nid = {
-          // TODO: push one of these off into a queue for other threads
-          let hi = self.ite(hi_i, hi_t, hi_e);
-          let lo = self.ite(lo_i, lo_t, lo_e);
-          if hi == lo {hi} else {
-            let v = nid::old_to_vid(v);
-            self.state.simple_node(v, HILO::new(hi,lo)) }};
-        // now add the triple to the generalized memo store
-        if !is_var(i) { self.state.put_xmemo(ite, new_nid) }
-        new_nid }}} }
 
 // ----------------------------------------------------------------
 // Helper types for BddSwarm
@@ -751,10 +702,6 @@ type S = SafeBddState;
 
 /// The default type used by the rest of the system.
 /// (Note the first three letters in uppercase).
-#[cfg(feature="noswarm")]
-pub type BDDBase = BddBase<S,SimpleBddWorker<S>>;
-
-#[cfg(not(feature="noswarm"))]
 pub type BDDBase = BddBase<S,BddSwarm<S>>;
 
 

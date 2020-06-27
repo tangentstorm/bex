@@ -23,7 +23,6 @@ name = "bdd-solve"
 path = "examples/solve/bdd-solve.rs"
 
 [features]
-noswarm = []
 wip = []
 
 [dependencies]

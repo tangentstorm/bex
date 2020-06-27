@@ -31,8 +31,7 @@ also construct and manipulate BDDs directly.
   not yet take advantage of multiple cores.
 
 **code cleanup**
-- Swarming is now enabled by default for BDDBase. (#7)
-  For now, you can disable with `--feature noswarm`, but that's probably going to go away.
+- Swarming is now the only implementation for BDDBase. (#7)
 - `cargo test` now runs quickly, without generating diagrams (#3)
 - Unify the AST and BDD "Base" interfaces. (#2, #5)
   - `base` now contains only the abstract trait `Base` (formerly `TBase`)
