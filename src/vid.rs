@@ -41,15 +41,11 @@ impl VID {
       Var(x) => match other.v {
         Vir(_) => Below,
         Var(y) => cmp_depth_idx(x,&y),
-        NoV|T    => Above },
+        NoV|T => Above },
       Vir(x) => match other.v {
         Var(_) => Above,
         Vir(y) => cmp_depth_idx(x,&y),
-        NoV|T => Above
-      }
-    }
-  }
-}
+        NoV|T => Above }}}}
 
 pub fn topmost(x:VID, y:VID)->VID { if x.is_above(&y) { x } else { y }}
 pub fn topmost_of3(x:VID, y:VID, z:VID)->VID { topmost(x, topmost(y, z)) }
