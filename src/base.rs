@@ -117,19 +117,19 @@ base_test!(test_base_vars, b, 2, {
 
 // Test when_lo and when_hi for the simple cases.
 base_test!(test_base_when, b, 2, {
-  let (o, i, x0, x1) = (b.o(), b.i(), b.var(0), b.var(1));
-  let v = x0.vid();
+  let (o, i, n0, n1) = (b.o(), b.i(), b.var(0), b.var(1));
+  let x0 = n0.vid();
 
-  assert_eq!(b.when_lo(v, o), o, "x0=O should not affect O");
-  assert_eq!(b.when_hi(v, o), o, "x0=I should not affect O");
-  assert_eq!(b.when_lo(v, i), i, "x0=O should not affect I");
-  assert_eq!(b.when_hi(v, i), i, "x0=I should not affect I");
+  assert_eq!(b.when_lo(x0, o), o, "x0=O should not affect O");
+  assert_eq!(b.when_hi(x0, o), o, "x0=I should not affect O");
+  assert_eq!(b.when_lo(x0, i), i, "x0=O should not affect I");
+  assert_eq!(b.when_hi(x0, i), i, "x0=I should not affect I");
 
-  assert_eq!(b.when_lo(v, x0), o, "when_lo(0,x0) should be O");
-  assert_eq!(b.when_hi(v, x0), i, "when_hi(0,x0) should not I");
+  assert_eq!(b.when_lo(x0, n0), o, "when_lo(0,n0) should be O");
+  assert_eq!(b.when_hi(x0, n0), i, "when_hi(0,n0) should be I");
 
-  assert_eq!(b.when_lo(v, x1), x1, "x0=O should not affect x1");
-  assert_eq!(b.when_hi(v, x1), x1, "x0=I should not affect x1"); });
+  assert_eq!(b.when_lo(x0, n1), n1, "x0=O should not affect n1");
+  assert_eq!(b.when_hi(x0, n1), n1, "x0=I should not affect n1"); });
 
 
 
