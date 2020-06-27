@@ -574,14 +574,9 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
         let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
         self.ite(NID::from_vid(yv), th, el) }}}
 
-  /// is it possible x depends on y?
-  /// the goal here is to avoid exploring a subgraph if we don't have to.
-  #[inline] pub fn might_depend(&mut self, x:NID, y:VID)->bool {
-    if is_var(x) { x.vid()==y } else { x.vid() <= y }}
-
   /// replace var x with y in z
   pub fn replace(&mut self, x:VID, y:NID, z:NID)->NID {
-    if self.might_depend(z, x) {
+    if z.might_depend_on(x) {
       let (zt,ze) = self.tup(z); let zv = z.vid();
       if x==zv { self.ite(y, zt, ze) }
       else {

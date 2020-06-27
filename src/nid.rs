@@ -191,4 +191,9 @@ impl NID {
   pub fn from_vir(v:vid::VID)->Self { NID::vir(v.vir_ix() as u32)}
   pub fn from_vid(v:vid::VID)->Self { nv(vid_to_old(v)) }
   pub fn from_vid_idx(v:vid::VID, i:IDX)->Self { nvi(vid_to_old(v), i) }
-  pub fn vid(&self)->vid::VID { old_to_vid(var(*self)) }}
+  pub fn vid(&self)->vid::VID { old_to_vid(var(*self)) }
+  /// is it possible nid depends on var v?
+  /// the goal here is to avoid exploring a subgraph if we don't have to.
+  #[inline] pub fn might_depend_on(&self, v:vid::VID)->bool {
+    if is_var(*self) { self.vid()==v } else { self.vid() <= v }}
+}
