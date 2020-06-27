@@ -54,6 +54,16 @@ impl VID {
   pub fn is_var(&self)->bool { if let VID{ v:Var(_) } = self { true } else { false } }
   pub fn is_vir(&self)->bool { if let VID{ v:Vir(_) } = self { true } else { false } }
 
+  pub fn is_above(&self, other:&VID)->bool { self < other }
+  pub fn is_below(&self, other:&VID)->bool { self > other }
+  pub fn shift_up(&self)->VID {
+    match self.v {
+      NoV => panic!("VID::nov().shift_up() is undefined"),
+      T => panic!("VID::top().shift_up() is undefined"), //VID::var(0),
+      // these two might panic on underflow:
+      Var(x) => VID::var(x-1),
+      Vir(x) => VID::vir(x-1) }}
+
   pub fn var_ix(&self)->usize {
     if let Var(x) = self.v { x as usize } else { panic!("var_ix({:?})", self) }}
 

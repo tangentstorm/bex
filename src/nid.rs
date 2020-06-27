@@ -195,5 +195,7 @@ impl NID {
   /// is it possible nid depends on var v?
   /// the goal here is to avoid exploring a subgraph if we don't have to.
   #[inline] pub fn might_depend_on(&self, v:vid::VID)->bool {
-    if is_var(*self) { self.vid()==v } else { self.vid() <= v }}
+    if is_const(*self) { false }
+    else if is_var(*self) { self.vid() == v }
+    else { let sv = self.vid(); sv == v || sv.is_above(&v) }}
 }

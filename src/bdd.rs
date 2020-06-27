@@ -17,7 +17,7 @@ use bincode;
 use base;
 use io;
 use reg::Reg;
-use {nid, nid::{NID,O,I,var,not,idx,rvar,is_var,is_const,is_rvar,HILO,IDX,is_inv}};
+use {nid, nid::{NID,O,I,not,idx,rvar,is_var,is_const,is_rvar,HILO,IDX,is_inv}};
 use {vid::VID};
 
 
@@ -68,18 +68,18 @@ impl ITE {
         else if h==f  { h=O } // bounce!(f,g,O)
         else if h==nf { h=I } // bounce!(f,g,I)
         else {
-          let (fv, fi) = (var(f), idx(f));
+          let (fv, fi) = (f.vid(), idx(f));
           macro_rules! cmp { ($x0:expr,$x1:expr) => {
-            { let x0=$x0; ((x0<fv) || ((x0==fv) && ($x1<fi))) }}}
-          if is_const(g) && cmp!(var(h),idx(h)) {
+            { let x0=$x0; ((x0.is_above(&fv)) || ((x0==fv) && ($x1<fi))) }}}
+          if is_const(g) && cmp!(h.vid(),idx(h)) {
             if g==I { g=f; f=h; h=g;  g=I; }     // bounce!(h,I,f)
             else    { f=not(h); g=O;  h=nf; }}   // bounce(not(h),O,nf)
-          else if is_const(h) && cmp!(var(g),idx(g)) {
+          else if is_const(h) && cmp!(g.vid(),idx(g)) {
             if h==I { f=not(g); g=nf; h=I; }     // bounce!(not(g),nf,I)
             else    { h=f; f=g; g=h;  h=O; }}    // bounce!(g,f,O)
           else {
             let ng = not(g);
-            if (h==ng) && cmp!(var(g), idx(g)) { h=f; f=g; g=h; h=nf; } // bounce!(g,f,nf)
+            if (h==ng) && cmp!(g.vid(), idx(g)) { h=f; f=g; g=h; h=nf; } // bounce!(g,f,nf)
             // choose form where first 2 slots are NOT inverted:
             // from { (f,g,h), (¬f,h,g), ¬(f,¬g,¬h), ¬(¬f,¬g,¬h) }
             else if is_inv(f) { f=g; g=h; h=f; f=nf; } // bounce!(nf,h,g)
@@ -931,28 +931,28 @@ impl<'a> VidSolIterator<'a> {
     // now we are definitely at a leaf node with a branch above us.
     self.move_up();
 
-    // if we've already walked the hi branch, then ascend
-    let bv = nid::rvar(self.node) as usize; // branching var for current node
-    if self.scope.get(bv) {
-      // move up one to the deepest node where the branch variable is still lo.
+    // if we've already walked the hi branch...
+    let bv = self.node.vid(); // branching var for current node
+    if self.scope.var_get(bv) {
+      // then climb to the deepest node where the branch variable is still lo.
       // scope[i] is inverted when we're exploring the low branch.
       // so move up the tree until we're back on a low branch or reach the top
-      let mut iv = (self.scope.len() as i64) -1;
-      while !self.nstack.is_empty() && self.scope.get(iv as usize) {
+      let mut iv = bv;
+      while !self.nstack.is_empty() && self.scope.var_get(iv) {
         self.move_up();
-        let bv = nid::rvar(self.node) as i64; // branching var for current node
-        while iv > bv { iv-= 1; }} // ascend
+        let bv = self.node.vid(); // branching var for current node
+        while iv.is_below(&bv) { iv = iv.shift_up(); }} // ascend
 
       // if we're back at the top and we already explored the hi branch, we're done
-      if self.nstack.is_empty() && self.scope.get(iv as usize) { return None }}
+      if self.nstack.is_empty() && self.scope.var_get(iv) { return None }}
 
     // flip the output bit in the answer. (it was lo, make it hi)
-    let bv = nid::rvar(self.node) as usize;
-    if self.scope.get(bv) { self.log("DONE WITH NODE"); return None }
-    self.scope.put(bv, true);
+    let bv = self.node.vid();
+    if self.scope.var_get(bv) { self.log("DONE WITH NODE"); return None }
+    self.scope.var_put(bv, true);
 
     // now set all variables after that branch to lo
-    for i in (bv+1)..self.nvars { self.scope.put(i, false); }
+    for i in (bv.var_ix()+1)..self.nvars { self.scope.put(i, false); }
 
     // we don't need to flip self.invert because it hasn't changed.
     self.move_down(BddPart::HiPart);
