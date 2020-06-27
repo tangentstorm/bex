@@ -11,38 +11,48 @@ enum VidEnum {
   Vir(u32), // Virtual are "biggest", so go to the top.
 }
 
+#[derive(Eq, PartialEq)]
+pub enum VidOrdering {
+  Above,
+  Level,
+  Below }
+
 use self::VidEnum::*;
 
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 pub struct VID { v:VidEnum }
 
-impl Ord for VID {
-  fn cmp(&self, other: &Self) -> Ordering {
+fn cmp_depth_idx(x:u32, y:&u32)->VidOrdering {
+  match x.cmp(y) {
+    Ordering::Less => VidOrdering::Above,
+    Ordering::Equal => VidOrdering::Level,
+    Ordering::Greater => VidOrdering::Below }}
+
+impl VID {
+  pub fn cmp_depth(&self, other: &Self) -> VidOrdering {
+    use self::VidOrdering::*;
     match self.v {
-      T => if other.v == T { Ordering::Equal } else { Ordering::Greater },
+      T => if other.v == T { Level } else { Below },
       NoV => match other.v {
-        T   => Ordering::Less,
-        NoV => Ordering::Equal,
-        _   => Ordering::Greater },
+        T   => Above,
+        NoV => Level,
+        _   => Below },
       Var(x) => match other.v {
-        Vir(_) => Ordering::Greater,
-        Var(y) => x.cmp(&y),
-        NoV|T    => Ordering::Less },
+        Vir(_) => Below,
+        Var(y) => cmp_depth_idx(x,&y),
+        NoV|T    => Above },
       Vir(x) => match other.v {
-        Var(_) => Ordering::Less,
-        Vir(y) => x.cmp(&y),
-        NoV|T => Ordering::Less
+        Var(_) => Above,
+        Vir(y) => cmp_depth_idx(x,&y),
+        NoV|T => Above
       }
     }
   }
 }
 
-impl PartialOrd for VID {
-  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-      Some(self.cmp(other))
-  }
-}
+pub fn topmost(x:VID, y:VID)->VID { if x.is_above(&y) { x } else { y }}
+pub fn topmost_of3(x:VID, y:VID, z:VID)->VID { topmost(x, topmost(y, z)) }
 
 impl VID {
   pub fn top()->VID { VID { v:T }}
@@ -54,8 +64,8 @@ impl VID {
   pub fn is_var(&self)->bool { if let VID{ v:Var(_) } = self { true } else { false } }
   pub fn is_vir(&self)->bool { if let VID{ v:Vir(_) } = self { true } else { false } }
 
-  pub fn is_above(&self, other:&VID)->bool { self < other }
-  pub fn is_below(&self, other:&VID)->bool { self > other }
+  pub fn is_above(&self, other:&VID)->bool { self.cmp_depth(&other) == VidOrdering::Above }
+  pub fn is_below(&self, other:&VID)->bool { self.cmp_depth(&other) == VidOrdering::Below }
   pub fn shift_up(&self)->VID {
     match self.v {
       NoV => panic!("VID::nov().shift_up() is undefined"),

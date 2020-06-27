@@ -17,7 +17,7 @@ use std::cmp::Ordering;
 use std::collections::HashSet;
 use base::Base;
 use {nid, nid::{NID,I,O}};
-use {vid::VID};
+use vid::{VID,VidOrdering};
 use reg::Reg;
 use hashbrown::HashMap;
 
@@ -99,24 +99,24 @@ impl Base for ANFBase {
 
   fn when_lo(&mut self, v:VID, n:NID)->NID {
     let nv = n.vid();
-    match nv.cmp(&v) {
-      Ordering::Greater => n, // n independent of v
-      Ordering::Equal => {
+    match v.cmp_depth(&nv) {
+      VidOrdering::Above => n, // n independent of v
+      VidOrdering::Level => {
         if nid::is_lit(n) {
           // a leaf node should never be inverted... unless it's also the root.
           if nid::is_inv(n) { I } else { O }}
         else { self.fetch(n).lo }}
-      Ordering::Less => panic!("TODO: anf::when_lo var(n)<v") }}
+      VidOrdering::Below => panic!("TODO: anf::when_lo v below var(n)") }}
 
   fn when_hi(&mut self, v:VID, n:NID)->NID {
     let nv = n.vid();
-    match nv.cmp(&v) {
-      Ordering::Greater => n,  // n independent of v
-      Ordering::Equal => {
+    match v.cmp_depth(&nv) {
+      VidOrdering::Above => n,  // n independent of v
+      VidOrdering::Level => {
         if nid::is_lit(n) {
           if nid::is_inv(n) { O } else { I }}
         else { self.fetch(n).hi }},
-      Ordering::Less => panic!("TODO: anf::when_hi") }}
+      VidOrdering::Below => todo!("anf::when_hi(v below n.vid)") }}
 
   // logical ops
 
@@ -159,8 +159,7 @@ impl Base for ANFBase {
 
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID {
     let cv = ctx.vid();
-    if v < cv { ctx } // ctx can't contain v
-    else {
+    if ctx.might_depend_on(v) {
       let x = self.fetch(ctx);
       let (hi, lo) = (x.hi, x.lo);
       if v == cv { expr![self, ((n & hi) ^ lo)] }
@@ -168,7 +167,8 @@ impl Base for ANFBase {
         let rhi = self.sub(v,n,hi);
         let rlo = self.sub(v,n,lo);
         let top = NID::from_vid(cv);
-        expr![self, ((top & rhi) ^ rlo)] }}}
+        expr![self, ((top & rhi) ^ rlo)] }}
+    else { ctx }}
 
   fn save(&self, _path:&str)->::std::io::Result<()> { todo!("anf::save") }
 

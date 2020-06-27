@@ -1,6 +1,5 @@
 /// A module for efficient implementation of binary decision diagrams.
 use std::clone::Clone;
-use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
@@ -8,7 +7,6 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::thread;
-use std::cmp::Ordering;
 
 extern crate num_cpus;
 
@@ -18,7 +16,7 @@ use base;
 use io;
 use reg::Reg;
 use {nid, nid::{NID,O,I,not,idx,rvar,is_var,is_const,is_rvar,HILO,IDX,is_inv}};
-use {vid::VID};
+use vid::{VID,VidOrdering,topmost_of3};
 
 
 /// An if/then/else triple. Like VHL, but all three slots are NIDs.
@@ -27,9 +25,9 @@ pub struct ITE {i:NID, t:NID, e:NID}
 impl ITE {
   /// shorthand constructor
   pub fn new (i:NID, t:NID, e:NID)-> ITE { ITE { i, t, e } }
-  pub fn min_vid(&self)->VID {
+  pub fn top_vid(&self)->VID {
     let (i,t,e) = (self.i.vid(), self.t.vid(), self.e.vid());
-    min(i, min(t, e)) }}
+    topmost_of3(i,t,e) }}
 
 /// This represents the result of normalizing an ITE. There are three conditions:
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -463,7 +461,7 @@ fn swarm_vhl_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
 fn swarm_ite_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
   let ITE { i, t, e } = ite;
   let (vi, vt, ve) = (i.vid(), t.vid(), e.vid());
-  let v = ite.min_vid();
+  let v = ite.top_vid();
   match state.get_memo(&ite) {
     Some(n) => RMsg::Nid(n),
     None => {
@@ -555,10 +553,10 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
   /// nid of y when x is high
   pub fn when_hi(&mut self, x:VID, y:NID)->NID {
     let yv = y.vid();
-    match yv.cmp(&x) {
-      Ordering::Equal => self.tup(y).0,  // x ∧ if(x,th,_) → th
-      Ordering::Greater => y,            // y independent of x, so no change. includes yv = I
-      Ordering::Less => {                // y may depend on x, so recurse.
+    match x.cmp_depth(&yv) {
+      VidOrdering::Level => self.tup(y).0,  // x ∧ if(x,th,_) → th
+      VidOrdering::Above => y,              // y independent of x, so no change. includes yv = I
+      VidOrdering::Below => {               // y may depend on x, so recurse.
         let (yt, ye) = self.tup(y);
         let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
         self.ite(NID::from_vid(yv), th, el) }}}
@@ -566,10 +564,10 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
   /// nid of y when x is low
   pub fn when_lo(&mut self, x:VID, y:NID)->NID {
     let yv = y.vid();
-    match yv.cmp(&x) {
-      Ordering::Equal => self.tup(y).1,  // ¬x ∧ if(x,_,el) → el
-      Ordering::Greater => y,            // y independent of x, so no change. includes yv = I
-      Ordering::Less => {                // y may depend on x, so recurse.
+    match x.cmp_depth(&yv) {
+      VidOrdering::Level => self.tup(y).1,  // ¬x ∧ if(x,_,el) → el
+      VidOrdering::Above => y,              // y independent of x, so no change. includes yv = I
+      VidOrdering::Below => {               // y may depend on x, so recurse.
         let (yt, ye) = self.tup(y);
         let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
         self.ite(NID::from_vid(yv), th, el) }}}
@@ -587,7 +585,7 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
 
   /// swap input variables x and y within bdd n
   pub fn swap(&mut self, n:NID, x:VID, y:VID)-> NID {
-    if y>x { return self.swap(n,y,x) }
+    if x.is_below(&y) { return self.swap(n,y,x) }
     /*
         x ____                        x'____
         :     \                       :     \

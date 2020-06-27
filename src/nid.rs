@@ -154,10 +154,10 @@ impl HILO {
     let v = |x:usize|->NID { nv(x) };  let x=|x:u32|->NID { NID::var(x) };
     let o=|x:NID|var(x);   let n=|x:NID|x.vid();
     assert!(o(O) == o(I),      "old:no=no");  assert!(n(O) == n(I),       "new:no=no");
-    assert!(o(O)    > o(v(0)), "old:no>v0");  assert!(n(O)    >  n(v(0)), "new:no>v0");
-    assert!(o(O)    > o(x(0)), "old:no>x0");  assert!(n(O)    >  n(x(0)), "new:no>x0, {:?} {:?}", n(O), n(x(0)));
-    assert!(o(v(0)) < o(x(0)), "old:v0>x0");  assert!(n(v(0)) < n(x(0)),  "new:v0>x0");
-    assert!(o(v(1)) < o(x(0)), "old:v1<x0");  assert!(n(v(1)) < n(x(0)),  "new:v1>x0");
+    assert!(o(O)    > o(v(0)), "old:no>v0");  assert!(n(O).is_below(&n(v(0))), "new:no bel v0");
+    assert!(o(O)    > o(x(0)), "old:no>x0");  assert!(n(O).is_below(&n(x(0))), "new:no bel x0");
+    assert!(o(v(0)) < o(x(0)), "old:v0>x0");  assert!(n(v(0)).is_above(&n(x(0))),  "new:v0 abv x0");
+    assert!(o(v(1)) < o(x(0)), "old:v1<x0");  assert!(n(v(1)).is_above(&n(x(0))),  "new:v1 abv x0");
   }
 
 
