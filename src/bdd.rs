@@ -642,8 +642,6 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   fn new(n:usize)->Self { Self::new(n) }
   fn num_vars(&self)->usize { self.nvars() }
 
-  fn var(&mut self, v:u32)->NID { nid::nv(v as usize) }
-
   fn when_hi(&mut self, v:VID, n:NID)->NID { self.when_hi(v,n) }
   fn when_lo(&mut self, v:VID, n:NID)->NID { self.when_lo(v,n) }
 
@@ -715,62 +713,62 @@ test_base_when!(BDDBase);
 
 #[test] fn test_base() {
   let mut base = BDDBase::new(3);
-  let (v1, v2, v3) = (nid::nv(1), nid::nv(2), nid::nv(3));
+  let (v1, v2, v3) = (NID::var(1), NID::var(2), NID::var(3));
   assert_eq!(base.nvars(), 3);
   assert_eq!((I,O), base.tup(I));
   assert_eq!((O,I), base.tup(O));
   assert_eq!((I,O), base.tup(v1));
   assert_eq!((I,O), base.tup(v2));
   assert_eq!((I,O), base.tup(v3));
-  assert_eq!(I, base.when_hi(VID::vir(3),v3));
-  assert_eq!(O, base.when_lo(VID::vir(3),v3))}
+  assert_eq!(I, base.when_hi(VID::var(3),v3));
+  assert_eq!(O, base.when_lo(VID::var(3),v3))}
 
 #[test] fn test_and() {
   let mut base = BDDBase::new(3);
-  let (v1, v2) = (nid::nv(1), nid::nv(2));
+  let (v1, v2) = (NID::var(1), NID::var(2));
   let a = base.and(v1, v2);
-  assert_eq!(O,  base.when_lo(VID::vir(1),a));
-  assert_eq!(v2, base.when_hi(VID::vir(1),a));
-  assert_eq!(O,  base.when_lo(VID::vir(2),a));
-  assert_eq!(v1, base.when_hi(VID::vir(2),a));
-  assert_eq!(a,  base.when_hi(VID::vir(3),a));
-  assert_eq!(a,  base.when_lo(VID::vir(3),a))}
+  assert_eq!(O,  base.when_lo(VID::var(1),a));
+  assert_eq!(v2, base.when_hi(VID::var(1),a));
+  assert_eq!(O,  base.when_lo(VID::var(2),a));
+  assert_eq!(v1, base.when_hi(VID::var(2),a));
+  assert_eq!(a,  base.when_hi(VID::var(3),a));
+  assert_eq!(a,  base.when_lo(VID::var(3),a))}
 
 #[test] fn test_xor() {
   let mut base = BDDBase::new(3);
-  let (v1, v2) = (nid::nv(1), nid::nv(2));
+  let (v1, v2) = (NID::var(1), NID::var(2));
   let x = base.xor(v1, v2);
-  assert_eq!(v2,      base.when_lo(VID::vir(1),x));
-  assert_eq!(not(v2), base.when_hi(VID::vir(1),x));
-  assert_eq!(v1,      base.when_lo(VID::vir(2),x));
-  assert_eq!(not(v1), base.when_hi(VID::vir(2),x));
-  assert_eq!(x,       base.when_lo(VID::vir(3),x));
-  assert_eq!(x,       base.when_hi(VID::vir(3),x))}
+  assert_eq!(v2,      base.when_lo(VID::var(1),x));
+  assert_eq!(not(v2), base.when_hi(VID::var(1),x));
+  assert_eq!(v1,      base.when_lo(VID::var(2),x));
+  assert_eq!(not(v1), base.when_hi(VID::var(2),x));
+  assert_eq!(x,       base.when_lo(VID::var(3),x));
+  assert_eq!(x,       base.when_hi(VID::var(3),x))}
 
 // swarm test suite
 pub type BddSwarmBase = BddBase<SafeBddState,BddSwarm<SafeBddState>>;
 
 #[test] fn test_swarm_xor() {
   let mut base = BddSwarmBase::new(2);
-  let (x0, x1) = (nid::nv(0), nid::nv(1));
+  let (x0, x1) = (NID::var(0), NID::var(1));
   let x = base.xor(x0, x1);
-  assert_eq!(x1,      base.when_lo(VID::vir(0),x));
-  assert_eq!(not(x1), base.when_hi(VID::vir(0),x));
-  assert_eq!(x0,      base.when_lo(VID::vir(1),x));
-  assert_eq!(not(x0), base.when_hi(VID::vir(1),x));
-  assert_eq!(x,       base.when_lo(VID::vir(2),x));
-  assert_eq!(x,       base.when_hi(VID::vir(2),x))}
+  assert_eq!(x1,      base.when_lo(VID::var(0),x));
+  assert_eq!(not(x1), base.when_hi(VID::var(0),x));
+  assert_eq!(x0,      base.when_lo(VID::var(1),x));
+  assert_eq!(not(x0), base.when_hi(VID::var(1),x));
+  assert_eq!(x,       base.when_lo(VID::var(2),x));
+  assert_eq!(x,       base.when_hi(VID::var(2),x))}
 
 #[test] fn test_swarm_and() {
   let mut base = BddSwarmBase::new(2);
-  let (x0, x1) = (nid::nv(0), nid::nv(1));
+  let (x0, x1) = (NID::var(0), NID::var(1));
   let a = base.and(x0, x1);
-  assert_eq!(O,  base.when_lo(VID::vir(0),a));
-  assert_eq!(x1, base.when_hi(VID::vir(0),a));
-  assert_eq!(O,  base.when_lo(VID::vir(1),a));
-  assert_eq!(x0, base.when_hi(VID::vir(1),a));
-  assert_eq!(a,  base.when_hi(VID::vir(2),a));
-  assert_eq!(a,  base.when_lo(VID::vir(2),a))}
+  assert_eq!(O,  base.when_lo(VID::var(0),a));
+  assert_eq!(x1, base.when_hi(VID::var(0),a));
+  assert_eq!(O,  base.when_lo(VID::var(1),a));
+  assert_eq!(x0, base.when_hi(VID::var(1),a));
+  assert_eq!(a,  base.when_hi(VID::var(2),a));
+  assert_eq!(a,  base.when_lo(VID::var(2),a))}
 
 /// slightly harder test case that requires ite() to recurse
 #[test] fn test_swarm_ite() {
@@ -816,7 +814,7 @@ pub type BddSwarmBase = BddBase<SafeBddState,BddSwarm<SafeBddState>>;
      "const true should yield all solutions"); }
 
 #[test] fn test_bdd_solutions_simple() {
-  let mut base = BDDBase::new(1); let (a, _na) = (nid::nv(0), nid::not(nid::nv(0)));
+  let mut base = BDDBase::new(1); let a = NID::var(0);
   let mut it = base.solutions(a);
   // it should be sitting on first solution, which is a=1
   assert!(!it.done,  "should be a solution");

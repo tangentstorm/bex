@@ -273,7 +273,7 @@ impl Base for ASTBase {
 
   fn var(&mut self, v:u32)->NID {
     for _ in self.nvars as u32 ..= v { self.nvars += 1 }
-    nid::nv(v as usize) }
+    NID::var(v) }
 
   fn when_hi(&mut self, v:vid::VID, n:NID)->NID { self.when(v, nid::I, n) }
   fn when_lo(&mut self, v:vid::VID, n:NID)->NID { self.when(v, nid::O, n) }
@@ -376,8 +376,8 @@ test_base_when!(ASTBase);
 fn ast_vars(){
   let mut b = ASTBase::empty();
   let x0 = b.var(0); let x1 = b.var(1);
-  assert_eq!(nid::var(x0), 0);
-  assert_eq!(nid::var(x1), 1);
+  assert_eq!(x0.vid().var_ix(), 0);
+  assert_eq!(x1.vid().var_ix(), 1);
   assert_eq!(b.not(x0), b.nid(Op::Not(x0))); }
 
 #[test]

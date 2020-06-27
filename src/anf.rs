@@ -422,8 +422,8 @@ test_base_when!(ANFBase);
   assert_eq!(base.sub(b.vid(), xyz, ctx), expr![base, ((a & xyz) ^ c)]);}
 
 #[test] fn test_anf_sub_inv() {
-    let mut base = ANFBase::new(7);
-    let (v1,v2,v4,v6) = (nid::nv(1), nid::nv(2), nid::nv(4), nid::nv(6));
+    let mut base = ANFBase::new(7); let nv = |x|NID::var(x);
+    let (v1,v2,v4,v6) = (nv(1), nv(2), nv(4), nv(6));
     let ctx = expr![base, (v1 & v6) ];
     let top = expr![base, ((I^v4) & v2)];
     assert_eq!(top, base.and(nid::not(v4), v2), "sanity check");

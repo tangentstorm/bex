@@ -94,10 +94,9 @@ pub const I:NID = new(T|INV);
 #[inline(always)] pub fn not(x:NID)->NID { NID { n:x.n^INV } }
 
 /// Construct the NID for the (virtual) node corresponding to an input variable.
-#[inline(always)] pub fn nv(v:VID)->NID { NID { n:((v as u64) << 32)|VAR }}
-
-/// Construct the NID for the (virtual) node corresponding to an input variable.
-#[inline(always)] pub fn nvr(v:VID)->NID { NID { n:((v as u64) << 32)|VAR|RVAR }}
+/// Private since moving to vid::VID, because this didn't set the "real" bit, and
+/// I want the real bit to eventually go away in favor of an unset "virtual" bit.
+#[inline(always)] fn nv(v:VID)->NID { NID { n:((v as u64) << 32)|VAR }}
 
 /// Construct a NID with the given variable and index.
 #[inline(always)] pub fn nvi(v:VID,i:IDX)->NID { new(((v as u64) << 32) + i as u64) }
@@ -137,22 +136,23 @@ impl HILO {
 #[test] fn test_nids() {
   assert_eq!(O.n,   2305843009213693952); assert_eq!(O, new(0x2000000000000000));
   assert_eq!(I.n,  11529215046068469760); assert_eq!(I, new(0xa000000000000000));
-  assert_eq!(nv(0),  new(0x4000000000000000u64));
-  assert_eq!(nvr(0), new(0x5000000000000000u64));
-  assert_eq!(nv(1),  new(0x4000000100000000u64));
-  assert!(var(nv(0)) < var(nvr(0)));
+  assert_eq!(NID::vir(0), new(0x4000000000000000u64));
+  assert_eq!(NID::var(0), new(0x5000000000000000u64));
+  assert_eq!(NID::vir(1),  new(0x4000000100000000u64));
+  assert!(var(NID::vir(0)) < var(NID::var(0)));
   assert_eq!(nvi(0,0), new(0x0000000000000000u64));
   assert_eq!(nvi(1,0), new(0x0000000100000000u64)); }
 
   #[test] fn test_var() {
     assert_eq!(var(O), 536870912, "var(O)");
     assert_eq!(var(I), var(O), "INV bit shouldn't be part of variable");
-    assert_eq!(var(nv(0)), 0);
-    assert_eq!(var(nvr(0)), 268435456);
+    assert_eq!(var(NID::vir(0)), 0);
+    assert_eq!(var(NID::var(0)), 268435456);
   }
 
   #[test] fn test_cmp() {
-    let v = |x|nv(x);  let x=|x|nvr(x);  let o=|x:NID|var(x);   let n=|x:NID|x.vid();
+    let v = |x:usize|->NID { nv(x) };  let x=|x:u32|->NID { NID::var(x) };
+    let o=|x:NID|var(x);   let n=|x:NID|x.vid();
     assert!(o(O) == o(I),      "old:no=no");  assert!(n(O) == n(I),       "new:no=no");
     assert!(o(O)    > o(v(0)), "old:no>v0");  assert!(n(O)    >  n(v(0)), "new:no>v0");
     assert!(o(O)    > o(x(0)), "old:no>x0");  assert!(n(O)    >  n(x(0)), "new:no>x0, {:?} {:?}", n(O), n(x(0)));
@@ -187,8 +187,8 @@ fn old_to_vid(o:VID)->vid::VID {
 impl NID {
   pub fn var(v:u32)->Self { Self::from_vid(vid::VID::var(v)) }
   pub fn vir(v:u32)->Self { Self::from_vid(vid::VID::vir(v)) }
-  pub fn from_var(v:vid::VID)->Self { nv(v.var_ix())}
-  pub fn from_vir(v:vid::VID)->Self { nv(v.vir_ix())}
+  pub fn from_var(v:vid::VID)->Self { NID::var(v.var_ix() as u32)}
+  pub fn from_vir(v:vid::VID)->Self { NID::vir(v.vir_ix() as u32)}
   pub fn from_vid(v:vid::VID)->Self { nv(vid_to_old(v)) }
   pub fn from_vid_idx(v:vid::VID, i:IDX)->Self { nvi(vid_to_old(v), i) }
   pub fn vid(&self)->vid::VID { old_to_vid(var(*self)) }}

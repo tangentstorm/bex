@@ -40,7 +40,7 @@ impl<'a> Progress for ProgressReport<'a> {
         println!("\n# newtop: {:?}  step:{}/{} ({:.2}%)",
                  newtop, step, src.len(), percent_done); }
       if self.save_dest {
-        dest.tag(new, "top".to_string()); dest.tag(nid::nv(step), "step".to_string());
+        dest.tag(new, "top".to_string()); dest.tag(NID::var(step as u32), "step".to_string());
         // TODO: remove the 'bdd' suffix
         dest.save(format!("{}-{:04}.bdd", self.prefix, step).as_str())
           .expect("failed to save"); }}
@@ -87,7 +87,7 @@ pub fn refine<P:Progress>(dest: &mut B, src:&ASTBase, end:DstNid, pr:P)->DstNid 
   let mut top = end;
   println!("INITIAL TOPNID: {:?}", top);
   // step is just a number. we're packing it in a nid as a kludge
-  let mut step = nid::var(dest.get(&"step".to_string()).unwrap_or_else(||nid::nv(0)));
+  let mut step = nid::var(dest.get(&"step".to_string()).unwrap_or_else(||NID::var(0)));
   pr.on_start();
   while !(nid::is_rvar(top.n) || nid::is_const(top.n)) {
     let now = std::time::SystemTime::now();
@@ -105,8 +105,8 @@ pub fn convert_nid(sn:SrcNid)->DstNid {
   let SrcNid{ n } = sn;
   let r = if nid::is_const(n) { n }
   else {
-    let r0 = if nid::is_var(n) { nid::nvr(nid::var(n)) }
-    else if nid::no_var(n) { nid::nv(nid::idx(n)) }
+    let r0 = if nid::is_var(n) { NID::var(nid::var(n) as u32) }
+    else if nid::no_var(n) { NID::vir(nid::idx(n) as u32) }
     else { todo!("convert_nid({:?})", n) };
     if nid::is_inv(n) { nid::not(r0)} else { r0 }};
   DstNid{ n: r } }
@@ -138,7 +138,7 @@ fn refine_one(dst: &mut B, src:&ASTBase, d:DstNid)->DstNid {
 #[macro_export]
 macro_rules! find_factors {
   ($TDEST:ident, $T0:ident, $T1:ident, $k:expr, $expect:expr, $show:expr) => {{
-    use bex::{Base,nid, solve::{SrcNid, DstNid, convert_nid}};
+    use bex::{Base,nid, nid::NID, solve::{SrcNid, DstNid, convert_nid}};
     // reset gbase on each test
     GBASE.with(|gb| gb.replace(ASTBase::empty()));
     let (x, y) = ($T0::def("x"), $T0::def("y")); let lt = x.lt(&y);
@@ -153,7 +153,7 @@ macro_rules! find_factors {
       if $show { src.show_named(top.n, "ast"); }
       dest = $TDEST::new(src.len());
       assert!(nid::no_var(top.n), "top nid seems to be a literal. (TODO: handle these already solved cases)");
-      refine(&mut dest, &src, DstNid{n: nid::nv(nid::idx(top.n))},
+      refine(&mut dest, &src, DstNid{n: NID::vir(nid::idx(top.n) as u32)},
              ProgressReport{ save_dot: $show, save_dest: false, prefix: "x",
                              show_result: $show, save_result: $show }) });
     let expect = $expect;

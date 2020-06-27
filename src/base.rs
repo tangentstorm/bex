@@ -15,8 +15,8 @@ pub trait Base {
   fn o(&self)->NID { nid::O }
   fn i(&self)->NID { nid::I }
 
-  fn var(&mut self, v:u32)->NID { nid::nvr(v as usize) }
-  fn vir(&mut self, v:u32)->NID { nid::nv(v as usize) }
+  fn var(&mut self, v:u32)->NID { NID::var(v) }
+  fn vir(&mut self, v:u32)->NID { NID::vir(v) }
 
   fn when_hi(&mut self, v:VID, n:NID)->NID;
   fn when_lo(&mut self, v:VID, n:NID)->NID;
