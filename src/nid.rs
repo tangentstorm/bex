@@ -90,10 +90,6 @@ pub const I:NID = new(T|INV);
 /// Same as var() but strips out the RVAR bit.
 #[inline(always)] pub fn rvar(x:NID)->VID { ((x.n & !(INV|VAR|RVAR)) >> 32) as VID}
 
-/// internal function to strip rvar bit and convert to usize
-#[deprecated(note="use vid::VID instead")]
-#[inline(always)] pub fn rv(v:VID)->usize { (v&!((RVAR>>32) as VID)) as usize}
-
 /// Toggle the INV bit, applying a logical "NOT" operation to the corressponding node.
 #[inline(always)] pub fn not(x:NID)->NID { NID { n:x.n^INV } }
 
@@ -173,16 +169,15 @@ pub fn no_var(x:NID)->bool { var(x)==NOVAR }
 pub fn ixn(ix:IDX)->NID { nvi(NOVAR, ix) }
 
 use vid;
-#[deprecated(note="VID scaffolding")]
-pub fn vid_to_old(v:vid::VID)->VID {
+
+fn vid_to_old(v:vid::VID)->VID {
   if v.is_nov() { NOVAR }
   else if v.is_top() { TOP }
   else if v.is_var() { v.var_ix() | (RVAR>>32) as VID }
   else if v.is_vir() { v.vir_ix() as VID }
   else { panic!("unknown vid::VID {:?}?", v) }}
 
-#[deprecated(note="VID scaffolding")]
-pub fn old_to_vid(o:VID)->vid::VID {
+fn old_to_vid(o:VID)->vid::VID {
   if o == TOP { vid::VID::top() }
   else if o == NOVAR { vid::VID::nov() }
   else if o & (RVAR>>32) as VID > 0 {

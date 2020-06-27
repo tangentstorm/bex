@@ -28,7 +28,8 @@ impl ITE {
   /// shorthand constructor
   pub fn new (i:NID, t:NID, e:NID)-> ITE { ITE { i, t, e } }
   pub fn min_vid(&self)->VID {
-    nid::old_to_vid(min(var(self.i), min(var(self.t), var(self.e)))) }}
+    let (i,t,e) = (self.i.vid(), self.t.vid(), self.e.vid());
+    min(i, min(t, e)) }}
 
 /// This represents the result of normalizing an ITE. There are three conditions:
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -456,7 +457,6 @@ fn swarm_ite<S:BddState>(state: &Arc<S>, ite0:ITE)->RMsg {
 
 fn swarm_vhl_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
   let ITE{i:vv,t:hi,e:lo} = ite; let v = vv.vid();
-  debug_assert!(is_var(vv)); debug_assert_eq!(v, ite.min_vid());
   if let Some(n) = state.get_simple_node(vv.vid(), HILO{hi,lo}) { RMsg::Nid(n) }
   else { RMsg::Vhl{ v, hi, lo, invert:false } }}
 
