@@ -17,7 +17,7 @@ use bincode;
 use base;
 use io;
 use reg::Reg;
-use {nid, nid::{NID,O,I,var,not,idx,rvar,rv,is_var,is_const,is_rvar,HILO,IDX,is_inv}};
+use {nid, nid::{NID,O,I,var,not,idx,rvar,is_var,is_const,is_rvar,HILO,IDX,is_inv}};
 use {vid::VID};
 
 
@@ -121,15 +121,23 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
   fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID; }
 
 
+// TODO: remove VID from hilos,index. just store hilos.
+//       there's no reason to store (x1,y,z) separately from (x2,y,z).
+// except...
+// !! Why do the solve tests fail when I remove VID from hilos/index?
+//    In test_nano_bdd, I wind up with a node branching on x2
+//    to another node also branching on x2.
+//    possibly a bug in sub/replace?
+
 /// Groups everything by variable. I thought this would be useful, but it probably is not.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SafeBddState {
   /// number of variables
   nvars: usize,
   /// variable-specific hi/lo pairs for individual bdd nodes.
-  nodes: Vec<Vec<HILO>>,
+  hilos: Vec<(VID,HILO)>,
   /// variable-specific memoization. These record (v,hilo) lookups.
-  vmemo: Vec<BDDHashMap<HILO,NID>>,
+  index: BDDHashMap<(VID,HILO), IDX>,
   /// arbitrary memoization. These record normalized (f,g,h) lookups.
   xmemo: BDDHashMap<ITE, NID> }
 
@@ -140,8 +148,8 @@ impl BddState for SafeBddState {
   fn new(nvars:usize)->SafeBddState {
     SafeBddState{
       nvars,
-      nodes: (0..nvars).map(|_| vec![]).collect(),
-      vmemo:(0..nvars).map(|_| BDDHashMap::default()).collect(),
+      hilos: vec![],
+      index: BDDHashMap::default(),
       xmemo: BDDHashMap::default() }}
 
   /// return the number of variables
@@ -149,7 +157,7 @@ impl BddState for SafeBddState {
 
   /// the "put" for this one is put_simple_node
   #[inline] fn get_hilo(&self, n:NID)->HILO {
-    self.nodes[rv(var(n))][idx(n)] }
+    self.hilos[idx(n) as usize].1}
 
   /// load the memoized NID if it exists
   #[inline] fn get_memo(&self, ite:&ITE) -> Option<NID> {
@@ -161,14 +169,13 @@ impl BddState for SafeBddState {
     self.xmemo.insert(ite, new_nid); }
 
   #[inline] fn get_simple_node(&self, v:VID, hilo:HILO)-> Option<NID> {
-    self.vmemo[v.u()].get(&hilo).copied() }
+    self.index.get(&(v,hilo)).map(|&ix| NID::from_vid_idx(v, ix)) }
 
   #[inline] fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID {
-    let vnodes = &mut self.nodes[v.u()];
-    let res = NID::from_vid_idx(v, vnodes.len() as IDX);
-    vnodes.push(hilo);
-    self.vmemo[v.u()].insert(hilo,res);
-    res } }
+    let ix = self.hilos.len() as IDX;
+    self.hilos.push((v,hilo));
+    self.index.insert((v,hilo), ix);
+    NID::from_vid_idx(v, ix) }}
 
 
 pub trait BddWorker<S:BddState> : Sized + Serialize {
