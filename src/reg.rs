@@ -83,7 +83,7 @@ impl Reg {
       let mut write_bit = |i| { write!(f, "{}", if self.get(i) {'1'} else {'o'}) };
       if SMALLER_AT_TOP { for i in 0..self.nvars { write_bit(i)? }}
       else { for i in (0..self.nvars).rev() { write_bit(i)? } };
-      write!(f, "={}]", self.as_usize()) }}
+      write!(f, "={:02x}]", self.as_usize()) }}
 
   /// Same as fmt::Display. Mostly so it's easier to see the problem when an assertion fails.
   impl fmt::Debug for Reg { // for test suite output
