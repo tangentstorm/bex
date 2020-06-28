@@ -107,10 +107,8 @@ impl fmt::Display for NID {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     if is_const(*self) { if is_inv(*self) { write!(f, "I") } else { write!(f, "O") } }
     else { if is_inv(*self) { write!(f, "¬")?; }
-           if is_var(*self) {
-             if is_rvar(*self) { write!(f, "x{}", rvar(*self)) }
-             else { write!(f, "v{}", var(*self)) }}
-           else if is_rvar(*self) { write!(f, "@[x{}:{}]", rvar(*self), idx(*self)) }
+           if is_var(*self) { write!(f, "{}", self.vid()) }
+           else if is_rvar(*self) { write!(f, "@[{}:{}]", self.vid(), idx(*self)) }
            else if var(*self) == NOVAR { write!(f, "#{}", idx(*self)) }
            else { write!(f, "@[v{}:{}]", var(*self), idx(*self)) }}}}
 

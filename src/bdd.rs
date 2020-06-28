@@ -902,7 +902,7 @@ impl<'a> VidSolIterator<'a> {
   fn log(&self, _msg: &str) {
     #[cfg(test)]{
       print!(" {}", if self.invert { '¬' } else { ' ' });
-      print!("{:>8}", format!("{}", self.node));
+      print!("{:>10}", format!("{}", self.node));
       print!(" {:?}{}", self.scope, if self.in_solution() { '.' } else { ' ' });
       let s = format!("{}{}", "  ".repeat(self.indent as usize), _msg,);
       println!(" {:50} {:?}", s, self.nstack);}}
@@ -997,7 +997,7 @@ impl<'a> VidSolIterator<'a> {
           let part = if hi { BddPart::HiPart } else { BddPart::LoPart };
           self.move_down(part);
           self.descend();
-          if self.in_solution() { self.log("// ^ found next solution"); return }}
+          if self.in_solution() { self.log("^ found next solution"); return }}
         else { // there's no lmz, so we've counted all the way to 2^nvars-1, and we're done.
           self.log("// found all solutions!"); self.done = true; return }}
       // If still here, we are looking at a leaf that isn't a solution (out=0 in truth table)

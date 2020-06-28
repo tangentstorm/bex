@@ -1,5 +1,6 @@
 /// Variable Identifiers
 use std::cmp::Ordering;
+use std::fmt;
 
 #[cfg(not(feature="hitop"))]
 pub const SMALLER_AT_TOP : bool = true;
@@ -26,7 +27,7 @@ pub enum VidOrdering {
 use self::VidEnum::*;
 
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VID { v:VidEnum }
 
 fn cmp_depth_idx(x:u32, y:&u32)->VidOrdering {
@@ -61,6 +62,7 @@ pub fn topmost(x:VID, y:VID)->VID { if x.is_above(&y) { x } else { y }}
 pub fn botmost(x:VID, y:VID)->VID { if x.is_below(&y) { x } else { y }}
 pub fn topmost_of3(x:VID, y:VID, z:VID)->VID { topmost(x, topmost(y, z)) }
 
+
 impl VID {
   pub fn top()->VID { VID { v:T }}
   pub fn nov()->VID { VID { v:NoV }}
@@ -94,8 +96,24 @@ impl VID {
 
   pub fn bitmask(&self)->u64 { match self.v {
     NoV|T => 0,
-    Var(x) | Vir(x) => if x < 64 { 1 << x as u64 } else { 0 }}}
+    Var(x) | Vir(x) => if x < 64 { 1 << x as u64 } else { 0 }}}}
 
+
+/// Pretty-printer for NIDS that reveal some of their internal data.
+impl fmt::Display for VID {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    match self.v {
+      T => write!(f, "$T"),
+      NoV => write!(f, "$NoV"),
+      Var(x) => write!(f, "$x{:X}", x),
+      Vir(x) => write!(f, "$v{:X}", x) }}}
+
+/// Same as fmt::Display. Mostly so it's easier to see the problem when an assertion fails.
+impl fmt::Debug for VID { // for test suite output
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self) }}
+
+
+impl VID {
   #[deprecated(note="VID scaffolding")]
   pub fn u(&self)->usize { match self.v {
     T  =>  536870912, // 1<<29, same as nid::T,
