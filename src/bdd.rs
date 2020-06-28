@@ -813,20 +813,17 @@ pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 #[test] fn test_bdd_solutions_simple() {
   let mut base = BDDBase::new(1); let a = NID::var(0);
   let mut it = base.solutions(a);
-  if SMALLER_AT_TOP {
-    // it should be sitting on first solution, which is a=1
-    assert!(!it.done,  "should be a solution");
-    assert!(it.in_solution(), "should be looking at the solution");
-    assert_eq!(it.nstack, vec![a], "stack should contain root node");
-    assert_eq!(it.scope.len(), 1);
-    assert_eq!(it.scope.get(0), true,  "scope[0] should be set to high (first solution)");
-    assert_eq!(it.node, nid::I,    "current node should be hi side of root (a.hi -> I)");
-    assert_eq!(it.next().expect("expected solution!").as_usize(), 0b1);
-    assert_eq!(it.next(), None);
-    assert!(it.done);}
-  else {
-    let actual:HashSet<usize> = it.map(|r|r.as_usize()).collect();
-    assert_eq!(actual, hs(vec![0b00, 0b01, 0b10, 0b11])); }}
+  assert!(!it.done,  "should be a solution");
+  // it should be sitting on first solution, which is a=1
+  assert!(it.in_solution(), "should be looking at the solution");
+  assert_eq!(it.nstack, vec![a], "stack should contain root node");
+  assert_eq!(it.scope.len(), 1);
+  println!("it.scope> {:?}", it.scope);
+  assert_eq!(it.scope.var_get(a.vid()), true,  "x0 should be set to high (first solution)");
+  assert_eq!(it.node, nid::I,    "current node should be hi side of root (a.hi -> I)");
+  assert_eq!(it.next().expect("expected solution!").as_usize(), 0b1);
+  assert_eq!(it.next(), None);
+  assert!(it.done);}
 
 
 #[test] fn test_bdd_solutions_extra() {
@@ -845,17 +842,16 @@ pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
                           0b11110,
                           0b11111])}
 
-
 #[test] fn test_bdd_solutions_xor() {
   let mut base = BDDBase::new(3);
   let (a, b) = (NID::var(0), NID::var(1));
   let n = base.xor(a, b);
-  use {std::collections::HashSet};
-  let actual:HashSet<usize> = base.solutions(n).map(|x|x.as_usize()).collect();
-  // ignoring order for now, since it will change
-  let expect = hs(vec![0b010, 0b011, 0b100, 0b101]);
-  assert_eq!(actual, expect);
-}
+  // use base::Base; base.show(n);
+  let actual:Vec<usize> = base.solutions(n).map(|x|x.as_usize()).collect();
+  let expect = if SMALLER_AT_TOP { vec![0b010, 0b011, 0b100, 0b101] }  // bits 012
+  else { vec![0b001, 0b010, 0b101, 0b110 ] }; // bits 210
+  assert_eq!(actual, expect); }
+
 
 impl<W:BddWorker<S>> BddBase<S,W> {
   pub fn solutions(&mut self, n:NID)->VidSolIterator {
@@ -962,7 +958,7 @@ impl<'a> VidSolIterator<'a> {
     if SMALLER_AT_TOP {
       for i in (bv.var_ix()+1)..self.nvars { self.scope.put(i, false); }}
     else {
-      for i in 0..=bv.var_ix() { self.scope.put(i, false) }}
+      for i in 0..bv.var_ix() { self.scope.put(i, false) }}
 
     // we don't need to flip self.invert because it hasn't changed.
     self.move_down(BddPart::HiPart);
