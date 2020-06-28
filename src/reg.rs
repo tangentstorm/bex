@@ -48,31 +48,26 @@ impl Reg {
     if SMALLER_AT_TOP { self.as_usize_fwd() }
     else { self.as_usize_fwd() }}
 
-  /// increment the register, returning None on overflow, or Some position of the leftmost changed bit.
-  #[cfg(not(feature="hitop"))]
-  pub fn increment(&mut self)->Option<usize> {
-    let mut i = self.nvars - 1;
+  /// ripple add with carry within the region specified by start and end
+  /// (inclusive), returning Some position where a 0 became a 1, or None on overflow.
+  pub fn ripple(&mut self, start:usize, end:usize)->Option<usize> {
+    let mut j = start as i64; let end = end as i64;
+    if j == end { return None }
+    let dj:i64 = if j > end { -1 } else { 1 };
     loop {
-      let j = i as usize;
-      let old = self.get(j);
-      self.put(j, !old);
-      if !old { break } // it was a 0 and now it's a 1 so we're done carrying
-      else if i == 0 { return None }
-      else { i -= 1 }}
-    Some(i as usize) }
+      let u = j as usize;
+      let old = self.get(u);
+      self.put(u, !old);
+      if !old { break } // we flipped a 0 to a 1. return the position.
+      else if j == end { return None }
+      else { j+=dj }}
+    Some(j as usize)}
 
-  #[cfg(feature="hitop")]
+  /// increment the register as if adding 1.
+  /// return position where the ripple-carry stopped.
   pub fn increment(&mut self)->Option<usize> {
-    let mut i = 0;
-    let max:usize = self.nvars - 1;
-    loop {
-      let j = i as usize;
-      let old = self.get(j);
-      self.put(j, !old);
-      if !old { break } // it was a 0 and now it's a 1 so we're done carrying
-      else if i == max { return None }
-      else { i += 1 }}
-    Some(i as usize) }
+    if SMALLER_AT_TOP { self.ripple(self.nvars-1, 0) }
+    else { self.ripple(0, self.nvars-1) }}
 
   pub fn len(&self)->usize { self.nvars }
   pub fn is_empty(&self)->bool { self.nvars == 0 }}
