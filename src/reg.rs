@@ -1,6 +1,6 @@
 /// Registers (bit vectors)
 use std::mem::size_of;
-use vid::VID;
+use vid::{VID, SMALLER_AT_TOP};
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Reg { nvars: usize, data: Vec<usize> }
@@ -23,18 +23,28 @@ impl Reg {
       if v { x |  (1 << (ix%USIZE)) }
       else { x & !(1 << (ix%USIZE)) }}
 
-  pub fn var_get(&self, v:VID)->bool { self.get(v.var_ix()) }
-  pub fn var_put(&mut self, v:VID, val:bool) { self.put(v.var_ix(), val) }
+  pub fn var_get(&self, v:VID)->bool {
+    let ix = v.var_ix();
+    let ix = if SMALLER_AT_TOP { ix } else { (self.nvars-1)-ix };
+    self.get(ix) }
+  pub fn var_put(&mut self, v:VID, val:bool) {
+    let ix = v.var_ix();
+    let ix = if SMALLER_AT_TOP { ix } else { (self.nvars-1)-ix };
+     self.put(ix, val) }
 
-  pub fn as_usize(&self)->usize { self.data[0] }
+  pub fn as_usize_fwd(&self)->usize { self.data[0] }
   pub fn as_usize_rev(&self)->usize {
     assert!(self.nvars <= 64, "usize_rev only works for <= 64 vars!");
-    let mut tmp = self.as_usize(); let mut res = 0;
+    let mut tmp = self.as_usize_fwd(); let mut res = 0;
     for _ in 0..self.nvars {
       res <<= 1;
       res += tmp & 1;
       tmp >>= 1;}
     res }
+
+  pub fn as_usize(&self)->usize {
+    if SMALLER_AT_TOP { self.as_usize_fwd() }
+    else { self.as_usize_rev() }}
 
   /// increment the register, returning None on overflow, or Some position of the leftmost changed bit.
   // !! the positions sem "backwards" becasue they're numbered according to how variables are named in BDD/ANF

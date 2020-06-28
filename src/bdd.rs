@@ -16,7 +16,7 @@ use base;
 use io;
 use reg::Reg;
 use {nid, nid::{NID,O,I,not,idx,rvar,is_var,is_const,is_rvar,HILO,IDX,is_inv}};
-use vid::{VID,VidOrdering,topmost_of3};
+use vid::{VID,VidOrdering,topmost_of3,SMALLER_AT_TOP};
 
 
 /// An if/then/else triple. Like VHL, but all three slots are NIDs.
@@ -794,7 +794,11 @@ pub type BddSwarmBase = BddBase<SafeBddState,BddSwarm<SafeBddState>>;
   assert_eq!(anb, anb2);
 }
 
-/// Test cases for SolutionIterator.
+
+use  std::iter::FromIterator; use std::hash::Hash;
+pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
+
+/// Test cases for SolutionIterator
 #[test] fn test_bdd_solutions_o() {
   let mut base = BDDBase::new(2);  let mut it = base.solutions(nid::O);
   assert!(it.done, "nidsols should be empty for const O");
@@ -802,23 +806,28 @@ pub type BddSwarmBase = BddBase<SafeBddState,BddSwarm<SafeBddState>>;
 
 #[test] fn test_bdd_solutions_i() {
   let mut base = BDDBase::new(2);
-  let actual:Vec<usize> = base.solutions(nid::I).map(|r| r.as_usize()).collect();
-  assert_eq!(actual, vec![0b00, 0b01, 0b10, 0b11],
+  let actual:HashSet<usize> = base.solutions(nid::I).map(|r| r.as_usize()).collect();
+  assert_eq!(actual, hs(vec![0b00, 0b01, 0b10, 0b11]),
      "const true should yield all solutions"); }
 
 #[test] fn test_bdd_solutions_simple() {
   let mut base = BDDBase::new(1); let a = NID::var(0);
   let mut it = base.solutions(a);
-  // it should be sitting on first solution, which is a=1
-  assert!(!it.done,  "should be a solution");
-  assert!(it.in_solution(), "should be looking at the solution");
-  assert_eq!(it.nstack, vec![a], "stack should contain root node");
-  assert_eq!(it.scope.len(), 1);
-  assert_eq!(it.scope.get(0), true,  "scope[0] should be set to high (first solution)");
-  assert_eq!(it.node, nid::I,    "current node should be hi side of root (a.hi -> I)");
-  assert_eq!(it.next().expect("expected solution!").as_usize(), 0b1);
-  assert_eq!(it.next(), None);
-  assert!(it.done); }
+  if SMALLER_AT_TOP {
+    // it should be sitting on first solution, which is a=1
+    assert!(!it.done,  "should be a solution");
+    assert!(it.in_solution(), "should be looking at the solution");
+    assert_eq!(it.nstack, vec![a], "stack should contain root node");
+    assert_eq!(it.scope.len(), 1);
+    assert_eq!(it.scope.get(0), true,  "scope[0] should be set to high (first solution)");
+    assert_eq!(it.node, nid::I,    "current node should be hi side of root (a.hi -> I)");
+    assert_eq!(it.next().expect("expected solution!").as_usize(), 0b1);
+    assert_eq!(it.next(), None);
+    assert!(it.done);}
+  else {
+    let actual:HashSet<usize> = it.map(|r|r.as_usize()).collect();
+    assert_eq!(actual, hs(vec![0b00, 0b01, 0b10, 0b11])); }}
+
 
 #[test] fn test_bdd_solutions_extra() {
   let mut base = BDDBase::new(5);
@@ -836,16 +845,16 @@ pub type BddSwarmBase = BddBase<SafeBddState,BddSwarm<SafeBddState>>;
                           0b11110,
                           0b11111])}
 
+
 #[test] fn test_bdd_solutions_xor() {
   let mut base = BDDBase::new(3);
   let (a, b) = (NID::var(0), NID::var(1));
   let n = base.xor(a, b);
-  let mut it = base.solutions(n);                            //abc
-  assert_eq!(it.next().expect("expect answer 0").as_usize(), 0b010, "0");
-  assert_eq!(it.next().expect("expect answer 1").as_usize(), 0b011, "1");
-  assert_eq!(it.next().expect("expect answer 2").as_usize(), 0b100, "2");
-  assert_eq!(it.next().expect("expect answer 3").as_usize(), 0b101, "3");
-  assert_eq!(it.next(), None);
+  use {std::collections::HashSet};
+  let actual:HashSet<usize> = base.solutions(n).map(|x|x.as_usize()).collect();
+  // ignoring order for now, since it will change
+  let expect = hs(vec![0b010, 0b011, 0b100, 0b101]);
+  assert_eq!(actual, expect);
 }
 
 impl<W:BddWorker<S>> BddBase<S,W> {
@@ -950,7 +959,10 @@ impl<'a> VidSolIterator<'a> {
     self.scope.var_put(bv, true);
 
     // now set all variables after that branch to lo
-    for i in (bv.var_ix()+1)..self.nvars { self.scope.put(i, false); }
+    if SMALLER_AT_TOP {
+      for i in (bv.var_ix()+1)..self.nvars { self.scope.put(i, false); }}
+    else {
+      for i in 0..=bv.var_ix() { self.scope.put(i, false) }}
 
     // we don't need to flip self.invert because it hasn't changed.
     self.move_down(BddPart::HiPart);
