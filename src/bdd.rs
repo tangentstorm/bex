@@ -934,6 +934,11 @@ impl<'a> VidSolIterator<'a> {
   /// walk depth-first from lo to hi until we arrive at the next solution
   fn find_next_leaf(&mut self)->Option<NID> {
     self.log("find_next_leaf"); self.log_indent(1);
+    let res = self.find_next_leaf0();
+    self.log(format!("^ next leaf: {:?}", res.clone()).as_str());
+    self.log_indent(-1); res }
+
+  fn find_next_leaf0(&mut self)->Option<NID> {
     // we always start at a leaf and move up, with the one exception of root=I
     assert!(nid::is_const(self.node), "find_next_leaf should always start by looking at a leaf");
     if self.nstack.is_empty() { assert!(self.node == nid::I); return None }
@@ -943,6 +948,7 @@ impl<'a> VidSolIterator<'a> {
 
     // if we've already walked the hi branch...
     let bv = self.node.vid(); // branching var for current node
+    let mut rippled = false;
     if self.scope.var_get(bv) {
       // then climb to the deepest node where the branch variable is still lo.
       // scope[i] is inverted when we're exploring the low branch.
@@ -953,19 +959,27 @@ impl<'a> VidSolIterator<'a> {
         let bv = self.node.vid(); // branching var for current node
         while iv.is_below(&bv) { iv = iv.shift_up(); }} // ascend
 
-      // if we're back at the top and we already explored the hi branch, we're done
-      if self.nstack.is_empty() && self.scope.var_get(iv) { return None }}
+      // if we've cleared the stack and already explored the hi branch...
+      if self.nstack.is_empty() && self.scope.var_get(iv) {
+        // ... then first check if there are any variables above us on which
+        // the node doesn't actually depend. if so, ripple add.
+        // otherwise, we're done.
+        let top = if SMALLER_AT_TOP { 0 } else { self.nvars-1 };
+        if let Some(x) = self.scope.ripple(iv.var_ix(), top) {
+          rippled = true;
+          self.log(format!("rippled top to {}. restarting.", x).as_str()); }
+        else { self.log("no next leaf!"); return None }}}
 
     // flip the output bit in the answer. (it was lo, make it hi)
-    let bv = self.node.vid();
-    if self.scope.var_get(bv) { self.log("DONE WITH NODE"); return None }
-    self.scope.var_put(bv, true);
+    if !rippled {
+      let bv = self.node.vid();
+      if self.scope.var_get(bv) { self.log("done with node."); return None }
+      self.scope.var_put(bv, true); }
 
     // now set all variables after that branch to lo
     if SMALLER_AT_TOP {
       for i in (bv.var_ix()+1)..self.nvars { self.scope.put(i, false); }}
-    else {
-      for i in 0..bv.var_ix() { self.scope.put(i, false) }}
+    else { for i in 0..bv.var_ix() { self.scope.put(i, false) }}
 
     // we don't need to flip self.invert because it hasn't changed.
     self.move_down(BddPart::HiPart);
@@ -999,13 +1013,11 @@ impl<'a> VidSolIterator<'a> {
           self.descend();
           if self.in_solution() { self.log("^ found next solution"); return }}
         else { // there's no lmz, so we've counted all the way to 2^nvars-1, and we're done.
-          self.log("// found all solutions!"); self.done = true; return }}
+          self.log("$ found all solutions!"); self.done = true; return }}
       // If still here, we are looking at a leaf that isn't a solution (out=0 in truth table)
       self.done = self.find_next_leaf()==None;
-      self.log_indent(-1);
       // let mut input = String::new(); std::io::stdin().read_line(&mut input).expect("??");
       if self.done || self.in_solution() { break } }}
-
 } // impl VidSolIterator
 
 
