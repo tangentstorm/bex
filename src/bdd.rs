@@ -864,6 +864,7 @@ impl<W:BddWorker<S>> BddBase<S,W> {
 }
 
 pub struct VidSolIterator<'a> {
+  indent: i8,
   node: NID,
   state: &'a S,
   nvars:usize,        // track our own nvars so we can ignore virtual variables
@@ -882,6 +883,7 @@ impl<'a> VidSolIterator<'a> {
   pub fn from_state(state: &'a S, n:NID, nvars:usize)->VidSolIterator<'a> {
     // init scope with all variables assigned to 0
     let mut res = VidSolIterator{
+      indent: 0,
       node: n, //if n == nid::I { n } else { nid::raw(n) },
       state,
       nvars,
@@ -890,16 +892,20 @@ impl<'a> VidSolIterator<'a> {
       istack: vec![],
       done: n==nid::O || nvars == 0,
       invert: false }; // should start false and only swap when we push to stack, so that parity of nstack = invert  . nid::is_inv(n) && n!=nid::I };
-    res.log("\n## from-state");
+    res.log("## init");
     if ! res.done {
       res.descend();
       if !res.in_solution() { res.advance() }}
     res }
 
+  fn log_indent(&mut self, d:i8) { self.indent += d; }
   fn log(&self, _msg: &str) {
     #[cfg(test)]{
-      print!("{}", _msg);
-      println!(": n:{:?} inv:{:?} st:{:?} sc:{:?}", self.node, self.invert, self.nstack, self.scope);}}
+      print!(" {}", if self.invert { '¬' } else { ' ' });
+      print!("{:>8}", format!("{}", self.node));
+      print!(" {:?}{}", self.scope, if self.in_solution() { '.' } else { ' ' });
+      let s = format!("{}{}", "  ".repeat(self.indent as usize), _msg,);
+      println!(" {:50} {:?}", s, self.nstack);}}
 
 
 
@@ -921,12 +927,13 @@ impl<'a> VidSolIterator<'a> {
 
   /// descend along the "lo" path into the bdd until we find a constant node
   fn descend(&mut self) {
+    self.log("descend");
     while !nid::is_const(self.node) {
       self.move_down(BddPart::LoPart); }}
 
   /// walk depth-first from lo to hi until we arrive at the next solution
   fn find_next_leaf(&mut self)->Option<NID> {
-    self.log("@@@@@      - find_next_leaf");
+    self.log("find_next_leaf"); self.log_indent(1);
     // we always start at a leaf and move up, with the one exception of root=I
     assert!(nid::is_const(self.node), "find_next_leaf should always start by looking at a leaf");
     if self.nstack.is_empty() { assert!(self.node == nid::I); return None }
@@ -968,15 +975,19 @@ impl<'a> VidSolIterator<'a> {
 
   /// walk depth-first from lo to hi until we arrive at the next solution
   fn advance(&mut self) {
-    self.log("  -- advance");
+    self.log("advance>"); self.log_indent(1); self.advance0(); self.log_indent(-1); }
+  fn advance0(&mut self) {
     assert!(!self.done, "advance() called on iterator that's already done!");
     assert!(nid::is_const(self.node), "advance should always start by looking at a leaf");
     loop {
       if self.in_solution() {
         // if we're in the solution, we're going to increment the "counter".
         if let Some(lmz) = self.scope.increment() { // lmz = the leftmost "zero" (lo input variable)
+          let lmz = VID::var(lmz as u32);
+          self.log(format!("rebranch on {:?}",lmz).as_str());
           // climb the bdd until we find the layer where the lmz would be.
-          while !self.nstack.is_empty() && nid::rvar(self.nstack[self.nstack.len()-1]) >= lmz {
+          while !self.nstack.is_empty()
+            && !lmz.is_below(&self.nstack[self.nstack.len()-1].vid()) {
             self.move_up(); }
           // The 'lmz' variable exists in the solution space, but there might or might
           // not be a branch node for that variable in the current bdd path.
@@ -986,12 +997,12 @@ impl<'a> VidSolIterator<'a> {
           let part = if hi { BddPart::HiPart } else { BddPart::LoPart };
           self.move_down(part);
           self.descend();
-          if self.in_solution() { self.log("// increment ok"); return }}
+          if self.in_solution() { self.log("// ^ found next solution"); return }}
         else { // there's no lmz, so we've counted all the way to 2^nvars-1, and we're done.
           self.log("// found all solutions!"); self.done = true; return }}
       // If still here, we are looking at a leaf that isn't a solution (out=0 in truth table)
       self.done = self.find_next_leaf()==None;
-      self.log("  // loop end. ");
+      self.log_indent(-1);
       // let mut input = String::new(); std::io::stdin().read_line(&mut input).expect("??");
       if self.done || self.in_solution() { break } }}
 
