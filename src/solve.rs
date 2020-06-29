@@ -5,7 +5,7 @@ use apl;
 use ast::{Op,ASTBase};
 use base::Base;
 use {nid, nid::NID};
-use {vid::VID};
+use {vid::{VID,SMALLER_AT_TOP}};
 
 type B = dyn Base;
 
@@ -72,11 +72,14 @@ pub fn sort_by_cost(src:&ASTBase, top:SrcNid)->(ASTBase,SrcNid) {
   let mut p = apl::gradeup(&c0); // p[new idx] = old idx
   let src1 = src0.permute(&p);
 
-  // now permute so that vars are on bottom and everything else is flipped
+  // now if the "biggest" node isn't naturally on the top, reverse the list
   // this is purely so that the node we want to replace remains on top in the destination
-  let max = p.len()-1;
-  for i in 0..p.len() { p[i] = max-i }
-  let ast = src1.permute(&p);
+  let ast = if SMALLER_AT_TOP {
+    let max = p.len()-1;
+    for i in 0..p.len() { p[i] = max-i }
+    src1.permute(&p)}
+  else { src1 };
+
   let n = ast.get("-top-").expect("what? I just put it there.");
   (ast,SrcNid{n}) }
 
@@ -159,7 +162,7 @@ macro_rules! find_factors {
     let expect = $expect;
     let answer = answer.n;
     let actual:Vec<(u64, u64)> = dest.solutions_trunc(answer, 2*$T0::n() as usize).map(|r|{
-      let t = r.as_usize_rev();
+      let t = if bex::vid::SMALLER_AT_TOP { r.as_usize_rev() } else { r.as_usize_fwd() };
       let x = t & ((1<<$T0::n())-1);
       let y = t >> $T0::n();
       (x as u64, y as u64)
