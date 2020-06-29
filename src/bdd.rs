@@ -662,6 +662,7 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
       ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap(); }}
 
     w!("digraph bdd {{");
+    w!("subgraph head {{ h1[shape=plaintext; label=\"BDD\"] }}");
     w!("  I[label=⊤; shape=square];");
     w!("  O[label=⊥; shape=square];");
     w!("node[shape=circle];");
