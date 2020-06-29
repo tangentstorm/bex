@@ -103,10 +103,10 @@ impl VID {
 impl fmt::Display for VID {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self.v {
-      T => write!(f, "$T"),
-      NoV => write!(f, "$NoV"),
-      Var(x) => write!(f, "$x{:X}", x),
-      Vir(x) => write!(f, "$v{:X}", x) }}}
+      T => write!(f, "T"),
+      NoV => write!(f, "NoV"),
+      Var(x) => write!(f, "x{:X}", x),
+      Vir(x) => write!(f, "v{:X}", x) }}}
 
 /// Same as fmt::Display. Mostly so it's easier to see the problem when an assertion fails.
 impl fmt::Debug for VID { // for test suite output

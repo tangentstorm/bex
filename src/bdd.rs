@@ -15,7 +15,7 @@ use bincode;
 use base;
 use io;
 use reg::Reg;
-use {nid, nid::{NID,O,I,not,idx,rvar,is_var,is_const,is_rvar,HILO,IDX,is_inv}};
+use {nid, nid::{NID,O,I,not,idx,is_var,is_const,HILO,IDX,is_inv}};
 use vid::{VID,VidOrdering,topmost_of3,SMALLER_AT_TOP};
 
 
@@ -661,15 +661,11 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
     macro_rules! w {
       ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap(); }}
 
-    let fmt = |n:NID| {
-      if is_rvar(n) { format!("x{}", rvar(n)) }
-      else { format!("{}", n) }};
-
     w!("digraph bdd {{");
     w!("  I[label=⊤; shape=square];");
     w!("  O[label=⊥; shape=square];");
     w!("node[shape=circle];");
-    self.walk(n, &mut |n,_,_,_| w!("  \"{}\"[label=\"{}\"];", n, fmt(n)));
+    self.walk(n, &mut |n,_,_,_| w!("  \"{}\"[label=\"{}\"];", n, n.vid()));
     w!("edge[style=solid];");
     self.walk(n, &mut |n,_,t,_| w!("  \"{}\"->\"{}\";", n, t));
     w!("edge[style=dashed];");

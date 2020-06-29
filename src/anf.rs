@@ -84,8 +84,10 @@ impl Base for ANFBase {
     macro_rules! w {
       ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap(); }}
     w!("digraph anf {{");
+    w!("  I[label=⊤; shape=square];");
+    w!("  O[label=⊥; shape=square];");
     w!("node[shape=circle];");
-    self.walk(n, &mut |n,_,_h,_l| w!("  \"{:?}\";", n));
+    self.walk(n, &mut |n,_,_h,_l| w!("  \"{}\"[label=\"{:?}\"];", n, n.vid()));
     w!("edge[style=solid];");
     self.walk(n, &mut |n,_,hi,_l| w!("  \"{:?}\"->\"{:?}\";", n, hi));
     w!("edge[style=dashed];");

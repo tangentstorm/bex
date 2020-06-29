@@ -379,7 +379,7 @@ impl Base for ASTBase {
       match &self.op(n) {
         Op::O => w!(" \"{}\"[label=⊥];", n),
         Op::I => w!(" \"{}\"[label=⊤];", n),
-        Op::Var(x)  => w!("\"{}\"[label=\"${:?}\"];", nid::raw(n), x),
+        Op::Var(x)  => w!("\"{}\"[label=\"{}\"];", nid::raw(n), x),
         Op::And(x,y) => dotop!("∧",n,x,y),
         Op::Xor(x,y) => dotop!("≠",n,x,y),
         Op::Or(x,y)  => dotop!("∨",n,x,y),
