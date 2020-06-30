@@ -2,11 +2,11 @@
 use std::cmp::Ordering;
 use std::fmt;
 
-#[cfg(not(feature="hitop"))]
-pub const SMALLER_AT_TOP : bool = true;
+#[cfg(feature="small_on_top")]
+pub const SMALL_ON_TOP : bool = true;
 
-#[cfg(feature="hitop")]
-pub const SMALLER_AT_TOP : bool = false;
+#[cfg(not(feature="small_on_top"))]
+pub const SMALL_ON_TOP : bool = false;
 
 /// this will probably go away in favor of a bitmask at some point
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Serialize, Deserialize)]
@@ -31,7 +31,7 @@ use self::VidEnum::*;
 pub struct VID { v:VidEnum }
 
 fn cmp_depth_idx(x:u32, y:&u32)->VidOrdering {
-  if SMALLER_AT_TOP { match x.cmp(y) {
+  if SMALL_ON_TOP { match x.cmp(y) {
     Ordering::Less => VidOrdering::Above,
     Ordering::Equal => VidOrdering::Level,
     Ordering::Greater => VidOrdering::Below }}
@@ -80,8 +80,8 @@ impl VID {
       NoV => panic!("VID::nov().shift_up() is undefined"),
       T => panic!("VID::top().shift_up() is undefined"), //VID::var(0),
       // these two might panic on over/underflow:
-      Var(x) => VID::var(if SMALLER_AT_TOP { x-1 } else { x+1 }),
-      Vir(x) => VID::vir(if SMALLER_AT_TOP { x-1 } else { x+1 }) }}
+      Var(x) => VID::var(if SMALL_ON_TOP { x-1 } else { x+1 }),
+      Vir(x) => VID::vir(if SMALL_ON_TOP { x-1 } else { x+1 }) }}
 
   pub fn var_ix(&self)->usize {
     if let Var(x) = self.v { x as usize } else { panic!("var_ix({:?})", self) }}

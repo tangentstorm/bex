@@ -16,7 +16,7 @@ use base;
 use io;
 use reg::Reg;
 use {nid, nid::{NID,O,I,not,idx,is_var,is_const,HILO,IDX,is_inv}};
-use vid::{VID,VidOrdering,topmost_of3,SMALLER_AT_TOP};
+use vid::{VID,VidOrdering,topmost_of3,SMALL_ON_TOP};
 
 
 /// An if/then/else triple. Like VHL, but all three slots are NIDs.
@@ -845,7 +845,7 @@ pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   let n = base.xor(a, b);
   // use base::Base; base.show(n);
   let actual:Vec<usize> = base.solutions(n).map(|x|x.as_usize()).collect();
-  let expect = if SMALLER_AT_TOP { vec![0b010, 0b011, 0b100, 0b101] }  // bits 012
+  let expect = if SMALL_ON_TOP { vec![0b010, 0b011, 0b100, 0b101] }  // bits 012
   else { vec![0b001, 0b010, 0b101, 0b110 ] }; // bits 210
   assert_eq!(actual, expect); }
 
@@ -961,7 +961,7 @@ impl<'a> VidSolIterator<'a> {
         // ... then first check if there are any variables above us on which
         // the node doesn't actually depend. if so, ripple add.
         // otherwise, we're done.
-        let top = if SMALLER_AT_TOP { 0 } else { self.nvars-1 };
+        let top = if SMALL_ON_TOP { 0 } else { self.nvars-1 };
         if let Some(x) = self.scope.ripple(iv.var_ix(), top) {
           rippled = true;
           self.log(format!("rippled top to {}. restarting.", x).as_str()); }
@@ -974,7 +974,7 @@ impl<'a> VidSolIterator<'a> {
       self.scope.var_put(bv, true); }
 
     // now set all variables after that branch to lo
-    if SMALLER_AT_TOP {
+    if SMALL_ON_TOP {
       for i in (bv.var_ix()+1)..self.nvars { self.scope.put(i, false); }}
     else { for i in 0..bv.var_ix() { self.scope.put(i, false) }}
 

@@ -1,7 +1,7 @@
 /// Registers (bit vectors)
 use std::fmt;
 use std::mem::size_of;
-use vid::{VID, SMALLER_AT_TOP};
+use vid::{VID, SMALL_ON_TOP};
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Reg { nvars: usize, data: Vec<usize> }
@@ -14,12 +14,12 @@ impl Reg {
     Reg { nvars, data: vec![0; (nvars as f64 / USIZE as f64).ceil() as usize ]}}
 
   pub fn get(&self, ix: usize )->bool {
-    let ix = if SMALLER_AT_TOP { (self.nvars-1)-ix } else { ix };
+    let ix = if SMALL_ON_TOP { (self.nvars-1)-ix } else { ix };
     // let ix = (self.nvars-1)-ix;
     0 < (self.data[ix/USIZE] & 1 << (ix%USIZE)) }
 
   pub fn put(&mut self, ix:usize, v:bool) {
-    let ix = if SMALLER_AT_TOP { (self.nvars-1)-ix } else { ix };
+    let ix = if SMALL_ON_TOP { (self.nvars-1)-ix } else { ix };
     // let ix = (self.nvars-1)-ix;
     let i = ix/USIZE; let x = self.data[i];
     self.data[i] =
@@ -31,7 +31,7 @@ impl Reg {
     self.get(ix) }
   pub fn var_put(&mut self, v:VID, val:bool) {
     let ix = v.var_ix();
-    //let ix = if SMALLER_AT_TOP { ix } else { (self.nvars-1)-ix };
+    //let ix = if SMALL_ON_TOP { ix } else { (self.nvars-1)-ix };
     self.put(ix, val) }
 
   pub fn as_usize_fwd(&self)->usize { self.data[0] }
@@ -45,7 +45,7 @@ impl Reg {
     res }
 
   pub fn as_usize(&self)->usize {
-    if SMALLER_AT_TOP { self.as_usize_fwd() }
+    if SMALL_ON_TOP { self.as_usize_fwd() }
     else { self.as_usize_fwd() }}
 
   /// ripple add with carry within the region specified by start and end
@@ -66,7 +66,7 @@ impl Reg {
   /// increment the register as if adding 1.
   /// return position where the ripple-carry stopped.
   pub fn increment(&mut self)->Option<usize> {
-    if SMALLER_AT_TOP { self.ripple(self.nvars-1, 0) }
+    if SMALL_ON_TOP { self.ripple(self.nvars-1, 0) }
     else { self.ripple(0, self.nvars-1) }}
 
   pub fn len(&self)->usize { self.nvars }
@@ -76,7 +76,7 @@ impl Reg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
       write!(f, "reg[")?;
       let mut write_bit = |i| { write!(f, "{}", if self.get(i) {'1'} else {'o'}) };
-      if SMALLER_AT_TOP { for i in 0..self.nvars { write_bit(i)? }}
+      if SMALL_ON_TOP { for i in 0..self.nvars { write_bit(i)? }}
       else { for i in (0..self.nvars).rev() { write_bit(i)? } };
       write!(f, "={:02x}]", self.as_usize()) }}
 
@@ -91,7 +91,7 @@ fn test_reg_mut() {
   assert_eq!(reg.data[0], 0);
   assert_eq!(reg.get(0), false);
   reg.put(0, true);
-  if SMALLER_AT_TOP {
+  if SMALL_ON_TOP {
     assert_eq!(reg.data[0], 0);
     assert_eq!(reg.data[1], 2); // bit '0' is the most signficant bit
     assert_eq!(reg.get(0), true);
@@ -112,7 +112,7 @@ fn test_reg_mut() {
     assert_eq!(reg.data[0], 3); }
   assert_eq!(reg.get(1), true); }
 
-#[cfg(not(feature="hitop"))]
+#[cfg(feature="small_on_top")]
 #[test] fn test_reg_inc_lotop() {
   let mut reg = Reg::new(2);
   assert_eq!(0, reg.as_usize());
@@ -124,7 +124,7 @@ fn test_reg_mut() {
   assert_eq!(3, reg.as_usize());
   assert_eq!(None, reg.increment(), "11 -> 00"); }
 
-#[cfg(feature="hitop")]
+#[cfg(not(feature="small_on_top"))]
 #[test] fn test_reg_inc_hitop() {
   let mut reg = Reg::new(2);
   assert_eq!(0, reg.as_usize());
