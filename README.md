@@ -14,15 +14,51 @@ also construct and manipulate BDDs directly.
 
 ### 0.1.4 (upcoming)
 
+**vid::VID**
+- `VID` is now an explicit custom type rather than a simple usize.
+  It accounts for both "real" variables (`var()`) and virtual ones (`vir()`), as
+  well as the meta-constant `T`  (true) which fills the branch variable
+  slots for the `I` and `O` BDD nodes.
+
+**smaller variables now appear at the bottom of BDD, ANF graphs.**
+- A new type for `VID` comparison was introduced - `vid::VidOrdering`. This
+  lets you `cmp_depth` using terms `Above`, `Level`, and `Below` rather than
+  the `Less`, `Equal`, `Greater` you get with `cmp`. There was no technical
+  reason for this, but I found it much easier to reason about the code in these terms.
+- By default, `VidOrdering` is set up so that branch variables with smaller
+  numbers move to the *bottom* of a BDD. There are numerous benefits to doing
+  this - cross-function cache hits, immediate knowledge of the width of a
+  node's truth table, and (most importantly) a much simpler time converting
+  from ANF to BDD.
+- If anyone really prefers the "industry standard" ordering (small variables
+  on top), you can use `--features small_on_top`.
+
 **NID as universal ID**
-- `ASTBase` now uses `nid::VID` for input variable identifiers, and `nid::NID` for node identifiers, rather than using simple `usize` indices. This means we no longer need to store explicit entries for constants and literals.
-- The `Base` trait no longer takes type arguments N and V, since all implementations now use `nid::NID` and `nid::VID`.
+- `ASTBase` now uses `nid::VID` for input variable identifiers, and `nid::NID`
+  for node identifiers, rather than using simple `usize` indices. This means
+  we no longer need to store explicit entries for constants and literals.
+- The `Base` trait no longer takes type arguments `N` and `V`, since all
+  implementations now use `nid::NID` and `vid::VID`.
+
+**Reg type**
+- `Reg` provides an general purpose register containing an arbitrary number of bits.
+- Bits in a Reg can be accessed individually either by number (with `get(ix)`
+  and `put(ix,bool))`, or using a `VID` (`var_get`, `var_put`). Indexing by virtual
+  variables is not supported.
+- `Reg` also provides a simple `increment()` method, as well as the more general `ripple(start,end)`.
+  These treat the register as a binary number, "add 1" at a specified location, and
+  ripple-carry the result until a 0 is encountered or the carry overflows the end position.
+  This allows a `Regs` to easily be used as a cursor, or representation of a single path
+  through a BDD/ANF-like graph structure.
+- `Reg` behaves in whatever way is most sensible for your `VidOrdering`: by default, bit 0
+  corresponds to the least significant bit, but with `--features small_on_top`, bit 0 is
+  the most significant bit. The numbers you get out with to_usize should be the same
+  no matter which ordering you use, but you can always explicitly ask for the reverse
+  ordering using `as_usize_rev()`).
 
 **BDDBase**
-- You can now call `nidsols()` on a `BDDBase` to iterate through solutions of the BDD.
-  Each solution is presented as a `Vec<NID>` of length `nvars()`. The `nid::var()` of each
-  NID tells you which input variable it describes, and the `nid::inv()` is 1 if the
-  input should be LO. (I'll probably add a more ergonomic representation in the future.)
+- You can now call `solutions()` on a `BDDBase` to iterate through solutions of the BDD.
+  Each solution is presented as a `Reg` of length `nvars()`.
 
 **ANFBase**
 - The new `anf` module contains the beginnings of a BDD-like structure for working
