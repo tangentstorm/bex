@@ -856,9 +856,8 @@ impl<W:BddWorker<S>> BddBase<S,W> {
 
   pub fn solutions_trunc(&mut self, n:NID, nvars:usize)->VidSolIterator {
     assert!(nvars <= self.nvars(), "nvars arg to nidsols_trunc must be <= self.nvars");
-    VidSolIterator::from_state(self.worker.get_state(), n, nvars)}
+    VidSolIterator::from_state(self.worker.get_state(), n, nvars)}}
 
-}
 
 pub struct VidSolIterator<'a> {
   indent: i8,
@@ -870,10 +869,6 @@ pub struct VidSolIterator<'a> {
   scope: Reg,    // the current variable assignments
   invert: bool,       // whether to invert the results
   done: bool}         // whether we've reached the end
-
-
-pub fn var_hi(n:NID)->bool { !nid::is_inv(n) }
-pub fn var_lo(n:NID)->bool {  nid::is_inv(n) }
 
 
 impl<'a> VidSolIterator<'a> {
