@@ -309,9 +309,8 @@ impl<'a> Iterator for VidSolIterator<'a> {
         let ANF{ v, hi, lo } = self.base.fetch(n);
         res.var_put(v, true); // flip it to hi    TODO: allow vir. (vid_put?)
         // move to the xored (lo) term, if present, else use the hi term
-        if nid::is_const(lo) {
-          if nid::is_const(hi) { break }
-          else { n = hi }}
+        if lo == O { n = hi }
+        else if lo == I { res.var_put(v, false); break; }
         else { n = lo }}
       Some(res) }}} // else, fn, impl Iterator
 
