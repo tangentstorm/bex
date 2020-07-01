@@ -67,7 +67,7 @@ impl ASTBase {
     if op == Op::O { nid::O }
     else if op == Op::I { nid::I }
     else if let Op::Var(x) = op { NID::from_vid(x) }
-    else if let Op::Not(x) = op { nid::not(x) }
+    else if let Op::Not(x) = op { !x }
     else { match self.hash.get(&op) {
       Some(&n) => n,
       None => {
@@ -88,7 +88,7 @@ impl ASTBase {
 
   pub fn sub(&mut self, x:NID, s:SID)->NID {
     macro_rules! op {
-      [not $x:ident] => {{ let x1 = self.sub($x, s); self.not(x1) }};
+      [not $x:ident] => {{ let x1 = self.sub($x, s); !x1 }};
       [$f:ident $x:ident $y:ident] => {{
         let x1 = self.sub($x, s);
         let y1 = self.sub($y, s);
@@ -113,7 +113,7 @@ impl ASTBase {
   fn when(&mut self, v:vid::VID, val:NID, nid:NID)->NID {
     // print!(":{}",nid);
     macro_rules! op {
-      [not $x:ident] => {{ let x1 = self.when(v, val, $x); self.not(x1) }};
+      [not $x:ident] => {{ let x1 = self.when(v, val, $x); !x1 }};
       [$f:ident $x:ident $y:ident] => {{
         let x1 = self.when(v, val, $x);
         let y1 = self.when(v, val, $y);
@@ -239,7 +239,7 @@ impl ASTBase {
       if nid::is_lit(x) { x }
       else {
         let r = nid::ixn(new[nid::idx(x) as usize].expect("bad index in AST::permute") as u32);
-        if nid::is_inv(x) { nid::not(r) } else { r }}};
+        if nid::is_inv(x) { !r } else { r }}};
     let newbits = pv.iter().map(|&old| {
       match self.bits[old] {
         Op::O | Op::I | Op::Var(_) | Op::Not(_) => panic!("o,i,var,not should never be in self.bits"),
@@ -306,10 +306,6 @@ impl Base for ASTBase {
   fn tag(&mut self, n:NID, s:String)->NID {
     let n = n;
     self.tags.insert(s, n); n }
-
-  fn not(&mut self, x:NID)->NID {
-    nid::not(x) }
-
 
   fn and(&mut self, x:NID, y:NID)->NID {
     if x == y { x }
@@ -328,7 +324,7 @@ impl Base for ASTBase {
       let (lo,hi) = if self.op(x) < self.op(y) { (x,y) } else { (y,x) };
       match (self.op(lo), self.op(hi)) {
         (Op::O, _) => hi,
-        (Op::I, _) => self.not(hi),
+        (Op::I, _) => !hi,
         (Op::Var(_), Op::Not(n)) if n==lo => self.i(),
         _ => self.nid(Op::Xor(lo,hi)) }}}
 
@@ -340,8 +336,7 @@ impl Base for ASTBase {
         (Op::O, _) => hi,
         (Op::I, _) => self.i(),
         (Op::Var(_), Op::Not(n)) if n==lo => self.i(),
-        (Op::Not(m), Op::Not(n)) => {
-          let a = self.and(m,n); self.not(a)},
+        (Op::Not(m), Op::Not(n)) => { !self.and(m,n) },
         _ => self.nid(Op::Or(lo,hi)) }}}
 
   #[cfg(todo)]
@@ -398,7 +393,7 @@ fn ast_vars(){
   let x0 = b.var(0); let x1 = b.var(1);
   assert_eq!(x0.vid().var_ix(), 0);
   assert_eq!(x1.vid().var_ix(), 1);
-  assert_eq!(b.not(x0), b.nid(Op::Not(x0))); }
+  assert_eq!(!x0, b.nid(Op::Not(x0))); }
 
 #[test]
 fn ast_and(){

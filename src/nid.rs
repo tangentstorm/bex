@@ -91,6 +91,7 @@ pub const I:NID = new(T|INV);
 #[inline(always)] pub fn rvar(x:NID)->VID { ((x.n & !(INV|VAR|RVAR)) >> 32) as VID}
 
 /// Toggle the INV bit, applying a logical "NOT" operation to the corressponding node.
+#[deprecated(note="use !nid instead")]
 #[inline(always)] pub fn not(x:NID)->NID { NID { n:x.n^INV } }
 
 /// Construct the NID for the (virtual) node corresponding to an input variable.
@@ -100,6 +101,11 @@ pub const I:NID = new(T|INV);
 
 /// Construct a NID with the given variable and index.
 #[inline(always)] pub fn nvi(v:VID,i:IDX)->NID { new(((v as u64) << 32) + i as u64) }
+
+
+impl std::ops::Not for NID {
+  type Output = NID;
+  fn not(self)-> NID {NID { n: self.n^INV }}}
 
 
 /// Pretty-printer for NIDS that reveal some of their internal data.
@@ -128,7 +134,7 @@ impl HILO {
   pub fn new(hi:NID, lo:NID)->HILO { HILO { hi, lo } }
 
   /// apply the not() operator to both branches
-  #[inline] pub fn invert(self)-> HILO { HILO{ hi: not(self.hi), lo: not(self.lo) }} }
+  #[inline] pub fn invert(self)-> HILO { HILO{ hi: !self.hi, lo: !self.lo }} }
 
 
 #[test] fn test_nids() {

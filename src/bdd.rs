@@ -15,7 +15,7 @@ use bincode;
 use base;
 use io;
 use reg::Reg;
-use {nid, nid::{NID,O,I,not,idx,is_var,is_const,HILO,IDX,is_inv}};
+use {nid, nid::{NID,O,I,idx,is_var,is_const,HILO,IDX,is_inv}};
 use vid::{VID,VidOrdering,topmost_of3,SMALL_ON_TOP};
 
 
@@ -59,9 +59,9 @@ impl ITE {
       if g==f { if is_const(h) { return Norm::Nid(if h==I { I } else { f }) } // (f, f, I/O)
                 else { g=I }}
       else if is_const(g) && is_const(h) { // both const, and we know g!=h
-        return if g==I { return Norm::Nid(f) } else { Norm::Nid(not(f)) }}
+        return if g==I { return Norm::Nid(f) } else { Norm::Nid(!f) }}
       else {
-        let nf = not(f);
+        let nf = !f;
         if      g==nf { g=O } // bounce!(f,O,h)
         else if h==f  { h=O } // bounce!(f,g,O)
         else if h==nf { h=I } // bounce!(f,g,I)
@@ -71,18 +71,18 @@ impl ITE {
             { let x0=$x0; ((x0.is_above(&fv)) || ((x0==fv) && ($x1<fi))) }}}
           if is_const(g) && cmp!(h.vid(),idx(h)) {
             if g==I { g=f; f=h; h=g;  g=I; }     // bounce!(h,I,f)
-            else    { f=not(h); g=O;  h=nf; }}   // bounce(not(h),O,nf)
+            else    { f=!h; g=O;  h=nf; }}   // bounce(not(h),O,nf)
           else if is_const(h) && cmp!(g.vid(),idx(g)) {
-            if h==I { f=not(g); g=nf; h=I; }     // bounce!(not(g),nf,I)
+            if h==I { f=!g; g=nf; h=I; }     // bounce!(not(g),nf,I)
             else    { h=f; f=g; g=h;  h=O; }}    // bounce!(g,f,O)
           else {
-            let ng = not(g);
+            let ng = !g;
             if (h==ng) && cmp!(g.vid(), idx(g)) { h=f; f=g; g=h; h=nf; } // bounce!(g,f,nf)
             // choose form where first 2 slots are NOT inverted:
             // from { (f,g,h), (¬f,h,g), ¬(f,¬g,¬h), ¬(¬f,¬g,¬h) }
             else if is_inv(f) { f=g; g=h; h=f; f=nf; } // bounce!(nf,h,g)
-            else if is_inv(g) { return match ITE::norm(f,ng,not(h)) {
-              Norm::Nid(nid) => Norm::Nid(not(nid)),
+            else if is_inv(g) { return match ITE::norm(f,ng,!h) {
+              Norm::Nid(nid) => Norm::Nid(!nid),
               Norm::Not(ite) => Norm::Ite(ite),
               Norm::Ite(ite) => Norm::Not(ite)}}
             else { return Norm::Ite(ITE::new(f,g,h)) }}}}}} }
@@ -216,10 +216,10 @@ enum RMsg {
 
 fn rmsg_not(rmsg:RMsg)->RMsg {
   match rmsg {
-    RMsg::Nid(n) => RMsg::Nid(not(n)),
+    RMsg::Nid(n) => RMsg::Nid(!n),
     RMsg::Vhl{v,hi,lo,invert} => RMsg::Vhl{v,hi,lo,invert:!invert},
     RMsg::Wip{v,hi,lo,invert} => RMsg::Wip{v,hi,lo,invert:!invert},
-    RMsg::Ret(n) => RMsg::Ret(not(n))}}
+    RMsg::Ret(n) => RMsg::Ret(!n)}}
 
 
 /// Sender for QMsg
@@ -372,17 +372,17 @@ impl<S:BddState> BddSwarm<S> {
     trace!("resolve_vhl(q{}, {:?}, {:?}, invert:{}", qid, v, hilo, invert);
     let HILO{hi:h0,lo:l0} = hilo;
     // we apply invert first so it normalizes correctly.
-    let (h1,l1) = if invert { (not(h0), not(l0)) } else { (h0, l0) };
+    let (h1,l1) = if invert { (!h0, !l0) } else { (h0, l0) };
     let nid = match ITE::norm(NID::from_vid(v), h1, l1) {
       Norm::Nid(n) => n,
-      Norm::Ite(ITE{i:vv,t:hi,e:lo}) =>     self.recent.simple_node(vv.vid(), HILO{hi,lo}),
-      Norm::Not(ITE{i:vv,t:hi,e:lo}) => not(self.recent.simple_node(vv.vid(), HILO{hi,lo})) };
+      Norm::Ite(ITE{i:vv,t:hi,e:lo}) =>  self.recent.simple_node(vv.vid(), HILO{hi,lo}),
+      Norm::Not(ITE{i:vv,t:hi,e:lo}) => !self.recent.simple_node(vv.vid(), HILO{hi,lo})};
     trace!("resolved vhl: q{}=>{}. #deps: {}", qid, nid, self.deps[qid].len());
     self.resolve_nid(qid, nid); }
 
   fn resolve_part(&mut self, qid:QID, part:BddPart, nid0:NID, invert:bool) {
     if let BddWIP::Parts(ref mut parts) = self.wip[qid] {
-      let nid = if invert { not(nid0) } else { nid0 };
+      let nid = if invert { !nid0 } else { nid0 };
       trace!("   !! set {:?} for q{} to {}", part, qid, nid);
       if part == BddPart::HiPart { parts.hi = Some(nid) } else { parts.lo = Some(nid) }}
     else { warn!("???? got a part for a qid #{} that was already done!", qid) }
@@ -441,7 +441,7 @@ impl<S:BddState> BddSwarm<S> {
     match ITE::norm(i,t,e) {
       Norm::Nid(n) => n,
       Norm::Ite(ite) => { run_swarm_ite!(ite) }
-      Norm::Not(ite) => { not(run_swarm_ite!(ite)) }}}
+      Norm::Not(ite) => { !run_swarm_ite!(ite) }}}
 
 } // end bddswarm
 
@@ -541,10 +541,10 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
 
   // public node constructors
 
-  pub fn and(&mut self, x:NID, y:NID)->NID { self.ite(x,  y, O) }
-  pub fn xor(&mut self, x:NID, y:NID)->NID { self.ite(x, not(y), y) }
+  pub fn and(&mut self, x:NID, y:NID)->NID { self.ite(x, y, O) }
+  pub fn xor(&mut self, x:NID, y:NID)->NID { self.ite(x, !y, y) }
   pub fn  or(&mut self, x:NID, y:NID)->NID { self.ite(x, I, y) }
-  pub fn  gt(&mut self, x:NID, y:NID)->NID { self.ite(x, not(y), O) }
+  pub fn  gt(&mut self, x:NID, y:NID)->NID { self.ite(x, !y, O) }
   pub fn  lt(&mut self, x:NID, y:NID)->NID { self.ite(x, O, y) }
 
   /// all-purpose node creation/lookup
@@ -643,7 +643,6 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
   fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 
-  fn not(&mut self, x:NID)->NID { not(x) }
   fn and(&mut self, x:NID, y:NID)->NID { self.and(x, y) }
   fn xor(&mut self, x:NID, y:NID)->NID { self.xor(x, y) }
   fn or(&mut self, x:NID, y:NID)->NID  { self.or(x, y) }
@@ -728,12 +727,12 @@ test_base_when!(BDDBase);
   let mut base = BDDBase::new(3);
   let (v1, v2) = (NID::var(1), NID::var(2));
   let x = base.xor(v1, v2);
-  assert_eq!(v2,      base.when_lo(VID::var(1),x));
-  assert_eq!(not(v2), base.when_hi(VID::var(1),x));
-  assert_eq!(v1,      base.when_lo(VID::var(2),x));
-  assert_eq!(not(v1), base.when_hi(VID::var(2),x));
-  assert_eq!(x,       base.when_lo(VID::var(3),x));
-  assert_eq!(x,       base.when_hi(VID::var(3),x))}
+  assert_eq!(v2,  base.when_lo(VID::var(1),x));
+  assert_eq!(!v2, base.when_hi(VID::var(1),x));
+  assert_eq!(v1,  base.when_lo(VID::var(2),x));
+  assert_eq!(!v1, base.when_hi(VID::var(2),x));
+  assert_eq!(x,   base.when_lo(VID::var(3),x));
+  assert_eq!(x,   base.when_hi(VID::var(3),x))}
 
 // swarm test suite
 pub type BddSwarmBase = BddBase<SafeBddState,BddSwarm<SafeBddState>>;
@@ -742,12 +741,12 @@ pub type BddSwarmBase = BddBase<SafeBddState,BddSwarm<SafeBddState>>;
   let mut base = BddSwarmBase::new(2);
   let (x0, x1) = (NID::var(0), NID::var(1));
   let x = base.xor(x0, x1);
-  assert_eq!(x1,      base.when_lo(VID::var(0),x));
-  assert_eq!(not(x1), base.when_hi(VID::var(0),x));
-  assert_eq!(x0,      base.when_lo(VID::var(1),x));
-  assert_eq!(not(x0), base.when_hi(VID::var(1),x));
-  assert_eq!(x,       base.when_lo(VID::var(2),x));
-  assert_eq!(x,       base.when_hi(VID::var(2),x))}
+  assert_eq!(x1,  base.when_lo(VID::var(0),x));
+  assert_eq!(!x1, base.when_hi(VID::var(0),x));
+  assert_eq!(x0,  base.when_lo(VID::var(1),x));
+  assert_eq!(!x0, base.when_hi(VID::var(1),x));
+  assert_eq!(x,   base.when_lo(VID::var(2),x));
+  assert_eq!(x,   base.when_hi(VID::var(2),x))}
 
 #[test] fn test_swarm_and() {
   let mut base = BddSwarmBase::new(2);
@@ -772,7 +771,7 @@ pub type BddSwarmBase = BddBase<SafeBddState,BddSwarm<SafeBddState>>;
   assert_eq!(vec![0,0,1,1,1,1,0,0], base.tt(x));
   let a = base.and(x1, x2);
   assert_eq!(vec![0,0,0,1,0,0,0,1], base.tt(a));
-  let i = base.ite(x, a, not(a));
+  let i = base.ite(x, a, !a);
   assert_eq!(vec![1,1,0,1,0,0,1,0], base.tt(i))}
 
 
@@ -781,12 +780,12 @@ pub type BddSwarmBase = BddBase<SafeBddState,BddSwarm<SafeBddState>>;
   use simplelog::*;  TermLogger::init(LevelFilter::Trace, Config::default()).unwrap();
   let mut base = BddSwarmBase::new(4);
   let (a,b) = (NID::var(0), NID::var(1));
-  let anb = base.and(a,not(b));
+  let anb = base.and(a,!b);
   assert_eq!(vec![0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0], base.tt(anb));
 
-  let anb_nb = base.xor(anb,not(b));
+  let anb_nb = base.xor(anb,!b);
   assert_eq!(vec![1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0], base.tt(anb_nb));
-  let anb2 = base.xor(not(b), anb_nb);
+  let anb2 = base.xor(!b, anb_nb);
   assert_eq!(vec![0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0], base.tt(anb2));
   assert_eq!(anb, anb2);
 }

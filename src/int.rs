@@ -44,7 +44,7 @@ impl TBit for BaseBit {}
 impl std::ops::Not for BaseBit {
   type Output = Self;
   fn not(self) -> Self {
-    self.op(|base| base.not(self.n)) }}
+    self.op(|_| !self.n) }}
 
 impl std::ops::BitAnd<BaseBit> for BaseBit {
   type Output = Self;

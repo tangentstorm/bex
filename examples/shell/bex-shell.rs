@@ -52,7 +52,7 @@ fn repl(base:&mut ASTBase) {
         // bdd commands
         "i"|"I" => data.push(base.i()),
         "o"|"O" => data.push(base.o()),
-        "~"|"not" => { let x = pop(&mut data); data.push(base.not(x)) }
+        "~"|"not" => { let x = pop(&mut data); data.push(!x) }
         "and" => { let (x,y)=pop2(&mut data); data.push(base.and(x,y)) }
         "xor" => { let (x,y)=pop2(&mut data); data.push(base.xor(x,y)) }
         "or"  => { let (x,y)=pop2(&mut data); data.push(base.or(x,y)) }

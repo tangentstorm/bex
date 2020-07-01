@@ -111,7 +111,7 @@ pub fn convert_nid(sn:SrcNid)->DstNid {
     let r0 = if nid::is_var(n) { NID::var(nid::var(n) as u32) }
     else if nid::no_var(n) { NID::vir(nid::idx(n) as u32) }
     else { todo!("convert_nid({:?})", n) };
-    if nid::is_inv(n) { nid::not(r0)} else { r0 }};
+    if nid::is_inv(n) { !r0 } else { r0 }};
   DstNid{ n: r } }
 
 /// replace a

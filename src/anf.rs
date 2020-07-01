@@ -111,7 +111,7 @@ impl Base for ANFBase {
         let hi1 = self.when_lo(v, hi);
         let lo1 = self.when_lo(v, lo);
         let mut res = self.vhl(nv, hi1, lo1);
-        if nid::is_inv(n) != nid::is_inv(res) { res = nid::not(res)}
+        if nid::is_inv(n) != nid::is_inv(res) { res = !res }
         res }}}
 
   fn when_hi(&mut self, v:VID, n:NID)->NID {
@@ -124,18 +124,16 @@ impl Base for ANFBase {
         let hi1 = self.when_hi(v, hi);
         let lo1 = self.when_hi(v, lo);
         let mut res = self.vhl(nv, hi1, lo1);
-        if nid::is_inv(n) != nid::is_inv(res) { res = nid::not(res)}
+        if nid::is_inv(n) != nid::is_inv(res) { res = !res }
         res }}}
 
   // logical ops
-
-  #[inline] fn not(&mut self, n:NID)->NID { nid::not(n) }
 
   fn and(&mut self, x:NID, y:NID)->NID {
     if x == O || y == O { O }
     else if x == I || x == y { y }
     else if y == I { x }
-    else if x == nid::not(y) { O }
+    else if x == !y { O }
 
     // We want any 'xor 1' (not) to be kept at the top level. There are four cases:
     else {
@@ -154,15 +152,15 @@ impl Base for ANFBase {
     if x == y { O }
     else if x == O { y }
     else if y == O { x }
-    else if x == I { nid::not(y) }
-    else if y == I { nid::not(x) }
-    else if x == nid::not(y) { I }
+    else if x == I { !y }
+    else if y == I { !x }
+    else if x == !y { I }
     else {
       // xor the raw anf expressions (without any 'xor 1' bits), then xor the bits.
       let (a, b) = (nid::raw(x), nid::raw(y));
       let res = self.calc_xor(a, b);
       if nid::is_inv(x) == nid::is_inv(y) { res }
-      else { nid::not(res) }}}
+      else { !res }}}
 
   fn or(&mut self, x:NID, y:NID)->NID { expr![self, ((x & y) ^ (x ^ y))] }
 
@@ -192,7 +190,7 @@ impl ANFBase {
       ANF{v:n.vid(), hi:I, lo: if nid::is_inv(n) { I } else { O } }}
     else {
       let mut anf = self.nodes[nid::idx(n)];
-      if nid::is_inv(n) { anf.lo = nid::not(anf.lo) }
+      if nid::is_inv(n) { anf.lo = !anf.lo }
       anf }}
 
   fn vhl(&mut self, v:VID, hi0:NID, lo0:NID)->NID {
@@ -209,7 +207,7 @@ impl ANFBase {
         self.cache.insert(anf, nid);
         self.nodes.push(anf);
         nid };
-    if nid::is_inv(lo) { nid::not( res )} else { res }}
+    if nid::is_inv(lo) { !res } else { res }}
 
   fn calc_and(&mut self, x:NID, y:NID)->NID {
     let (xv, yv) = (x.vid(), y.vid());
@@ -331,7 +329,7 @@ test_base_when!(ANFBase);
 #[test] fn test_anf_hilo_not() {
   let mut base = ANFBase::new(1);
   let a = base.var(0);
-  let ANF{ v, hi, lo } = base.fetch(nid::not(a));
+  let ANF{ v, hi, lo } = base.fetch(!a);
   assert_eq!(v, a.vid());
   assert_eq!(hi, I);
   assert_eq!(lo, I); // the final I never appears in the stored structure,
@@ -344,7 +342,7 @@ test_base_when!(ANFBase);
   let a = base.var(0); let b = base.var(1);
   let (axb, bxa) = (base.xor(a,b), base.xor(b,a));
   assert_eq!(O, base.xor(a,a), "a xor a should be 0");
-  assert_eq!(base.not(a), base.xor(I,a), "a xor 1 should be ~a");
+  assert_eq!(!a, base.xor(I,a), "a xor 1 should be ~a");
   assert_eq!(axb, bxa, "xor should be order-independent");
 
   let ANF{ v, hi, lo } = base.fetch(axb);
@@ -359,12 +357,12 @@ test_base_when!(ANFBase);
   let mut base = ANFBase::new(2);
   let a = base.var(0); let b = base.var(1);
   let axb = base.xor(a, b);
-  let naxb = base.xor(nid::not(a), b);
-  let axnb = base.xor(a, nid::not(b));
-  let naxnb = base.xor(nid::not(a), nid::not(b));
+  let naxb = base.xor(!a, b);
+  let axnb = base.xor(a, !b);
+  let naxnb = base.xor(!a, !b);
   assert_eq!(naxnb, axb, "expect ~a ^ ~b == a^b");
   assert_eq!(axnb, naxb, "expect a ^ ~b ==  ~a ^ b");
-  assert_eq!(axb, nid::not(naxb), "expect a ^ b ==  ~(~a ^ b)"); }
+  assert_eq!(axb, !naxb, "expect a ^ b ==  ~(~a ^ b)"); }
 
 
 #[test] fn test_anf_xor3() {
@@ -399,7 +397,7 @@ test_base_when!(ANFBase);
     assert_eq!(base.fetch(t), ANF{ v:tv, hi:I, lo:nid::O}, "t = t(1)+0");
     assert_eq!(base.fetch(tb), ANF{ v:tv, hi:b, lo:nid::O}, "tb = t(b)+0");
     assert_eq!(base.fetch(bxtb), ANF{ v:tv, hi:b, lo:b}, "b + tb = t(b)+b");
-    assert_eq!(base.fetch(txtb), ANF{ v:tv, hi:nid::not(b), lo:nid::O}, "t+tb = t(b+1)+0");
+    assert_eq!(base.fetch(txtb), ANF{ v:tv, hi:!b, lo:nid::O}, "t+tb = t(b+1)+0");
   }
 
 #[test] fn test_anf_and3() {
@@ -445,7 +443,7 @@ test_base_when!(ANFBase);
     let (v1,v2,v4,v6) = (nv(1), nv(2), nv(4), nv(6));
     let ctx = expr![base, (v1 & v6) ];
     let top = expr![base, ((I^v4) & v2)];
-    assert_eq!(top, base.and(nid::not(v4), v2), "sanity check");
+    assert_eq!(top, base.and(!v4, v2), "sanity check");
     // v1 * v6 ; v1->(~v4 * v2)
     // -> (v2 * (v4 + 1)) *v6
     // -> (v2v4 +v2) & v6

@@ -21,7 +21,6 @@ pub trait Base {
   fn when_hi(&mut self, v:VID, n:NID)->NID;
   fn when_lo(&mut self, v:VID, n:NID)->NID;
 
-  fn not(&mut self, x:NID)->NID;
   fn and(&mut self, x:NID, y:NID)->NID;
   fn xor(&mut self, x:NID, y:NID)->NID;
   fn or(&mut self, x:NID, y:NID)->NID;
@@ -91,9 +90,6 @@ base_test!(test_base_consts, b, 0, {
   // the const functions should give same answer each time
   assert!(o==b.o(), "o");  assert!(o==b.o(), "i");
 
-  // not:
-  assert!(i==b.not(o), "¬o");  assert!(o==b.not(i), "¬i");
-
   // and
   assert!(o==b.and(o,o), "o∧o");  assert!(o==b.and(i,o), "i∧o");
   assert!(o==b.and(o,i), "o∧i");  assert!(i==b.and(i,i), "i∧i");
@@ -110,9 +106,7 @@ base_test!(test_base_vars, b, 2, {
   assert!(x0 == x02, "var(0) should always return the same nid.");
   assert!(x1 != x0, "different variables should have different nids.");
   // assert!(b.o() < x0, "expect O < $0");
-  assert!(x0 < b.i(), "expect $0 < I");
-  let nx0 = b.not(x0);
-  assert!(x0 == b.not(nx0), "expected x0 = ¬¬x0"); });
+  assert!(x0 < b.i(), "expect $0 < I"); });
 
 
 // Test when_lo and when_hi for the simple cases.
