@@ -20,6 +20,9 @@ pub mod vid;
 /// Node IDs (shared by various Base implementations)
 pub mod nid;
 
+/// (Var, Hi, Lo) triples
+pub mod vhl;
+
 /// Abstract syntax trees (simple logic combinators).
 pub mod ast;
 /// Binary decision diagrams (if-then-else).

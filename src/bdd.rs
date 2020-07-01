@@ -15,7 +15,8 @@ use bincode;
 use base;
 use io;
 use reg::Reg;
-use {nid, nid::{NID,O,I,idx,is_var,is_const,HILO,IDX,is_inv}};
+use vhl::{HiLo, HiLoPart, VHLParts};
+use {nid, nid::{NID,O,I,idx,is_var,is_const,IDX,is_inv}};
 use vid::{VID,VidOrdering,topmost_of3,SMALL_ON_TOP};
 
 
@@ -103,7 +104,7 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
 
   /// fetch or create a "simple" node, where the hi and lo branches are both
   /// already fully computed pointers to existing nodes.
-  #[inline] fn simple_node(&mut self, v:VID, hilo:HILO)->NID {
+  #[inline] fn simple_node(&mut self, v:VID, hilo:HiLo)->NID {
     match self.get_simple_node(v, hilo) {
       Some(n) => n,
       None => { self.put_simple_node(v, hilo) }}}
@@ -112,12 +113,12 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
 
   fn nvars(&self)->usize;
 
-  fn get_hilo(&self, n:NID)->HILO;
+  fn get_hilo(&self, n:NID)->HiLo;
   /// load the memoized NID if it exists
   fn get_memo(&self, ite:&ITE) -> Option<NID>;
   fn put_xmemo(&mut self, ite:ITE, new_nid:NID);
-  fn get_simple_node(&self, v:VID, hilo:HILO)-> Option<NID>;
-  fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID; }
+  fn get_simple_node(&self, v:VID, hilo:HiLo)-> Option<NID>;
+  fn put_simple_node(&mut self, v:VID, hilo:HiLo)->NID; }
 
 
 // TODO: remove VID from hilos,index. just store hilos.
@@ -134,9 +135,9 @@ pub struct SafeBddState {
   /// number of variables
   nvars: usize,
   /// variable-specific hi/lo pairs for individual bdd nodes.
-  hilos: Vec<(VID,HILO)>,
+  hilos: Vec<(VID,HiLo)>,
   /// variable-specific memoization. These record (v,hilo) lookups.
-  index: BDDHashMap<(VID,HILO), IDX>,
+  index: BDDHashMap<(VID,HiLo), IDX>,
   /// arbitrary memoization. These record normalized (f,g,h) lookups.
   xmemo: BDDHashMap<ITE, NID> }
 
@@ -155,22 +156,22 @@ impl BddState for SafeBddState {
   fn nvars(&self)->usize { self.nvars }
 
   /// the "put" for this one is put_simple_node
-  #[inline] fn get_hilo(&self, n:NID)->HILO {
+  #[inline] fn get_hilo(&self, n:NID)->HiLo {
     self.hilos[idx(n) as usize].1}
 
   /// load the memoized NID if it exists
   #[inline] fn get_memo(&self, ite:&ITE) -> Option<NID> {
     if is_var(ite.i) {
-      self.get_simple_node(ite.i.vid(), HILO::new(ite.t,ite.e)) }
+      self.get_simple_node(ite.i.vid(), HiLo::new(ite.t,ite.e)) }
     else { self.xmemo.get(&ite).copied() }}
 
   #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID) {
     self.xmemo.insert(ite, new_nid); }
 
-  #[inline] fn get_simple_node(&self, v:VID, hilo:HILO)-> Option<NID> {
+  #[inline] fn get_simple_node(&self, v:VID, hilo:HiLo)-> Option<NID> {
     self.index.get(&(v,hilo)).map(|&ix| NID::from_vid_idx(v, ix)) }
 
-  #[inline] fn put_simple_node(&mut self, v:VID, hilo:HILO)->NID {
+  #[inline] fn put_simple_node(&mut self, v:VID, hilo:HiLo)->NID {
     let ix = self.hilos.len() as IDX;
     self.hilos.push((v,hilo));
     self.index.insert((v,hilo), ix);
@@ -231,26 +232,16 @@ type RTx = Sender<(QID, RMsg)>;
 /// Receiver for RMsg
 type RRx = Receiver<(QID, RMsg)>;
 
-/// Partial BDD node (for BddWIP).
-#[derive(PartialEq,Debug,Copy,Clone)]
-enum BddPart { HiPart, LoPart }
 
 /// Work in progress for BddSwarm.
 #[derive(PartialEq,Debug,Copy,Clone)]
-struct BddParts{ v:VID, hi:Option<NID>, lo:Option<NID>, invert:bool}
-impl BddParts {
-  fn hilo(&self)->Option<HILO> {
-    if let (Some(hi), Some(lo)) = (self.hi, self.lo) { Some(HILO{hi,lo}) } else { None }}}
-
-/// Work in progress for BddSwarm.
-#[derive(PartialEq,Debug,Copy,Clone)]
-enum BddWIP { Fresh, Done(NID), Parts(BddParts) }
+enum BddWIP { Fresh, Done(NID), Parts(VHLParts) }
 
 /// Helps track dependencies between WIP tasks
 #[derive(Debug,Copy,Clone)]
-struct BddDep { qid: QID, part: BddPart, invert: bool }
+struct BddDep { qid: QID, part: HiLoPart, invert: bool }
 impl BddDep{
-  fn new(qid: QID, part: BddPart, invert: bool)->BddDep { BddDep{qid, part, invert} }}
+  fn new(qid: QID, part: HiLoPart, invert: bool)->BddDep { BddDep{qid, part, invert} }}
 
 
 
@@ -368,23 +359,23 @@ impl<S:BddState> BddSwarm<S> {
       if qid == 0 { self.me.send((0, RMsg::Ret(nid))).expect("failed to send Ret"); }}}
 
   /// called whenever the wip resolves to a new simple (v/hi/lo) node.
-  fn resolve_vhl(&mut self, qid:QID, v:VID, hilo:HILO, invert:bool) {
+  fn resolve_vhl(&mut self, qid:QID, v:VID, hilo:HiLo, invert:bool) {
     trace!("resolve_vhl(q{}, {:?}, {:?}, invert:{}", qid, v, hilo, invert);
-    let HILO{hi:h0,lo:l0} = hilo;
+    let HiLo{hi:h0,lo:l0} = hilo;
     // we apply invert first so it normalizes correctly.
     let (h1,l1) = if invert { (!h0, !l0) } else { (h0, l0) };
     let nid = match ITE::norm(NID::from_vid(v), h1, l1) {
       Norm::Nid(n) => n,
-      Norm::Ite(ITE{i:vv,t:hi,e:lo}) =>  self.recent.simple_node(vv.vid(), HILO{hi,lo}),
-      Norm::Not(ITE{i:vv,t:hi,e:lo}) => !self.recent.simple_node(vv.vid(), HILO{hi,lo})};
+      Norm::Ite(ITE{i:vv,t:hi,e:lo}) =>  self.recent.simple_node(vv.vid(), HiLo{hi,lo}),
+      Norm::Not(ITE{i:vv,t:hi,e:lo}) => !self.recent.simple_node(vv.vid(), HiLo{hi,lo})};
     trace!("resolved vhl: q{}=>{}. #deps: {}", qid, nid, self.deps[qid].len());
     self.resolve_nid(qid, nid); }
 
-  fn resolve_part(&mut self, qid:QID, part:BddPart, nid0:NID, invert:bool) {
+  fn resolve_part(&mut self, qid:QID, part:HiLoPart, nid0:NID, invert:bool) {
     if let BddWIP::Parts(ref mut parts) = self.wip[qid] {
       let nid = if invert { !nid0 } else { nid0 };
       trace!("   !! set {:?} for q{} to {}", part, qid, nid);
-      if part == BddPart::HiPart { parts.hi = Some(nid) } else { parts.lo = Some(nid) }}
+      if part == HiLoPart::HiPart { parts.hi = Some(nid) } else { parts.lo = Some(nid) }}
     else { warn!("???? got a part for a qid #{} that was already done!", qid) }
     if let BddWIP::Parts(wip) = self.wip[qid] {
       if let Some(hilo) = wip.hilo() { self.resolve_vhl(qid, wip.v, hilo, wip.invert) }}}
@@ -421,18 +412,18 @@ impl<S:BddState> BddSwarm<S> {
         trace!("===> run_swarm got RMsg {}: {:?}", qid, rmsg);
         match rmsg {
           RMsg::Nid(nid) =>  { self.resolve_nid(qid, nid); }
-          RMsg::Vhl{v,hi,lo,invert} => { self.resolve_vhl(qid, v, HILO{hi, lo}, invert); }
+          RMsg::Vhl{v,hi,lo,invert} => { self.resolve_vhl(qid, v, HiLo{hi, lo}, invert); }
           RMsg::Wip{v,hi,lo,invert} => {
             // by the time we get here, the task for this node was already created.
             // (add_task already filled in the v for us, so we don't need it.)
             assert_eq!(self.wip[qid], BddWIP::Fresh);
-            self.wip[qid] = BddWIP::Parts(BddParts{ v, hi:None, lo:None, invert });
+            self.wip[qid] = BddWIP::Parts(VHLParts{ v, hi:None, lo:None, invert });
             macro_rules! handle_part { ($xx:ident, $part:expr) => {
               match $xx {
                 Norm::Nid(nid) => self.resolve_part(qid, $part, nid, false),
                 Norm::Ite(ite) => self.add_task(Some(BddDep::new(qid, $part, false)), ite),
                 Norm::Not(ite) => self.add_task(Some(BddDep::new(qid, $part, true)), ite)}}}
-            handle_part!(hi, BddPart::HiPart); handle_part!(lo, BddPart::LoPart); }
+            handle_part!(hi, HiLoPart::HiPart); handle_part!(lo, HiLoPart::LoPart); }
           RMsg::Ret(n) => { result = Some(n) }}}
       result.unwrap() }}}
 
@@ -455,7 +446,7 @@ fn swarm_ite<S:BddState>(state: &Arc<S>, ite0:ITE)->RMsg {
 
 fn swarm_vhl_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
   let ITE{i:vv,t:hi,e:lo} = ite; let v = vv.vid();
-  if let Some(n) = state.get_simple_node(vv.vid(), HILO{hi,lo}) { RMsg::Nid(n) }
+  if let Some(n) = state.get_simple_node(vv.vid(), HiLo{hi,lo}) { RMsg::Nid(n) }
   else { RMsg::Vhl{ v, hi, lo, invert:false } }}
 
 fn swarm_ite_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
@@ -904,11 +895,11 @@ impl<'a> VidSolIterator<'a> {
   fn in_solution(&self)->bool { (self.node == nid::I && !self.invert) ||
                                 (self.node == nid::O && self.invert) }
 
-  fn move_down(&mut self, which:BddPart) {
+  fn move_down(&mut self, which:HiLoPart) {
     self.istack.push(self.invert);
     self.nstack.push(self.node);
     let (hi, lo) = self.state.tup(self.node);
-    self.node = if which == BddPart::HiPart { hi } else { lo };
+    self.node = if which == HiLoPart::HiPart { hi } else { lo };
     self.invert = nid::is_inv(self.node) && !nid::is_const(self.node);}
 
   fn move_up(&mut self) {
@@ -920,7 +911,7 @@ impl<'a> VidSolIterator<'a> {
   fn descend(&mut self) {
     self.log("descend");
     while !nid::is_const(self.node) {
-      self.move_down(BddPart::LoPart); }}
+      self.move_down(HiLoPart::LoPart); }}
 
   /// walk depth-first from lo to hi until we arrive at the next solution
   fn find_next_leaf(&mut self)->Option<NID> {
@@ -973,7 +964,7 @@ impl<'a> VidSolIterator<'a> {
     else { for i in 0..bv.var_ix() { self.scope.put(i, false) }}
 
     // we don't need to flip self.invert because it hasn't changed.
-    self.move_down(BddPart::HiPart);
+    self.move_down(HiLoPart::HiPart);
     self.descend();
     Some(self.node) }
 
@@ -999,7 +990,7 @@ impl<'a> VidSolIterator<'a> {
           // Whether we follow the hi or lo branch depends on which variable we're looking at.
           if nid::is_const(self.node) { return } // special case for topmost I (all solutions)
           let hi = self.scope.var_get(self.node.vid());
-          let part = if hi { BddPart::HiPart } else { BddPart::LoPart };
+          let part = if hi { HiLoPart::HiPart } else { HiLoPart::LoPart };
           self.move_down(part);
           self.descend();
           if self.in_solution() { self.log("^ found next solution"); return }}

@@ -123,20 +123,6 @@ impl fmt::Debug for NID { // for test suite output
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self) }}
 
 
-/// Simple Hi/Lo pair stored internally when representing nodes.
-/// All nodes with the same branching variable go in the same array, so there's
-/// no point duplicating it.
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct HILO {pub hi:NID, pub lo:NID}
-
-impl HILO {
-  /// constructor
-  pub fn new(hi:NID, lo:NID)->HILO { HILO { hi, lo } }
-
-  /// apply the not() operator to both branches
-  #[inline] pub fn invert(self)-> HILO { HILO{ hi: !self.hi, lo: !self.lo }} }
-
-
 #[test] fn test_nids() {
   assert_eq!(O.n,   2305843009213693952); assert_eq!(O, new(0x2000000000000000));
   assert_eq!(I.n,  11529215046068469760); assert_eq!(I, new(0xa000000000000000));
