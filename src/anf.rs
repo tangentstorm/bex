@@ -17,7 +17,9 @@ use std::collections::HashSet;
 use base::Base;
 use {nid, nid::{NID,I,O}};
 use vid::{VID,VidOrdering};
+use cur::Cursor;
 use reg::Reg;
+use vhl::{HiLo, HiLoBase};
 use hashbrown::HashMap;
 #[cfg(test)] use vid::{topmost, botmost};
 
@@ -263,44 +265,47 @@ impl ANFBase {
         let hi = self.xor(b, q);
         let lo = self.xor(c, r);
         self.vhl(a, hi, lo)}}}
-
 
 /// solutions: this only returns the *very first* solution for now.
 
-  pub fn solutions(&mut self, n:NID)->VidSolIterator {
+  pub fn solutions(&mut self, n:NID)->ANFSolIterator {
     self.solutions_trunc(n, self.num_vars())}
 
-  pub fn solutions_trunc(&mut self, n:NID, nvars:usize)->VidSolIterator {
-    assert!(nvars <= self.num_vars(), "nvars arg to nidsols_trunc must be <= self.nvars");
-    VidSolIterator::from_anf_base(self, n, nvars)}
+  pub fn solutions_trunc(&mut self, n:NID, nvars:usize)->ANFSolIterator {
+    assert!(nvars <= self.num_vars(), "nvars arg to solutions_trunc must be <= self.nvars");
+    ANFSolIterator::from_anf_base(self, n, nvars)}
 } // impl ANFBase
 
-pub struct VidSolIterator<'a> {
-  nid: NID,
+
+impl HiLoBase for ANFBase {
+  fn get_hilo(&self, nid:NID)->Option<HiLo> {
+    let ANF { v:_, hi, lo } = self.fetch(nid);
+    Some(HiLo { hi, lo }) }}
+
+pub struct ANFSolIterator<'a> {
   base: &'a ANFBase,
-  nvars: usize,
+  cur: Cursor,
   done: bool}
 
-impl<'a>  VidSolIterator<'a> {
-  pub fn from_anf_base(base: &'a ANFBase, nid:NID, nvars:usize)->VidSolIterator<'a> {
-    VidSolIterator{ nid, base, nvars, done: nid==nid::O } }}
+impl<'a>  ANFSolIterator<'a> {
 
-impl<'a> Iterator for VidSolIterator<'a> {
+  pub fn from_anf_base(base: &'a ANFBase, nid:NID, nvars:usize)->ANFSolIterator<'a> {
+    ANFSolIterator{ base, cur:Cursor::new(nvars, nid), done: nid==nid::O } }}
+
+impl<'a> Iterator for ANFSolIterator<'a> {
 
   type Item = Reg;
 
   fn next(&mut self)->Option<Self::Item> {
     if self.done { None }
     else {
-      self.done = true; println!("warning: ANFBase::nidsols currently only finds first solution!");
-      let mut res = Reg::new(self.nvars);
-      let mut n = self.nid;
+      self.done = true; println!("warning: ANFBase::solutions currently only finds first solution!");
+      let mut res = self.cur.scope.clone();
+      let mut n = self.cur.node.clone();
       if nid::is_inv(n) { return Some(res) } // 1 term in ANF means f(0,0,0,..)=1
       // else walk down to lowest term, if we're not already there.
-      loop {
-        let ANF{ v:_, hi:_, lo } = self.base.fetch(n);
-        if nid::is_const(lo) { break }
-        else { n = lo }}
+      self.cur.descend(self.base);
+      n = self.cur.step_up();
       // now we're at the first factor of the first term. collect the others.
       loop {
         if nid::is_const(n) { break }

@@ -15,7 +15,7 @@ use bincode;
 use base;
 use io;
 use reg::Reg;
-use vhl::{HiLo, HiLoPart, VHLParts};
+use vhl::{HiLo, HiLoPart, HiLoBase, VHLParts};
 use {nid, nid::{NID,O,I,idx,is_var,is_const,IDX,is_inv}};
 use vid::{VID,VidOrdering,topmost_of3,SMALL_ON_TOP};
 use cur::Cursor;
@@ -789,7 +789,7 @@ pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 /// Test cases for SolutionIterator
 #[test] fn test_bdd_solutions_o() {
   let mut base = BDDBase::new(2);  let mut it = base.solutions(nid::O);
-  assert!(it.done, "nidsols should be empty for const O");
+  assert!(it.done, "solutions should be empty for const O");
   assert_eq!(it.next(), None, "const O should yield no solutions.") }
 
 #[test] fn test_bdd_solutions_i() {
@@ -839,41 +839,38 @@ pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   let expect = if SMALL_ON_TOP { vec![0b010, 0b011, 0b100, 0b101] }  // bits 012
   else { vec![0b001, 0b010, 0b101, 0b110 ] }; // bits 210
   assert_eq!(actual, expect); }
-
 
 impl<W:BddWorker<S>> BddBase<S,W> {
-  pub fn solutions(&mut self, n:NID)->VidSolIterator {
+  pub fn solutions(&mut self, n:NID)->BDDSolIterator {
     self.solutions_trunc(n, self.nvars())}
 
-  pub fn solutions_trunc(&mut self, n:NID, nvars:usize)->VidSolIterator {
-    assert!(nvars <= self.nvars(), "nvars arg to nidsols_trunc must be <= self.nvars");
-    VidSolIterator::from_state(self.worker.get_state(), n, nvars)}}
+  pub fn solutions_trunc(&mut self, n:NID, nvars:usize)->BDDSolIterator {
+    assert!(nvars <= self.nvars(), "nvars arg to solutions_trunc must be <= self.nvars");
+    BDDSolIterator::from_state(self.worker.get_state(), n, nvars)}}
 
 
-pub struct VidSolIterator<'a> {
+pub struct BDDSolIterator<'a> {
   cur: Cursor,
   indent: i8,
   state: &'a S,
   done: bool}         // whether we've reached the end
 
+impl HiLoBase for SafeBddState {
+  fn get_hilo(&self, n:NID)->Option<HiLo> {
+    let (hi, lo) = self.tup(n);
+    Some(HiLo{ hi, lo }) }}
 
-impl<'a> VidSolIterator<'a> {
-  pub fn from_state(state: &'a S, n:NID, nvars:usize)->VidSolIterator<'a> {
+impl<'a> BDDSolIterator<'a> {
+  pub fn from_state(state: &'a S, n:NID, nvars:usize)->BDDSolIterator<'a> {
     // init scope with all variables assigned to 0
-    let mut res = VidSolIterator{
+    let mut res = BDDSolIterator{
       indent: 0,
       state,
-      cur: Cursor {
-        node:n,
-        nvars,
-        invert: false,  // start:0, swap when we push, so parity of self.nstack == self.invert
-        scope: Reg::new(nvars),
-        nstack: vec![],
-        istack: vec![]},
+      cur: Cursor::new(nvars, n),
       done: n==nid::O || nvars == 0 };
     res.log("## init");
     if ! res.done {
-      res.descend();
+      res.cur.descend(state);
       if !res.in_solution() { res.advance() }}
     res }
 
@@ -891,15 +888,6 @@ impl<'a> VidSolIterator<'a> {
   fn in_solution(&self)->bool { (self.cur.node == nid::I && !self.cur.invert) ||
                                 (self.cur.node == nid::O && self.cur.invert) }
 
-  fn move_down(&mut self, which:HiLoPart) {
-    let (hi, lo) = self.state.tup(self.cur.node);
-    self.cur.push_node(if which == HiLoPart::HiPart { hi } else { lo }); }
-
-  /// descend along the "lo" path into the bdd until we find a constant node
-  fn descend(&mut self) {
-    self.log("descend");
-    while !nid::is_const(self.cur.node) {
-      self.move_down(HiLoPart::LoPart); }}
 
   /// walk depth-first from lo to hi until we arrive at the next solution
   fn find_next_leaf(&mut self)->Option<NID> {
@@ -914,7 +902,7 @@ impl<'a> VidSolIterator<'a> {
     if self.cur.nstack.is_empty() { assert!(self.cur.node == nid::I); return None }
 
     // now we are definitely at a leaf node with a branch above us.
-    self.cur.pop_node();
+    self.cur.step_up();
 
     let tv = self.cur.node.vid(); // branching var for current twig node
     let mut rippled = false;
@@ -937,8 +925,8 @@ impl<'a> VidSolIterator<'a> {
       self.log("done with node."); return None }
 
     self.cur.clear_trailing_bits();
-    self.move_down(HiLoPart::HiPart);
-    self.descend();
+    self.cur.step_down(self.state, HiLoPart::HiPart);
+    self.cur.descend(self.state);
     Some(self.cur.node) }
 
 
@@ -958,8 +946,8 @@ impl<'a> VidSolIterator<'a> {
           // Whether we follow the hi or lo branch depends on which variable we're looking at.
           if nid::is_const(self.cur.node) { return } // special case for topmost I (all solutions)
           let hi = self.cur.scope.var_get(self.cur.node.vid());
-          self.move_down(if hi { HiLoPart::HiPart } else { HiLoPart::LoPart });
-          self.descend();
+          self.cur.step_down(self.state, if hi { HiLoPart::HiPart } else { HiLoPart::LoPart });
+          self.cur.descend(self.state);
           if self.in_solution() { self.log("^ found next solution"); return }}
         else { // there's no lmz, so we've counted all the way to 2^nvars-1, and we're done.
           self.log("$ found all solutions!"); self.done = true; return }}
@@ -970,7 +958,7 @@ impl<'a> VidSolIterator<'a> {
 } // impl VidSolIterator
 
 
-impl<'a> Iterator for VidSolIterator<'a> {
+impl<'a> Iterator for BDDSolIterator<'a> {
 
   type Item = Reg;
 

@@ -2,6 +2,7 @@
 use reg::Reg;
 use {nid,nid::NID};
 use vid::{VID,SMALL_ON_TOP};
+use vhl::{HiLoPart, HiLoBase};
 
 
 pub struct Cursor {
@@ -15,20 +16,43 @@ pub struct Cursor {
 
 impl Cursor {
 
+  pub fn new(nvars:usize, node:NID)->Self {
+    Cursor {
+      node,
+      nvars,
+      invert: false,  // start:0, swap when we push, so parity of self.nstack == self.invert
+      scope: Reg::new(nvars),
+      nstack: vec![],
+      istack: vec![]}}
+
   /// push a new node onto the stack
-  pub fn push_node(&mut self, node:NID) {
+  fn push_node(&mut self, node:NID) {
     self.istack.push(self.invert);
     self.nstack.push(self.node);
     self.node = node;
     self.invert = nid::is_inv(node) && !nid::is_const(node); }
 
   /// pop a node from the stack.
-  pub fn pop_node(&mut self)->NID {
+  fn pop_node(&mut self)->NID {
     assert!(!self.nstack.is_empty());
     let res = self.node;
     self.invert = self.istack.pop().expect("istack.pop() should have worked, as len>0");
     self.node = self.nstack.pop().expect("nstack.pop() should have worked, as len>0");
     res }
+
+  /// take one step upward and return new node id.
+  pub fn step_up(&mut self)->NID {
+    self.pop_node();
+    self.node }
+
+  pub fn step_down(&mut self, base: &dyn HiLoBase, which:HiLoPart) {
+    let hl = base.get_hilo(self.node).expect("node not found for step_down");
+    self.push_node(hl.get_part(which)); }
+
+  /// descend along the "lo" path into the bdd until we find a constant node
+  pub fn descend(&mut self, base: &dyn HiLoBase)->NID {
+    while !nid::is_const(self.node) { self.step_down(base, HiLoPart::LoPart); }
+    self.node }
 
   /// set entry in scope to hi for current branch.
   /// returns false if the entry was alreday hi
