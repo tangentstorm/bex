@@ -16,18 +16,20 @@ pub use base::*;
 
 /// Variable IDs (used interally by Base implementations)
 pub mod vid;
-
 /// Node IDs (shared by various Base implementations)
 pub mod nid;
-
+/// Registers -- arbitrarily large arrays of bits.
+pub mod reg;
 /// (Var, Hi, Lo) triples
 pub mod vhl;
+
+// Cursors (register + stack and scope) for navigating vhl-graphs (Bdd, Anf, etc)
+pub mod cur;
 
 /// Abstract syntax trees (simple logic combinators).
 pub mod ast;
 /// Binary decision diagrams (if-then-else).
 pub mod bdd;
-
 /// Solve AST-based expressions by converting them to other forms.
 pub mod solve;
 
@@ -35,8 +37,6 @@ pub mod solve;
 pub mod apl;
 /// Helpers for working with arrays of bit structures as if they were integers.
 pub mod int;
-/// Registers -- arbitrarily large arrays of bits.
-pub mod reg;
 /// Input/output helpers.
 pub mod io;
 

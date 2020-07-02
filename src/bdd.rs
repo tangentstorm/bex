@@ -18,6 +18,7 @@ use reg::Reg;
 use vhl::{HiLo, HiLoPart, VHLParts};
 use {nid, nid::{NID,O,I,idx,is_var,is_const,IDX,is_inv}};
 use vid::{VID,VidOrdering,topmost_of3,SMALL_ON_TOP};
+use cur::Cursor;
 
 
 /// An if/then/else triple. Like VHL, but all three slots are NIDs.
@@ -803,11 +804,11 @@ pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   assert!(!it.done,  "should be a solution");
   // it should be sitting on first solution, which is a=1
   assert!(it.in_solution(), "should be looking at the solution");
-  assert_eq!(it.nstack, vec![a], "stack should contain root node");
-  assert_eq!(it.scope.len(), 1);
-  println!("it.scope> {:?}", it.scope);
-  assert_eq!(it.scope.var_get(a.vid()), true,  "x0 should be set to high (first solution)");
-  assert_eq!(it.node, nid::I,    "current node should be hi side of root (a.hi -> I)");
+  assert_eq!(it.cur.nstack, vec![a], "stack should contain root node");
+  assert_eq!(it.cur.scope.len(), 1);
+  println!("it.scope> {:?}", it.cur.scope);
+  assert_eq!(it.cur.scope.var_get(a.vid()), true,  "x0 should be set to high (first solution)");
+  assert_eq!(it.cur.node, nid::I,    "current node should be hi side of root (a.hi -> I)");
   assert_eq!(it.next().expect("expected solution!").as_usize(), 0b1);
   assert_eq!(it.next(), None);
   assert!(it.done);}
@@ -850,14 +851,9 @@ impl<W:BddWorker<S>> BddBase<S,W> {
 
 
 pub struct VidSolIterator<'a> {
+  cur: Cursor,
   indent: i8,
-  node: NID,
   state: &'a S,
-  nvars:usize,        // track our own nvars so we can ignore virtual variables
-  nstack: Vec<NID>,   // the path of nodes we have traversed
-  istack: Vec<bool>,  // the stack of node inversion states
-  scope: Reg,    // the current variable assignments
-  invert: bool,       // whether to invert the results
   done: bool}         // whether we've reached the end
 
 
@@ -866,14 +862,15 @@ impl<'a> VidSolIterator<'a> {
     // init scope with all variables assigned to 0
     let mut res = VidSolIterator{
       indent: 0,
-      node: n, //if n == nid::I { n } else { nid::raw(n) },
       state,
-      nvars,
-      scope: Reg::new(nvars),
-      nstack: vec![],
-      istack: vec![],
-      done: n==nid::O || nvars == 0,
-      invert: false }; // should start false and only swap when we push to stack, so that parity of nstack = invert  . nid::is_inv(n) && n!=nid::I };
+      cur: Cursor {
+        node:n,
+        nvars,
+        invert: false,  // start:0, swap when we push, so parity of self.nstack == self.invert
+        scope: Reg::new(nvars),
+        nstack: vec![],
+        istack: vec![]},
+      done: n==nid::O || nvars == 0 };
     res.log("## init");
     if ! res.done {
       res.descend();
@@ -883,34 +880,29 @@ impl<'a> VidSolIterator<'a> {
   fn log_indent(&mut self, d:i8) { self.indent += d; }
   fn log(&self, _msg: &str) {
     #[cfg(test)]{
-      print!(" {}", if self.invert { '¬' } else { ' ' });
-      print!("{:>10}", format!("{}", self.node));
-      print!(" {:?}{}", self.scope, if self.in_solution() { '.' } else { ' ' });
+      print!(" {}", if self.cur.invert { '¬' } else { ' ' });
+      print!("{:>10}", format!("{}", self.cur.node));
+      print!(" {:?}{}", self.cur.scope, if self.in_solution() { '.' } else { ' ' });
       let s = format!("{}{}", "  ".repeat(self.indent as usize), _msg,);
-      println!(" {:50} {:?}", s, self.nstack);}}
+      println!(" {:50} {:?}", s, self.cur.nstack);}}
 
 
 
   /// are we currently pointing at a span of 1 or more solutions?
-  fn in_solution(&self)->bool { (self.node == nid::I && !self.invert) ||
-                                (self.node == nid::O && self.invert) }
+  fn in_solution(&self)->bool { (self.cur.node == nid::I && !self.cur.invert) ||
+                                (self.cur.node == nid::O && self.cur.invert) }
 
   fn move_down(&mut self, which:HiLoPart) {
-    self.istack.push(self.invert);
-    self.nstack.push(self.node);
-    let (hi, lo) = self.state.tup(self.node);
-    self.node = if which == HiLoPart::HiPart { hi } else { lo };
-    self.invert = nid::is_inv(self.node) && !nid::is_const(self.node);}
+    let (hi, lo) = self.state.tup(self.cur.node);
+    let nid = if which == HiLoPart::HiPart { hi } else { lo };
+    self.cur.push_node(nid); }
 
-  fn move_up(&mut self) {
-    assert!(!self.nstack.is_empty());
-    self.invert = self.istack.pop().expect("istack.pop() should have worked, as len>0");
-    self.node = self.nstack.pop().expect("nstack.pop() should have worked, as len>0"); }
+  fn move_up(&mut self) { self.cur.pop_node(); }
 
   /// descend along the "lo" path into the bdd until we find a constant node
   fn descend(&mut self) {
     self.log("descend");
-    while !nid::is_const(self.node) {
+    while !nid::is_const(self.cur.node) {
       self.move_down(HiLoPart::LoPart); }}
 
   /// walk depth-first from lo to hi until we arrive at the next solution
@@ -922,51 +914,44 @@ impl<'a> VidSolIterator<'a> {
 
   fn find_next_leaf0(&mut self)->Option<NID> {
     // we always start at a leaf and move up, with the one exception of root=I
-    assert!(nid::is_const(self.node), "find_next_leaf should always start by looking at a leaf");
-    if self.nstack.is_empty() { assert!(self.node == nid::I); return None }
+    assert!(nid::is_const(self.cur.node), "find_next_leaf should always start by looking at a leaf");
+    if self.cur.nstack.is_empty() { assert!(self.cur.node == nid::I); return None }
 
     // now we are definitely at a leaf node with a branch above us.
     self.move_up();
 
-    // if we've already walked the hi branch...
-    let bv = self.node.vid(); // branching var for current node
+    let tv = self.cur.node.vid(); // branching var for current twig node
     let mut rippled = false;
-    if self.scope.var_get(bv) {
+    // if we've already walked the hi branch...
+    if self.cur.scope.var_get(tv) {
       // then climb to the deepest node where the branch variable is still lo.
       // scope[i] is inverted when we're exploring the low branch.
       // so move up the tree until we're back on a low branch or reach the top
-      let mut iv = bv;
-      while !self.nstack.is_empty() && self.scope.var_get(iv) {
-        self.move_up();
-        let bv = self.node.vid(); // branching var for current node
-        while iv.is_below(&bv) { iv = iv.shift_up(); }} // ascend
+
+      self.cur.to_next_lo_var();
 
       // if we've cleared the stack and already explored the hi branch...
-      if self.nstack.is_empty() && self.scope.var_get(iv) {
-        // ... then first check if there are any variables above us on which
-        // the node doesn't actually depend. if so, ripple add.
-        // otherwise, we're done.
-        let top = if SMALL_ON_TOP { 0 } else { self.nvars-1 };
-        if let Some(x) = self.scope.ripple(iv.var_ix(), top) {
-          rippled = true;
-          self.log(format!("rippled top to {}. restarting.", x).as_str()); }
-        else { self.log("no next leaf!"); return None }}}
+      { let iv = self.cur.node.vid();
+        if self.cur.nstack.is_empty() && self.cur.scope.var_get(iv) {
+          // ... then first check if there are any variables above us on which
+          // the node doesn't actually depend. if so, ripple add.
+          // otherwise, we're done.
+          let top = if SMALL_ON_TOP { 0 } else { self.cur.nvars-1 };
+          if let Some(x) = self.cur.scope.ripple(iv.var_ix(), top) {
+            rippled = true;
+            self.log(format!("rippled top to {}. restarting.", x).as_str()); }
+          else { self.log("no next leaf!"); return None }}} }
 
     // flip the output bit in the answer. (it was lo, make it hi)
-    if !rippled {
-      let bv = self.node.vid();
-      if self.scope.var_get(bv) { self.log("done with node."); return None }
-      self.scope.var_put(bv, true); }
+    if !rippled && !self.cur.set_var_hi() {
+      self.log("done with node."); return None }
 
-    // now set all variables after that branch to lo
-    if SMALL_ON_TOP {
-      for i in (bv.var_ix()+1)..self.nvars { self.scope.put(i, false); }}
-    else { for i in 0..bv.var_ix() { self.scope.put(i, false) }}
+    self.cur.clear_trailing_bits();
 
     // we don't need to flip self.invert because it hasn't changed.
     self.move_down(HiLoPart::HiPart);
     self.descend();
-    Some(self.node) }
+    Some(self.cur.node) }
 
 
   /// walk depth-first from lo to hi until we arrive at the next solution
@@ -974,22 +959,17 @@ impl<'a> VidSolIterator<'a> {
     self.log("advance>"); self.log_indent(1); self.advance0(); self.log_indent(-1); }
   fn advance0(&mut self) {
     assert!(!self.done, "advance() called on iterator that's already done!");
-    assert!(nid::is_const(self.node), "advance should always start by looking at a leaf");
+    assert!(nid::is_const(self.cur.node), "advance should always start by looking at a leaf");
     loop {
       if self.in_solution() {
         // if we're in the solution, we're going to increment the "counter".
-        if let Some(lmz) = self.scope.increment() { // lmz = the leftmost "zero" (lo input variable)
-          let lmz = VID::var(lmz as u32);
-          self.log(format!("rebranch on {:?}",lmz).as_str());
-          // climb the bdd until we find the layer where the lmz would be.
-          while !self.nstack.is_empty()
-            && !lmz.is_below(&self.nstack[self.nstack.len()-1].vid()) {
-            self.move_up(); }
+        if let Some(zpos) = self.cur.increment() {
+          self.log(format!("rebranch on {:?}",zpos).as_str());
           // The 'lmz' variable exists in the solution space, but there might or might
           // not be a branch node for that variable in the current bdd path.
           // Whether we follow the hi or lo branch depends on which variable we're looking at.
-          if nid::is_const(self.node) { return } // special case for topmost I (all solutions)
-          let hi = self.scope.var_get(self.node.vid());
+          if nid::is_const(self.cur.node) { return } // special case for topmost I (all solutions)
+          let hi = self.cur.scope.var_get(self.cur.node.vid());
           let part = if hi { HiLoPart::HiPart } else { HiLoPart::LoPart };
           self.move_down(part);
           self.descend();
@@ -1010,7 +990,7 @@ impl<'a> Iterator for VidSolIterator<'a> {
   fn next(&mut self)->Option<Self::Item> {
     if self.done { return None }
     assert!(self.in_solution());
-    let result = self.scope.clone();
+    let result = self.cur.scope.clone();
     self.advance();
     Some(result)}
 
