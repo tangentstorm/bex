@@ -887,17 +887,13 @@ impl<'a> VidSolIterator<'a> {
       println!(" {:50} {:?}", s, self.cur.nstack);}}
 
 
-
   /// are we currently pointing at a span of 1 or more solutions?
   fn in_solution(&self)->bool { (self.cur.node == nid::I && !self.cur.invert) ||
                                 (self.cur.node == nid::O && self.cur.invert) }
 
   fn move_down(&mut self, which:HiLoPart) {
     let (hi, lo) = self.state.tup(self.cur.node);
-    let nid = if which == HiLoPart::HiPart { hi } else { lo };
-    self.cur.push_node(nid); }
-
-  fn move_up(&mut self) { self.cur.pop_node(); }
+    self.cur.push_node(if which == HiLoPart::HiPart { hi } else { lo }); }
 
   /// descend along the "lo" path into the bdd until we find a constant node
   fn descend(&mut self) {
@@ -918,24 +914,18 @@ impl<'a> VidSolIterator<'a> {
     if self.cur.nstack.is_empty() { assert!(self.cur.node == nid::I); return None }
 
     // now we are definitely at a leaf node with a branch above us.
-    self.move_up();
+    self.cur.pop_node();
 
     let tv = self.cur.node.vid(); // branching var for current twig node
     let mut rippled = false;
     // if we've already walked the hi branch...
     if self.cur.scope.var_get(tv) {
-      // then climb to the deepest node where the branch variable is still lo.
-      // scope[i] is inverted when we're exploring the low branch.
-      // so move up the tree until we're back on a low branch or reach the top
-
       self.cur.to_next_lo_var();
-
       // if we've cleared the stack and already explored the hi branch...
       { let iv = self.cur.node.vid();
         if self.cur.nstack.is_empty() && self.cur.scope.var_get(iv) {
           // ... then first check if there are any variables above us on which
-          // the node doesn't actually depend. if so, ripple add.
-          // otherwise, we're done.
+          // the node doesn't actually depend. ifso: ripple add. else: done.
           let top = if SMALL_ON_TOP { 0 } else { self.cur.nvars-1 };
           if let Some(x) = self.cur.scope.ripple(iv.var_ix(), top) {
             rippled = true;
@@ -947,8 +937,6 @@ impl<'a> VidSolIterator<'a> {
       self.log("done with node."); return None }
 
     self.cur.clear_trailing_bits();
-
-    // we don't need to flip self.invert because it hasn't changed.
     self.move_down(HiLoPart::HiPart);
     self.descend();
     Some(self.cur.node) }
@@ -965,13 +953,12 @@ impl<'a> VidSolIterator<'a> {
         // if we're in the solution, we're going to increment the "counter".
         if let Some(zpos) = self.cur.increment() {
           self.log(format!("rebranch on {:?}",zpos).as_str());
-          // The 'lmz' variable exists in the solution space, but there might or might
+          // The 'zpos' variable exists in the solution space, but there might or might
           // not be a branch node for that variable in the current bdd path.
           // Whether we follow the hi or lo branch depends on which variable we're looking at.
           if nid::is_const(self.cur.node) { return } // special case for topmost I (all solutions)
           let hi = self.cur.scope.var_get(self.cur.node.vid());
-          let part = if hi { HiLoPart::HiPart } else { HiLoPart::LoPart };
-          self.move_down(part);
+          self.move_down(if hi { HiLoPart::HiPart } else { HiLoPart::LoPart });
           self.descend();
           if self.in_solution() { self.log("^ found next solution"); return }}
         else { // there's no lmz, so we've counted all the way to 2^nvars-1, and we're done.
