@@ -19,7 +19,7 @@ use {nid, nid::{NID,I,O}};
 use vid::{VID,VidOrdering};
 use cur::Cursor;
 use reg::Reg;
-use vhl::{HiLo, HiLoBase};
+use vhl::{HiLo, HiLoBase, HiLoPart};
 use hashbrown::HashMap;
 #[cfg(test)] use vid::{topmost, botmost};
 
@@ -282,40 +282,48 @@ impl HiLoBase for ANFBase {
     let ANF { v:_, hi, lo } = self.fetch(nid);
     Some(HiLo { hi, lo }) }}
 
+// cursor logic
+impl ANFBase {
+  fn first_term(&self, nvars:usize, n:NID)->Option<Cursor> {
+    if n == O { return None } // O has no other terms, and we can't represent O with a cursor
+    let mut cur = Cursor::new(nvars, n); // vid().var_ix()+1
+    if nid::is_inv(n) { } // not(x) in ANF means f(0,0,0,..)=1
+    else {
+      cur.descend(self); // walk down the lo branches to lowest term (O)
+      assert_eq!(cur.node, O, "lowest branch in ANF should always be O");
+      cur.step_up();    // top of lowest "real" term
+      loop {
+        if nid::is_const(cur.node) { break }
+        let ANF{ v, hi:_, lo } = self.fetch(cur.node);
+        match lo {
+          O => { cur.scope.var_put(v, true); cur.step_down(self, HiLoPart::HiPart) },
+          I => break,
+          _ => { cur.scope.var_put(v, true); cur.step_down(self, HiLoPart::LoPart) }}}}
+    Some(cur) }
+
+  fn next_term(&self, _cur:&mut Cursor)->Option<Cursor> {
+    println!("warning: ANF only returns the first term right now!");
+    None }}
+
 pub struct ANFSolIterator<'a> {
   base: &'a ANFBase,
-  cur: Cursor,
-  done: bool}
+  next: Option<Cursor> }
 
 impl<'a>  ANFSolIterator<'a> {
 
   pub fn from_anf_base(base: &'a ANFBase, nid:NID, nvars:usize)->ANFSolIterator<'a> {
-    ANFSolIterator{ base, cur:Cursor::new(nvars, nid), done: nid==nid::O } }}
+    ANFSolIterator{ base, next: base.first_term(nvars, nid) } }}
 
 impl<'a> Iterator for ANFSolIterator<'a> {
 
   type Item = Reg;
 
   fn next(&mut self)->Option<Self::Item> {
-    if self.done { None }
-    else {
-      self.done = true; println!("warning: ANFBase::solutions currently only finds first solution!");
-      let mut res = self.cur.scope.clone();
-      let mut n = self.cur.node.clone();
-      if nid::is_inv(n) { return Some(res) } // 1 term in ANF means f(0,0,0,..)=1
-      // else walk down to lowest term, if we're not already there.
-      self.cur.descend(self.base);
-      n = self.cur.step_up();
-      // now we're at the first factor of the first term. collect the others.
-      loop {
-        if nid::is_const(n) { break }
-        let ANF{ v, hi, lo } = self.base.fetch(n);
-        res.var_put(v, true); // flip it to hi    TODO: allow vir. (vid_put?)
-        // move to the xored (lo) term, if present, else use the hi term
-        if lo == O { n = hi }
-        else if lo == I { res.var_put(v, false); break; }
-        else { n = lo }}
-      Some(res) }}} // else, fn, impl Iterator
+    if let Some(mut cur) = self.next.take() {
+      let reg = cur.scope.clone();
+      self.next = self.base.next_term(&mut cur);
+      Some(reg) }
+    else { None }}}
 
 
 // test suite
