@@ -16,7 +16,7 @@
 use std::collections::HashSet;
 use base::Base;
 use {nid, nid::{NID,I,O}};
-use vid::{VID,VidOrdering};
+use vid::{VID,VidOrdering,SMALL_ON_TOP};
 use cur::Cursor;
 use reg::Reg;
 use vhl::{HiLo, HiLoBase, HiLoPart};
@@ -284,7 +284,25 @@ impl HiLoBase for ANFBase {
 
 // cursor logic
 impl ANFBase {
-  fn first_term(&self, nvars:usize, n:NID)->Option<Cursor> {
+
+  fn descend_term(&self, mut cur:Cursor)->Cursor {
+    loop {
+      if nid::is_const(cur.node) { break }
+      let ANF{ v, hi:_, lo } = self.fetch(cur.node);
+      match lo {
+        O => { cur.scope.var_put(v, true); cur.step_down(self, HiLoPart::HiPart) },
+        I => break,
+        _ => { cur.scope.var_put(v, true); cur.step_down(self, HiLoPart::LoPart) }}}
+    cur }
+
+  fn log(&self, _cur:&Cursor, _msg: &str) {
+    #[cfg(test)] {
+      print!("{:>10}", format!("{}", _cur.node));
+      print!(" {:?}", _cur.scope);
+      let s = format!("{}", _msg);
+      println!(" {:50} {:?}", s, _cur.nstack); }}
+
+  pub fn first_term(&self, nvars:usize, n:NID)->Option<Cursor> {
     if n == O { return None } // O has no other terms, and we can't represent O with a cursor
     let mut cur = Cursor::new(nvars, n); // vid().var_ix()+1
     if nid::is_inv(n) { } // not(x) in ANF means f(0,0,0,..)=1
@@ -292,26 +310,51 @@ impl ANFBase {
       cur.descend(self); // walk down the lo branches to lowest term (O)
       assert_eq!(cur.node, O, "lowest branch in ANF should always be O");
       cur.step_up();    // top of lowest "real" term
-      loop {
-        if nid::is_const(cur.node) { break }
-        let ANF{ v, hi:_, lo } = self.fetch(cur.node);
-        match lo {
-          O => { cur.scope.var_put(v, true); cur.step_down(self, HiLoPart::HiPart) },
-          I => break,
-          _ => { cur.scope.var_put(v, true); cur.step_down(self, HiLoPart::LoPart) }}}}
+      cur = self.descend_term(cur); }
     Some(cur) }
 
-  fn next_term(&self, _cur:&mut Cursor)->Option<Cursor> {
-    println!("warning: ANF only returns the first term right now!");
-    None }}
+  pub fn next_term(&self, mut cur:Cursor)->Option<Cursor> {
+    self.log(&cur,"next_term");
+    if !nid::is_const(cur.node) {
+      println!("warning: ANFBase::next_term should be called on cursor pointing at a leaf.");
+      cur = self.descend_term(cur); }
+    cur.step_up();                             self.log(&cur,"step up");
+    cur.to_next_lo_var();                      self.log(&cur,"next lo");
+    if cur.at_top() && cur.var_is_hi() { return None }
+    cur.clear_trailing_bits();                 self.log(&cur, "cleared trailing");
+    cur.set_var_hi();                          self.log(&cur, "set var to hi");
+    cur.step_down(self, HiLoPart::HiPart);     self.log(&cur, "stepped down.");
+    cur.descend(self);                         self.log(&cur, "descend");
+    Some(cur)}
 
+  pub fn terms(&self, n:NID)->ANFTermIterator {
+    ANFTermIterator::from_anf_base(&self, n, self.nvars) }}
+
+pub struct ANFTermIterator<'a> {
+  base: &'a ANFBase,
+  next: Option<Cursor> }
+
+impl<'a> ANFTermIterator<'a> {
+  pub fn from_anf_base(base: &'a ANFBase, nid:NID, nvars:usize)->Self {
+    ANFTermIterator{ base, next: base.first_term(nvars, nid) } }}
+
+impl<'a> Iterator for ANFTermIterator<'a> {
+  type Item = Reg;
+  fn next(&mut self)->Option<Self::Item> {
+    if let Some(cur) = self.next.take() {
+      let reg = cur.scope.clone();
+      self.next = self.base.next_term(cur);
+      Some(reg) }
+    else { None }}}
+
+
 pub struct ANFSolIterator<'a> {
   base: &'a ANFBase,
   next: Option<Cursor> }
 
 impl<'a>  ANFSolIterator<'a> {
 
-  pub fn from_anf_base(base: &'a ANFBase, nid:NID, nvars:usize)->ANFSolIterator<'a> {
+  pub fn from_anf_base(base: &'a ANFBase, nid:NID, nvars:usize)->Self {
     ANFSolIterator{ base, next: base.first_term(nvars, nid) } }}
 
 impl<'a> Iterator for ANFSolIterator<'a> {
@@ -319,9 +362,12 @@ impl<'a> Iterator for ANFSolIterator<'a> {
   type Item = Reg;
 
   fn next(&mut self)->Option<Self::Item> {
-    if let Some(mut cur) = self.next.take() {
+    if let Some(cur) = self.next.take() {
       let reg = cur.scope.clone();
-      self.next = self.base.next_term(&mut cur);
+      if SMALL_ON_TOP {
+        println!("warning: next anf solution doesn't work correctly with small_on_top!");
+        self.next = None }
+      else { self.next = self.base.next_term(cur) }
       Some(reg) }
     else { None }}}
 
@@ -467,3 +513,14 @@ test_base_when!(ANFBase);
     // base.show_named(expect, "expect");
     // base.show_named(actual, "actual");
     assert_eq!(expect, actual);}
+
+
+#[test] fn test_anf_terms() {
+  let mut base = ANFBase::new(3); let nv = |x|NID::var(x);
+  let (x,y,z) = (nv(0), nv(1), nv(2));
+  let n = expr![base, ((z^(z&y))^((y&x)^x))];
+  // anf: x(0+1) + y(x(0+1)) + z(y(0+1))
+  // terms: x yx zy z
+  let terms:Vec<_> = base.terms(n).map(|t| t.as_usize()).collect();
+  assert_eq!(terms, [0b001, 0b010, 0b011, 0b100, 0b110]);
+}

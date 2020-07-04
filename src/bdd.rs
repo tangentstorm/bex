@@ -924,7 +924,7 @@ impl<'a> BDDSolIterator<'a> {
     if !rippled && !self.cur.set_var_hi() {
       self.log("done with node."); return None }
 
-    self.cur.clear_trailing_bits();
+    self.cur.clear_bits_below();
     self.cur.step_down(self.state, HiLoPart::HiPart);
     self.cur.descend(self.state);
     Some(self.cur.node) }

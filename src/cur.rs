@@ -32,7 +32,7 @@ impl Cursor {
     self.node = node;
     self.invert = nid::is_inv(node) && !nid::is_const(node); }
 
-  /// pop a node from the stack.
+  /// pop a node from the stack and return the old node id.
   fn pop_node(&mut self)->NID {
     assert!(!self.nstack.is_empty());
     let res = self.node;
@@ -44,6 +44,9 @@ impl Cursor {
   pub fn step_up(&mut self)->NID {
     self.pop_node();
     self.node }
+
+  pub fn at_top(&self)->bool { self.nstack.is_empty() }
+  pub fn var_is_hi(&self)->bool { self.scope.var_get(self.node.vid()) }
 
   pub fn step_down(&mut self, base: &dyn HiLoBase, which:HiLoPart) {
     let hl = base.get_hilo(self.node).expect("node not found for step_down");
@@ -65,11 +68,19 @@ impl Cursor {
   /// a branch whose variable is still set to lo.
   pub fn to_next_lo_var(&mut self) {
     let mut bv = self.node.vid();
-    while !self.nstack.is_empty() && self.scope.var_get(bv) {
-      bv = self.pop_node().vid(); }}
+    while self.scope.var_get(bv) && !self.nstack.is_empty() {
+      bv = self.step_up().vid(); }}
 
-  /// set all variables below current branch to lo
   pub fn clear_trailing_bits(&mut self) {
+    let bi = self.node.vid().var_ix();
+    if SMALL_ON_TOP {
+      for i in (bi+1)..self.nvars { self.scope.put(i, false); }}
+    else if bi > 0 { // no trailing bits if branch on x0
+      for i in 0..bi { self.scope.put(i, false) }}}
+
+  /// set all variables below current branch to lo (skipping one branch)
+  /// !! this is clunky, but it's not obvious how to remove it from bdd.
+  pub fn clear_bits_below(&mut self) {
     let bi = self.node.vid().var_ix();
     if SMALL_ON_TOP {
       for i in (bi+1)..self.nvars { self.scope.put(i, false); }}
