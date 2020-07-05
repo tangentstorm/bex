@@ -314,18 +314,20 @@ impl ANFBase {
     Some(cur) }
 
   pub fn next_term(&self, mut cur:Cursor)->Option<Cursor> {
-    self.log(&cur,"next_term");
+    self.log(&cur,"== next_term()");
     if !nid::is_const(cur.node) {
       println!("warning: ANFBase::next_term should be called on cursor pointing at a leaf.");
       cur = self.descend_term(cur); }
-    cur.step_up();                             self.log(&cur,"step up");
-    cur.to_next_lo_var();                      self.log(&cur,"next lo");
-    if cur.at_top() && cur.var_is_hi() { return None }
-    cur.clear_trailing_bits();                 self.log(&cur, "cleared trailing");
-    cur.set_var_hi();                          self.log(&cur, "set var to hi");
-    cur.step_down(self, HiLoPart::HiPart);     self.log(&cur, "stepped down.");
-    cur.descend(self);                         self.log(&cur, "descend");
-    Some(cur)}
+    loop {
+      cur.step_up();                             self.log(&cur,"step up");
+      cur.to_next_lo_var();                      self.log(&cur,"next lo");
+      if cur.at_top() && cur.var_is_hi() { self.log(&cur, "@end"); return None }
+      cur.clear_trailing_bits();                 self.log(&cur, "cleared trailing");
+      cur.set_var_hi();                          self.log(&cur, "set var to hi");
+      cur.step_down(self, HiLoPart::HiPart);     self.log(&cur, "stepped down.");
+      if cur.node == I { self.log(&cur, "<-- answer (lo)"); return Some(cur) }
+      cur.descend(self);                         self.log(&cur, "descend");
+      if cur.node == I { self.log(&cur, "<-- answer (lo)"); return Some(cur) }}}
 
   pub fn terms(&self, n:NID)->ANFTermIterator {
     ANFTermIterator::from_anf_base(&self, n, self.nvars) }}
@@ -522,5 +524,14 @@ test_base_when!(ANFBase);
   // anf: x(0+1) + y(x(0+1)) + z(y(0+1))
   // terms: x yx zy z
   let terms:Vec<_> = base.terms(n).map(|t| t.as_usize()).collect();
-  assert_eq!(terms, [0b001, 0b010, 0b011, 0b100, 0b110]);
-}
+  assert_eq!(terms, [0b001, 0b011, 0b100, 0b110]);}
+
+
+#[test] fn test_anf_terms_not() {
+  let mut anf = ANFBase::new(3);
+  let (a,b,c) = (NID::var(0), NID::var(1), NID::var(2));
+  let anc = expr![anf, (a & (c^I))];
+  let res:Vec<_> = anf.terms(anc).map(|reg|reg.as_usize()).collect();
+  assert_eq!(res, vec![0b001,0b101]); }
+
+
