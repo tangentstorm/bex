@@ -789,7 +789,6 @@ pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 /// Test cases for SolutionIterator
 #[test] fn test_bdd_solutions_o() {
   let mut base = BDDBase::new(2);  let mut it = base.solutions(nid::O);
-  assert!(it.done, "solutions should be empty for const O");
   assert_eq!(it.next(), None, "const O should yield no solutions.") }
 
 #[test] fn test_bdd_solutions_i() {
@@ -801,17 +800,9 @@ pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 #[test] fn test_bdd_solutions_simple() {
   let mut base = BDDBase::new(1); let a = NID::var(0);
   let mut it = base.solutions(a);
-  assert!(!it.done,  "should be a solution");
   // it should be sitting on first solution, which is a=1
-  assert!(it.in_solution(), "should be looking at the solution");
-  assert_eq!(it.cur.nstack, vec![a], "stack should contain root node");
-  assert_eq!(it.cur.scope.len(), 1);
-  println!("it.scope> {:?}", it.cur.scope);
-  assert_eq!(it.cur.scope.var_get(a.vid()), true,  "x0 should be set to high (first solution)");
-  assert_eq!(it.cur.node, nid::I,    "current node should be hi side of root (a.hi -> I)");
   assert_eq!(it.next().expect("expected solution!").as_usize(), 0b1);
-  assert_eq!(it.next(), None);
-  assert!(it.done);}
+  assert_eq!(it.next(), None);}
 
 
 #[test] fn test_bdd_solutions_extra() {
@@ -848,125 +839,129 @@ impl<W:BddWorker<S>> BddBase<S,W> {
     assert!(nvars <= self.nvars(), "nvars arg to solutions_trunc must be <= self.nvars");
     BDDSolIterator::from_state(self.worker.get_state(), n, nvars)}}
 
-
-pub struct BDDSolIterator<'a> {
-  cur: Cursor,
-  indent: i8,
-  state: &'a S,
-  done: bool}         // whether we've reached the end
-
+
+/// helpers for solution cursor
 impl HiLoBase for SafeBddState {
   fn get_hilo(&self, n:NID)->Option<HiLo> {
     let (hi, lo) = self.tup(n);
     Some(HiLo{ hi, lo }) }}
 
-impl<'a> BDDSolIterator<'a> {
-  pub fn from_state(state: &'a S, n:NID, nvars:usize)->BDDSolIterator<'a> {
-    // init scope with all variables assigned to 0
-    let mut res = BDDSolIterator{
-      indent: 0,
-      state,
-      cur: Cursor::new(nvars, n),
-      done: n==nid::O || nvars == 0 };
-    res.log("## init");
-    if ! res.done {
-      res.cur.descend(state);
-      if !res.in_solution() { res.advance() }}
-    res }
+impl SafeBddState {
+  pub fn first_solution(&self, n:NID, nvars:usize)->Option<Cursor> {
+    if n==nid::O || nvars == 0 { None }
+    else {
+      let cur = Cursor::new(nvars, n);
+      Some(cur)}}
 
-  fn log_indent(&mut self, d:i8) { self.indent += d; }
-  fn log(&self, _msg: &str) {
-    #[cfg(test)]{
-      print!(" {}", if self.cur.invert { '¬' } else { ' ' });
-      print!("{:>10}", format!("{}", self.cur.node));
-      print!(" {:?}{}", self.cur.scope, if self.in_solution() { '.' } else { ' ' });
-      let s = format!("{}{}", "  ".repeat(self.indent as usize), _msg,);
-      println!(" {:50} {:?}", s, self.cur.nstack);}}
+  pub fn next_solution(&self, mut _cur:Cursor)->Option<Cursor> {
+    None }
 
-
   /// are we currently pointing at a span of 1 or more solutions?
-  fn in_solution(&self)->bool { (self.cur.node == nid::I && !self.cur.invert) ||
-                                (self.cur.node == nid::O && self.cur.invert) }
+  pub fn in_solution(&self, cur:&Cursor)->bool {
+    (cur.node == nid::I && !cur.invert) ||
+    (cur.node == nid::O &&  cur.invert) }
 
-
+  fn log_indent(&self, _d:i8) { /*self.indent += d;*/ }
+  fn log(&self, _c:&Cursor, _msg: &str) {
+    #[cfg(test)]{
+      print!(" {}", if _c.invert { '¬' } else { ' ' });
+      print!("{:>10}", format!("{}", _c.node));
+      print!(" {:?}{}", _c.scope, if self.in_solution(&_c) { '.' } else { ' ' });
+      let s = format!("{}", /*"{}", "  ".repeat(self.indent as usize),*/ _msg,);
+      println!(" {:50} {:?}", s, _c.nstack);}}
+
   /// walk depth-first from lo to hi until we arrive at the next solution
-  fn find_next_leaf(&mut self)->Option<NID> {
-    self.log("find_next_leaf"); self.log_indent(1);
-    let res = self.find_next_leaf0();
-    self.log(format!("^ next leaf: {:?}", res.clone()).as_str());
+  fn find_next_leaf(&self, cur:&mut Cursor)->Option<NID> {
+    self.log(cur, "find_next_leaf"); self.log_indent(1);
+    let res = self.find_next_leaf0(cur);
+    self.log(cur, format!("^ next leaf: {:?}", res.clone()).as_str());
     self.log_indent(-1); res }
 
-  fn find_next_leaf0(&mut self)->Option<NID> {
+  fn find_next_leaf0(&self, cur:&mut Cursor)->Option<NID> {
     // we always start at a leaf and move up, with the one exception of root=I
-    assert!(nid::is_const(self.cur.node), "find_next_leaf should always start by looking at a leaf");
-    if self.cur.nstack.is_empty() { assert!(self.cur.node == nid::I); return None }
+    assert!(nid::is_const(cur.node), "find_next_leaf should always start by looking at a leaf");
+    if cur.nstack.is_empty() { assert!(cur.node == nid::I); return None }
 
     // now we are definitely at a leaf node with a branch above us.
-    self.cur.step_up();
+    cur.step_up();
 
-    let tv = self.cur.node.vid(); // branching var for current twig node
+    let tv = cur.node.vid(); // branching var for current twig node
     let mut rippled = false;
     // if we've already walked the hi branch...
-    if self.cur.scope.var_get(tv) {
-      self.cur.to_next_lo_var();
+    if cur.scope.var_get(tv) {
+      cur.to_next_lo_var();
       // if we've cleared the stack and already explored the hi branch...
-      { let iv = self.cur.node.vid();
-        if self.cur.nstack.is_empty() && self.cur.scope.var_get(iv) {
+      { let iv = cur.node.vid();
+        if cur.nstack.is_empty() && cur.scope.var_get(iv) {
           // ... then first check if there are any variables above us on which
           // the node doesn't actually depend. ifso: ripple add. else: done.
-          let top = if SMALL_ON_TOP { 0 } else { self.cur.nvars-1 };
-          if let Some(x) = self.cur.scope.ripple(iv.var_ix(), top) {
+          let top = if SMALL_ON_TOP { 0 } else { cur.nvars-1 };
+          if let Some(x) = cur.scope.ripple(iv.var_ix(), top) {
             rippled = true;
-            self.log(format!("rippled top to {}. restarting.", x).as_str()); }
-          else { self.log("no next leaf!"); return None }}} }
+            self.log(cur, format!("rippled top to {}. restarting.", x).as_str()); }
+          else { self.log(cur, "no next leaf!"); return None }}} }
 
     // flip the output bit in the answer. (it was lo, make it hi)
-    if !rippled && !self.cur.set_var_hi() {
-      self.log("done with node."); return None }
+    if !rippled && !cur.set_var_hi() {
+      self.log(cur, "done with node."); return None }
 
-    self.cur.clear_bits_below();
-    self.cur.step_down(self.state, HiLoPart::HiPart);
-    self.cur.descend(self.state);
-    Some(self.cur.node) }
+    cur.clear_bits_below();
+    cur.step_down(self, HiLoPart::HiPart);
+    cur.descend(self);
+    Some(cur.node) }
 
-
   /// walk depth-first from lo to hi until we arrive at the next solution
-  fn advance(&mut self) {
-    self.log("advance>"); self.log_indent(1); self.advance0(); self.log_indent(-1); }
-  fn advance0(&mut self) {
-    assert!(!self.done, "advance() called on iterator that's already done!");
-    assert!(nid::is_const(self.cur.node), "advance should always start by looking at a leaf");
+  fn advance(&self, cur:Cursor)->Option<Cursor> {
+    self.log(&cur, "advance>"); self.log_indent(1);
+    let res = self.advance0(cur); self.log_indent(-1);
+    res }
+  fn advance0(&self, mut cur:Cursor)->Option<Cursor> {
+    assert!(nid::is_const(cur.node), "advance should always start by looking at a leaf");
     loop {
-      if self.in_solution() {
+      if self.in_solution(&cur) {
         // if we're in the solution, we're going to increment the "counter".
-        if let Some(zpos) = self.cur.increment() {
-          self.log(format!("rebranch on {:?}",zpos).as_str());
+        if let Some(zpos) = cur.increment() {
+          self.log(&cur, format!("rebranch on {:?}",zpos).as_str());
           // The 'zpos' variable exists in the solution space, but there might or might
           // not be a branch node for that variable in the current bdd path.
           // Whether we follow the hi or lo branch depends on which variable we're looking at.
-          if nid::is_const(self.cur.node) { return } // special case for topmost I (all solutions)
-          let hi = self.cur.scope.var_get(self.cur.node.vid());
-          self.cur.step_down(self.state, if hi { HiLoPart::HiPart } else { HiLoPart::LoPart });
-          self.cur.descend(self.state);
-          if self.in_solution() { self.log("^ found next solution"); return }}
+          if nid::is_const(cur.node) { break } // special case for topmost I (all solutions)
+          let hi = cur.scope.var_get(cur.node.vid());
+          cur.step_down(self, if hi { HiLoPart::HiPart } else { HiLoPart::LoPart });
+          cur.descend(self);
+          if self.in_solution(&cur) { self.log(&cur, "^ found next solution"); break }}
         else { // there's no lmz, so we've counted all the way to 2^nvars-1, and we're done.
-          self.log("$ found all solutions!"); self.done = true; return }}
+          self.log(&cur, "$ found all solutions!"); return None }}
       // If still here, we are looking at a leaf that isn't a solution (out=0 in truth table)
-      self.done = self.find_next_leaf()==None;
+      if self.find_next_leaf(&mut cur)==None { return None }
       // let mut input = String::new(); std::io::stdin().read_line(&mut input).expect("??");
-      if self.done || self.in_solution() { break } }}
+      if self.in_solution(&cur) { break } }
+      Some(cur)}
+}
+
+pub struct BDDSolIterator<'a> {
+  state: &'a S,
+  next: Option<Cursor>}
+
+impl<'a> BDDSolIterator<'a> {
+  pub fn from_state(state: &'a S, n:NID, nvars:usize)->BDDSolIterator<'a> {
+    // init scope with all variables assigned to 0
+    let next = state.first_solution(n, nvars);
+    let mut res = BDDSolIterator{ state, next };
+    if let Some(mut cur) = res.next.take() {
+      cur.descend(state);
+      if res.state.in_solution(&cur) { res.next = Some(cur) }
+      else { res.next = res.state.advance(cur) }}
+    res }
 } // impl VidSolIterator
 
 
 impl<'a> Iterator for BDDSolIterator<'a> {
-
   type Item = Reg;
-
   fn next(&mut self)->Option<Self::Item> {
-    if self.done { return None }
-    assert!(self.in_solution());
-    let result = self.cur.scope.clone();
-    self.advance();
-    Some(result)}
-
-} // impl Iterator
+    if let Some(cur) = self.next.take() {
+      assert!(self.state.in_solution(&cur));
+      let result = cur.scope.clone();
+      self.next = self.state.advance(cur);
+      Some(result)}
+    else { None }}}

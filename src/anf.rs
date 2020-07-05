@@ -529,9 +529,7 @@ test_base_when!(ANFBase);
 
 #[test] fn test_anf_terms_not() {
   let mut anf = ANFBase::new(3);
-  let (a,b,c) = (NID::var(0), NID::var(1), NID::var(2));
+  let (a,_,c) = (NID::var(0), NID::var(1), NID::var(2));
   let anc = expr![anf, (a & (c^I))];
   let res:Vec<_> = anf.terms(anc).map(|reg|reg.as_usize()).collect();
   assert_eq!(res, vec![0b001,0b101]); }
-
-
