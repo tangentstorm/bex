@@ -16,11 +16,12 @@
 use std::collections::HashSet;
 use base::Base;
 use {nid, nid::{NID,I,O}};
-use vid::{VID,VidOrdering,SMALL_ON_TOP};
+use vid::{VID,VidOrdering};
 use cur::Cursor;
 use reg::Reg;
 use vhl::{HiLo, HiLoBase, HiLoPart};
 use hashbrown::HashMap;
+use bdd::{BDDBase}; // for solutions
 #[cfg(test)] use vid::{topmost, botmost};
 
 /// (v AND hi) XOR lo
@@ -289,10 +290,8 @@ impl ANFBase {
     loop {
       if nid::is_const(cur.node) { break }
       let ANF{ v, hi:_, lo } = self.fetch(cur.node);
-      match lo {
-        O => { cur.scope.var_put(v, true); cur.step_down(self, HiLoPart::HiPart) },
-        I => break,
-        _ => { cur.scope.var_put(v, true); cur.step_down(self, HiLoPart::LoPart) }}}
+      if lo == O { cur.scope.var_put(v, true); cur.step_down(self, HiLoPart::HiPart) }
+      else { cur.scope.var_put(v, false); cur.step_down(self, HiLoPart::LoPart) }}
     cur }
 
   fn log(&self, _cur:&Cursor, _msg: &str) {
@@ -305,10 +304,10 @@ impl ANFBase {
   pub fn first_term(&self, nvars:usize, n:NID)->Option<Cursor> {
     if n == O { return None } // O has no other terms, and we can't represent O with a cursor
     let mut cur = Cursor::new(nvars, n); // vid().var_ix()+1
+    cur.descend(self);     // walk down the lo branches to lowest term (O)
+    assert_eq!(cur.node, O, "lowest branch in ANF should always be O");
     if nid::is_inv(n) { } // not(x) in ANF means f(0,0,0,..)=1
     else {
-      cur.descend(self); // walk down the lo branches to lowest term (O)
-      assert_eq!(cur.node, O, "lowest branch in ANF should always be O");
       cur.step_up();    // top of lowest "real" term
       cur = self.descend_term(cur); }
     Some(cur) }
@@ -338,7 +337,11 @@ pub struct ANFTermIterator<'a> {
 
 impl<'a> ANFTermIterator<'a> {
   pub fn from_anf_base(base: &'a ANFBase, nid:NID, nvars:usize)->Self {
-    ANFTermIterator{ base, next: base.first_term(nvars, nid) } }}
+    if let Some(next) = base.first_term(nvars, nid) {
+      println!("FIRST TERM: {:?} {:?} {:?}", next.scope, next.node, next.nstack);
+      ANFTermIterator{ base, next:Some(next) }}
+    else {
+      ANFTermIterator{ base, next:None }}}}
 
 impl<'a> Iterator for ANFTermIterator<'a> {
   type Item = Reg;
@@ -350,28 +353,45 @@ impl<'a> Iterator for ANFTermIterator<'a> {
     else { None }}}
 
 
+/// iterator for actual solutions.
+/// this works by converting to a bdd.
+
 pub struct ANFSolIterator<'a> {
-  base: &'a ANFBase,
-  next: Option<Cursor> }
+  _anf: &'a ANFBase,
+  _bdd: BDDBase,
+  acur: Option<Cursor>,
+  _bcur: Option<Cursor>}
 
 impl<'a>  ANFSolIterator<'a> {
-
-  pub fn from_anf_base(base: &'a ANFBase, nid:NID, nvars:usize)->Self {
-    ANFSolIterator{ base, next: base.first_term(nvars, nid) } }}
+  pub fn from_anf_base(anf: &'a ANFBase, nid:NID, nvars:usize)->Self {
+    let mut bdd = BDDBase::new(nvars);
+    let acur = anf.first_term(nvars, nid);
+    let _nid = anf.to_base(nid, &mut bdd);
+    // let bcur = bdd.state.first_solution() <- how to actually get this?
+    ANFSolIterator{ _anf:anf, _bdd:bdd, acur, _bcur:None } }}
 
 impl<'a> Iterator for ANFSolIterator<'a> {
-
   type Item = Reg;
-
   fn next(&mut self)->Option<Self::Item> {
-    if let Some(cur) = self.next.take() {
-      let reg = cur.scope.clone();
-      if SMALL_ON_TOP {
-        println!("warning: next anf solution doesn't work correctly with small_on_top!");
-        self.next = None }
-      else { self.next = self.base.next_term(cur) }
-      Some(reg) }
-    else { None }}}
+    if let Some(cur) = self.acur.take() {
+      Some(cur.scope) }
+    else { None } }}
+
+
+impl ANFBase {
+
+  /// transfer node to another base (e.g. bdd), and return the NID from that base.
+  pub fn to_base(&self, n:NID, dest: &mut dyn Base)-> NID {
+    let mut sum = nid::O;
+    if nid::is_inv(n) { sum = nid::I }
+    for t in self.terms(nid::raw(n)) {
+      let mut term = I;
+      for v in t.hi_bits() {
+        term = dest.and(term, NID::var(v as u32));
+        println!("term: {}", term) }
+      sum = dest.xor(sum, term);
+      println!("sum: {}", sum) }
+    sum }}
 
 
 // test suite
@@ -516,7 +536,7 @@ test_base_when!(ANFBase);
     // base.show_named(actual, "actual");
     assert_eq!(expect, actual);}
 
-
+
 #[test] fn test_anf_terms() {
   let mut base = ANFBase::new(3); let nv = |x|NID::var(x);
   let (x,y,z) = (nv(0), nv(1), nv(2));
@@ -533,3 +553,29 @@ test_base_when!(ANFBase);
   let anc = expr![anf, (a & (c^I))];
   let res:Vec<_> = anf.terms(anc).map(|reg|reg.as_usize()).collect();
   assert_eq!(res, vec![0b001,0b101]); }
+
+#[test] fn test_anf_terms_bug() {
+  let mut anf = ANFBase::new(3);
+  let (a,b,c) = (NID::var(0), NID::var(1), NID::var(2));
+  let x = expr![anf, ((a & (b^c)) ^ (b & (c^I)))]; // b^ba^ca^cb
+  let t:Vec<_> = anf.terms(x).map(|r|r.as_usize()).collect();
+  assert_eq!(t, vec![0b010,0b011,0b101,0b110]); }
+
+#[test] fn test_anf_to_base() {
+  use bdd::BDDBase;
+  let mut anf = ANFBase::new(3);
+  let mut bdd = BDDBase::new(3);
+  let (a,b,c) = (NID::var(0), NID::var(1), NID::var(2));
+  let initial = expr![anf, (a & (c^I))];
+  let expect  = expr![bdd, (a & (c^I))];
+  let actual  = anf.to_base(initial, &mut bdd);
+  assert_eq!(expect, actual, "anf-> bdd should get same answer as pure bdd (1).");
+  let initial = expr![anf, (a & (b^c))];
+  let expect  = expr![bdd, (a & (b^c))];
+  let actual  = anf.to_base(initial, &mut bdd);
+  assert_eq!(expect, actual, "anf-> bdd should get same answer as pure bdd (2).");
+
+  let initial = expr![anf, ((a & (b^c)) ^ (b & (c^I)))];
+  let expect  = expr![bdd, ((a & (b^c)) ^ (b & (c^I)))];
+  let actual  = anf.to_base(initial, &mut bdd);
+  assert_eq!(expect, actual, "anf-> bdd should get same answer as pure bdd (3).");}
