@@ -17,7 +17,7 @@ use std::collections::HashSet;
 use base::Base;
 use {nid, nid::{NID,I,O}};
 use vid::{VID,VidOrdering};
-use cur::Cursor;
+use cur::{Cursor, CursorPlan};
 use reg::Reg;
 use vhl::{HiLo, HiLoBase, HiLoPart};
 use hashbrown::HashMap;
@@ -283,16 +283,14 @@ impl HiLoBase for ANFBase {
     let ANF { v:_, hi, lo } = self.fetch(nid);
     Some(HiLo { hi, lo }) }}
 
+impl CursorPlan for ANFBase {
+  fn includes_leaf(&self, n: NID, _inv: bool)->bool {
+    n == nid::I }
+  fn includes_lo(&self, n:NID, _inv:bool)->bool {
+    n != nid::O }}
+
 // cursor logic
 impl ANFBase {
-
-  fn descend_term(&self, mut cur:Cursor)->Cursor {
-    loop {
-      if nid::is_const(cur.node) { break }
-      let ANF{ v, hi:_, lo } = self.fetch(cur.node);
-      if lo == O { cur.scope.var_put(v, true); cur.step_down(self, HiLoPart::HiPart) }
-      else { cur.scope.var_put(v, false); cur.step_down(self, HiLoPart::LoPart) }}
-    cur }
 
   fn log(&self, _cur:&Cursor, _msg: &str) {
     #[cfg(test)] {
@@ -309,14 +307,14 @@ impl ANFBase {
     if nid::is_inv(n) { } // not(x) in ANF means f(0,0,0,..)=1
     else {
       cur.step_up();    // top of lowest "real" term
-      cur = self.descend_term(cur); }
+      cur.descend_term(self); }
     Some(cur) }
 
   pub fn next_term(&self, mut cur:Cursor)->Option<Cursor> {
     self.log(&cur,"== next_term()");
     if !nid::is_const(cur.node) {
       println!("warning: ANFBase::next_term should be called on cursor pointing at a leaf.");
-      cur = self.descend_term(cur); }
+      cur.descend_term(self); }
     loop {
       cur.step_up();                             self.log(&cur,"step up");
       cur.to_next_lo_var();                      self.log(&cur,"next lo");

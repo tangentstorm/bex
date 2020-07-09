@@ -168,6 +168,7 @@ macro_rules! find_factors {
       let y = t >> $T0::n();
       (x as u64, y as u64)
     }).collect();
+    assert_eq!(actual, expect);
     assert_eq!(actual.len(), expect.len(), "check number of solutions");
     for i in 0..expect.len() {
       assert_eq!(actual[i], expect[i], "mismatch at i={}", i) }
@@ -202,16 +203,20 @@ macro_rules! find_factors {
      use {anf::ANFBase, int::{X2,X4}};
      find_factors!(ANFBase, X2, X4, 6, vec![(2,3)], false); }
 
-
-  /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
+     /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
   #[test] pub fn test_tiny_bdd() {
     use {bdd::BDDBase, int::{X4,X8}};
     find_factors!(BDDBase, X4, X8, 210, vec![(14,15)], false); }
 
-  // /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
+  /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
   #[test] pub fn test_tiny_anf() {
     use {anf::ANFBase, int::{X4,X8}};
     find_factors!(ANFBase, X4, X8, 210, vec![(14,15)], false); }
+
+  /// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
+  #[test] pub fn test_multi_bdd() {
+    use {bdd::BDDBase, int::{X4,X8}};
+    find_factors!(BDDBase, X4, X8, 30, vec![(2,15), (3,10), (5,6)], false); }
 
   /// same as tiny test, but multiply 2 bytes to get 210. There are 8 distinct answers.
   /// this was intended as a unit test but is *way* too slow.

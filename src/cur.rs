@@ -4,6 +4,12 @@ use {nid,nid::NID};
 use vid::{VID,SMALL_ON_TOP};
 use vhl::{HiLoPart, HiLoBase};
 
+pub trait CursorPlan : HiLoBase {
+  /// is the given (leaf) node a solution, given the current inversion state?
+  fn includes_leaf(&self, n:NID, inv:bool)->bool;
+  fn includes_lo(&self, n:NID, inv:bool)->bool { self.includes_leaf(n, inv) }
+}
+
 
 pub struct Cursor {
   pub nvars: usize,       // number of input variables in context
@@ -33,12 +39,10 @@ impl Cursor {
     self.invert = nid::is_inv(node) && !nid::is_const(node); }
 
   /// pop a node from the stack and return the old node id.
-  fn pop_node(&mut self)->NID {
+  fn pop_node(&mut self) {
     assert!(!self.nstack.is_empty());
-    let res = self.node;
     self.invert = self.istack.pop().expect("istack.pop() should have worked, as len>0");
-    self.node = self.nstack.pop().expect("nstack.pop() should have worked, as len>0");
-    res }
+    self.node = self.nstack.pop().expect("nstack.pop() should have worked, as len>0"); }
 
   /// take one step upward and return new node id.
   pub fn step_up(&mut self)->NID {
@@ -48,14 +52,25 @@ impl Cursor {
   pub fn at_top(&self)->bool { self.nstack.is_empty() }
   pub fn var_is_hi(&self)->bool { self.scope.var_get(self.node.vid()) }
 
-  pub fn step_down(&mut self, base: &dyn HiLoBase, which:HiLoPart) {
+  pub fn step_down(&mut self, base: &dyn CursorPlan, which:HiLoPart) {
     let hl = base.get_hilo(self.node).expect("node not found for step_down");
     self.push_node(hl.get_part(which)); }
 
   /// descend along the "lo" path into the bdd until we find a constant node
-  pub fn descend(&mut self, base: &dyn HiLoBase)->NID {
+  pub fn descend(&mut self, base: &dyn CursorPlan)->NID {
     while !nid::is_const(self.node) { self.step_down(base, HiLoPart::LoPart); }
     self.node }
+
+  /// walk down to next included term while setting the scope
+  pub fn descend_term(&mut self, base: &dyn CursorPlan) {
+    while !nid::is_const(self.node) {
+      let v = self.node.vid();
+      let hl = base.get_hilo(self.node).expect("couldn't get_hilo");
+      let (bit,part) =
+        if base.includes_lo(hl.lo, self.invert) { (false, HiLoPart::LoPart) }
+        else { (true, HiLoPart::HiPart) };
+      self.scope.var_put(v, bit);
+      self.step_down(base, part); }}
 
   /// set entry in scope to hi for current branch.
   /// returns false if the entry was alreday hi

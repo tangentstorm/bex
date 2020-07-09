@@ -18,7 +18,7 @@ use reg::Reg;
 use vhl::{HiLo, HiLoPart, HiLoBase, VHLParts};
 use {nid, nid::{NID,O,I,idx,is_var,is_const,IDX,is_inv}};
 use vid::{VID,VidOrdering,topmost_of3,SMALL_ON_TOP};
-use cur::Cursor;
+use cur::{Cursor, CursorPlan};
 
 
 /// An if/then/else triple. Like VHL, but all three slots are NIDs.
@@ -846,20 +846,31 @@ impl HiLoBase for SafeBddState {
     let (hi, lo) = self.tup(n);
     Some(HiLo{ hi, lo }) }}
 
+impl CursorPlan for SafeBddState {
+
+  fn includes_lo(&self, n:NID, inverted:bool)->bool {
+    self.includes_leaf(n, inverted)}
+
+  fn includes_leaf(&self, n:NID, inverted:bool)->bool {
+    if inverted { n == nid::O } else { n == nid::I }}}
+
 impl SafeBddState {
   pub fn first_solution(&self, n:NID, nvars:usize)->Option<Cursor> {
     if n==nid::O || nvars == 0 { None }
     else {
-      let cur = Cursor::new(nvars, n);
-      Some(cur)}}
+      let mut cur = Cursor::new(nvars, n);
+      cur.descend(self);
+      if self.in_solution(&cur) { Some(cur) }
+      else { self.next_solution(cur) }}}
 
-  pub fn next_solution(&self, mut _cur:Cursor)->Option<Cursor> {
-    None }
+  pub fn next_solution(&self, cur:Cursor)->Option<Cursor> {
+    self.log(&cur, "advance>"); self.log_indent(1);
+    let res = self.advance0(cur); self.log_indent(-1);
+    res }
 
-  /// are we currently pointing at a span of 1 or more solutions?
+  /// is the cursor currently pointing at a span of 1 or more solutions?
   pub fn in_solution(&self, cur:&Cursor)->bool {
-    (cur.node == nid::I && !cur.invert) ||
-    (cur.node == nid::O &&  cur.invert) }
+    self.includes_leaf(cur.node, cur.invert) }
 
   fn log_indent(&self, _d:i8) { /*self.indent += d;*/ }
   fn log(&self, _c:&Cursor, _msg: &str) {
@@ -911,32 +922,26 @@ impl SafeBddState {
     Some(cur.node) }
 
   /// walk depth-first from lo to hi until we arrive at the next solution
-  fn advance(&self, cur:Cursor)->Option<Cursor> {
-    self.log(&cur, "advance>"); self.log_indent(1);
-    let res = self.advance0(cur); self.log_indent(-1);
-    res }
   fn advance0(&self, mut cur:Cursor)->Option<Cursor> {
     assert!(nid::is_const(cur.node), "advance should always start by looking at a leaf");
-    loop {
-      if self.in_solution(&cur) {
-        // if we're in the solution, we're going to increment the "counter".
-        if let Some(zpos) = cur.increment() {
-          self.log(&cur, format!("rebranch on {:?}",zpos).as_str());
-          // The 'zpos' variable exists in the solution space, but there might or might
-          // not be a branch node for that variable in the current bdd path.
-          // Whether we follow the hi or lo branch depends on which variable we're looking at.
-          if nid::is_const(cur.node) { break } // special case for topmost I (all solutions)
-          let hi = cur.scope.var_get(cur.node.vid());
-          cur.step_down(self, if hi { HiLoPart::HiPart } else { HiLoPart::LoPart });
-          cur.descend(self);
-          if self.in_solution(&cur) { self.log(&cur, "^ found next solution"); break }}
-        else { // there's no lmz, so we've counted all the way to 2^nvars-1, and we're done.
-          self.log(&cur, "$ found all solutions!"); return None }}
+    if self.in_solution(&cur) {
+      // if we're in the solution, we're going to increment the "counter".
+      if let Some(zpos) = cur.increment() {
+        self.log(&cur, format!("rebranch on {:?}",zpos).as_str());
+        // The 'zpos' variable exists in the solution space, but there might or might
+        // not be a branch node for that variable in the current bdd path.
+        // Whether we follow the hi or lo branch depends on which variable we're looking at.
+        if nid::is_const(cur.node) { return Some(cur) } // special case for topmost I (all solutions)
+        let hi = cur.scope.var_get(cur.node.vid());
+        cur.step_down(self, if hi { HiLoPart::HiPart } else { HiLoPart::LoPart });
+        cur.descend(self); }
+      else { // overflow. we've counted all the way to 2^nvars-1, and we're done.
+        self.log(&cur, "$ found all solutions!"); return None }}
+    while !self.in_solution(&cur) {
       // If still here, we are looking at a leaf that isn't a solution (out=0 in truth table)
-      if self.find_next_leaf(&mut cur)==None { return None }
-      // let mut input = String::new(); std::io::stdin().read_line(&mut input).expect("??");
-      if self.in_solution(&cur) { break } }
-      Some(cur)}
+      let next = self.find_next_leaf(&mut cur);
+      if next.is_none() { return None }}
+    Some(cur)}
 }
 
 pub struct BDDSolIterator<'a> {
@@ -947,13 +952,7 @@ impl<'a> BDDSolIterator<'a> {
   pub fn from_state(state: &'a S, n:NID, nvars:usize)->BDDSolIterator<'a> {
     // init scope with all variables assigned to 0
     let next = state.first_solution(n, nvars);
-    let mut res = BDDSolIterator{ state, next };
-    if let Some(mut cur) = res.next.take() {
-      cur.descend(state);
-      if res.state.in_solution(&cur) { res.next = Some(cur) }
-      else { res.next = res.state.advance(cur) }}
-    res }
-} // impl VidSolIterator
+    BDDSolIterator{ state, next }}}
 
 
 impl<'a> Iterator for BDDSolIterator<'a> {
@@ -962,6 +961,6 @@ impl<'a> Iterator for BDDSolIterator<'a> {
     if let Some(cur) = self.next.take() {
       assert!(self.state.in_solution(&cur));
       let result = cur.scope.clone();
-      self.next = self.state.advance(cur);
+      self.next = self.state.next_solution(cur);
       Some(result)}
     else { None }}}
