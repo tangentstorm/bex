@@ -3,18 +3,13 @@ extern crate bencher;
 use bencher::Bencher;
 
 extern crate bex;
-use bex::bdd;
-use bex::int::{BInt, BaseBit, GBASE};
-use bex::{find_factors, solve::{ProgressReport, refine, sort_by_cost}};
-use bex::ast::ASTBase;
-
+use bex::{bdd, find_factors, int::GBASE};
 type BDD = bdd::BDDBase;
 
 pub fn tiny(b: &mut Bencher) {
   use bex::int::{X4,X8};
   b.iter(|| {
-    find_factors!(BDD, X4, X8, 210, vec![(14,15)], false);
-  }); }
+    find_factors!(BDD, X4, X8, 210, vec![(14,15)], false); }); }
 
 pub fn small(b: &mut Bencher) {
   use bex::int::{X8,X16};
@@ -24,8 +19,6 @@ pub fn small(b: &mut Bencher) {
     find_factors!(BDD, X8, X16, 210, expected, false);
     GBASE.with(|gb| gb.replace(bex::ast::ASTBase::empty()));
   }); }
-
-
 
 benchmark_group!(both, tiny, small);
 benchmark_main!(both);
