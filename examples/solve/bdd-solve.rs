@@ -1317,52 +1317,10 @@ fn factors()->Vec<(u64,u64)> {
     (785341095,782958878), (785147363,783152070) ] }
 
 extern crate bex;
-use bex::int::{BInt, BaseBit, GBASE};
-use bex::{bdd, find_factors, solve::*};
-use bex::ast::ASTBase;
-
-type BDD = bdd::BDDBase;
-
-
-/// nano test case for BDD: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
-#[test] pub fn test_nano_bdd() {
-  use bex::int::{BInt, BaseBit, GBASE,X2,X4}; use bex::bdd::BDDBase;
-  find_factors!(BDDBase, X2, X4, 6, vec![(2,3)], false); }
-
-/// nano test case for ANF: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
-#[test] pub fn test_nano_anf() {
-   use bex::anf;
-   use bex::int::{X2,X4};
-   type ANF = anf::ANFBase;
-   find_factors!(ANF, X2, X4, 6, vec![(2,3)], false); }
-
-
-/// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
-#[test] pub fn test_tiny_bdd() {
-  use bex::int::{X4,X8};
-  find_factors!(BDD, X4, X8, 210, vec![(14,15)], false); }
-
-// /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
-#[test] pub fn test_tiny_anf() {
-  use bex::anf;
-  use bex::int::{X4,X8};
-  type ANF = anf::ANFBase;
-  find_factors!(ANF, X4, X8, 210, vec![(14,15)], false); }
-
-
-/// same as tiny test, but multiply 2 bytes to get 210. There are 8 distinct answers.
-/// this was intended as a unit test but is *way* too slow.
-/// (11m17.768s on rincewind (hex-core Intel i7-8700K @ 3.70 GHz with 16GB ram) as of 6/16/2020)
-/// (that's with debug information and no optimizations enabled in rustc)
-#[cfg(feature="slowtests")]
-#[test] pub fn test_small_bdd() {
-  use bex::int::{X8,X16};
-  let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
-                      (6, 35), (7, 30), (10,21), (14,15)];
-  find_factors!(BDD, X8, X16, 210, expected, false); }
 
 /// The real challenge: factor the 64-bit product of the first 15 primes.
 #[cfg(not(test))]
 pub fn main() {
-  use bex::int::{X32, X64};
+  use bex::{bdd, find_factors, int::{X32, X64}};
+  type BDD = bdd::BDDBase;
   find_factors!(BDD, X32, X64, K as usize, factors(), false); }

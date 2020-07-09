@@ -141,7 +141,8 @@ fn refine_one(dst: &mut B, src:&ASTBase, d:DstNid)->DstNid {
 #[macro_export]
 macro_rules! find_factors {
   ($TDEST:ident, $T0:ident, $T1:ident, $k:expr, $expect:expr, $show:expr) => {{
-    use bex::{Base,nid, nid::NID, solve::{SrcNid, DstNid, convert_nid}};
+    use $crate::{Base,nid, nid::NID, solve::*, ast::ASTBase,
+                int::{GBASE,BInt,BaseBit}};
     // reset gbase on each test
     GBASE.with(|gb| gb.replace(ASTBase::empty()));
     let (x, y) = ($T0::def("x"), $T0::def("y")); let lt = x.lt(&y);
@@ -149,7 +150,7 @@ macro_rules! find_factors {
     if $show {
       GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
       GBASE.with(|gb| { gb.borrow().show_named(eq.clone().n, "eq") }); }
-    let mut top:BaseBit = lt & eq;
+    let top:BaseBit = lt & eq;
     let mut dest = $TDEST::new(nid::idx(top.n));
     let answer:DstNid = GBASE.with(|gb| {
       let (src, top) = sort_by_cost(&gb.borrow(), SrcNid{n:top.n});
@@ -162,7 +163,7 @@ macro_rules! find_factors {
     let expect = $expect;
     let answer = answer.n;
     let actual:Vec<(u64, u64)> = dest.solutions_trunc(answer, 2*$T0::n() as usize).map(|r|{
-      let t = if bex::vid::SMALL_ON_TOP { r.as_usize_rev() } else { r.as_usize() };
+      let t = if $crate::vid::SMALL_ON_TOP { r.as_usize_rev() } else { r.as_usize() };
       let x = t & ((1<<$T0::n())-1);
       let y = t >> $T0::n();
       (x as u64, y as u64)
@@ -189,3 +190,36 @@ macro_rules! find_factors {
   println!("eq: {:?}", eq);
   println!("top: {:?}", top);
 }
+
+
+/// nano test case for BDD: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
+#[test] pub fn test_nano_bdd() {
+  use {bdd::BDDBase, int::{X2,X4}};
+  find_factors!(BDDBase, X2, X4, 6, vec![(2,3)], false); }
+
+  /// nano test case for ANF: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
+  #[test] pub fn test_nano_anf() {
+     use {anf::ANFBase, int::{X2,X4}};
+     find_factors!(ANFBase, X2, X4, 6, vec![(2,3)], false); }
+
+
+  /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
+  #[test] pub fn test_tiny_bdd() {
+    use {bdd::BDDBase, int::{X4,X8}};
+    find_factors!(BDDBase, X4, X8, 210, vec![(14,15)], false); }
+
+  // /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
+  #[test] pub fn test_tiny_anf() {
+    use {anf::ANFBase, int::{X4,X8}};
+    find_factors!(ANFBase, X4, X8, 210, vec![(14,15)], false); }
+
+  /// same as tiny test, but multiply 2 bytes to get 210. There are 8 distinct answers.
+  /// this was intended as a unit test but is *way* too slow.
+  /// (11m17.768s on rincewind (hex-core Intel i7-8700K @ 3.70 GHz with 16GB ram) as of 6/16/2020)
+  /// (that's with debug information and no optimizations enabled in rustc)
+  #[cfg(feature="slowtests")]
+  #[test] pub fn test_small_bdd() {
+    use {bdd::BDDBase, int::{X8,X16}};
+    let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
+                        (6, 35), (7, 30), (10,21), (14,15)];
+    find_factors!(BDDBase, X8, X16, 210, expected, false); }
