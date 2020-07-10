@@ -30,15 +30,19 @@ impl<'a> Progress for ProgressReport<'a> {
   fn on_start(&self) { } //println!("step, seconds, topnid, oldtopvar, newtopvar"); }
   fn on_step(&self, src:&ASTBase, dest: &mut B, step:usize, secs:u64, oldtop:DstNid, newtop:DstNid) {
     let DstNid{ n: new } = newtop;
-    println!("{:4}, {:4}, {:4?}→{:3?}, {:8?}",
-             step, secs, oldtop, new, /*src.get_op(nid::nvi(nid::NOVAR, nid::var(new) as u32)),*/ newtop);
+    println!("{:4}, {:4}, {:4?} → {:3?}, {:8?}",
+             step, secs, oldtop.n,
+             if new.vid().is_vir() {
+               format!("{:?}", src.get_op(nid::ixn(new.vid().vir_ix() as u32))) }
+             else { format!("{:?}", new)},
+             newtop.n);
     // dest.show_named(newtop.n, format!("step-{}", step).as_str());
     if step.trailing_zeros() >= 3 { // every so often, save the state
       // !! TODO: expected number of steps only works if sort_by_cost was called.
       { let expected_steps = src.len() as f64;
         let percent_done = 100.0 * (step as f64) / expected_steps as f64;
         println!("\n# newtop: {:?}  step:{}/{} ({:.2}%)",
-                 newtop, step, src.len(), percent_done); }
+                 newtop.n.vid(), step, src.len(), percent_done); }
       if self.save_dest {
         dest.tag(new, "top".to_string()); dest.tag(NID::var(step as u32), "step".to_string());
         // TODO: remove the 'bdd' suffix
@@ -90,7 +94,8 @@ pub fn refine<P:Progress>(dest: &mut B, src:&ASTBase, end:DstNid, pr:P)->DstNid 
   let mut top = end;
   println!("INITIAL TOPNID: {:?}", top);
   // step is just a number. we're packing it in a nid as a kludge
-  let mut step = nid::var(dest.get(&"step".to_string()).unwrap_or_else(||NID::var(0)));
+  let step_node = dest.get(&"step".to_string()).unwrap_or_else(||NID::var(0));
+  let mut step:usize = step_node.vid().var_ix();
   pr.on_start();
   while !(nid::is_rvar(top.n) || nid::is_const(top.n)) {
     let now = std::time::SystemTime::now();
@@ -217,6 +222,7 @@ macro_rules! find_factors {
   #[test] pub fn test_multi_bdd() {
     use {bdd::BDDBase, int::{X4,X8}};
     find_factors!(BDDBase, X4, X8, 30, vec![(2,15), (3,10), (5,6)], false); }
+
 
   /// same as tiny test, but multiply 2 bytes to get 210. There are 8 distinct answers.
   /// this was intended as a unit test but is *way* too slow.
