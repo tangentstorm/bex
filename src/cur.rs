@@ -1,7 +1,7 @@
 /// Cursors: tools for navigating (v,hi,lo) structures.
 use reg::Reg;
 use {nid,nid::NID};
-use vid::{VID,SMALL_ON_TOP};
+use vid::VID;
 use vhl::{HiLoPart, HiLoBase};
 
 pub trait CursorPlan : HiLoBase {
@@ -79,10 +79,7 @@ impl Cursor {
 
   pub fn clear_trailing_bits(&mut self) {
     let bi = self.node.vid().var_ix();
-    if SMALL_ON_TOP {
-      for i in (bi+1)..self.nvars { self.scope.put(i, false); }}
-    else if bi > 0 { // no trailing bits if branch on x0
-      for i in 0..bi { self.scope.put(i, false) }}}
+    for i in 0..bi { self.scope.put(i, false) }}
 
   /// decorate the increment() method on the scope register.
   /// returns Some index of first 0 or None on overflow.

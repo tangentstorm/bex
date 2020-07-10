@@ -25,13 +25,14 @@ also construct and manipulate BDDs directly.
   lets you `cmp_depth` using terms `Above`, `Level`, and `Below` rather than
   the `Less`, `Equal`, `Greater` you get with `cmp`. There was no technical
   reason for this, but I found it much easier to reason about the code in these terms.
-- By default, `VidOrdering` is set up so that branch variables with smaller
+- `VidOrdering` is set up so that branch variables with smaller
   numbers move to the *bottom* of a BDD. There are numerous benefits to doing
   this - cross-function cache hits, immediate knowledge of the width of a
   node's truth table, and (most importantly) a much simpler time converting
   from ANF to BDD.
-- If anyone really prefers the "industry standard" ordering (small variables
-  on top), you can use `--features small_on_top`.
+- There is currently no support for the "industry standard" ordering - the
+  plan in the future is just to make sure the graphviz output shows variable
+  names, and then you can just re-arrange the labels.
 
 **NID as universal ID**
 - `ASTBase` now uses `nid::VID` for input variable identifiers, and `nid::NID`
@@ -45,20 +46,18 @@ also construct and manipulate BDDs directly.
 - Bits in a Reg can be accessed individually either by number (with `get(ix)`
   and `put(ix,bool))`, or using a `VID` (`var_get`, `var_put`). Indexing by virtual
   variables is not supported.
-- `Reg` also provides a simple `increment()` method, as well as the more general `ripple(start,end)`.
-  These treat the register as a binary number, "add 1" at a specified location, and
-  ripple-carry the result until a 0 is encountered or the carry overflows the end position.
-  This allows a `Regs` to easily be used as a cursor, or representation of a single path
-  through a BDD/ANF-like graph structure.
-- `Reg` behaves in whatever way is most sensible for your `VidOrdering`: by default, bit 0
-  corresponds to the least significant bit, but with `--features small_on_top`, bit 0 is
-  the most significant bit. The numbers you get out with to_usize should be the same
-  no matter which ordering you use, but you can always explicitly ask for the reverse
-  ordering using `as_usize_rev()`).
+- `Reg` also provides a simple `increment()` method, as well as the more general
+  `ripple(start,end)`. These treat the register as a binary number, "add 1" at a
+  specified location, and ripple-carry the result until a 0 is encountered, or
+  the carry overflows the end position. This is all intended to support `Cursor`.
+
+**Cursor**
+- `cur::Cursor` combines a `Reg` with a stack of `NID`s to provide a tool for
+  navigating through the terms or solutions in a BDD/ANF-like graph structure.
 
 **BDDBase**
-- You can now call `solutions()` on a `BDDBase` to iterate through solutions of the BDD.
-  Each solution is presented as a `Reg` of length `nvars()`.
+- You can now call `solutions()` on a `BDDBase` to iterate through solutions of
+  the BDD. Each solution is presented as a `Reg` of length `nvars()`.
 
 **ANFBase**
 - The new `anf` module contains the beginnings of a BDD-like structure for working

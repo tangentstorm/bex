@@ -1,7 +1,7 @@
 /// Registers (bit vectors)
 use std::fmt;
 use std::mem::size_of;
-use vid::{VID, SMALL_ON_TOP};
+use vid::VID;
 
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -36,13 +36,11 @@ impl Reg {
 
   /// fetch value of a bit by index
   pub fn get(&self, ix: usize )->bool {
-    let ix = if SMALL_ON_TOP { (self.nvars-1)-ix } else { ix };
     // let ix = (self.nvars-1)-ix;
     0 < (self.data[ix/USIZE] & 1 << (ix%USIZE)) }
 
   /// assign value of a bit by index
   pub fn put(&mut self, ix:usize, v:bool) {
-    let ix = if SMALL_ON_TOP { (self.nvars-1)-ix } else { ix };
     // let ix = (self.nvars-1)-ix;
     let i = ix/USIZE; let x = self.data[i];
     self.data[i] =
@@ -100,9 +98,7 @@ impl Reg {
 
   /// increment the register as if adding 1.
   /// return position where the ripple-carry stopped.
-  pub fn increment(&mut self)->Option<usize> {
-    if SMALL_ON_TOP { self.ripple(self.nvars-1, 0) }
-    else { self.ripple(0, self.nvars-1) }}
+  pub fn increment(&mut self)->Option<usize> { self.ripple(0, self.nvars-1) }
 
 } // impl Reg
 
@@ -114,8 +110,7 @@ impl fmt::Display for Reg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
       write!(f, "reg[")?;
       let mut write_bit = |i| { write!(f, "{}", if self.get(i) {'1'} else {'o'}) };
-      if SMALL_ON_TOP { for i in 0..self.nvars { write_bit(i)? }}
-      else { for i in (0..self.nvars).rev() { write_bit(i)? } };
+      for i in (0..self.nvars).rev() { write_bit(i)? };
       write!(f, "={:02x}]", self.as_usize()) }}
 
 /// Same as fmt::Display.
@@ -129,25 +124,14 @@ fn test_reg_mut() {
   assert_eq!(reg.data[0], 0);
   assert_eq!(reg.get(0), false);
   reg.put(0, true);
-  if SMALL_ON_TOP {
-    assert_eq!(reg.data[0], 0);
-    assert_eq!(reg.data[1], 2); // bit '0' is the most signficant bit
-    assert_eq!(reg.get(0), true);
-    assert_eq!(reg.get(1), false);
-    // it's 0 as_usize because we get the 64 rightmost bits, and it looks like this:
-    // reg[1ooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo=0]=1
-    assert_eq!(reg.as_usize(), 0, "expected reg[...=0], got: {:?}", reg);
-    reg.put(1, true);
-    assert_eq!(reg.data[1], 3); }
-  else {
-    assert_eq!(reg.data[0], 1); // bit '0' is the least significant bit
-    assert_eq!(reg.data[1], 0);
-    assert_eq!(reg.get(0), true);
-    assert_eq!(reg.get(1), false);
-    // now
-    assert_eq!(reg.as_usize(), 1, "{:?}=1", reg);
-    reg.put(1, true);
-    assert_eq!(reg.data[0], 3); }
+  assert_eq!(reg.data[0], 1); // bit '0' is the least significant bit
+  assert_eq!(reg.data[1], 0);
+  assert_eq!(reg.get(0), true);
+  assert_eq!(reg.get(1), false);
+  // now
+  assert_eq!(reg.as_usize(), 1, "{:?}=1", reg);
+  reg.put(1, true);
+  assert_eq!(reg.data[0], 3);
   assert_eq!(reg.get(1), true); }
 
 #[cfg(feature="small_on_top")]

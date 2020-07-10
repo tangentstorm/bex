@@ -24,7 +24,6 @@ path = "examples/solve/bdd-solve.rs"
 
 [features]
 wip = []
-small_on_top = []
 
 [dependencies]
 serde = "1.0"

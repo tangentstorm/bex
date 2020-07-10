@@ -17,7 +17,7 @@ use io;
 use reg::Reg;
 use vhl::{HiLo, HiLoPart, HiLoBase, VHLParts};
 use {nid, nid::{NID,O,I,idx,is_var,is_const,IDX,is_inv}};
-use vid::{VID,VidOrdering,topmost_of3,SMALL_ON_TOP};
+use vid::{VID,VidOrdering,topmost_of3};
 use cur::{Cursor, CursorPlan};
 
 
@@ -808,8 +808,7 @@ pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   let n = base.xor(a, b);
   // use base::Base; base.show(n);
   let actual:Vec<usize> = base.solutions(n).map(|x|x.as_usize()).collect();
-  let expect = if SMALL_ON_TOP { vec![0b010, 0b011, 0b100, 0b101] }  // bits 012
-  else { vec![0b001, 0b010, 0b101, 0b110 ] }; // bits 210
+  let expect = vec![0b001, 0b010, 0b101, 0b110 ]; // bits cba
   assert_eq!(actual, expect); }
 
 impl<W:BddWorker<S>> BddBase<S,W> {
@@ -882,7 +881,7 @@ impl SafeBddState {
         if cur.nstack.is_empty() && cur.scope.var_get(iv) {
           // ... then first check if there are any variables above us on which
           // the node doesn't actually depend. ifso: ripple add. else: done.
-          let top = if SMALL_ON_TOP { 0 } else { cur.nvars-1 };
+          let top = cur.nvars-1;
           if let Some(x) = cur.scope.ripple(iv.var_ix(), top) {
             rippled = true;
             self.log(cur, format!("rippled top to {}. restarting.", x).as_str()); }
