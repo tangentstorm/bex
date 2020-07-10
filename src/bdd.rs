@@ -806,7 +806,7 @@ pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   let mut base = BDDBase::new(3);
   let (a, b) = (NID::var(0), NID::var(1));
   let n = base.xor(a, b);
-  use base::Base; base.show(n);
+  // use base::Base; base.show(n);
   let actual:Vec<usize> = base.solutions(n).map(|x|x.as_usize()).collect();
   let expect = if SMALL_ON_TOP { vec![0b010, 0b011, 0b100, 0b101] }  // bits 012
   else { vec![0b001, 0b010, 0b101, 0b110 ] }; // bits 210
