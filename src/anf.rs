@@ -316,6 +316,8 @@ impl ANFBase {
       cur.descend(self);                         self.log(&cur, "descend");
       if cur.node == I { self.log(&cur, "<-- answer (lo)"); return Some(cur) }}}
 
+  pub fn terms_trunc(&self, n:NID, nvars:usize)->ANFTermIterator {
+    ANFTermIterator::from_anf_base(&self, n, nvars)}
   pub fn terms(&self, n:NID)->ANFTermIterator {
     ANFTermIterator::from_anf_base(&self, n, self.nvars) }}
 
@@ -326,7 +328,6 @@ pub struct ANFTermIterator<'a> {
 impl<'a> ANFTermIterator<'a> {
   pub fn from_anf_base(base: &'a ANFBase, nid:NID, nvars:usize)->Self {
     if let Some(next) = base.first_term(nvars, nid) {
-      println!("FIRST TERM: {:?} {:?} {:?}", next.scope, next.node, next.nstack);
       ANFTermIterator{ base, next:Some(next) }}
     else {
       ANFTermIterator{ base, next:None }}}}
@@ -346,33 +347,40 @@ impl<'a> Iterator for ANFTermIterator<'a> {
 
 pub struct ANFSolIterator<'a> {
   _anf: &'a ANFBase,
-  _bdd: BDDBase,
-  acur: Option<Cursor>,
-  _bcur: Option<Cursor>}
+  bdd: BDDBase,
+  //acur: Option<Cursor>,
+  bcur: Option<Cursor>}
 
 impl<'a>  ANFSolIterator<'a> {
   pub fn from_anf_base(anf: &'a ANFBase, nid:NID, nvars:usize)->Self {
     let mut bdd = BDDBase::new(nvars);
-    let acur = anf.first_term(nvars, nid);
-    let _nid = anf.to_base(nid, &mut bdd);
-    // let bcur = bdd.state.first_solution() <- how to actually get this?
-    ANFSolIterator{ _anf:anf, _bdd:bdd, acur, _bcur:None } }}
+    // TODO: convert ANF->BDD incrementally, to speed up time to first solution.
+    // This will involve copying bcur.scope but changing the actual nids on the stack.
+    //let acur = anf.first_term(nvars, nid);
+    let bnid = anf.to_base_trunc(nid, &mut bdd, nvars);
+    let bcur = bdd.first_solution(bnid, nvars);
+    ANFSolIterator{ _anf:anf, bdd:bdd, bcur } }}
 
 impl<'a> Iterator for ANFSolIterator<'a> {
   type Item = Reg;
   fn next(&mut self)->Option<Self::Item> {
-    if let Some(cur) = self.acur.take() {
-      Some(cur.scope) }
+    if let Some(cur) = self.bcur.take() {
+      let res = Some(cur.scope.clone());
+      self.bcur = self.bdd.next_solution(cur);
+      res }
     else { None } }}
 
 
 impl ANFBase {
 
   /// transfer node to another base (e.g. bdd), and return the NID from that base.
-  pub fn to_base(&self, n:NID, dest: &mut dyn Base)-> NID {
+  pub fn to_base(&self, n:NID, dest: &mut dyn Base)->NID {
+    self.to_base_trunc(n, dest, self.nvars)}
+
+  pub fn to_base_trunc(&self, n:NID, dest: &mut dyn Base, nvars:usize)-> NID {
     let mut sum = nid::O;
     if nid::is_inv(n) { sum = nid::I }
-    for t in self.terms(nid::raw(n)) {
+    for t in self.terms_trunc(nid::raw(n), nvars) {
       let mut term = I;
       for v in t.hi_bits() {
         term = dest.and(term, NID::var(v as u32));

@@ -171,23 +171,6 @@ macro_rules! find_factors {
   }}
 }
 
-/// First step of the solve procedure: do a calculation that results in a bit.
-#[test] fn test_nano_expanded() {
-  use int::*;
-  GBASE.with(|gb| gb.replace(ASTBase::empty()));
-  let x = X2::def("x"); let y = X2::def("y");
-  let lt = x.lt(&y);
-  let xy:X4 = x.times(&y); let k = X4::new(6);
-  let eq = xy.eq(&k);
-  let top = lt.clone() & eq.clone();
-  //GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
-  //GBASE.with(|gb| { gb.borrow().show_named(eq.clone().n, "eq") });
-  //GBASE.with(|gb| { gb.borrow().show_named(top.clone().n, "top") });
-  println!("lt: {:?}", lt);
-  println!("eq: {:?}", eq);
-  println!("top: {:?}", top);
-}
-
 
 /// nano test case for BDD: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
 #[test] pub fn test_nano_bdd() {
@@ -214,6 +197,10 @@ macro_rules! find_factors {
     use {bdd::BDDBase, int::{X4,X8}};
     find_factors!(BDDBase, X4, X8, 30, vec![(2,15), (3,10), (5,6)], false); }
 
+  /// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
+  #[test] pub fn test_multi_anf() {
+    use {anf::ANFBase, int::{X4,X8}};
+    find_factors!(ANFBase, X4, X8, 30, vec![(2,15), (3,10), (5,6)], false); }
 
   /// same as tiny test, but multiply 2 bytes to get 210. There are 8 distinct answers.
   /// this was intended as a unit test but is *way* too slow.

@@ -811,24 +811,24 @@ pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   let expect = vec![0b001, 0b010, 0b101, 0b110 ]; // bits cba
   assert_eq!(actual, expect); }
 
-impl<W:BddWorker<S>> BddBase<S,W> {
+impl BDDBase {
   pub fn solutions(&mut self, n:NID)->BDDSolIterator {
     self.solutions_trunc(n, self.nvars())}
 
-  pub fn solutions_trunc(&mut self, n:NID, nvars:usize)->BDDSolIterator {
+  pub fn solutions_trunc(&self, n:NID, nvars:usize)->BDDSolIterator {
     assert!(nvars <= self.nvars(), "nvars arg to solutions_trunc must be <= self.nvars");
-    BDDSolIterator::from_state(self.worker.get_state(), n, nvars)}}
+    BDDSolIterator::from_bdd(self, n, nvars)}}
 
 
 /// helpers for solution cursor
-impl HiLoBase for SafeBddState {
+impl HiLoBase for BDDBase {
   fn get_hilo(&self, n:NID)->Option<HiLo> {
-    let (hi, lo) = self.tup(n);
+    let (hi, lo) = self.worker.get_state().tup(n);
     Some(HiLo{ hi, lo }) }}
 
-impl CursorPlan for SafeBddState {}
+impl CursorPlan for BDDBase {}
 
-impl SafeBddState {
+impl BDDBase {
   pub fn first_solution(&self, n:NID, nvars:usize)->Option<Cursor> {
     if n==nid::O || nvars == 0 { None }
     else {
@@ -916,22 +916,22 @@ impl SafeBddState {
 }
 
 pub struct BDDSolIterator<'a> {
-  state: &'a S,
+  bdd: &'a BDDBase,
   next: Option<Cursor>}
 
 impl<'a> BDDSolIterator<'a> {
-  pub fn from_state(state: &'a S, n:NID, nvars:usize)->BDDSolIterator<'a> {
+  pub fn from_bdd(bdd: &'a BDDBase, n:NID, nvars:usize)->BDDSolIterator<'a> {
     // init scope with all variables assigned to 0
-    let next = state.first_solution(n, nvars);
-    BDDSolIterator{ state, next }}}
+    let next = bdd.first_solution(n, nvars);
+    BDDSolIterator{ bdd, next }}}
 
 
 impl<'a> Iterator for BDDSolIterator<'a> {
   type Item = Reg;
   fn next(&mut self)->Option<Self::Item> {
     if let Some(cur) = self.next.take() {
-      assert!(self.state.in_solution(&cur));
+      assert!(self.bdd.in_solution(&cur));
       let result = cur.scope.clone();
-      self.next = self.state.next_solution(cur);
+      self.next = self.bdd.next_solution(cur);
       Some(result)}
     else { None }}}
