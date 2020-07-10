@@ -19,7 +19,7 @@ use {nid, nid::{NID,I,O}};
 use vid::{VID,VidOrdering};
 use cur::{Cursor, CursorPlan};
 use reg::Reg;
-use vhl::{HiLo, HiLoBase, HiLoPart};
+use vhl::{HiLo, HiLoBase};
 use hashbrown::HashMap;
 use bdd::{BDDBase}; // for solutions
 #[cfg(test)] use vid::{topmost, botmost};
@@ -283,11 +283,7 @@ impl HiLoBase for ANFBase {
     let ANF { v:_, hi, lo } = self.fetch(nid);
     Some(HiLo { hi, lo }) }}
 
-impl CursorPlan for ANFBase {
-  fn includes_leaf(&self, n: NID, _inv: bool)->bool {
-    n == nid::I }
-  fn includes_lo(&self, n:NID, _inv:bool)->bool {
-    n != nid::O }}
+impl CursorPlan for ANFBase {}
 
 // cursor logic
 impl ANFBase {
@@ -302,26 +298,20 @@ impl ANFBase {
   pub fn first_term(&self, nvars:usize, n:NID)->Option<Cursor> {
     if n == O { return None } // O has no other terms, and we can't represent O with a cursor
     let mut cur = Cursor::new(nvars, n); // vid().var_ix()+1
-    cur.descend(self);     // walk down the lo branches to lowest term (O)
-    assert_eq!(cur.node, O, "lowest branch in ANF should always be O");
-    if nid::is_inv(n) { } // not(x) in ANF means f(0,0,0,..)=1
-    else {
-      cur.step_up();    // top of lowest "real" term
-      cur.descend_term(self); }
+    cur.descend(self); // walk down the lo branches to lowest term (O or I)
     Some(cur) }
 
   pub fn next_term(&self, mut cur:Cursor)->Option<Cursor> {
     self.log(&cur,"== next_term()");
     if !nid::is_const(cur.node) {
       println!("warning: ANFBase::next_term should be called on cursor pointing at a leaf.");
-      cur.descend_term(self); }
+      cur.descend(self); }
     loop {
       cur.step_up();                             self.log(&cur,"step up");
       cur.to_next_lo_var();                      self.log(&cur,"next lo");
-      if cur.at_top() && cur.var_is_hi() { self.log(&cur, "@end"); return None }
+      if cur.at_top() && cur.var_get() { self.log(&cur, "@end"); return None }
       cur.clear_trailing_bits();                 self.log(&cur, "cleared trailing");
-      cur.set_var_hi();                          self.log(&cur, "set var to hi");
-      cur.step_down(self, HiLoPart::HiPart);     self.log(&cur, "stepped down.");
+      cur.put_step(self, true);
       if cur.node == I { self.log(&cur, "<-- answer (lo)"); return Some(cur) }
       cur.descend(self);                         self.log(&cur, "descend");
       if cur.node == I { self.log(&cur, "<-- answer (lo)"); return Some(cur) }}}

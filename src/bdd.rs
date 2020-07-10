@@ -623,7 +623,6 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
 // Base Trait
 
 impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
-
   fn new(n:usize)->Self { Self::new(n) }
   fn num_vars(&self)->usize { self.nvars() }
 
@@ -639,19 +638,16 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
   fn xor(&mut self, x:NID, y:NID)->NID { self.xor(x, y) }
   fn or(&mut self, x:NID, y:NID)->NID  { self.or(x, y) }
   #[cfg(todo)] fn mj(&mut self, x:NID, y:NID, z:NID)->NID  {
-    self.xor(x, self.xor(y, z))  // TODO: normalize order. make this the default impl.
-  }
+    self.xor(x, self.xor(y, z)) }  // TODO: normalize order. make this the default impl.
   #[cfg(todo)] fn ch(&mut self, x:NID, y:NID, z:NID)->NID { self.ite(x, y, z) }
 
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID { self.replace(v,n,ctx) }
 
   fn save(&self, path:&str)->::std::io::Result<()> { self.save(path) }
-
+
   // generate dot file (graphviz)
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {
-    macro_rules! w {
-      ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap(); }}
-
+    macro_rules! w { ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap(); }}
     w!("digraph bdd {{");
     w!("subgraph head {{ h1[shape=plaintext; label=\"BDD\"] }}");
     w!("  I[label=⊤; shape=square];");
@@ -662,20 +658,7 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
     self.walk(n, &mut |n,_,t,_| w!("  \"{}\"->\"{}\";", n, t));
     w!("edge[style=dashed];");
     self.walk(n, &mut |n,_,_,e| w!("  \"{}\"->\"{}\";", n, e));
-    w!("}}"); }
-
-}
-
-
-
-struct SolutionIterator<'a> {
-  item: PhantomData<&'a ()>
-}
-
-impl<'a> Iterator for SolutionIterator<'a> {
-  type Item = &'a Vec<bool>;
-  fn next(&mut self)->Option<Self::Item> { None }
-}
+    w!("}}"); }}
 
 type S = SafeBddState;
 
@@ -683,7 +666,6 @@ type S = SafeBddState;
 /// (Note the first three letters in uppercase).
 pub type BDDBase = BddBase<S,BddSwarm<S>>;
 
-
 // generic base::Base test suite
 test_base_consts!(BDDBase);
 test_base_vars!(BDDBase);
@@ -779,8 +761,7 @@ pub type BddSwarmBase = BddBase<SafeBddState,BddSwarm<SafeBddState>>;
   assert_eq!(vec![1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0], base.tt(anb_nb));
   let anb2 = base.xor(!b, anb_nb);
   assert_eq!(vec![0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0], base.tt(anb2));
-  assert_eq!(anb, anb2);
-}
+  assert_eq!(anb, anb2)}
 
 
 use  std::iter::FromIterator; use std::hash::Hash;
@@ -825,7 +806,7 @@ pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   let mut base = BDDBase::new(3);
   let (a, b) = (NID::var(0), NID::var(1));
   let n = base.xor(a, b);
-  // use base::Base; base.show(n);
+  use base::Base; base.show(n);
   let actual:Vec<usize> = base.solutions(n).map(|x|x.as_usize()).collect();
   let expect = if SMALL_ON_TOP { vec![0b010, 0b011, 0b100, 0b101] }  // bits 012
   else { vec![0b001, 0b010, 0b101, 0b110 ] }; // bits 210
@@ -846,13 +827,7 @@ impl HiLoBase for SafeBddState {
     let (hi, lo) = self.tup(n);
     Some(HiLo{ hi, lo }) }}
 
-impl CursorPlan for SafeBddState {
-
-  fn includes_lo(&self, n:NID, inverted:bool)->bool {
-    self.includes_leaf(n, inverted)}
-
-  fn includes_leaf(&self, n:NID, inverted:bool)->bool {
-    if inverted { n == nid::O } else { n == nid::I }}}
+impl CursorPlan for SafeBddState {}
 
 impl SafeBddState {
   pub fn first_solution(&self, n:NID, nvars:usize)->Option<Cursor> {
@@ -860,8 +835,9 @@ impl SafeBddState {
     else {
       let mut cur = Cursor::new(nvars, n);
       cur.descend(self);
-      if self.in_solution(&cur) { Some(cur) }
-      else { self.next_solution(cur) }}}
+      debug_assert!(nid::is_const(cur.node));
+      debug_assert!(self.in_solution(&cur), format!("{:?}", cur.scope));
+      Some(cur) }}
 
   pub fn next_solution(&self, cur:Cursor)->Option<Cursor> {
     self.log(&cur, "advance>"); self.log_indent(1);
@@ -870,7 +846,7 @@ impl SafeBddState {
 
   /// is the cursor currently pointing at a span of 1 or more solutions?
   pub fn in_solution(&self, cur:&Cursor)->bool {
-    self.includes_leaf(cur.node, cur.invert) }
+    self.includes_leaf(cur.node) }
 
   fn log_indent(&self, _d:i8) { /*self.indent += d;*/ }
   fn log(&self, _c:&Cursor, _msg: &str) {
@@ -912,12 +888,9 @@ impl SafeBddState {
             self.log(cur, format!("rippled top to {}. restarting.", x).as_str()); }
           else { self.log(cur, "no next leaf!"); return None }}} }
 
-    // flip the output bit in the answer. (it was lo, make it hi)
-    if !rippled && !cur.set_var_hi() {
-      self.log(cur, "done with node."); return None }
-
-    cur.clear_bits_below();
-    cur.step_down(self, HiLoPart::HiPart);
+    if rippled { cur.clear_trailing_bits() }
+    else if cur.var_get() { self.log(cur, "done with node."); return None }
+    else { cur.put_step(self, true); }
     cur.descend(self);
     Some(cur.node) }
 
@@ -932,8 +905,7 @@ impl SafeBddState {
         // not be a branch node for that variable in the current bdd path.
         // Whether we follow the hi or lo branch depends on which variable we're looking at.
         if nid::is_const(cur.node) { return Some(cur) } // special case for topmost I (all solutions)
-        let hi = cur.scope.var_get(cur.node.vid());
-        cur.step_down(self, if hi { HiLoPart::HiPart } else { HiLoPart::LoPart });
+        cur.put_step(self, cur.var_get());
         cur.descend(self); }
       else { // overflow. we've counted all the way to 2^nvars-1, and we're done.
         self.log(&cur, "$ found all solutions!"); return None }}

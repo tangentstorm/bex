@@ -150,7 +150,7 @@ macro_rules! find_factors {
                 int::{GBASE,BInt,BaseBit}};
     // reset gbase on each test
     GBASE.with(|gb| gb.replace(ASTBase::empty()));
-    let (x, y) = ($T0::def("x"), $T0::def("y")); let lt = x.lt(&y);
+    let (y, x) = ($T0::def("y"), $T0::def("x")); let lt = x.lt(&y);
     let xy:$T1 = x.times(&y); let k = $T1::new($k); let eq = xy.eq(&k);
     if $show {
       GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
@@ -171,7 +171,7 @@ macro_rules! find_factors {
       let t = if $crate::vid::SMALL_ON_TOP { r.as_usize_rev() } else { r.as_usize() };
       let x = t & ((1<<$T0::n())-1);
       let y = t >> $T0::n();
-      (x as u64, y as u64)
+      (y as u64, x as u64)
     }).collect();
     assert_eq!(actual, expect);
     assert_eq!(actual.len(), expect.len(), "check number of solutions");
