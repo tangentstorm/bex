@@ -134,10 +134,10 @@ impl fmt::Debug for NID { // for test suite output
   assert_eq!(nvi(1,0), new(0x0000000100000000u64)); }
 
   #[test] fn test_var() {
-    assert_eq!(var(O), 536870912, "var(O)");
+    assert_eq!(var(O), 536_870_912, "var(O)");
     assert_eq!(var(I), var(O), "INV bit shouldn't be part of variable");
     assert_eq!(var(NID::vir(0)), 0);
-    assert_eq!(var(NID::var(0)), 268435456);
+    assert_eq!(var(NID::var(0)), 268_435_456);
   }
 
   #[test] fn test_cmp() {
@@ -152,8 +152,8 @@ impl fmt::Debug for NID { // for test suite output
 
 
 // scaffolding for moving ASTBase over to use NIDS
-const NOVAR:VID = (1<<27) as VID;
-const TOP:VID = (T>>32) as VID; // 536870912, // 1<<29, same as nid::T
+const NOVAR:VID = (1<<27) as VID; // 134_217_728
+const TOP:VID = (T>>32) as VID; // 536_870_912, // 1<<29, same as nid::T
 pub fn no_var(x:NID)->bool { var(x)==NOVAR }
 /// return a nid that is not tied to a variable
 pub fn ixn(ix:IDX)->NID { nvi(NOVAR, ix) }
