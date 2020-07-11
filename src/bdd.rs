@@ -99,8 +99,7 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
   #[inline] fn tup(&self, n:NID)-> (NID, NID) {
     if is_const(n) { if n==I { (I, O) } else { (O, I) } }
     else if is_var(n) { if is_inv(n) { (O, I) } else { (I, O) }}
-    else { let mut hilo = self.get_hilo(n);
-           if is_inv(n) { hilo = hilo.invert() };
+    else { let hilo = self.get_hilo(n);
            (hilo.hi, hilo.lo) }}
 
   /// fetch or create a "simple" node, where the hi and lo branches are both
@@ -122,23 +121,32 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
   fn put_simple_node(&mut self, v:VID, hilo:HiLo)->NID; }
 
 
-// TODO: remove VID from hilos,index. just store hilos.
-//       there's no reason to store (x1,y,z) separately from (x2,y,z).
-// except...
-// !! Why do the solve tests fail when I remove VID from hilos/index?
-//    In test_nano_bdd, I wind up with a node branching on x2
-//    to another node also branching on x2.
-//    possibly a bug in sub/replace?
+// TODO: remove vindex. There's no reason to store (x1,y,z) separately from (y,z).
+// !! Previously, in test_nano_bdd, I wind up with a node branching on x2
+//      to another node also branching on x2.
+//    As of 2020-07-10, the new problem is just that test_multi_bdd
+//      and test_nano_bdd start taking minutes to run.
+//    I can't currently think of a reason vindex[(vX,hilo)] shouldn't behave
+//      exactly the same as vindex[(vY,hilo)] and thus == index[hilo], but I'm
+//      obviously missing something. :/
+//    It could be a bug in replace(), but that's a simple function.
+//    More likely, it's something to do with the recent/stable dichotomy in BddSwarm,
+//      or simply the fact that each worker has its own recent state and they're getting
+//      out of sync.
 
 /// Groups everything by variable. I thought this would be useful, but it probably is not.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SafeBddState {
   /// number of variables
   nvars: usize,
-  /// variable-specific hi/lo pairs for individual bdd nodes.
-  hilos: Vec<(VID,HiLo)>,
+  /// variable-agnostic hi/lo pairs for individual bdd nodes.
+  hilos: Vec<HiLo>,
+  /// reverse map for hilos.
+  index: BDDHashMap<HiLo, IDX>,
   /// variable-specific memoization. These record (v,hilo) lookups.
-  index: BDDHashMap<(VID,HiLo), IDX>,
+  /// There shouldn't be any need for this, but an undiagnosed
+  /// bug prevents me from removing it.
+  vindex: BDDHashMap<(VID,HiLo), IDX>,
   /// arbitrary memoization. These record normalized (f,g,h) lookups.
   xmemo: BDDHashMap<ITE, NID> }
 
@@ -147,36 +155,54 @@ impl BddState for SafeBddState {
 
   /// constructor
   fn new(nvars:usize)->SafeBddState {
-    SafeBddState{
+    SafeBddState {
       nvars,
       hilos: vec![],
       index: BDDHashMap::default(),
+      vindex: BDDHashMap::default(),
       xmemo: BDDHashMap::default() }}
 
   /// return the number of variables
   fn nvars(&self)->usize { self.nvars }
 
-  /// the "put" for this one is put_simple_node
-  #[inline] fn get_hilo(&self, n:NID)->HiLo {
-    self.hilos[idx(n) as usize].1}
+  #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID) {
+    self.xmemo.insert(ite, new_nid); }
 
   /// load the memoized NID if it exists
   #[inline] fn get_memo(&self, ite:&ITE) -> Option<NID> {
     if is_var(ite.i) {
-      self.get_simple_node(ite.i.vid(), HiLo::new(ite.t,ite.e)) }
+      debug_assert!(!is_inv(ite.i)); // because it ought to be normalized by this point.
+      let hilo = if is_inv(ite.i) { HiLo::new(ite.e,ite.t) } else { HiLo::new(ite.t,ite.e) };
+      self.get_simple_node(ite.i.vid(), hilo) }
     else { self.xmemo.get(&ite).copied() }}
 
-  #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID) {
-    self.xmemo.insert(ite, new_nid); }
+  /// the "put" for this one is put_simple_node
+  #[inline] fn get_hilo(&self, n:NID)->HiLo {
+    assert!(!nid::is_lit(n));
+    let res = self.hilos[idx(n) as usize];
+    if is_inv(n) { res.invert() } else { res }}
 
-  #[inline] fn get_simple_node(&self, v:VID, hilo:HiLo)-> Option<NID> {
-    self.index.get(&(v,hilo)).map(|&ix| NID::from_vid_idx(v, ix)) }
+  #[inline] fn get_simple_node(&self, v:VID, hl0:HiLo)-> Option<NID> {
+    let inv = nid::is_inv(hl0.lo);
+    let hl1 = if inv { hl0.invert() } else { hl0 };
+    let to_nid = |&ix| NID::from_vid_idx(v, ix);
+    let res = self.vindex.get(&(v, hl1)).map(to_nid);
+    //let res = self.index.get(&hl1).map(to_nid);
+    if inv { res.map(|nid| !nid ) } else { res }}
 
-  #[inline] fn put_simple_node(&mut self, v:VID, hilo:HiLo)->NID {
-    let ix = self.hilos.len() as IDX;
-    self.hilos.push((v,hilo));
-    self.index.insert((v,hilo), ix);
-    NID::from_vid_idx(v, ix) }}
+  #[inline] fn put_simple_node(&mut self, v:VID, hl0:HiLo)->NID {
+    let inv = nid::is_inv(hl0.lo);
+    let hilo = if inv { hl0.invert() } else { hl0 };
+    let ix:IDX =
+      if let Some(&ix) = self.index.get(&hilo) { ix }
+      else {
+        let ix = self.hilos.len() as IDX;
+        self.hilos.push(hilo);
+        self.index.insert(hilo, ix);
+        self.vindex.insert((v,hilo), ix);
+        ix };
+    let res = NID::from_vid_idx(v, ix);
+    if inv { !res } else { res } }}
 
 
 pub trait BddWorker<S:BddState> : Sized + Serialize {
@@ -855,7 +881,7 @@ impl BDDBase {
       print!(" {:?}{}", _c.scope, if self.in_solution(&_c) { '.' } else { ' ' });
       let s = format!("{}", /*"{}", "  ".repeat(self.indent as usize),*/ _msg,);
       println!(" {:50} {:?}", s, _c.nstack);}}
-
+
   /// walk depth-first from lo to hi until we arrive at the next solution
   fn find_next_leaf(&self, cur:&mut Cursor)->Option<NID> {
     self.log(cur, "find_next_leaf"); self.log_indent(1);
@@ -892,7 +918,7 @@ impl BDDBase {
     else { cur.put_step(self, true); }
     cur.descend(self);
     Some(cur.node) }
-
+
   /// walk depth-first from lo to hi until we arrive at the next solution
   fn advance0(&self, mut cur:Cursor)->Option<Cursor> {
     assert!(nid::is_const(cur.node), "advance should always start by looking at a leaf");
@@ -935,3 +961,27 @@ impl<'a> Iterator for BDDSolIterator<'a> {
       self.next = self.bdd.next_solution(cur);
       Some(result)}
     else { None }}}
+
+
+
+#[test] fn test_simple_nodes() {
+  let mut state = SafeBddState::new(8);
+  let hl = HiLo::new(NID::var(5), NID::var(6));
+  let x0 = VID::var(0);
+  let v0 = VID::vir(0);
+  let v1 = VID::vir(1);
+  assert!(state.get_simple_node(v0, hl).is_none());
+  let nv0 = state.put_simple_node(v0, hl);
+  assert_eq!(nv0, NID::from_vid_idx(v0, 0));
+
+  // I want the following to just work, but it doesn't:
+  // let nv1 = state.get_simple_node(v1, hl).expect("nv1");
+
+  let nv1 = state.put_simple_node(v1, hl);
+  assert_eq!(nv1, NID::from_vid_idx(v1, 0));
+
+  // this node is "malformed" because the lower number is on top,
+  // but the concept should still work:
+  let nx0 = state.put_simple_node(x0, hl);
+  assert_eq!(nx0, NID::from_vid_idx(x0, 0));
+}
