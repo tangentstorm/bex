@@ -1,11 +1,11 @@
 [package]
 name = "bex"
-version = "0.1.3"
+version = "0.1.4"
 authors = ["tangentstorm <michal.wallace@gmail.com>"]
-description = "A rust library for working with boolean expressions (expression trees, decision diagrams, etc.)"
+description = "A rust library for working with boolean expressions (syntax trees, decision diagrams, algebraic normal form, etc.)"
 documentation = "https://docs.rs/bex/"
 repository = "https://github.com/tangentstorm/bex"
-keywords = ["bdd", "diagram"]
+keywords = ["bdd", "diagram", "anf"]
 categories = ["algorithms", "data-structures"]
 license = "MIT"
 readme = "README.md"
