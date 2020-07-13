@@ -1,4 +1,19 @@
-#+title: plans for things to try in bex
+#+title: plans for bex
+
+
+
+* TODO establish some benchmarks
+- [ ] count nodes in the astbase
+- [ ] count calls to refine()
+- [ ] count calls to ite()
+
+* TODO fix repack / permute
+- [ ] tests for repack()
+- [ ] tests for permute()
+
+* TODO rebuild the shell
+* TODO have int.rs use Base instead of ASTBase
+* TODO have solve use Base for Src instead of ASTBase
 
 * TODO [2/3] extract WIP base, and use for ANF
 ** DONE extract basic test suite for =trait Base=

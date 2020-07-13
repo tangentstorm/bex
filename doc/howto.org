@@ -9,7 +9,7 @@ Make changes, then...
 : git branch -d merge                  # if it exists
 : git branch merge                     # create new branch to hold recent commits
 : git reset --hard origin/master       # move the master branche's HEAD back
-: git merge --no-ff merge -m <msg>     # force a merge commit 
+: git merge --no-ff merge -m <msg>     # force a merge commit
 
 * Enable/disable output for =trace!=
 This is controlled by the log crate: https://docs.rs/log/0.4.8/log/
@@ -19,3 +19,8 @@ For now, I'm configuring it globally in Cargo.toml
 [dependencies]
 log = { version = "0.4", features = ["max_level_debug"]}
 #+end_src
+
+
+* Make a release version
+- update version in Cargo.toml
+: cargo publish --dry-run
