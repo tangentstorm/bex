@@ -1,6 +1,9 @@
 ///! (Var, Hi, Lo) triples
 use nid::NID;
 use vid::VID;
+
+pub type VHLHashMap<K,V> = hashbrown::hash_map::HashMap<K,V>;
+
 
 /// Simple Hi/Lo pair stored internally when representing nodes.
 /// All nodes with the same branching variable go in the same array, so there's

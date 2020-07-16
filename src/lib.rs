@@ -22,6 +22,8 @@ pub mod nid;
 pub mod reg;
 /// (Var, Hi, Lo) triples
 pub mod vhl;
+/// Structures for storing work in progress.
+pub mod wip;
 
 // Cursors (register + stack and scope) for navigating vhl-graphs (Bdd, Anf, etc)
 pub mod cur;

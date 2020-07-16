@@ -1,5 +1,4 @@
-/// A module for efficient implementation of binary decision diagrams.
-use std::clone::Clone;
+///! A module for efficient implementation of binary decision diagrams.
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
@@ -15,10 +14,16 @@ use bincode;
 use base;
 use io;
 use reg::Reg;
-use vhl::{HiLo, HiLoPart, HiLoBase, VHLParts};
+use {vhl, vhl::{HiLo, HiLoPart, HiLoBase, VHLParts}};
 use {nid, nid::{NID,O,I,idx,is_var,is_const,IDX,is_inv}};
 use vid::{VID,VidOrdering,topmost_of3};
 use cur::{Cursor, CursorPlan};
+use {wip, wip::{QID,Dep,WIP}};
+
+/// Type alias for whatever HashMap implementation we're curretly using -- std,
+/// fnv, hashbrown... Hashing is an extremely important aspect of a BDD base, so
+/// it's useful to have a single place to configure this.
+pub type BDDHashMap<K,V> = vhl::VHLHashMap<K,V>;
 
 
 /// An if/then/else triple. Like VHL, but all three slots are NIDs.
@@ -40,11 +45,6 @@ pub enum Norm {
   Ite(ITE),
   /// a normalized, inverted ITE.
   Not(ITE)}
-
-/// Type alias for whatever HashMap implementation we're curretly using -- std,
-/// fnv, hashbrown... Hashing is an extremely important aspect of a BDD base, so
-/// it's useful to have a single place to configure this.
-pub type BDDHashMap<K,V> = hashbrown::hash_map::HashMap<K,V>;
 
 
 impl ITE {
@@ -218,8 +218,6 @@ pub trait BddWorker<S:BddState> : Sized + Serialize {
 // ----------------------------------------------------------------
 // Helper types for BddSwarm
 // ----------------------------------------------------------------
-/// Query ID for BddSwarm.
-type QID = usize;
 
 /// Query message for BddSwarm.
 #[derive(PartialEq)]
@@ -230,25 +228,7 @@ impl<S:BddState> std::fmt::Debug for QMsg<S> {
       QMsg::Ite(qid, ite) => { write!(f, "Ite(q{}, {:?})", qid, ite) }
       QMsg::Cache(_) => { write!(f, "QMsg::Cache") } } }}
 
-/// Response message for BddSwarm.
-#[derive(PartialEq,Debug)]
-enum RMsg {
-  /// resolved to a nid
-  Nid(NID),
-  /// a simple node needs to be constructed:
-  Vhl{v:VID, hi:NID, lo:NID, invert:bool},
-  /// other work in progress
-  Wip{v:VID, hi:Norm, lo:Norm, invert:bool},
-  /// We've solved the whole problem, so exit the loop and return this nid.
-  Ret(NID)}
-
-fn rmsg_not(rmsg:RMsg)->RMsg {
-  match rmsg {
-    RMsg::Nid(n) => RMsg::Nid(!n),
-    RMsg::Vhl{v,hi,lo,invert} => RMsg::Vhl{v,hi,lo,invert:!invert},
-    RMsg::Wip{v,hi,lo,invert} => RMsg::Wip{v,hi,lo,invert:!invert},
-    RMsg::Ret(n) => RMsg::Ret(!n)}}
-
+type RMsg = wip::RMsg<Norm>;
 
 /// Sender for QMsg
 type QTx<S> = Sender<QMsg<S>>;
@@ -260,15 +240,6 @@ type RTx = Sender<(QID, RMsg)>;
 type RRx = Receiver<(QID, RMsg)>;
 
 
-/// Work in progress for BddSwarm.
-#[derive(PartialEq,Debug,Copy,Clone)]
-enum BddWIP { Fresh, Done(NID), Parts(VHLParts) }
-
-/// Helps track dependencies between WIP tasks
-#[derive(Debug,Copy,Clone)]
-struct BddDep { qid: QID, part: HiLoPart, invert: bool }
-impl BddDep{
-  fn new(qid: QID, part: HiLoPart, invert: bool)->BddDep { BddDep{qid, part, invert} }}
 
 
 
@@ -293,11 +264,11 @@ pub struct BddSwarm <S:BddState+'static> {
   /// track new ites that aren't in the cache, so we can memoize once we solve them.
   ites: Vec<ITE>,
   /// stores work in progress during a run:
-  wip:Vec<BddWIP>,
+  wip:Vec<WIP>,
   /// track ongoing tasks so we don't duplicate work in progress:
   qid: BDDHashMap<ITE, QID>,
   /// stores dependencies during a run. The bool specifies whether to invert.
-  deps: Vec<Vec<BddDep>> }
+  deps: Vec<Vec<Dep>> }
 
 impl<TState:BddState> Serialize for BddSwarm<TState> {
   fn serialize<S:Serializer>(&self, ser: S)->Result<S::Ok, S::Error> {
@@ -345,7 +316,7 @@ impl<S:BddState> BddSwarm<S> {
   /// add a new task for the swarm to work on. (if it's a duplicate, we just
   /// add the dependencies to the original task (unless it's already finished,
   /// in which case we resolve immediately))
-  fn add_task(&mut self, opt_dep:Option<BddDep>, ite:ITE) {
+  fn add_task(&mut self, opt_dep:Option<Dep>, ite:ITE) {
     trace!("add_task({:?}, {:?})", opt_dep, ite);
     let (qid, is_dup) = {
       if let Some(&dup) = self.qid.get(&ite) { (dup, true) }
@@ -353,7 +324,7 @@ impl<S:BddState> BddSwarm<S> {
     if is_dup {
       if let Some(dep) = opt_dep {
         trace!("*** task {:?} is dup of q{} invert: {}", ite, qid, dep.invert);
-        if let BddWIP::Done(nid) = self.wip[qid] {
+        if let WIP::Done(nid) = self.wip[qid] {
           self.resolve_part(dep.qid, dep.part, nid, dep.invert); }
         else { self.deps[qid].push(dep) }}
       else { panic!("Got duplicate request, but no dep. This should never happen!") }}
@@ -361,7 +332,7 @@ impl<S:BddState> BddSwarm<S> {
       self.qid.insert(ite, qid); self.ites.push(ite);
       let w:usize = qid % self.swarm.len();
       self.swarm[w].send(QMsg::Ite(qid, ite)).expect("send to swarm failed");
-      self.wip.push(BddWIP::Fresh);
+      self.wip.push(WIP::Fresh);
       if let Some(dep) = opt_dep {
         trace!("*** added task #{}: {:?} invert:{}", qid, ite, dep.invert);
         self.deps.push(vec![dep]) }
@@ -373,12 +344,12 @@ impl<S:BddState> BddSwarm<S> {
   /// called whenever the wip resolves to a single nid
   fn resolve_nid(&mut self, qid:QID, nid:NID) {
     trace!("resolve_nid(q{}, {})", qid, nid);
-    if let BddWIP::Done(old) = self.wip[qid] {
+    if let WIP::Done(old) = self.wip[qid] {
       warn!("resolving already resolved nid for q{}", qid);
       assert_eq!(old, nid, "old and new resolutions didn't match!") }
     else {
       trace!("resolved_nid: q{}=>{}. deps: {:?}", qid, nid, self.deps[qid].clone());
-      self.wip[qid] = BddWIP::Done(nid);
+      self.wip[qid] = WIP::Done(nid);
       let ite = self.ites[qid];
       self.recent.put_xmemo(ite, nid);
       for &dep in self.deps[qid].clone().iter() {
@@ -399,12 +370,12 @@ impl<S:BddState> BddSwarm<S> {
     self.resolve_nid(qid, nid); }
 
   fn resolve_part(&mut self, qid:QID, part:HiLoPart, nid0:NID, invert:bool) {
-    if let BddWIP::Parts(ref mut parts) = self.wip[qid] {
+    if let WIP::Parts(ref mut parts) = self.wip[qid] {
       let nid = if invert { !nid0 } else { nid0 };
       trace!("   !! set {:?} for q{} to {}", part, qid, nid);
       if part == HiLoPart::HiPart { parts.hi = Some(nid) } else { parts.lo = Some(nid) }}
     else { warn!("???? got a part for a qid #{} that was already done!", qid) }
-    if let BddWIP::Parts(wip) = self.wip[qid] {
+    if let WIP::Parts(wip) = self.wip[qid] {
       if let Some(hilo) = wip.hilo() { self.resolve_vhl(qid, wip.v, hilo, wip.invert) }}}
       // else { println!("got a part for q{} but it's still not done", qid);
       //        for (qid, task) in self.wip.iter().by_ref().enumerate() {
@@ -443,13 +414,13 @@ impl<S:BddState> BddSwarm<S> {
           RMsg::Wip{v,hi,lo,invert} => {
             // by the time we get here, the task for this node was already created.
             // (add_task already filled in the v for us, so we don't need it.)
-            assert_eq!(self.wip[qid], BddWIP::Fresh);
-            self.wip[qid] = BddWIP::Parts(VHLParts{ v, hi:None, lo:None, invert });
+            assert_eq!(self.wip[qid], WIP::Fresh);
+            self.wip[qid] = WIP::Parts(VHLParts{ v, hi:None, lo:None, invert });
             macro_rules! handle_part { ($xx:ident, $part:expr) => {
               match $xx {
                 Norm::Nid(nid) => self.resolve_part(qid, $part, nid, false),
-                Norm::Ite(ite) => self.add_task(Some(BddDep::new(qid, $part, false)), ite),
-                Norm::Not(ite) => self.add_task(Some(BddDep::new(qid, $part, true)), ite)}}}
+                Norm::Ite(ite) => self.add_task(Some(Dep::new(qid, $part, false)), ite),
+                Norm::Not(ite) => self.add_task(Some(Dep::new(qid, $part, true)), ite)}}}
             handle_part!(hi, HiLoPart::HiPart); handle_part!(lo, HiLoPart::LoPart); }
           RMsg::Ret(n) => { result = Some(n) }}}
       result.unwrap() }}}
@@ -469,7 +440,7 @@ fn swarm_ite<S:BddState>(state: &Arc<S>, ite0:ITE)->RMsg {
   match ITE::norm(i,t,e) {
       Norm::Nid(n) => RMsg::Nid(n),
       Norm::Ite(ite) => swarm_ite_norm(state, ite),
-      Norm::Not(ite) => rmsg_not(swarm_ite_norm(state, ite)) }}
+      Norm::Not(ite) => !swarm_ite_norm(state, ite) }}
 
 fn swarm_vhl_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
   let ITE{i:vv,t:hi,e:lo} = ite; let v = vv.vid();
@@ -496,7 +467,7 @@ fn swarm_ite_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
           Norm::Nid(n) => { RMsg::Nid(n) }
           // otherwise, the normalized triple might already be in cache:
           Norm::Ite(ite) => swarm_vhl_norm(state, ite),
-          Norm::Not(ite) => rmsg_not(swarm_vhl_norm(state, ite))}}
+          Norm::Not(ite) => !swarm_vhl_norm(state, ite)}}
       // otherwise at least one side is not a simple nid yet, and we have to defer
       else { RMsg::Wip{ v, hi, lo, invert:false } }}}}
 
