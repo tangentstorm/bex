@@ -2,7 +2,6 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fmt;
-use std::marker::PhantomData;
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::thread;
@@ -89,10 +88,17 @@ impl ITE {
             else { return Norm::Ite(ITE::new(f,g,h)) }}}}}} }
 
 
-/// trait allowing multiple implementations of the in-memory storage layer.
-pub trait BddState : Sized + Serialize + Clone + Sync + Send {
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BddState {
+  /// number of variables
+  nvars: usize,
+  /// cache of hi,lo pairs.
+  hilos: vhl::HiLoCache,
+  /// arbitrary memoization. These record normalized (f,g,h) lookups.
+  xmemo: BDDHashMap<ITE, NID> }
 
-  fn new(nvars: usize)->Self;
+
+impl BddState {
 
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)-> (NID, NID) {
@@ -107,33 +113,9 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
       Some(n) => n,
       None => { self.put_simple_node(v, hilo) }}}
 
-  // --- implement these --------------------------------------------
-
-  fn nvars(&self)->usize;
-
-  fn get_hilo(&self, n:NID)->HiLo;
-  /// load the memoized NID if it exists
-  fn get_memo(&self, ite:&ITE) -> Option<NID>;
-  fn put_xmemo(&mut self, ite:ITE, new_nid:NID);
-  fn get_simple_node(&self, v:VID, hilo:HiLo)-> Option<NID>;
-  fn put_simple_node(&mut self, v:VID, hilo:HiLo)->NID; }
-
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SafeBddState {
-  /// number of variables
-  nvars: usize,
-  /// cache of hi,lo pairs.
-  hilos: vhl::HiLoCache,
-  /// arbitrary memoization. These record normalized (f,g,h) lookups.
-  xmemo: BDDHashMap<ITE, NID> }
-
-
-impl BddState for SafeBddState {
-
   /// constructor
-  fn new(nvars:usize)->SafeBddState {
-    SafeBddState {
+  fn new(nvars:usize)->BddState {
+    BddState {
       nvars,
       hilos: vhl::HiLoCache::new(),
       xmemo: BDDHashMap::default() }}
@@ -162,9 +144,9 @@ impl BddState for SafeBddState {
     self.hilos.insert(v, hl) }}
 
 
-pub trait BddWorker<S:BddState> : Sized + Serialize {
+pub trait BddWorker : Sized + Serialize {
   fn new(nvars:usize)->Self;
-  fn new_with_state(state: S)->Self;
+  fn new_with_state(state: BddState)->Self;
   fn nvars(&self)->usize;
   fn tup(&self, n:NID)->(NID,NID);
   fn ite(&mut self, f:NID, g:NID, h:NID)->NID;
@@ -177,9 +159,8 @@ pub trait BddWorker<S:BddState> : Sized + Serialize {
 // ----------------------------------------------------------------
 
 /// Query message for BddSwarm.
-#[derive(PartialEq)]
-enum QMsg<S:BddState> { Ite(QID, ITE), Cache(Arc<S>) }
-impl<S:BddState> std::fmt::Debug for QMsg<S> {
+enum QMsg { Ite(QID, ITE), Cache(Arc<BddState>) }
+impl std::fmt::Debug for QMsg {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
       QMsg::Ite(qid, ite) => { write!(f, "Ite(q{}, {:?})", qid, ite) }
@@ -188,9 +169,9 @@ impl<S:BddState> std::fmt::Debug for QMsg<S> {
 type RMsg = wip::RMsg<Norm>;
 
 /// Sender for QMsg
-type QTx<S> = Sender<QMsg<S>>;
+type QTx = Sender<QMsg>;
 /// Receiver for QMsg
-type QRx<S> = Receiver<QMsg<S>>;
+type QRx = Receiver<QMsg>;
 /// Sender for RMsg
 type RTx = Sender<(QID, RMsg)>;
 /// Receiver for RMsg
@@ -204,15 +185,15 @@ type RRx = Receiver<(QID, RMsg)>;
 /// BddSwarm: a multi-threaded worker implementation
 // ----------------------------------------------------------------
 #[derive(Debug)]
-pub struct BddSwarm <S:BddState+'static> {
+pub struct BddSwarm {
   /// receives messages from the threads
   rx: RRx,
   /// send messages to myself (so we can put them back in the queue.
   me: RTx,
   /// QMsg senders for each thread, so we can send queries to work on.
-  swarm: Vec<QTx<S>>,
+  swarm: Vec<QTx>,
   /// read-only version of the state shared by all threads.
-  stable: Arc<S>,
+  stable: Arc<BddState>,
   /// mutable version of the state kept by the main thread.
   recent: S,
 
@@ -227,24 +208,24 @@ pub struct BddSwarm <S:BddState+'static> {
   /// stores dependencies during a run. The bool specifies whether to invert.
   deps: Vec<Vec<Dep>> }
 
-impl<TState:BddState> Serialize for BddSwarm<TState> {
+impl Serialize for BddSwarm {
   fn serialize<S:Serializer>(&self, ser: S)->Result<S::Ok, S::Error> {
     // all we really care about is the state:
     self.stable.serialize::<S>(ser) } }
 
-impl<'de, S:BddState + Deserialize<'de>> Deserialize<'de> for BddSwarm<S> {
+impl<'de> Deserialize<'de> for BddSwarm {
   fn deserialize<D:Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
     let mut res = Self::new(0);
     res.stable = Arc::new(S::deserialize(d)?);
     Ok(res) }}
 
 
-impl<S:BddState> BddWorker<S> for BddSwarm<S> {
+impl BddWorker for BddSwarm {
 
   fn new(nvars:usize)->Self {
     let (me, rx) = channel::<(QID, RMsg)>();
     let swarm = vec![];
-    let stable = Arc::new(S::new(nvars));
+    let stable = Arc::new(BddState::new(nvars));
     let recent = S::new(nvars);
     Self{ me, rx, swarm, stable, recent,
           ites:vec![], deps:vec![], wip:vec![], qid:BDDHashMap::new() }}
@@ -268,7 +249,7 @@ impl<S:BddState> BddWorker<S> for BddSwarm<S> {
   fn ite(&mut self, i:NID, t:NID, e:NID)->NID { self.run_swarm(i,t,e) } }
 
 
-impl<S:BddState> BddSwarm<S> {
+impl BddSwarm {
 
   /// add a new task for the swarm to work on. (if it's a duplicate, we just
   /// add the dependencies to the original task (unless it's already finished,
@@ -343,7 +324,7 @@ impl<S:BddState> BddSwarm<S> {
     let (me, rx) = channel::<(QID, RMsg)>(); self.me = me; self.rx = rx;
     self.swarm = vec![];
     while self.swarm.len() < num_cpus::get() {
-      let (tx, rx) = channel::<QMsg<S>>();
+      let (tx, rx) = channel::<QMsg>();
       let me_clone = self.me.clone();
       let state = self.stable.clone();
       thread::spawn(move || swarm_loop(me_clone, rx, state));
@@ -387,19 +368,19 @@ impl<S:BddState> BddSwarm<S> {
 } // end bddswarm
 
 /// Code run by each thread in the swarm. Isolated as a function without channels for testing.
-fn swarm_ite<S:BddState>(state: &Arc<S>, ite0:ITE)->RMsg {
+fn swarm_ite(state: &Arc<BddState>, ite0:ITE)->RMsg {
   let ITE { i, t, e } = ite0;
   match ITE::norm(i,t,e) {
       Norm::Nid(n) => RMsg::Nid(n),
       Norm::Ite(ite) => swarm_ite_norm(state, ite),
       Norm::Not(ite) => !swarm_ite_norm(state, ite) }}
 
-fn swarm_vhl_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
+fn swarm_vhl_norm(state: &Arc<BddState>, ite:ITE)->RMsg {
   let ITE{i:vv,t:hi,e:lo} = ite; let v = vv.vid();
   if let Some(n) = state.get_simple_node(v, HiLo{hi,lo}) { RMsg::Nid(n) }
   else { RMsg::Vhl{ v, hi, lo, invert:false } }}
 
-fn swarm_ite_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
+fn swarm_ite_norm(state: &Arc<BddState>, ite:ITE)->RMsg {
   let ITE { i, t, e } = ite;
   let (vi, vt, ve) = (i.vid(), t.vid(), e.vid());
   let v = ite.top_vid();
@@ -426,7 +407,7 @@ fn swarm_ite_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
 
 
 /// This is the loop run by each thread in the swarm.
-fn swarm_loop<S:BddState>(tx:RTx, rx:QRx<S>, mut state:Arc<S>) {
+fn swarm_loop(tx:RTx, rx:QRx, mut state:Arc<BddState>) {
   for qmsg in rx.iter() {
     match qmsg {
       QMsg::Cache(s) => { state = s }
@@ -438,20 +419,17 @@ fn swarm_loop<S:BddState>(tx:RTx, rx:QRx<S>, mut state:Arc<S>) {
 
 /// Finally, we put everything together. This is the top-level type for this crate.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BddBase<S:BddState, W:BddWorker<S>> {
+pub struct BddBase<W:BddWorker> {
   /// allows us to give user-friendly names to specific nodes in the base.
   pub tags: HashMap<String, NID>,
-  phantom: PhantomData<S>,
   worker: W}
 
 
-impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
+impl<W:BddWorker> BddBase<W> {
 
   /// constructor
-  pub fn new(nvars:usize)->BddBase<S,W> {
-    BddBase{phantom: PhantomData,
-            worker: W::new(nvars),
-            tags:HashMap::new()}}
+  pub fn new(nvars:usize)->BddBase<W> {
+    BddBase{worker: W::new(nvars), tags:HashMap::new()}}
 
   /// accessor for number of variables
   pub fn nvars(&self)->usize { self.worker.nvars() }
@@ -571,7 +549,7 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
 
 // Base Trait
 
-impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
+impl<W:BddWorker> base::Base for BddBase<W> {
   fn new(n:usize)->Self { Self::new(n) }
   fn num_vars(&self)->usize { self.nvars() }
 
@@ -609,11 +587,11 @@ impl<S:BddState, W:BddWorker<S>> base::Base for BddBase<S,W> {
     self.walk(n, &mut |n,_,_,e| w!("  \"{}\"->\"{}\";", n, e));
     w!("}}"); }}
 
-type S = SafeBddState;
+type S = BddState;
 
 /// The default type used by the rest of the system.
 /// (Note the first three letters in uppercase).
-pub type BDDBase = BddBase<S,BddSwarm<S>>;
+pub type BDDBase = BddBase<BddSwarm>;
 
 // generic base::Base test suite
 test_base_consts!(BDDBase);
@@ -658,7 +636,7 @@ test_base_when!(BDDBase);
   assert_eq!(x,   base.when_hi(VID::var(3),x))}
 
 // swarm test suite
-pub type BddSwarmBase = BddBase<SafeBddState,BddSwarm<SafeBddState>>;
+pub type BddSwarmBase = BddBase<BddSwarm>;
 
 #[test] fn test_swarm_xor() {
   let mut base = BddSwarmBase::new(2);
@@ -886,7 +864,7 @@ impl<'a> Iterator for BDDSolIterator<'a> {
 
 
 #[test] fn test_simple_nodes() {
-  let mut state = SafeBddState::new(8);
+  let mut state = BddState::new(8);
   let hl = HiLo::new(NID::var(5), NID::var(6));
   let x0 = VID::var(0);
   let v0 = VID::vir(0);
