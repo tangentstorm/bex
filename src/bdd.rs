@@ -144,16 +144,6 @@ impl BddState {
     self.hilos.insert(v, hl) }}
 
 
-pub trait BddWorker : Sized + Serialize {
-  fn new(nvars:usize)->Self;
-  fn new_with_state(state: BddState)->Self;
-  fn nvars(&self)->usize;
-  fn tup(&self, n:NID)->(NID,NID);
-  fn ite(&mut self, f:NID, g:NID, h:NID)->NID;
-  fn get_state(&self)->&S;
-}
-
-
 // ----------------------------------------------------------------
 // Helper types for BddSwarm
 // ----------------------------------------------------------------
@@ -176,13 +166,10 @@ type QRx = Receiver<QMsg>;
 type RTx = Sender<(QID, RMsg)>;
 /// Receiver for RMsg
 type RRx = Receiver<(QID, RMsg)>;
-
-
-
 
 
 // ----------------------------------------------------------------
-/// BddSwarm: a multi-threaded worker implementation
+/// BddSwarm: a multi-threaded swarm implementation
 // ----------------------------------------------------------------
 #[derive(Debug)]
 pub struct BddSwarm {
@@ -195,7 +182,7 @@ pub struct BddSwarm {
   /// read-only version of the state shared by all threads.
   stable: Arc<BddState>,
   /// mutable version of the state kept by the main thread.
-  recent: S,
+  recent: BddState,
 
   // !! maybe these should be moved to a different struct, since they're specific to a run?
 
@@ -216,28 +203,21 @@ impl Serialize for BddSwarm {
 impl<'de> Deserialize<'de> for BddSwarm {
   fn deserialize<D:Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
     let mut res = Self::new(0);
-    res.stable = Arc::new(S::deserialize(d)?);
+    res.stable = Arc::new(BddState::deserialize(d)?);
     Ok(res) }}
 
 
-impl BddWorker for BddSwarm {
+impl BddSwarm {
 
   fn new(nvars:usize)->Self {
     let (me, rx) = channel::<(QID, RMsg)>();
     let swarm = vec![];
     let stable = Arc::new(BddState::new(nvars));
-    let recent = S::new(nvars);
+    let recent = BddState::new(nvars);
     Self{ me, rx, swarm, stable, recent,
           ites:vec![], deps:vec![], wip:vec![], qid:BDDHashMap::new() }}
 
-  fn new_with_state(state: S)->Self {
-    println!("warning: new_with_state probably doesn't work so well yet..."); // TODO!
-    let mut res = Self::new(state.nvars());
-    res.stable = Arc::new(state.clone());
-    res.recent = state;
-    res }
-
-  fn get_state(&self)->&S { &self.recent }
+  fn get_state(&self)->&BddState { &self.recent }
 
   fn nvars(&self)->usize { self.recent.nvars() }
 
@@ -419,23 +399,21 @@ fn swarm_loop(tx:RTx, rx:QRx, mut state:Arc<BddState>) {
 
 /// Finally, we put everything together. This is the top-level type for this crate.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BddBase<W:BddWorker> {
+pub struct BDDBase {
   /// allows us to give user-friendly names to specific nodes in the base.
   pub tags: HashMap<String, NID>,
-  worker: W}
+  swarm: BddSwarm}
 
-
-impl<W:BddWorker> BddBase<W> {
+impl BDDBase {
 
-  /// constructor
-  pub fn new(nvars:usize)->BddBase<W> {
-    BddBase{worker: W::new(nvars), tags:HashMap::new()}}
+  pub fn new(nvars:usize)->BDDBase {
+    BDDBase{swarm: BddSwarm::new(nvars), tags:HashMap::new()}}
 
   /// accessor for number of variables
-  pub fn nvars(&self)->usize { self.worker.nvars() }
+  pub fn nvars(&self)->usize { self.swarm.nvars() }
 
   /// return (hi, lo) pair for the given nid. used internally
-  #[inline] fn tup(&self, n:NID)->(NID,NID) { self.worker.tup(n) }
+  #[inline] fn tup(&self, n:NID)->(NID,NID) { self.swarm.tup(n) }
 
   /// walk node recursively, without revisiting shared nodes
   pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
@@ -467,7 +445,7 @@ impl<W:BddWorker> BddBase<W> {
   pub fn  lt(&mut self, x:NID, y:NID)->NID { self.ite(x, O, y) }
 
   /// all-purpose node creation/lookup
-  #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID { self.worker.ite(f,g,h) }
+  #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID { self.swarm.ite(f,g,h) }
 
   /// nid of y when x is high
   pub fn when_hi(&mut self, x:VID, y:NID)->NID {
@@ -545,11 +523,11 @@ impl<W:BddWorker> BddBase<W> {
     self.tt_aux(&mut res, VID::var(0), n0, 0);
     res }
 
-} // end impl BddBase
+} // end impl BDDBase
 
 // Base Trait
 
-impl<W:BddWorker> base::Base for BddBase<W> {
+impl base::Base for BDDBase {
   fn new(n:usize)->Self { Self::new(n) }
   fn num_vars(&self)->usize { self.nvars() }
 
@@ -557,7 +535,7 @@ impl<W:BddWorker> base::Base for BddBase<W> {
   fn when_lo(&mut self, v:VID, n:NID)->NID { self.when_lo(v,n) }
 
   // TODO: these should be moved into seperate struct
-  fn def(&mut self, _s:String, _i:VID)->NID { todo!("BddBase::def()") }
+  fn def(&mut self, _s:String, _i:VID)->NID { todo!("BDDBase::def()") }
   fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
   fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 
@@ -587,18 +565,11 @@ impl<W:BddWorker> base::Base for BddBase<W> {
     self.walk(n, &mut |n,_,_,e| w!("  \"{}\"->\"{}\";", n, e));
     w!("}}"); }}
 
-type S = BddState;
-
-/// The default type used by the rest of the system.
-/// (Note the first three letters in uppercase).
-pub type BDDBase = BddBase<BddSwarm>;
-
 // generic base::Base test suite
 test_base_consts!(BDDBase);
 test_base_vars!(BDDBase);
 test_base_when!(BDDBase);
 
-
 // basic test suite
 
 #[test] fn test_base() {
@@ -636,10 +607,8 @@ test_base_when!(BDDBase);
   assert_eq!(x,   base.when_hi(VID::var(3),x))}
 
 // swarm test suite
-pub type BddSwarmBase = BddBase<BddSwarm>;
-
 #[test] fn test_swarm_xor() {
-  let mut base = BddSwarmBase::new(2);
+  let mut base = BDDBase::new(2);
   let (x0, x1) = (NID::var(0), NID::var(1));
   let x = base.xor(x0, x1);
   assert_eq!(x1,  base.when_lo(VID::var(0),x));
@@ -650,7 +619,7 @@ pub type BddSwarmBase = BddBase<BddSwarm>;
   assert_eq!(x,   base.when_hi(VID::var(2),x))}
 
 #[test] fn test_swarm_and() {
-  let mut base = BddSwarmBase::new(2);
+  let mut base = BDDBase::new(2);
   let (x0, x1) = (NID::var(0), NID::var(1));
   let a = base.and(x0, x1);
   assert_eq!(O,  base.when_lo(VID::var(0),a));
@@ -663,7 +632,7 @@ pub type BddSwarmBase = BddBase<BddSwarm>;
 /// slightly harder test case that requires ite() to recurse
 #[test] fn test_swarm_ite() {
   //use simplelog::*;  TermLogger::init(LevelFilter::Trace, Config::default()).unwrap();
-  let mut base = BddSwarmBase::new(3);
+  let mut base = BDDBase::new(3);
   let (x0,x1,x2) = (NID::var(0), NID::var(1), NID::var(2));
   assert_eq!(vec![0,0,0,0,1,1,1,1], base.tt(x0));
   assert_eq!(vec![0,0,1,1,0,0,1,1], base.tt(x1));
@@ -679,7 +648,7 @@ pub type BddSwarmBase = BddBase<BddSwarm>;
 /// slightly harder test case that requires ite() to recurse
 #[test] fn test_swarm_another() {
   use simplelog::*;  TermLogger::init(LevelFilter::Trace, Config::default()).unwrap();
-  let mut base = BddSwarmBase::new(4);
+  let mut base = BDDBase::new(4);
   let (a,b) = (NID::var(0), NID::var(1));
   let anb = base.and(a,!b);
   assert_eq!(vec![0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0], base.tt(anb));
@@ -750,7 +719,7 @@ impl BDDBase {
 /// helpers for solution cursor
 impl HiLoBase for BDDBase {
   fn get_hilo(&self, n:NID)->Option<HiLo> {
-    let (hi, lo) = self.worker.get_state().tup(n);
+    let (hi, lo) = self.swarm.get_state().tup(n);
     Some(HiLo{ hi, lo }) }}
 
 impl CursorPlan for BDDBase {}
