@@ -10,7 +10,7 @@ extern crate num_cpus;
 
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use bincode;
-use base;
+use base::Base;
 use io;
 use reg::Reg;
 use {vhl, vhl::{HiLo, HiLoPart, HiLoBase, VHLParts}};
@@ -120,9 +120,6 @@ impl BddState {
       hilos: vhl::HiLoCache::new(),
       xmemo: BDDHashMap::default() }}
 
-  /// return the number of variables
-  fn nvars(&self)->usize { self.nvars }
-
   #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID) {
     self.xmemo.insert(ite, new_nid); }
 
@@ -219,7 +216,7 @@ impl BddSwarm {
 
   fn get_state(&self)->&BddState { &self.recent }
 
-  fn nvars(&self)->usize { self.recent.nvars() }
+  fn nvars(&self)->usize { self.recent.nvars }
 
   fn tup(&self, n:NID)->(NID,NID) { self.recent.tup(n) }
 
@@ -406,12 +403,6 @@ pub struct BDDBase {
 
 impl BDDBase {
 
-  pub fn new(nvars:usize)->BDDBase {
-    BDDBase{swarm: BddSwarm::new(nvars), tags:HashMap::new()}}
-
-  /// accessor for number of variables
-  pub fn nvars(&self)->usize { self.swarm.nvars() }
-
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)->(NID,NID) { self.swarm.tup(n) }
 
@@ -428,58 +419,19 @@ impl BDDBase {
       if !hi.is_const() { self.step(hi, f, seen); }
       if !lo.is_const() { self.step(lo, f, seen); }}}
 
-  pub fn save(&self, path:&str)->::std::io::Result<()> {
-    let s = bincode::serialize(&self).unwrap();
-    io::put(path, &s) }
-
   pub fn load(path:&str)->::std::io::Result<BDDBase> {
     let s = io::get(path)?;
     Ok(bincode::deserialize(&s).unwrap()) }
 
   // public node constructors
 
-  pub fn and(&mut self, x:NID, y:NID)->NID { self.ite(x, y, O) }
-  pub fn xor(&mut self, x:NID, y:NID)->NID { self.ite(x, !y, y) }
-  pub fn  or(&mut self, x:NID, y:NID)->NID { self.ite(x, I, y) }
   pub fn  gt(&mut self, x:NID, y:NID)->NID { self.ite(x, !y, O) }
   pub fn  lt(&mut self, x:NID, y:NID)->NID { self.ite(x, O, y) }
 
   /// all-purpose node creation/lookup
   #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID { self.swarm.ite(f,g,h) }
 
-  /// nid of y when x is high
-  pub fn when_hi(&mut self, x:VID, y:NID)->NID {
-    let yv = y.vid();
-    match x.cmp_depth(&yv) {
-      VidOrdering::Level => self.tup(y).0,  // x ∧ if(x,th,_) → th
-      VidOrdering::Above => y,              // y independent of x, so no change. includes yv = I
-      VidOrdering::Below => {               // y may depend on x, so recurse.
-        let (yt, ye) = self.tup(y);
-        let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
-        self.ite(NID::from_vid(yv), th, el) }}}
-
-  /// nid of y when x is low
-  pub fn when_lo(&mut self, x:VID, y:NID)->NID {
-    let yv = y.vid();
-    match x.cmp_depth(&yv) {
-      VidOrdering::Level => self.tup(y).1,  // ¬x ∧ if(x,_,el) → el
-      VidOrdering::Above => y,              // y independent of x, so no change. includes yv = I
-      VidOrdering::Below => {               // y may depend on x, so recurse.
-        let (yt, ye) = self.tup(y);
-        let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
-        self.ite(NID::from_vid(yv), th, el) }}}
 
-  /// replace var x with y in z
-  pub fn replace(&mut self, x:VID, y:NID, z:NID)->NID {
-    if z.might_depend_on(x) {
-      let (zt,ze) = self.tup(z); let zv = z.vid();
-      if x==zv { self.ite(y, zt, ze) }
-      else {
-        let th = self.replace(x, y, zt);
-        let el = self.replace(x, y, ze);
-        self.ite(NID::from_vid(zv), th, el) }}
-    else { z }}
-
   /// swap input variables x and y within bdd n
   pub fn swap(&mut self, n:NID, x:VID, y:VID)-> NID {
     if x.is_below(&y) { return self.swap(n,y,x) }
@@ -503,7 +455,7 @@ impl BDDBase {
   /// helper for truth table builder
   fn tt_aux(&mut self, res:&mut Vec<u8>, v:VID, n:NID, i:usize) {
     let o = v.var_ix();
-    if o == self.nvars() { match self.when_lo(v, n) {
+    if o == self.num_vars() { match self.when_lo(v, n) {
       O => {} // res[i] = 0; but this is already the case.
       I => { res[i] = 1; }
       x => panic!("expected a leaf nid, got {}", x) }}
@@ -517,38 +469,71 @@ impl BDDBase {
   pub fn tt(&mut self, n0:NID)->Vec<u8> {
     // !! once the high vars are at the top, we can compare to nid.vid().u() and count down instead of up
     if !n0.vid().is_var() { todo!("tt only works for actual variables. got {:?}", n0); }
-    if self.nvars() > 16 {
-      panic!("refusing to generate a truth table of 2^{} bytes", self.nvars()) }
-    let mut res = vec![0;(1 << self.nvars()) as usize];
+    if self.num_vars() > 16 {
+      panic!("refusing to generate a truth table of 2^{} bytes", self.num_vars()) }
+    let mut res = vec![0;(1 << self.num_vars()) as usize];
     self.tt_aux(&mut res, VID::var(0), n0, 0);
     res }
 
 } // end impl BDDBase
+
 
-// Base Trait
+impl Base for BDDBase {
 
-impl base::Base for BDDBase {
-  fn new(n:usize)->Self { Self::new(n) }
-  fn num_vars(&self)->usize { self.nvars() }
+  fn new(nvars:usize)->BDDBase {
+    BDDBase{swarm: BddSwarm::new(nvars), tags:HashMap::new()}}
 
-  fn when_hi(&mut self, v:VID, n:NID)->NID { self.when_hi(v,n) }
-  fn when_lo(&mut self, v:VID, n:NID)->NID { self.when_lo(v,n) }
+  /// accessor for number of variables
+  fn num_vars(&self)->usize { self.swarm.nvars() }
+
+  /// nid of y when x is high
+  fn when_hi(&mut self, x:VID, y:NID)->NID {
+    let yv = y.vid();
+    match x.cmp_depth(&yv) {
+      VidOrdering::Level => self.tup(y).0,  // x ∧ if(x,th,_) → th
+      VidOrdering::Above => y,              // y independent of x, so no change. includes yv = I
+      VidOrdering::Below => {               // y may depend on x, so recurse.
+        let (yt, ye) = self.tup(y);
+        let (th,el) = (self.when_hi(x,yt), self.when_hi(x,ye));
+        self.ite(NID::from_vid(yv), th, el) }}}
+
+  /// nid of y when x is low
+  fn when_lo(&mut self, x:VID, y:NID)->NID {
+    let yv = y.vid();
+    match x.cmp_depth(&yv) {
+      VidOrdering::Level => self.tup(y).1,  // ¬x ∧ if(x,_,el) → el
+      VidOrdering::Above => y,              // y independent of x, so no change. includes yv = I
+      VidOrdering::Below => {               // y may depend on x, so recurse.
+        let (yt, ye) = self.tup(y);
+        let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
+        self.ite(NID::from_vid(yv), th, el) }}}
 
   // TODO: these should be moved into seperate struct
   fn def(&mut self, _s:String, _i:VID)->NID { todo!("BDDBase::def()") }
   fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
   fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 
-  fn and(&mut self, x:NID, y:NID)->NID { self.and(x, y) }
-  fn xor(&mut self, x:NID, y:NID)->NID { self.xor(x, y) }
-  fn or(&mut self, x:NID, y:NID)->NID  { self.or(x, y) }
-  #[cfg(todo)] fn mj(&mut self, x:NID, y:NID, z:NID)->NID  {
-    self.xor(x, self.xor(y, z)) }  // TODO: normalize order. make this the default impl.
+  fn and(&mut self, x:NID, y:NID)->NID { self.ite(x, y, O) }
+  fn xor(&mut self, x:NID, y:NID)->NID { self.ite(x, !y, y) }
+  fn  or(&mut self, x:NID, y:NID)->NID { self.ite(x, I, y) }
+
+  #[cfg(todo)] fn mj(&mut self, x:NID, y:NID, z:NID)->NID { self.xor(x, self.xor(y, z)) }  // TODO: normalize order. make this the default impl.
   #[cfg(todo)] fn ch(&mut self, x:NID, y:NID, z:NID)->NID { self.ite(x, y, z) }
 
-  fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID { self.replace(v,n,ctx) }
+  /// replace var v with n in ctx
+  fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID {
+    if ctx.might_depend_on(v) {
+      let (zt,ze) = self.tup(ctx); let zv = ctx.vid();
+      if v==zv { self.ite(n, zt, ze) }
+      else {
+        let th = self.sub(v, n, zt);
+        let el = self.sub(v, n, ze);
+        self.ite(NID::from_vid(zv), th, el) }}
+    else { ctx }}
 
-  fn save(&self, path:&str)->::std::io::Result<()> { self.save(path) }
+  fn save(&self, path:&str)->::std::io::Result<()> {
+    let s = bincode::serialize(&self).unwrap();
+    io::put(path, &s) }
 
   // generate dot file (graphviz)
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {
@@ -565,7 +550,7 @@ impl base::Base for BDDBase {
     self.walk(n, &mut |n,_,_,e| w!("  \"{}\"->\"{}\";", n, e));
     w!("}}"); }}
 
-// generic base::Base test suite
+// generic Base test suite
 test_base_consts!(BDDBase);
 test_base_vars!(BDDBase);
 test_base_when!(BDDBase);
@@ -575,7 +560,7 @@ test_base_when!(BDDBase);
 #[test] fn test_base() {
   let mut base = BDDBase::new(3);
   let (v1, v2, v3) = (NID::var(1), NID::var(2), NID::var(3));
-  assert_eq!(base.nvars(), 3);
+  assert_eq!(base.num_vars(), 3);
   assert_eq!((I,O), base.tup(I));
   assert_eq!((O,I), base.tup(O));
   assert_eq!((I,O), base.tup(v1));
@@ -702,17 +687,17 @@ pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   let mut base = BDDBase::new(3);
   let (a, b) = (NID::var(0), NID::var(1));
   let n = base.xor(a, b);
-  // use base::Base; base.show(n);
+  // base.show(n);
   let actual:Vec<usize> = base.solutions(n).map(|x|x.as_usize()).collect();
   let expect = vec![0b001, 0b010, 0b101, 0b110 ]; // bits cba
   assert_eq!(actual, expect); }
 
 impl BDDBase {
   pub fn solutions(&mut self, n:NID)->BDDSolIterator {
-    self.solutions_trunc(n, self.nvars())}
+    self.solutions_trunc(n, self.num_vars())}
 
   pub fn solutions_trunc(&self, n:NID, nvars:usize)->BDDSolIterator {
-    assert!(nvars <= self.nvars(), "nvars arg to solutions_trunc must be <= self.nvars");
+    assert!(nvars <= self.num_vars(), "nvars arg to solutions_trunc must be <= self.num_vars");
     BDDSolIterator::from_bdd(self, n, nvars)}}
 
 
