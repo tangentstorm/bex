@@ -44,6 +44,7 @@ impl VHLParts {
 pub trait HiLoBase {
   fn get_hilo(&self, n:NID)->Option<HiLo>;
 }
+
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HiLoCache {
@@ -68,6 +69,7 @@ pub struct HiLoCache {
 //    More likely, it's something to do with the recent/stable dichotomy in BddSwarm,
 //      or simply the fact that each worker has its own recent state and they're getting
 //      out of sync.
+
 
 impl HiLoCache {
 
@@ -77,7 +79,6 @@ impl HiLoCache {
       index: VHLHashMap::default(),
       vindex: VHLHashMap::default()}}
 
-  /// the "put" for this one is put_node
   // TODO: ->Option<HiLo>, and then impl HiLoBase
   #[inline] pub fn get_hilo(&self, n:NID)->HiLo {
     assert!(!n.is_lit());
@@ -89,10 +90,10 @@ impl HiLoCache {
     let hl1 = if inv { hl0.invert() } else { hl0 };
     let to_nid = |&ix| NID::from_vid_idx(v, ix);
     let res = self.vindex.get(&(v, hl1)).map(to_nid);
-    //let res = self.index.get(&hl1).map(to_nid);
+    // let res = if res.is_none() { self.index.get(&hl1).map(to_nid) } else { res };
     if inv { res.map(|nid| !nid ) } else { res }}
 
-  #[inline] pub fn put_node(&mut self, v:VID, hl0:HiLo)->NID {
+  #[inline] pub fn insert(&mut self, v:VID, hl0:HiLo)->NID {
     let inv = hl0.lo.is_inv();
     let hilo = if inv { hl0.invert() } else { hl0 };
     let ix:IDX =
@@ -105,3 +106,6 @@ impl HiLoCache {
         ix };
     let res = NID::from_vid_idx(v, ix);
     if inv { !res } else { res } }}
+
+impl Default for HiLoCache {
+  fn default() -> Self { Self::new() }}

@@ -25,8 +25,8 @@ impl Reg {
   /// constructor that takes the indices of the high bits
   pub fn hi_bits(&self)->Vec<usize> {
     let mut res = vec![];
-    for (j, raw) in self.data.iter().enumerate() {
-      let mut bits = raw.clone();
+    for (j, &raw) in self.data.iter().enumerate() {
+      let mut bits = raw;
       let offset = j * USIZE;
       for i in 0..USIZE {
         if (bits & 1) == 1 { res.push(offset + i) }

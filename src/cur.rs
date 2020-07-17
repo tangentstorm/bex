@@ -68,11 +68,11 @@ impl Cursor {
       self.put_step(base, choice) }}
 
   pub fn var_get(&self)->bool {
-    return self.scope.var_get(self.node.vid()) }
+    self.scope.var_get(self.node.vid()) }
 
   /// starting at a leaf, climb the stack until we reach
   /// a branch whose variable is still set to lo.
-  pub fn to_next_lo_var(&mut self) {
+  pub fn go_next_lo_var(&mut self) {
     let mut bv = self.node.vid();
     while self.scope.var_get(bv) && !self.nstack.is_empty() {
       bv = self.step_up().vid(); }}

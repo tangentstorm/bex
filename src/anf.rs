@@ -308,7 +308,7 @@ impl ANFBase {
       cur.descend(self); }
     loop {
       cur.step_up();                             self.log(&cur,"step up");
-      cur.to_next_lo_var();                      self.log(&cur,"next lo");
+      cur.go_next_lo_var();                      self.log(&cur,"next lo");
       if cur.at_top() && cur.var_get() { self.log(&cur, "@end"); return None }
       cur.clear_trailing_bits();                 self.log(&cur, "cleared trailing");
       cur.put_step(self, true);
@@ -359,7 +359,7 @@ impl<'a>  ANFSolIterator<'a> {
     //let acur = anf.first_term(nvars, nid);
     let bnid = anf.to_base_trunc(nid, &mut bdd, nvars);
     let bcur = bdd.first_solution(bnid, nvars);
-    ANFSolIterator{ _anf:anf, bdd:bdd, bcur } }}
+    ANFSolIterator{ _anf:anf, bdd, bcur } }}
 
 impl<'a> Iterator for ANFSolIterator<'a> {
   type Item = Reg;

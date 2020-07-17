@@ -51,38 +51,37 @@ impl ITE {
   /// choose normal form for writing this triple. Algorithm based on:
   /// "Efficient Implementation of a BDD Package"
   /// http://www.cs.cmu.edu/~emc/15817-f08/bryant-bdd-1991.pdf
-  /// (This is one of the biggest bottlenecks so we inline a lot,
-  /// do our own tail call optimization, etc...)
   pub fn norm(f0:NID, g0:NID, h0:NID)->Norm {
     let mut f = f0; let mut g = g0; let mut h = h0;
     loop {
-      if f.is_const() { return Norm::Nid(if f==I { g } else { h }) }           // (I/O, _, _)
-      if g==h { return Norm::Nid(g) }                                         // (_, g, g)
-      if g==f { if h.is_const() { return Norm::Nid(if h==I { I } else { f }) } // (f, f, I/O)
+      if f.is_const() { return Norm::Nid(if f==I { g } else { h }) }  // (I/O, _, _)
+      if g==h { return Norm::Nid(g) }                                 // (_, g, g)
+      if g==f { if h.is_const() {
+                return Norm::Nid(if h==I { I } else { f }) } // (f, f, I/O)
                 else { g=I }}
       else if g.is_const() && h.is_const() { // both const, and we know g!=h
         return if g==I { return Norm::Nid(f) } else { Norm::Nid(!f) }}
       else {
         let nf = !f;
-        if      g==nf { g=O } // bounce!(f,O,h)
-        else if h==f  { h=O } // bounce!(f,g,O)
-        else if h==nf { h=I } // bounce!(f,g,I)
+        if      g==nf { g=O }
+        else if h==f  { h=O }
+        else if h==nf { h=I }
         else {
           let (fv, fi) = (f.vid(), f.idx());
           macro_rules! cmp { ($x0:expr,$x1:expr) => {
             { let x0=$x0; ((x0.is_above(&fv)) || ((x0==fv) && ($x1<fi))) }}}
           if g.is_const() && cmp!(h.vid(),h.idx()) {
-            if g==I { g=f; f=h; h=g;  g=I; }     // bounce!(h,I,f)
-            else    { f=!h; g=O;  h=nf; }}   // bounce(not(h),O,nf)
+            if g==I { g = f;  f = h;  h = g;  g = I; }
+            else    { f = !h; g = O;  h = nf; }}
           else if h.is_const() && cmp!(g.vid(),g.idx()) {
-            if h==I { f=!g; g=nf; h=I; }     // bounce!(not(g),nf,I)
-            else    { h=f; f=g; g=h;  h=O; }}    // bounce!(g,f,O)
+            if h==I { f = !g; g = nf; h = I; }
+            else    { h = f;  f = g;  g = h;  h = O; }}
           else {
             let ng = !g;
-            if (h==ng) && cmp!(g.vid(), g.idx()) { h=f; f=g; g=h; h=nf; } // bounce!(g,f,nf)
+            if (h==ng) && cmp!(g.vid(), g.idx()) { h=f; f=g; g=h; h=nf; }
             // choose form where first 2 slots are NOT inverted:
             // from { (f,g,h), (¬f,h,g), ¬(f,¬g,¬h), ¬(¬f,¬g,¬h) }
-            else if f.is_inv() { f=g; g=h; h=f; f=nf; } // bounce!(nf,h,g)
+            else if f.is_inv() { f=g; g=h; h=f; f=nf; }
             else if g.is_inv() { return match ITE::norm(f,ng,!h) {
               Norm::Nid(nid) => Norm::Nid(!nid),
               Norm::Not(ite) => Norm::Ite(ite),
@@ -99,8 +98,7 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
   #[inline] fn tup(&self, n:NID)-> (NID, NID) {
     if n.is_const() { if n==I { (I, O) } else { (O, I) } }
     else if n.is_var() { if n.is_inv() { (O, I) } else { (I, O) }}
-    else { let hilo = self.get_hilo(n);
-           (hilo.hi, hilo.lo) }}
+    else { let hilo = self.get_hilo(n); (hilo.hi, hilo.lo) }}
 
   /// fetch or create a "simple" node, where the hi and lo branches are both
   /// already fully computed pointers to existing nodes.
@@ -121,20 +119,6 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
   fn put_simple_node(&mut self, v:VID, hilo:HiLo)->NID; }
 
 
-// TODO: remove vindex. There's no reason to store (x1,y,z) separately from (y,z).
-// !! Previously, in test_nano_bdd, I wind up with a node branching on x2
-//      to another node also branching on x2.
-//    As of 2020-07-10, the new problem is just that test_multi_bdd
-//      and test_nano_bdd start taking minutes to run.
-//    I can't currently think of a reason vindex[(vX,hilo)] shouldn't behave
-//      exactly the same as vindex[(vY,hilo)] and thus == index[hilo], but I'm
-//      obviously missing something. :/
-//    It could be a bug in replace(), but that's a simple function.
-//    More likely, it's something to do with the recent/stable dichotomy in BddSwarm,
-//      or simply the fact that each worker has its own recent state and they're getting
-//      out of sync.
-
-/// Groups everything by variable. I thought this would be useful, but it probably is not.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SafeBddState {
   /// number of variables
@@ -171,11 +155,11 @@ impl BddState for SafeBddState {
   #[inline] fn get_hilo(&self, n:NID)->HiLo {
     self.hilos.get_hilo(n) }
 
-  #[inline] fn get_simple_node(&self, v:VID, hl0:HiLo)-> Option<NID> {
-    self.hilos.get_node(v, hl0)}
+  #[inline] fn get_simple_node(&self, v:VID, hl:HiLo)-> Option<NID> {
+    self.hilos.get_node(v, hl)}
 
-  #[inline] fn put_simple_node(&mut self, v:VID, hl0:HiLo)->NID {
-    self.hilos.put_node(v, hl0) }}
+  #[inline] fn put_simple_node(&mut self, v:VID, hl:HiLo)->NID {
+    self.hilos.insert(v, hl) }}
 
 
 pub trait BddWorker<S:BddState> : Sized + Serialize {
@@ -840,7 +824,7 @@ impl BDDBase {
     let mut rippled = false;
     // if we've already walked the hi branch...
     if cur.scope.var_get(tv) {
-      cur.to_next_lo_var();
+      cur.go_next_lo_var();
       // if we've cleared the stack and already explored the hi branch...
       { let iv = cur.node.vid();
         if cur.nstack.is_empty() && cur.scope.var_get(iv) {
@@ -873,11 +857,9 @@ impl BDDBase {
         cur.descend(self); }
       else { // overflow. we've counted all the way to 2^nvars-1, and we're done.
         self.log(&cur, "$ found all solutions!"); return None }}
-    while !self.in_solution(&cur) {
-      // If still here, we are looking at a leaf that isn't a solution (out=0 in truth table)
-      let next = self.find_next_leaf(&mut cur);
-      if next.is_none() { return None }}
-    Some(cur)}
+    // If still here, we are looking at a leaf that isn't a solution (out=0 in truth table)
+    while !self.in_solution(&cur) { self.find_next_leaf(&mut cur)?; }
+    Some(cur) }
 }
 
 pub struct BDDSolIterator<'a> {
