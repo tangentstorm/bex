@@ -275,7 +275,7 @@ impl<TState:BddState> Serialize for BddSwarm<TState> {
     // all we really care about is the state:
     self.stable.serialize::<S>(ser) } }
 
-impl<'de:'a, 'a, S:BddState + Deserialize<'de>> Deserialize<'de> for BddSwarm<S> {
+impl<'de, S:BddState + Deserialize<'de>> Deserialize<'de> for BddSwarm<S> {
   fn deserialize<D:Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
     let mut res = Self::new(0);
     res.stable = Arc::new(S::deserialize(d)?);
@@ -377,9 +377,6 @@ impl<S:BddState> BddSwarm<S> {
     else { warn!("???? got a part for a qid #{} that was already done!", qid) }
     if let WIP::Parts(wip) = self.wip[qid] {
       if let Some(hilo) = wip.hilo() { self.resolve_vhl(qid, wip.v, hilo, wip.invert) }}}
-      // else { println!("got a part for q{} but it's still not done", qid);
-      //        for (qid, task) in self.wip.iter().by_ref().enumerate() {
-      //          println!("    q{} : {:?} {:?}", qid, task, self.deps[qid]); }} }}
 
   /// initialization logic for running the swarm. spawns threads and copies latest cache.
   fn init_swarm(&mut self) {
@@ -424,9 +421,7 @@ impl<S:BddState> BddSwarm<S> {
             handle_part!(hi, HiLoPart::HiPart); handle_part!(lo, HiLoPart::LoPart); }
           RMsg::Ret(n) => { result = Some(n) }}}
       result.unwrap() }}}
-
     // TODO: at some point, we should kill all the child threads.
-
     match ITE::norm(i,t,e) {
       Norm::Nid(n) => n,
       Norm::Ite(ite) => { run_swarm_ite!(ite) }
@@ -444,7 +439,7 @@ fn swarm_ite<S:BddState>(state: &Arc<S>, ite0:ITE)->RMsg {
 
 fn swarm_vhl_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
   let ITE{i:vv,t:hi,e:lo} = ite; let v = vv.vid();
-  if let Some(n) = state.get_simple_node(vv.vid(), HiLo{hi,lo}) { RMsg::Nid(n) }
+  if let Some(n) = state.get_simple_node(v, HiLo{hi,lo}) { RMsg::Nid(n) }
   else { RMsg::Vhl{ v, hi, lo, invert:false } }}
 
 fn swarm_ite_norm<S:BddState>(state: &Arc<S>, ite:ITE)->RMsg {
