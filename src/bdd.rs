@@ -15,7 +15,7 @@ use base;
 use io;
 use reg::Reg;
 use {vhl, vhl::{HiLo, HiLoPart, HiLoBase, VHLParts}};
-use {nid, nid::{NID,O,I,idx,is_var,is_const,IDX,is_inv}};
+use nid::{NID,O,I};
 use vid::{VID,VidOrdering,topmost_of3};
 use cur::{Cursor, CursorPlan};
 use {wip, wip::{QID,Dep,WIP}};
@@ -56,11 +56,11 @@ impl ITE {
   pub fn norm(f0:NID, g0:NID, h0:NID)->Norm {
     let mut f = f0; let mut g = g0; let mut h = h0;
     loop {
-      if is_const(f) { return Norm::Nid(if f==I { g } else { h }) }           // (I/O, _, _)
+      if f.is_const() { return Norm::Nid(if f==I { g } else { h }) }           // (I/O, _, _)
       if g==h { return Norm::Nid(g) }                                         // (_, g, g)
-      if g==f { if is_const(h) { return Norm::Nid(if h==I { I } else { f }) } // (f, f, I/O)
+      if g==f { if h.is_const() { return Norm::Nid(if h==I { I } else { f }) } // (f, f, I/O)
                 else { g=I }}
-      else if is_const(g) && is_const(h) { // both const, and we know g!=h
+      else if g.is_const() && h.is_const() { // both const, and we know g!=h
         return if g==I { return Norm::Nid(f) } else { Norm::Nid(!f) }}
       else {
         let nf = !f;
@@ -68,22 +68,22 @@ impl ITE {
         else if h==f  { h=O } // bounce!(f,g,O)
         else if h==nf { h=I } // bounce!(f,g,I)
         else {
-          let (fv, fi) = (f.vid(), idx(f));
+          let (fv, fi) = (f.vid(), f.idx());
           macro_rules! cmp { ($x0:expr,$x1:expr) => {
             { let x0=$x0; ((x0.is_above(&fv)) || ((x0==fv) && ($x1<fi))) }}}
-          if is_const(g) && cmp!(h.vid(),idx(h)) {
+          if g.is_const() && cmp!(h.vid(),h.idx()) {
             if g==I { g=f; f=h; h=g;  g=I; }     // bounce!(h,I,f)
             else    { f=!h; g=O;  h=nf; }}   // bounce(not(h),O,nf)
-          else if is_const(h) && cmp!(g.vid(),idx(g)) {
+          else if h.is_const() && cmp!(g.vid(),g.idx()) {
             if h==I { f=!g; g=nf; h=I; }     // bounce!(not(g),nf,I)
             else    { h=f; f=g; g=h;  h=O; }}    // bounce!(g,f,O)
           else {
             let ng = !g;
-            if (h==ng) && cmp!(g.vid(), idx(g)) { h=f; f=g; g=h; h=nf; } // bounce!(g,f,nf)
+            if (h==ng) && cmp!(g.vid(), g.idx()) { h=f; f=g; g=h; h=nf; } // bounce!(g,f,nf)
             // choose form where first 2 slots are NOT inverted:
             // from { (f,g,h), (¬f,h,g), ¬(f,¬g,¬h), ¬(¬f,¬g,¬h) }
-            else if is_inv(f) { f=g; g=h; h=f; f=nf; } // bounce!(nf,h,g)
-            else if is_inv(g) { return match ITE::norm(f,ng,!h) {
+            else if f.is_inv() { f=g; g=h; h=f; f=nf; } // bounce!(nf,h,g)
+            else if g.is_inv() { return match ITE::norm(f,ng,!h) {
               Norm::Nid(nid) => Norm::Nid(!nid),
               Norm::Not(ite) => Norm::Ite(ite),
               Norm::Ite(ite) => Norm::Not(ite)}}
@@ -97,8 +97,8 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
 
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)-> (NID, NID) {
-    if is_const(n) { if n==I { (I, O) } else { (O, I) } }
-    else if is_var(n) { if is_inv(n) { (O, I) } else { (I, O) }}
+    if n.is_const() { if n==I { (I, O) } else { (O, I) } }
+    else if n.is_var() { if n.is_inv() { (O, I) } else { (I, O) }}
     else { let hilo = self.get_hilo(n);
            (hilo.hi, hilo.lo) }}
 
@@ -139,14 +139,8 @@ pub trait BddState : Sized + Serialize + Clone + Sync + Send {
 pub struct SafeBddState {
   /// number of variables
   nvars: usize,
-  /// variable-agnostic hi/lo pairs for individual bdd nodes.
-  hilos: Vec<HiLo>,
-  /// reverse map for hilos.
-  index: BDDHashMap<HiLo, IDX>,
-  /// variable-specific memoization. These record (v,hilo) lookups.
-  /// There shouldn't be any need for this, but an undiagnosed
-  /// bug prevents me from removing it.
-  vindex: BDDHashMap<(VID,HiLo), IDX>,
+  /// cache of hi,lo pairs.
+  hilos: vhl::HiLoCache,
   /// arbitrary memoization. These record normalized (f,g,h) lookups.
   xmemo: BDDHashMap<ITE, NID> }
 
@@ -157,9 +151,7 @@ impl BddState for SafeBddState {
   fn new(nvars:usize)->SafeBddState {
     SafeBddState {
       nvars,
-      hilos: vec![],
-      index: BDDHashMap::default(),
-      vindex: BDDHashMap::default(),
+      hilos: vhl::HiLoCache::new(),
       xmemo: BDDHashMap::default() }}
 
   /// return the number of variables
@@ -170,39 +162,20 @@ impl BddState for SafeBddState {
 
   /// load the memoized NID if it exists
   #[inline] fn get_memo(&self, ite:&ITE) -> Option<NID> {
-    if is_var(ite.i) {
-      debug_assert!(!is_inv(ite.i)); // because it ought to be normalized by this point.
-      let hilo = if is_inv(ite.i) { HiLo::new(ite.e,ite.t) } else { HiLo::new(ite.t,ite.e) };
+    if ite.i.is_var() {
+      debug_assert!(!ite.i.is_inv()); // because it ought to be normalized by this point.
+      let hilo = if ite.i.is_inv() { HiLo::new(ite.e,ite.t) } else { HiLo::new(ite.t,ite.e) };
       self.get_simple_node(ite.i.vid(), hilo) }
     else { self.xmemo.get(&ite).copied() }}
 
-  /// the "put" for this one is put_simple_node
   #[inline] fn get_hilo(&self, n:NID)->HiLo {
-    assert!(!nid::is_lit(n));
-    let res = self.hilos[idx(n) as usize];
-    if is_inv(n) { res.invert() } else { res }}
+    self.hilos.get_hilo(n) }
 
   #[inline] fn get_simple_node(&self, v:VID, hl0:HiLo)-> Option<NID> {
-    let inv = nid::is_inv(hl0.lo);
-    let hl1 = if inv { hl0.invert() } else { hl0 };
-    let to_nid = |&ix| NID::from_vid_idx(v, ix);
-    let res = self.vindex.get(&(v, hl1)).map(to_nid);
-    //let res = self.index.get(&hl1).map(to_nid);
-    if inv { res.map(|nid| !nid ) } else { res }}
+    self.hilos.get_node(v, hl0)}
 
   #[inline] fn put_simple_node(&mut self, v:VID, hl0:HiLo)->NID {
-    let inv = nid::is_inv(hl0.lo);
-    let hilo = if inv { hl0.invert() } else { hl0 };
-    let ix:IDX =
-      if let Some(&ix) = self.index.get(&hilo) { ix }
-      else {
-        let ix = self.hilos.len() as IDX;
-        self.hilos.push(hilo);
-        self.index.insert(hilo, ix);
-        self.vindex.insert((v,hilo), ix);
-        ix };
-    let res = NID::from_vid_idx(v, ix);
-    if inv { !res } else { res } }}
+    self.hilos.put_node(v, hl0) }}
 
 
 pub trait BddWorker<S:BddState> : Sized + Serialize {
@@ -512,8 +485,8 @@ impl<S:BddState, W:BddWorker<S>> BddBase<S,W> {
   where F: FnMut(NID,VID,NID,NID) {
     if !seen.contains(&n) {
       seen.insert(n); let (hi,lo) = self.tup(n); f(n,n.vid(),hi,lo);
-      if !is_const(hi) { self.step(hi, f, seen); }
-      if !is_const(lo) { self.step(lo, f, seen); }}}
+      if !hi.is_const() { self.step(hi, f, seen); }
+      if !lo.is_const() { self.step(lo, f, seen); }}}
 
   pub fn save(&self, path:&str)->::std::io::Result<()> {
     let s = bincode::serialize(&self).unwrap();
@@ -761,12 +734,12 @@ pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 
 /// Test cases for SolutionIterator
 #[test] fn test_bdd_solutions_o() {
-  let mut base = BDDBase::new(2);  let mut it = base.solutions(nid::O);
+  let mut base = BDDBase::new(2);  let mut it = base.solutions(O);
   assert_eq!(it.next(), None, "const O should yield no solutions.") }
 
 #[test] fn test_bdd_solutions_i() {
   let mut base = BDDBase::new(2);
-  let actual:HashSet<usize> = base.solutions(nid::I).map(|r| r.as_usize()).collect();
+  let actual:HashSet<usize> = base.solutions(I).map(|r| r.as_usize()).collect();
   assert_eq!(actual, hs(vec![0b00, 0b01, 0b10, 0b11]),
      "const true should yield all solutions"); }
 
@@ -822,11 +795,11 @@ impl CursorPlan for BDDBase {}
 
 impl BDDBase {
   pub fn first_solution(&self, n:NID, nvars:usize)->Option<Cursor> {
-    if n==nid::O || nvars == 0 { None }
+    if n== O || nvars == 0 { None }
     else {
       let mut cur = Cursor::new(nvars, n);
       cur.descend(self);
-      debug_assert!(nid::is_const(cur.node));
+      debug_assert!(cur.node.is_const());
       debug_assert!(self.in_solution(&cur), format!("{:?}", cur.scope));
       Some(cur) }}
 
@@ -857,8 +830,8 @@ impl BDDBase {
 
   fn find_next_leaf0(&self, cur:&mut Cursor)->Option<NID> {
     // we always start at a leaf and move up, with the one exception of root=I
-    assert!(nid::is_const(cur.node), "find_next_leaf should always start by looking at a leaf");
-    if cur.nstack.is_empty() { assert!(cur.node == nid::I); return None }
+    assert!(cur.node.is_const(), "find_next_leaf should always start by looking at a leaf");
+    if cur.nstack.is_empty() { assert!(cur.node == I); return None }
 
     // now we are definitely at a leaf node with a branch above us.
     cur.step_up();
@@ -887,7 +860,7 @@ impl BDDBase {
 
   /// walk depth-first from lo to hi until we arrive at the next solution
   fn advance0(&self, mut cur:Cursor)->Option<Cursor> {
-    assert!(nid::is_const(cur.node), "advance should always start by looking at a leaf");
+    assert!(cur.node.is_const(), "advance should always start by looking at a leaf");
     if self.in_solution(&cur) {
       // if we're in the solution, we're going to increment the "counter".
       if let Some(zpos) = cur.increment() {
@@ -895,7 +868,7 @@ impl BDDBase {
         // The 'zpos' variable exists in the solution space, but there might or might
         // not be a branch node for that variable in the current bdd path.
         // Whether we follow the hi or lo branch depends on which variable we're looking at.
-        if nid::is_const(cur.node) { return Some(cur) } // special case for topmost I (all solutions)
+        if cur.node.is_const() { return Some(cur) } // special case for topmost I (all solutions)
         cur.put_step(self, cur.var_get());
         cur.descend(self); }
       else { // overflow. we've counted all the way to 2^nvars-1, and we're done.
