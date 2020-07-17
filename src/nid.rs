@@ -182,6 +182,11 @@ impl NID {
   pub fn from_vid(v:vid::VID)->Self { nv(vid_to_old(v)) }
   pub fn from_vid_idx(v:vid::VID, i:IDX)->Self { nvi(vid_to_old(v), i) }
   pub fn vid(&self)->vid::VID { old_to_vid(var(*self)) }
+  pub fn is_const(&self)->bool { is_const(*self) }
+  pub fn is_var(&self)->bool { is_var(*self) }
+  pub fn is_lit(&self)->bool { is_lit(*self) }
+  pub fn is_inv(&self)->bool { is_inv(*self) }
+  pub fn idx(&self)->usize { idx(*self) }
   /// is it possible nid depends on var v?
   /// the goal here is to avoid exploring a subgraph if we don't have to.
   #[inline] pub fn might_depend_on(&self, v:vid::VID)->bool {
