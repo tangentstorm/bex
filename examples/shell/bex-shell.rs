@@ -40,15 +40,12 @@ fn pop2<T>(data: &mut Vec<T>)->(T,T){
 
 fn repl(base:&mut ASTBase) {
   let mut scope = HashMap::new();
-  println!("hint: no variables defined. type '8 vars' to define 8 of them.");
   let mut data: Vec<NID> = Vec::new();
   'main: loop {
     print!("[ "); for x in &data { print!("{} ", *x); } println!("]");
     let line = readln();
     for word in line.split_whitespace() {
       match word {
-        "vars" => { let x = pop(&mut data);
-                    for i in base.num_vars()..nid::idx(x) { base.var(i as u32); }}
         // bdd commands
         "i"|"I" => data.push(base.i()),
         "o"|"O" => data.push(base.o()),
