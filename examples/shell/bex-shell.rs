@@ -6,6 +6,9 @@ extern crate bex;
 use bex::*;
 use bex::nid::NID;
 use bex::ast::{ASTBase};
+use bex::solve;
+use bex::anf::ANFBase;
+use bex::bdd::BDDBase;
 
 
 // forth-like REPL for the BDD  (helper routines)
@@ -34,13 +37,14 @@ fn pop2<T>(data: &mut Vec<T>)->(T,T){
 // forth-like REPL for the BDD  (main loop)
 
 // fn to_io(b:bool)->NID { if b {Op::I} else {Op::O} }
-
 // enum Item { Vid(VID), Nid(NID), Int(u32) }
-
 
 fn repl(base:&mut ASTBase) {
   let mut scope = HashMap::new();
   let mut data: Vec<NID> = Vec::new();
+  let mut bdds = BDDBase::new(1024);
+  let mut anfs = ANFBase::new(1024);
+
   'main: loop {
     print!("[ "); for x in &data { print!("{} ", *x); } println!("]");
     let line = readln();
@@ -59,7 +63,7 @@ fn repl(base:&mut ASTBase) {
         //todo "hi" => { let (x,y)=pop2(&mut data); data.push(base.when_hi(y,x)) }
         //todo "cnt" => { let x = pop(&mut data); data.push(base.node_count(x)) }
         // "ite" => { let (x,y,z) = pop3(&mut data); data.push(base.ite(x,y,z)); }
-        //todo "swp" => { let (n,x,y) = pop3(&mut data); data.push(base.swap(n,x,y)); }
+        //todo "shuf" => { let (n,x,y) = pop3(&mut data); data.push(base.swap(n,x,y)); }
         // "norm" => { let (x,y,z) = pop3(&mut data); println!("{:?}", base.norm(x,y,z)) }
         // "tup" => { let (v,hi,lo) = base.tup(data.pop().expect("underflow")); println!("({}, {}, {})", v,hi,lo); },
         //todo "rep" => { let (x,y,z)=pop3(&mut data); data.push(base.replace(x,y,z)); }
@@ -68,7 +72,9 @@ fn repl(base:&mut ASTBase) {
         // "deep" => { let x = pop(&mut data); data.push(base.deep[x]); }
         "dot" => { let mut s=String::new(); base.dot(pop(&mut data),&mut s); print!("{}", s); }
         "sho" => base.show(pop(&mut data)),
-
+        "bdd" => { let top=pop(&mut data); data.push(solve::solve(&mut bdds,&base,top,true).n) }
+        "anf" => { let top=pop(&mut data); data.push(solve::solve(&mut anfs,&base,top,true).n) }
+  
         // generic forth commands
         "q" => break 'main,
         "." => { let nid = data.pop().expect("underflow"); println!("{}", nid); }
