@@ -131,13 +131,20 @@ fn refine_one(dst: &mut B, src:&ASTBase, d:DstNid)->DstNid {
     DstNid{n: dst.sub(otv, newdef, d.n) }}}
 
 
+pub fn solve(dst:&mut B, src0:&ASTBase, n:NID, show:bool)->DstNid {
+  let (src, top) = sort_by_cost(&src0, SrcNid{n});
+  refine(dst, &src, DstNid{n: NID::vir(nid::idx(top.n) as u32)},
+        ProgressReport{ save_dot: show, save_dest: false,
+                        prefix:"x", show_result: show, save_result: show }) }
+
+
 /// This is an example solver used by the bdd-solve example and the bench-solve benchmark.
 /// It finds all pairs of type $T0 that multiply to $k as a $T1. ($T0 and $T1 are
 /// BInt types. Generally $T0 would have half as many bits as $T1) $TDEST is destination type.
 #[macro_export]
 macro_rules! find_factors {
   ($TDEST:ident, $T0:ident, $T1:ident, $k:expr, $expect:expr, $show:expr) => {{
-    use $crate::{Base,nid, nid::NID, solve::*, ast::ASTBase,
+    use $crate::{Base,nid, solve::*, ast::ASTBase,
                 int::{GBASE,BInt,BaseBit}};
     // reset gbase on each test
     GBASE.with(|gb| gb.replace(ASTBase::empty()));
@@ -153,9 +160,7 @@ macro_rules! find_factors {
       if $show { src.show_named(top.n, "ast"); }
       dest = $TDEST::new(src.len());
       assert!(nid::no_var(top.n), "top nid seems to be a literal. (TODO: handle these already solved cases)");
-      refine(&mut dest, &src, DstNid{n: NID::vir(nid::idx(top.n) as u32)},
-             ProgressReport{ save_dot: $show, save_dest: false, prefix: "x",
-                             show_result: $show, save_result: $show }) });
+      solve(&mut dest, &src, top.n, $show) });
     let expect = $expect;
     let answer = answer.n;
     let actual:Vec<(u64, u64)> = dest.solutions_trunc(answer, 2*$T0::n() as usize).map(|r|{
@@ -175,7 +180,7 @@ macro_rules! find_factors {
 /// nano test case for BDD: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
 #[test] pub fn test_nano_bdd() {
   use {bdd::BDDBase, int::{X2,X4}};
-  find_factors!(BDDBase, X2, X4, 6, vec![(2,3)], false); }
+  find_factors!(BDDBase, X2, X4, 6, vec![(2,3)], true); }
 
   /// nano test case for ANF: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
   #[test] pub fn test_nano_anf() {
