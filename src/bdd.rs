@@ -274,12 +274,8 @@ impl BddSwarm {
     trace!("resolved vhl: q{}=>{}. #deps: {}", qid, nid, self.work.deps[qid].len());
     self.resolve_nid(qid, nid); }
 
-  fn resolve_part(&mut self, qid:QID, part:HiLoPart, nid0:NID, invert:bool) {
-    if let WIP::Parts(ref mut parts) = self.work.wip[qid] {
-      let nid = if invert { !nid0 } else { nid0 };
-      trace!("   !! set {:?} for q{} to {}", part, qid, nid);
-      if part == HiLoPart::HiPart { parts.hi = Some(nid) } else { parts.lo = Some(nid) }}
-    else { warn!("???? got a part for a qid #{} that was already done!", qid) }
+  fn resolve_part(&mut self, qid:QID, part:HiLoPart, nid:NID, invert:bool) {
+    self.work.resolve_part(qid, part, nid, invert);
     if let WIP::Parts(wip) = self.work.wip[qid] {
       if let Some(hilo) = wip.hilo() { self.resolve_vhl(qid, wip.v, hilo, wip.invert) }}}
 

@@ -60,4 +60,12 @@ pub struct WorkState<Q:Eq+Hash> {
 impl<Q: Eq+Hash> WorkState<Q> {
   pub fn new() -> Self {
     WorkState{
-      wip: vec![], deps: vec![], qid: WIPHashMap::new(), qs:vec![]}}}
+      wip: vec![], deps: vec![], qid: WIPHashMap::new(), qs:vec![] }}
+
+  pub fn resolve_part(&mut self, qid:QID, part:HiLoPart, nid:NID, invert: bool) {
+    if let WIP::Parts(ref mut parts) = self.wip[qid] {
+      let n = if invert { !nid } else { nid };
+      trace!("   !! set {:?} for q{} to {}", part, qid, n);
+      if part == HiLoPart::HiPart { parts.hi = Some(n) } else { parts.lo = Some(n) }}
+    else { warn!("???? got a part for a qid #{} that was already done!", qid) }}
+  }
