@@ -1,0 +1,88 @@
+#+title: plans for bex
+
+* TODO plans for version 0.2.0
+** [0/3] better benchmarking
+*** TODO implement bookeeping decorators
+- for each benchmark:
+  - original AST:
+    - time to generate
+    - number of nodes (broken down by type?)
+    - number of cache attempts and hits
+  - for each step:
+    - time to generate
+    - number of nodes at each step
+    - number of cache attempts and hits
+    - calculations saved from short circuits
+*** TODO allow decorator pattern on bases
+https://github.com/lpxxn/rust-design-pattern/blob/master/structural/decorator.rs
+
+- toggle bookkeeping for benchmarks
+- toggle individual optimizations
+- consolidate BASE/anf normalizers
+- swap out work coordination strategies (swarm/etc)
+- swap out different kinds of normalizer (main vs ITE)
+  (allow preserving the original expression)
+- toggle use of constant truth tables in the nid
+- configure larger constant truth tables at other levels
+- even toggle caching to see what it gets us
+
+*** TODO tool to generate and store metrics
+** [0/3] generalize swarm implementation
+*** TODO bdd: extract ite function that returns (V, HiPart, LoPart)
+(In other words, decouple the work for a single node from the work scheduler)
+*** TODO clean up / refactor the swarm code in general
+
+resolve-part calls:
+  resolve-vhl # when both sides are done
+
+resolve-vhl
+  ITE::norm # bdd-specific logic
+  resolve-nid
+
+resolve-nid
+  resolve-part
+  put-xmemo
+
+*** TODO re-use swarm for =ANF= implementation
+** [0/6] solver optimizations
+*** TODO optimization: nid-level truth tables for bottom 5 variables
+*** TODO optimization: nid-level truth tables for /any/ 5 variables
+*** TODO bring relevant variables to top in solver
+- maintain top-level vec for variable permutation
+- at each step:
+  - bring highest numbered =Vir= to the top
+  - fetch relevant inputs to =Vir= in the AST
+  - raise relevant inputs to 2nd and 3rd layers in BDD
+*** TODO periodically sift variables to reduce solution size
+*** TODO optionally, return vars to desired ordering in final output
+*** TODO have swarm workers descend lo branches on their own
+This should help fully utilize each CPU
+** [0/3] better graphviz rendering
+*** TODO draw inverted top level with an extra "not" node
+*** TODO use command line argument instead of macro parameter to toggle solver visualizations
+*** TODO render input variables with names instead of x0, x1
+*** TODO group bdd/anf nodes by level
+some combination of these ideas:
+#+begin_src dot
+{ edge [ style=invis ];
+  rankdir=LR;
+   rank=same; }
+#+end_src
+*** TODO draw truth table nodes using braille
+** [0/2] other improvements
+*** TODO move expr macro up to the base node
+*** TODO mark each AST node with highest input var, so =NoV= can go away
+
+* potential future work
+** implement zdd base
+** implement biconditional bdd base (bic.rs)?
+** implement cnf base
+https://en.wikipedia.org/wiki/Conjunctive_normal_form
+** implement aig (nand) base
+https://en.wikipedia.org/wiki/And-inverter_graph
+** integrate with other rust bdd libraries
+** generate vhdl/verilog
+** generate compute shaders
+** visual debugger for solver
+*** use labels for vars when generating dot
+*** be able to highlight certain nodes
