@@ -61,22 +61,6 @@ impl ANFBase {
 }
 
 
-// macros for building expressions
-
-#[macro_export]
-macro_rules! op {
-  ($b:ident, $x:tt $op:ident $y:tt) => {{
-    let x = expr![$b, $x];
-    let y = expr![$b, $y];
-    $b.$op(x,y) }}}
-
-#[macro_export]
-macro_rules! expr {
-  ($_:ident, $id:ident) => { $id };
-  ($b:ident, ($x:tt ^ $y:tt)) => { op![$b, $x xor $y] };
-  ($b:ident, ($x:tt & $y:tt)) => { op![$b, $x and $y] };}
-
-
 impl Base for ANFBase {
 
   fn new(n:usize)->Self {

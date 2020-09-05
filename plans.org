@@ -69,8 +69,8 @@ some combination of these ideas:
    rank=same; }
 #+end_src
 *** TODO draw truth table nodes using braille
-** [0/2] other improvements
-*** TODO move expr macro up to the base node
+** [1/2] other improvements
+*** DONE move =expr= macro to the base module
 *** TODO mark each AST node with highest input var, so =NoV= can go away
 
 * potential future work
