@@ -57,9 +57,17 @@ resolve-nid
 *** TODO optionally, return vars to desired ordering in final output
 *** TODO have swarm workers descend lo branches on their own
 This should help fully utilize each CPU
-** [0/3] better graphviz rendering
+** [1/5] better graphviz rendering
+*** DONE use command line argument instead of macro parameter to toggle solver visualizations
+examples:
+#+begin_src shell
+cargo test nano_bdd -- -- -a     # show AST
+cargo test nano_bdd -- -- -r     # show result
+cargo test nano_bdd -- -- -a -r  # show both
+cargo test nano_bdd -- --nocapture -- -a -r  # show both, and include output logs
+#+end_src
+
 *** TODO draw inverted top level with an extra "not" node
-*** TODO use command line argument instead of macro parameter to toggle solver visualizations
 *** TODO render input variables with names instead of x0, x1
 *** TODO group bdd/anf nodes by level
 some combination of these ideas:

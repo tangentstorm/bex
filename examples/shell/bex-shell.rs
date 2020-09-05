@@ -72,8 +72,8 @@ fn repl(base:&mut ASTBase) {
         // "deep" => { let x = pop(&mut data); data.push(base.deep[x]); }
         "dot" => { let mut s=String::new(); base.dot(pop(&mut data),&mut s); print!("{}", s); }
         "sho" => base.show(pop(&mut data)),
-        "bdd" => { let top=pop(&mut data); data.push(solve::solve(&mut bdds,&base,top,true).n) }
-        "anf" => { let top=pop(&mut data); data.push(solve::solve(&mut anfs,&base,top,true).n) }
+        "bdd" => { let top=pop(&mut data); let n = solve::solve(&mut bdds,&base,top).n; bdds.show(n); data.push(n); }
+        "anf" => { let top=pop(&mut data); let n = solve::solve(&mut anfs,&base,top).n; anfs.show(n); data.push(n); }
   
         // generic forth commands
         "q" => break 'main,

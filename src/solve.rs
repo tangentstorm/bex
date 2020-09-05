@@ -1,6 +1,19 @@
-  #![macro_use]
-
 /// "solve" ast-based expressions by converting to another form.
+///
+/// the tests in this module use command line options to show or hide diagrams.
+///     -a show AST (problem statement)
+///     -r show result (BDD, ANF, etc)
+///
+/// note that you need to use two '--' parameters to pass arguments to a test.
+///
+/// syntax:
+///     cargo test pattern -- test_engine_args -- actual_args
+/// example:
+///     cargo test nano_bdd -- --nocapture -- -a -r
+///
+/// (the --nocapture is an optional argument to the test engine. it turns off
+/// capturing of stdout so that you can see debug lines from the solver)
+
 use apl;
 use ast::{Op,ASTBase};
 use base::Base;
@@ -17,9 +30,7 @@ pub trait Progress {
 pub struct ProgressReport<'a> {
   pub save_dot: bool,
   pub save_dest: bool,
-  pub prefix: &'a str,
-  pub show_result: bool,
-  pub save_result: bool }
+  pub prefix: &'a str }
 
 /// these are wrappers so the type system can help us keep the src and dest nids separate
 #[derive(Clone, Copy, Debug, PartialEq)] pub struct SrcNid { pub n: NID }
@@ -53,12 +64,7 @@ impl<'a> Progress for ProgressReport<'a> {
     { // on really special occasions, output a diagram
       dest.save_dot(new, format!("{}-{:04}.dot", self.prefix, step).as_str()); } }
 
-  fn on_done(&self, _src:&ASTBase, dest: &mut B, newtop:DstNid) {
-    if self.show_result {
-      dest.show_named(newtop.n, format!("{}-final", self.prefix).as_str()); }
-    else if self.save_result {
-      dest.save_dot(newtop.n, format!("{}-final.dot", self.prefix).as_str()); }
-    else {}}}
+  fn on_done(&self, _src:&ASTBase, _dest: &mut B, _newtop:DstNid) {}}
 
 
 fn default_bitmask(_src:&ASTBase, v:VID) -> u64 { v.bitmask() }
@@ -131,81 +137,81 @@ fn refine_one(dst: &mut B, src:&ASTBase, d:DstNid)->DstNid {
     DstNid{n: dst.sub(otv, newdef, d.n) }}}
 
 
-pub fn solve(dst:&mut B, src0:&ASTBase, n:NID, show:bool)->DstNid {
+pub fn solve(dst:&mut B, src0:&ASTBase, n:NID)->DstNid {
   let (src, top) = sort_by_cost(&src0, SrcNid{n});
   refine(dst, &src, DstNid{n: NID::vir(nid::idx(top.n) as u32)},
-        ProgressReport{ save_dot: show, save_dest: false,
-                        prefix:"x", show_result: show, save_result: show }) }
-
+        ProgressReport{ save_dot: false, save_dest: false, prefix:"x" }) }
 
 /// This is an example solver used by the bdd-solve example and the bench-solve benchmark.
 /// It finds all pairs of type $T0 that multiply to $k as a $T1. ($T0 and $T1 are
 /// BInt types. Generally $T0 would have half as many bits as $T1) $TDEST is destination type.
 #[macro_export]
 macro_rules! find_factors {
-  ($TDEST:ident, $T0:ident, $T1:ident, $k:expr, $expect:expr, $show:expr) => {{
-    use $crate::{Base,nid, solve::*, ast::ASTBase,
-                int::{GBASE,BInt,BaseBit}};
-    // reset gbase on each test
-    GBASE.with(|gb| gb.replace(ASTBase::empty()));
+  ($TDEST:ident, $T0:ident, $T1:ident, $k:expr, $expect:expr) => {{
+    use std::env;
+    use $crate::{Base,nid, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}};
+    GBASE.with(|gb| gb.replace(ASTBase::empty()));   // reset on each test
     let (y, x) = ($T0::def("y"), $T0::def("x")); let lt = x.lt(&y);
     let xy:$T1 = x.times(&y); let k = $T1::new($k); let eq = xy.eq(&k);
-    if $show {
+    let mut show_ast = false; let mut show_res = false;
+    for arg in env::args() { match arg.as_str() {
+      "-a" => { show_ast = true }
+      "-r" => { show_res = true }
+      _ => {} }}
+    if show_ast {
       GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
       GBASE.with(|gb| { gb.borrow().show_named(eq.clone().n, "eq") }); }
-    let top:BaseBit = lt & eq;
-    let mut dest = $TDEST::new(nid::idx(top.n));
+    let top0:BaseBit = lt & eq;
+    let mut dest = $TDEST::new(nid::idx(top0.n));
     let answer:DstNid = GBASE.with(|gb| {
-      let (src, top) = sort_by_cost(&gb.borrow(), SrcNid{n:top.n});
-      if $show { src.show_named(top.n, "ast"); }
+      let (src, top) = sort_by_cost(&gb.borrow(), SrcNid{n:top0.n});
+      if show_ast { src.show_named(top.n, "ast"); }
       dest = $TDEST::new(src.len());
       assert!(nid::no_var(top.n), "top nid seems to be a literal. (TODO: handle these already solved cases)");
-      solve(&mut dest, &src, top.n, $show) });
+      solve(&mut dest, &src, top.n) });
+    if show_res { dest.show_named(answer.n, "result") }
     let expect = $expect;
     let answer = answer.n;
     let actual:Vec<(u64, u64)> = dest.solutions_trunc(answer, 2*$T0::n() as usize).map(|r|{
       let t = r.as_usize();
       let x = t & ((1<<$T0::n())-1);
       let y = t >> $T0::n();
-      (y as u64, x as u64)
-    }).collect();
+      (y as u64, x as u64) }).collect();
     assert_eq!(actual, expect);
     assert_eq!(actual.len(), expect.len(), "check number of solutions");
-    for i in 0..expect.len() {
-      assert_eq!(actual[i], expect[i], "mismatch at i={}", i) }
-  }}
+    for i in 0..expect.len() { assert_eq!(actual[i], expect[i], "mismatch at i={}", i) }}}
 }
 
 
 /// nano test case for BDD: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
 #[test] pub fn test_nano_bdd() {
   use {bdd::BDDBase, int::{X2,X4}};
-  find_factors!(BDDBase, X2, X4, 6, vec![(2,3)], true); }
+  find_factors!(BDDBase, X2, X4, 6, vec![(2,3)]); }
 
   /// nano test case for ANF: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
   #[test] pub fn test_nano_anf() {
      use {anf::ANFBase, int::{X2,X4}};
-     find_factors!(ANFBase, X2, X4, 6, vec![(2,3)], false); }
+     find_factors!(ANFBase, X2, X4, 6, vec![(2,3)]); }
 
      /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
   #[test] pub fn test_tiny_bdd() {
     use {bdd::BDDBase, int::{X4,X8}};
-    find_factors!(BDDBase, X4, X8, 210, vec![(14,15)], false); }
+    find_factors!(BDDBase, X4, X8, 210, vec![(14,15)]); }
 
   /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
   #[test] pub fn test_tiny_anf() {
     use {anf::ANFBase, int::{X4,X8}};
-    find_factors!(ANFBase, X4, X8, 210, vec![(14,15)], false); }
+    find_factors!(ANFBase, X4, X8, 210, vec![(14,15)]); }
 
   /// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
   #[test] pub fn test_multi_bdd() {
     use {bdd::BDDBase, int::{X4,X8}};
-    find_factors!(BDDBase, X4, X8, 30, vec![(2,15), (3,10), (5,6)], false); }
+    find_factors!(BDDBase, X4, X8, 30, vec![(2,15), (3,10), (5,6)]); }
 
   /// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
   #[test] pub fn test_multi_anf() {
     use {anf::ANFBase, int::{X4,X8}};
-    find_factors!(ANFBase, X4, X8, 30, vec![(2,15), (3,10), (5,6)], false); }
+    find_factors!(ANFBase, X4, X8, 30, vec![(2,15), (3,10), (5,6)]); }
 
   /// same as tiny test, but multiply 2 bytes to get 210. There are 8 distinct answers.
   /// this was intended as a unit test but is *way* too slow.
@@ -216,4 +222,4 @@ macro_rules! find_factors {
     use {bdd::BDDBase, int::{X8,X16}};
     let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
                         (6, 35), (7, 30), (10,21), (14,15)];
-    find_factors!(BDDBase, X8, X16, 210, expected, false); }
+    find_factors!(BDDBase, X8, X16, 210, expected); }

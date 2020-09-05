@@ -1323,4 +1323,4 @@ extern crate bex;
 pub fn main() {
   use bex::{bdd, find_factors, int::{X32, X64}};
   type BDD = bdd::BDDBase;
-  find_factors!(BDD, X32, X64, K as usize, factors(), false); }
+  find_factors!(BDD, X32, X64, K as usize, factors()); }
