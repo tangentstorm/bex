@@ -149,7 +149,8 @@ pub fn solve(dst:&mut B, src0:&RawASTBase, n:NID)->DstNid {
 macro_rules! find_factors {
   ($TDEST:ident, $T0:ident, $T1:ident, $k:expr, $expect:expr) => {{
     use std::env;
-    use $crate::{Base,nid, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}};
+    use $crate::{Base,nid, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}, bdd};
+    bdd::COUNT_XMEMO_TEST.with(|c| *c.borrow_mut()=0 ); bdd::COUNT_XMEMO_TEST.with(|c| *c.borrow_mut()=0 ); // TODO: other bases
     GBASE.with(|gb| gb.replace(ASTBase::empty()));   // reset on each test
     let (y, x) = ($T0::def("y"), $T0::def("x")); let lt = x.lt(&y);
     let xy:$T1 = x.times(&y); let k = $T1::new($k); let eq = xy.eq(&k);
@@ -178,7 +179,10 @@ macro_rules! find_factors {
       (y as u64, x as u64) }).collect();
     assert_eq!(actual, expect);
     assert_eq!(actual.len(), expect.len(), "check number of solutions");
-    for i in 0..expect.len() { assert_eq!(actual[i], expect[i], "mismatch at i={}", i) }}}
+    for i in 0..expect.len() { assert_eq!(actual[i], expect[i], "mismatch at i={}", i) }
+    let tests = bdd::COUNT_XMEMO_TEST.with(|c| *c.borrow() );
+    let fails = bdd::COUNT_XMEMO_FAIL.with(|c| *c.borrow() );
+    println!("TOTAL XMEMO STATS: tests: {} fails: {} hits: {}", tests, fails, tests-fails); }}
 }
 
 

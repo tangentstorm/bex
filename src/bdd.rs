@@ -5,6 +5,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::mpsc::{channel, Sender, Receiver};
 use std::thread;
+use std::cell::RefCell;
 
 extern crate num_cpus;
 
@@ -97,6 +98,11 @@ pub struct BddState {
   /// arbitrary memoization. These record normalized (f,g,h) lookups.
   xmemo: BDDHashMap<ITE, NID> }
 
+// cache lookup counters:
+thread_local!{
+  pub static COUNT_XMEMO_TEST: RefCell<u64> = RefCell::new(0);
+  pub static COUNT_XMEMO_FAIL: RefCell<u64> = RefCell::new(0); }
+
 
 impl BddState {
 
@@ -129,7 +135,11 @@ impl BddState {
       debug_assert!(!ite.i.is_inv()); // because it ought to be normalized by this point.
       let hilo = if ite.i.is_inv() { HiLo::new(ite.e,ite.t) } else { HiLo::new(ite.t,ite.e) };
       self.get_simple_node(ite.i.vid(), hilo) }
-    else { self.xmemo.get(&ite).copied() }}
+    else {
+      COUNT_XMEMO_TEST.with(|c| *c.borrow_mut() += 1 );
+      let test = self.xmemo.get(&ite).copied();
+      if test == None { COUNT_XMEMO_FAIL.with(|c| *c.borrow_mut() += 1 ); }
+      test }}
 
   #[inline] fn get_hilo(&self, n:NID)->HiLo {
     self.hilos.get_hilo(n) }
@@ -146,12 +156,13 @@ impl BddState {
 // ----------------------------------------------------------------
 
 /// Query message for BddSwarm.
-enum QMsg { Ite(QID, ITE), Cache(Arc<BddState>) }
+enum QMsg { Ite(QID, ITE), Cache(Arc<BddState>), Halt }
 impl std::fmt::Debug for QMsg {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
-      QMsg::Ite(qid, ite) => { write!(f, "Ite(q{}, {:?})", qid, ite) }
-      QMsg::Cache(_) => { write!(f, "QMsg::Cache") } } }}
+      QMsg::Ite(qid, ite) => { write!(f, "QMsg::Ite(q{}, {:?})", qid, ite) }
+      QMsg::Cache(_) => { write!(f, "QMsg::Cache(...)") }
+      QMsg::Halt => { write!(f, "QMsg::Halt")} } }}
 
 type RMsg = wip::RMsg<Norm>;
 
@@ -193,6 +204,7 @@ impl<'de> Deserialize<'de> for BddSwarm {
     let mut res = Self::new(0);
     res.stable = Arc::new(BddState::deserialize(d)?);
     Ok(res) }}
+
 
 
 impl BddSwarm {
@@ -298,7 +310,7 @@ impl BddSwarm {
 
   /// distrubutes the standard ite() operatation across a swarm of threads
   fn run_swarm(&mut self, i:NID, t:NID, e:NID)->NID {
-    macro_rules! run_swarm_ite { ($ite:expr) => {{
+    macro_rules! run_swarm_ite { ($n:expr, $ite:expr) => {{
       self.init_swarm(); self.add_task(None, $ite);
       let mut result:Option<NID> = None;
       // each response can lead to up to two new ITE queries, and we'll relay those to
@@ -307,6 +319,7 @@ impl BddSwarm {
         let (qid, rmsg) = self.rx.recv().expect("failed to read RMsg from queue!");
         trace!("===> run_swarm got RMsg {}: {:?}", qid, rmsg);
         match rmsg {
+          RMsg::MemoStats{ tests:_, fails:_ } => { panic!("got RMsg::MemoStats before sending QMsg::Halt"); }
           RMsg::Nid(nid) =>  { self.resolve_nid(qid, nid); }
           RMsg::Vhl{v,hi,lo,invert} => { self.resolve_vhl(qid, v, HiLo{hi, lo}, invert); }
           RMsg::Wip{v,hi,lo,invert} => {
@@ -320,13 +333,24 @@ impl BddSwarm {
                 Norm::Ite(ite) => self.add_task(Some(Dep::new(qid, $part, false)), ite),
                 Norm::Not(ite) => self.add_task(Some(Dep::new(qid, $part, true)), ite)}}}
             handle_part!(hi, HiLoPart::HiPart); handle_part!(lo, HiLoPart::LoPart); }
-          RMsg::Ret(n) => { result = Some(n) }}}
+          RMsg::Ret(n) => {
+            result = Some(n);
+            for tx in self.swarm.iter() {  tx.send(QMsg::Halt).expect("failed to send QMsg::Halt") }}}}
+      let (mut tests, mut fails, mut reports, mut shorts) = (0, 0, 0, 0);
+      // println!("waiting for MemoStats");
+      while reports < self.swarm.len() {
+        let (_qid, rmsg) = self.rx.recv().expect("still expecting an Rmsg::MemoCount");
+        if let wip::RMsg::MemoStats{ tests:t, fails: f } = rmsg { reports += 1; tests+=t; fails += f }
+        else { shorts += 1; println!("extraneous rmsg from swarm: {:?}", rmsg) }}
+      // if tests > 0 { println!("{:?} result: {:?}  tests: {}  fails: {}  hits: {}", $ite, result, tests, fails, tests-fails); }
+      if shorts > 0 { println!("----------- shorts: {}", shorts)} // i don't think this actually happens.
+      COUNT_XMEMO_TEST.with(|c| *c.borrow_mut() += tests );
+      COUNT_XMEMO_FAIL.with(|c| *c.borrow_mut() += fails );
       result.unwrap() }}}
-    // TODO: at some point, we should kill all the child threads.
     match ITE::norm(i,t,e) {
       Norm::Nid(n) => n,
-      Norm::Ite(ite) => { run_swarm_ite!(ite) }
-      Norm::Not(ite) => { !run_swarm_ite!(ite) }}}
+      Norm::Ite(ite) => { run_swarm_ite!(0,ite) }
+      Norm::Not(ite) => { !run_swarm_ite!(0,ite) }}}
 } // end bddswarm
 
 /// Code run by each thread in the swarm. Isolated as a function without channels for testing.
@@ -375,7 +399,13 @@ fn swarm_loop(tx:RTx, rx:QRx, mut state:Arc<BddState>) {
       QMsg::Ite(qid, ite) => {
         trace!("--->   thread worker got qmsg {}: {:?}", qid, qmsg);
         let rmsg = swarm_ite(&state, ite);
-        if tx.send((qid, rmsg)).is_err() { break } }}}}
+        if tx.send((qid, rmsg)).is_err() { break } }
+      QMsg::Halt => {
+        let tests = COUNT_XMEMO_TEST.with(|c| c.replace(0));
+        let fails = COUNT_XMEMO_FAIL.with(|c| c.replace(0));
+        if tx.send((QID::MAX, RMsg::MemoStats{ tests, fails })).is_err() {
+          println!("failed to send memostats (tests:{} fails: {})", tests, fails)}
+        break; } }}}
 
 
 /// Finally, we put everything together. This is the top-level type for this crate.

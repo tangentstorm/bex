@@ -24,7 +24,9 @@ pub enum RMsg<TWIP> {
   /// other work in progress
   Wip{v:VID, hi:TWIP, lo:TWIP, invert:bool},
   /// We've solved the whole problem, so exit the loop and return this nid.
-  Ret(NID)}
+  Ret(NID),
+  /// return stats about the memo cache
+  MemoStats { tests: u64, fails: u64 }}
 
 impl<TWIP> std::ops::Not for RMsg<TWIP> {
     type Output = RMsg<TWIP>;
@@ -33,7 +35,8 @@ impl<TWIP> std::ops::Not for RMsg<TWIP> {
         RMsg::Nid(n) => RMsg::Nid(!n),
         RMsg::Vhl{v,hi,lo,invert} => RMsg::Vhl{v,hi,lo,invert:!invert},
         RMsg::Wip{v,hi,lo,invert} => RMsg::Wip{v,hi,lo,invert:!invert},
-        RMsg::Ret(n) => RMsg::Ret(!n) }}}
+        RMsg::Ret(n) => RMsg::Ret(!n),
+        RMsg::MemoStats{ tests:_, fails: _} => panic!("not(MemoStats)? This makes no sense.") }}}
 
 
 /// Helps track dependencies between WIP tasks
