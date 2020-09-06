@@ -1,7 +1,18 @@
 #+title: plans for bex
 
 * TODO plans for version 0.2.0
-** [0/3] better benchmarking
+** [1/3] better benchmarking
+*** DONE come up with basic decorator pattern scheme for bases
+will use for things like:
+- toggle bookkeeping for benchmarks
+- toggle individual optimizations
+- consolidate BASE/anf normalizers
+- swap out work coordination strategies (swarm/etc)
+- swap out different kinds of normalizer (main vs ITE)
+  (allow preserving the original expression)
+- toggle use of constant truth tables in the nid
+- configure larger constant truth tables at other levels
+- even toggle caching to see what it gets us
 *** TODO implement bookeeping decorators
 - for each benchmark:
   - original AST:
@@ -13,18 +24,6 @@
     - number of nodes at each step
     - number of cache attempts and hits
     - calculations saved from short circuits
-*** TODO allow decorator pattern on bases
-https://github.com/lpxxn/rust-design-pattern/blob/master/structural/decorator.rs
-
-- toggle bookkeeping for benchmarks
-- toggle individual optimizations
-- consolidate BASE/anf normalizers
-- swap out work coordination strategies (swarm/etc)
-- swap out different kinds of normalizer (main vs ITE)
-  (allow preserving the original expression)
-- toggle use of constant truth tables in the nid
-- configure larger constant truth tables at other levels
-- even toggle caching to see what it gets us
 
 *** TODO tool to generate and store metrics
 ** [0/3] generalize swarm implementation

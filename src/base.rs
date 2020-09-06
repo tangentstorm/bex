@@ -1,6 +1,6 @@
 #![macro_use]
 ///! bex: a boolean expression library for rust
-///! outside the base, you deal only with opaque references.
+///! outside the base, you deal only with opaque node IDs (NIDs).
 ///! inside, it could be stored any way we like.
 use std::fs::File;
 use std::io::Write;
@@ -57,6 +57,61 @@ pub trait Base {
 
   fn show(&self, n:NID) { self.show_named(n, "+bdd") }
 }
+
+/// This macro makes it easy to define decorators for `Base` implementations.
+/// Define your decorator as a struct with type parameter `T:Base` and member `base: T`,
+/// then use this macro to implement the functions you *don't* want to manually decorate.
+///
+/// ```
+/// #[macro_use] extern crate bex;
+/// use bex::{base::Base, nid::NID, vid::VID};
+///
+/// // example do-nothing decorator
+/// pub struct Decorated<T:Base> { base: T }
+/// impl<T:Base> Base for Decorated<T> {
+///   inherit![ new, num_vars, i, o, var, vir, when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ]; }
+/// ```
+#[macro_export] macro_rules! inherit {
+  ( $($i:ident),* ) => { $( inherit_fn!($i); )* }
+}
+
+/// This helper macro provides actual implementations for the names passed to `inherit!`
+#[macro_export] macro_rules! inherit_fn {
+  (new) =>      { fn new(_n:usize)->Self where Self:Sized { unimplemented!("you need to explicitly construct the decorator") }};
+  (num_vars) => { #[inline] fn num_vars(&self)->usize { self.base.num_vars() }};
+  (i) =>        { #[inline] fn o(&self)->NID { self.base.o() } };
+  (o) =>        { #[inline] fn i(&self)->NID { self.base.i() } };
+  (var) =>      { #[inline] fn var(&mut self, v:u32)->NID { self.base.var(v) } };
+  (vir) =>      { #[inline] fn vir(&mut self, v:u32)->NID { self.base.vir(v) }};
+  (when_hi) =>  { #[inline] fn when_hi(&mut self, v:VID, n:NID)->NID { self.base.when_hi(v, n) }};
+  (when_lo) =>  { #[inline] fn when_lo(&mut self, v:VID, n:NID)->NID { self.base.when_lo(v, n) }};
+  (and) =>      { #[inline] fn and(&mut self, x:NID, y:NID)->NID { self.base.and(x, y) }};
+  (xor) =>      { #[inline] fn xor(&mut self, x:NID, y:NID)->NID { self.base.xor(x, y) }};
+  (or) =>       { #[inline] fn or(&mut self, x:NID, y:NID)->NID  { self.base.or(x, y) }};
+  (def) =>      { #[inline] fn def(&mut self, s:String, i:VID)->NID { self.base.def(s, i) }};
+  (tag) =>      { #[inline] fn tag(&mut self, n:NID, s:String)->NID { self.base.tag(n, s) }};
+  (get) =>      { #[inline] fn get(&self, s:&str)->Option<NID> { self.base.get(s) }};
+  (sub) =>      { #[inline] fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID { self.base.sub(v, n, ctx) }};
+  (save) =>     { #[inline] fn save(&self, path:&str)->::std::io::Result<()> { self.base.save(path) }};
+  (dot) =>      { #[inline] fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) { self.base.dot(n, wr) }};
+}
+
+
+// !! start on isolating simplification rules (for use in AST, ANF)
+pub struct Simplify<T:Base> { pub base: T }
+impl<T:Base> Base for Simplify<T> {
+  inherit![ new, num_vars, i, o, var, vir, when_hi, when_lo, xor, or, def, tag, get, sub, save, dot ];
+  fn and(&mut self, x:NID, y:NID)->NID {
+    if x == y { x }
+    else {
+      let (a, b) = if x < y { (x,y) } else { (y,x) };
+      if a == nid::O { nid::O }
+      else if a == nid::I { b }
+      else if !a == b { nid::O }
+      else { println!("dispatching to original AND"); self.base.and(x, y) }}
+  }
+}
+
 
 // macros for building expressions
 

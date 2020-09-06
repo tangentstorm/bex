@@ -15,7 +15,7 @@
 /// capturing of stdout so that you can see debug lines from the solver)
 
 use apl;
-use ast::{Op,ASTBase};
+use ast::{Op,RawASTBase};
 use base::Base;
 use {nid, nid::NID};
 use {vid::VID};
@@ -24,8 +24,8 @@ type B = dyn Base;
 
 pub trait Progress {
   fn on_start(&self);
-  fn on_step(&self, src:&ASTBase, dest: &mut B, step:usize, secs:u64, oldtop:DstNid, newtop:DstNid);
-  fn on_done(&self, src:&ASTBase, dest: &mut B, newtop:DstNid); }
+  fn on_step(&self, src:&RawASTBase, dest: &mut B, step:usize, secs:u64, oldtop:DstNid, newtop:DstNid);
+  fn on_done(&self, src:&RawASTBase, dest: &mut B, newtop:DstNid); }
 
 pub struct ProgressReport<'a> {
   pub save_dot: bool,
@@ -39,7 +39,7 @@ pub struct ProgressReport<'a> {
 
 impl<'a> Progress for ProgressReport<'a> {
   fn on_start(&self) { } //println!("step, seconds, topnid, oldtopvar, newtopvar"); }
-  fn on_step(&self, src:&ASTBase, dest: &mut B, step:usize, secs:u64, oldtop:DstNid, newtop:DstNid) {
+  fn on_step(&self, src:&RawASTBase, dest: &mut B, step:usize, secs:u64, oldtop:DstNid, newtop:DstNid) {
     let DstNid{ n: new } = newtop;
     println!("{:4}, {:4}, {:4?} → {:3?}, {:8?}",
              step, secs, oldtop.n,
@@ -64,16 +64,16 @@ impl<'a> Progress for ProgressReport<'a> {
     { // on really special occasions, output a diagram
       dest.save_dot(new, format!("{}-{:04}.dot", self.prefix, step).as_str()); } }
 
-  fn on_done(&self, _src:&ASTBase, _dest: &mut B, _newtop:DstNid) {}}
+  fn on_done(&self, _src:&RawASTBase, _dest: &mut B, _newtop:DstNid) {}}
 
 
-fn default_bitmask(_src:&ASTBase, v:VID) -> u64 { v.bitmask() }
+fn default_bitmask(_src:&RawASTBase, v:VID) -> u64 { v.bitmask() }
 
 /// This function renumbers the NIDs so that nodes with higher IDs "cost" more.
 /// Sorting your AST this way dramatically reduces the cost of converting to
 /// another form. (For example, the test_tiny benchmark drops from 5282 steps to 111 for BDDBase)
 #[allow(clippy::needless_range_loop)]
-pub fn sort_by_cost(src:&ASTBase, top:SrcNid)->(ASTBase,SrcNid) {
+pub fn sort_by_cost(src:&RawASTBase, top:SrcNid)->(RawASTBase,SrcNid) {
   let (mut src0,kept0) = src.repack(vec![top.n]);
   src0.tag(kept0[0], "-top-".to_string());
 
@@ -85,7 +85,7 @@ pub fn sort_by_cost(src:&ASTBase, top:SrcNid)->(ASTBase,SrcNid) {
   (ast,SrcNid{n}) }
 
 
-pub fn refine<P:Progress>(dest: &mut B, src:&ASTBase, end:DstNid, pr:P)->DstNid {
+pub fn refine<P:Progress>(dest: &mut B, src:&RawASTBase, end:DstNid, pr:P)->DstNid {
   // end is the root of the expression to simplify, as a nid in the src ASTbase.
   // we want its equivalent expression in the dest base:
   let mut top = end;
@@ -117,7 +117,7 @@ pub fn convert_nid(sn:SrcNid)->DstNid {
   DstNid{ n: r } }
 
 /// replace a
-fn refine_one(dst: &mut B, src:&ASTBase, d:DstNid)->DstNid {
+fn refine_one(dst: &mut B, src:&RawASTBase, d:DstNid)->DstNid {
   // println!("refine_one({:?})", d);
   if nid::is_const(d.n) || nid::is_rvar(d.n) { d }
   else {
@@ -137,7 +137,7 @@ fn refine_one(dst: &mut B, src:&ASTBase, d:DstNid)->DstNid {
     DstNid{n: dst.sub(otv, newdef, d.n) }}}
 
 
-pub fn solve(dst:&mut B, src0:&ASTBase, n:NID)->DstNid {
+pub fn solve(dst:&mut B, src0:&RawASTBase, n:NID)->DstNid {
   let (src, top) = sort_by_cost(&src0, SrcNid{n});
   refine(dst, &src, DstNid{n: NID::vir(nid::idx(top.n) as u32)},
         ProgressReport{ save_dot: false, save_dest: false, prefix:"x" }) }
@@ -162,13 +162,12 @@ macro_rules! find_factors {
       GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
       GBASE.with(|gb| { gb.borrow().show_named(eq.clone().n, "eq") }); }
     let top0:BaseBit = lt & eq;
-    let mut dest = $TDEST::new(nid::idx(top0.n));
-    let answer:DstNid = GBASE.with(|gb| {
-      let (src, top) = sort_by_cost(&gb.borrow(), SrcNid{n:top0.n});
-      if show_ast { src.show_named(top.n, "ast"); }
-      dest = $TDEST::new(src.len());
-      assert!(nid::no_var(top.n), "top nid seems to be a literal. (TODO: handle these already solved cases)");
-      solve(&mut dest, &src, top.n) });
+    let gb = GBASE.with(|gb| gb.replace(ASTBase::empty())); // swap out the thread-local one
+    let (src, top) = sort_by_cost(gb.raw_ast(), SrcNid{n:top0.n});
+    assert!(nid::no_var(top.n), "top nid seems to be a literal. (TODO: handle these already solved cases)");
+    if show_ast { src.show_named(top.n, "ast"); }
+    let mut dest = $TDEST::new(src.len());
+    let answer:DstNid = solve(&mut dest, &src, top.n);
     if show_res { dest.show_named(answer.n, "result") }
     let expect = $expect;
     let answer = answer.n;

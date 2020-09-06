@@ -39,7 +39,7 @@ pub enum Op {
 
 // !! TODO: move subs/subc into external structure
 #[derive(Serialize, Deserialize)]
-pub struct ASTBase {
+pub struct RawASTBase {
   bits: Vec<Op>,                    // all known bits (simplified)
   nvars: usize,
   tags: HashMap<String, NID>,       // support for naming/tagging bits.
@@ -48,18 +48,18 @@ pub struct ASTBase {
   subc: Vec<HashMap<NID,NID>>       // cache of substiution results
 }
 
-type VarMaskFn = fn(&ASTBase,vid::VID)->u64;
+type VarMaskFn = fn(&RawASTBase,vid::VID)->u64;
 
-impl ASTBase {
+impl RawASTBase {
 
 
-  fn new(bits:Vec<Op>, tags:HashMap<String, NID>, nvars:usize)->ASTBase {
-    ASTBase{bits, nvars, tags,
+  fn new(bits:Vec<Op>, tags:HashMap<String, NID>, nvars:usize)->RawASTBase {
+    RawASTBase{bits, nvars, tags,
             hash: HashMap::new(),
             subs: vec![],
             subc: vec![]}}
 
-  pub fn empty()->ASTBase { ASTBase::new(vec![], HashMap::new(), 0) }
+  pub fn empty()->RawASTBase { RawASTBase::new(vec![], HashMap::new(), 0) }
   pub fn len(&self)->usize { self.bits.len() }
   pub fn is_empty(&self)->bool { self.bits.is_empty() }
 
@@ -76,7 +76,7 @@ impl ASTBase {
         self.hash.insert(op, nid);
         nid }}}}
 
-  pub fn load(path:&str)->::std::io::Result<ASTBase> {
+  pub fn load(path:&str)->::std::io::Result<RawASTBase> {
     let s = io::get(path)?;
     Ok(bincode::deserialize(&s).unwrap()) }
 
@@ -229,7 +229,7 @@ impl ASTBase {
   /// that we want to keep, in the order we want them. (It might actually be
   /// shorter than bits.len() and thus not technically a permutation vector,
   /// but I don't have a better name for this concept.)
-  pub fn permute(&self, pv:&[usize])->ASTBase {
+  pub fn permute(&self, pv:&[usize])->RawASTBase {
     // map each kept node in self.bits to Some(new position)
     let new:Vec<Option<usize>> = {
       let mut res = vec![None; self.bits.len()];
@@ -251,11 +251,11 @@ impl ASTBase {
       .collect();
     let mut newtags = HashMap::new();
     for (key, &val) in &self.tags { newtags.insert(key.clone(), nn(val)); }
-    ASTBase::new(newbits, newtags, self.nvars) }
+    RawASTBase::new(newbits, newtags, self.nvars) }
 
-  /// Construct a new ASTBase with only the nodes necessary to define the given nodes.
+  /// Construct a new RawASTBase with only the nodes necessary to define the given nodes.
   /// The relative order of the bits is preserved.
-  pub fn repack(&self, keep:Vec<NID>) -> (ASTBase, Vec<NID>) {
+  pub fn repack(&self, keep:Vec<NID>) -> (RawASTBase, Vec<NID>) {
     // garbage collection: mark dependencies of the bits we want to keep
     let mut deps = vec!(false;self.bits.len());
     for &nid in keep.iter() { self.markdeps(nid, &mut deps) }
@@ -277,16 +277,16 @@ impl ASTBase {
 
   pub fn get_op(&self, nid:NID)->Op { self.op(nid) }
 
-} // impl ASTBase
+} // impl RawASTBase
 
-impl ::std::fmt::Debug for ASTBase {
+impl ::std::fmt::Debug for RawASTBase {
   fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-    write!(f,"ASTBase[{}]", self.bits.len()) } }
+    write!(f,"RawASTBase[{}]", self.bits.len()) } }
 
-impl Base for ASTBase {
+impl Base for RawASTBase {
 
   fn new(n:usize)->Self {
-    let mut res = ASTBase::empty();
+    let mut res = RawASTBase::empty();
     for i in 0..n { println!("var({})",i); res.var(i as u32); }
     res }
   fn num_vars(&self)->usize { self.nvars }
@@ -380,8 +380,16 @@ impl Base for ASTBase {
         Op::Or(x,y)  => dotop!("∨",n,x,y),
         _ => panic!("unexpected node: {:?}", n) }});
     w!("}}"); }
-} // impl Base for ASTBase
+} // impl Base for RawASTBase
 
+pub struct ASTBase { base: Simplify<RawASTBase> }
+impl Base for ASTBase {
+  inherit![num_vars, i, o, var, vir, when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ];
+  fn new(n:usize)->Self { ASTBase{ base: Simplify{ base: <RawASTBase as Base>::new(n) }}}}
+
+impl ASTBase {
+  pub fn empty()->Self { ASTBase { base: Simplify{ base: RawASTBase::empty() }}}
+  pub fn raw_ast(&self)->&RawASTBase { &self.base.base }}
 
 test_base_consts!(ASTBase);
 test_base_vars!(ASTBase);
@@ -389,7 +397,7 @@ test_base_when!(ASTBase);
 
 #[test]
 fn ast_vars(){
-  let mut b = ASTBase::empty();
+  let mut b = RawASTBase::empty();
   let x0 = b.var(0); let x1 = b.var(1);
   assert_eq!(x0.vid().var_ix(), 0);
   assert_eq!(x1.vid().var_ix(), 1);
