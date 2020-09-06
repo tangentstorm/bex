@@ -72,16 +72,13 @@ pub fn gbase_ref()->BaseRef {
   GBASE.with(|gb| gb.clone()) }
 
 pub fn gbase_var(v:u32)->BaseBit {
-  GBASE.with(|gb| {
-    let vn = gb.borrow_mut().var(v); BaseBit{base:gb.clone(), n:vn }}) }
+  GBASE.with(|gb| { BaseBit{base:gb.clone(), n:NID::var(v) }}) }
 
 pub fn gbase_tag(n:NID, s:String)->NID {
-  GBASE.with(|gb| {
-    gb.borrow_mut().tag(n,s) })}
+  GBASE.with(|gb| { gb.borrow_mut().tag(n,s) })}
 
 pub fn gbase_def(s:String, i:VID)->BaseBit {
-  GBASE.with(|gb| {
-    let vn=gb.borrow_mut().def(s,i); BaseBit{base:gb.clone(), n:vn }}) }
+  GBASE.with(|gb| { let vn=gb.borrow_mut().def(s,i); BaseBit{base:gb.clone(), n:vn }}) }
 
 pub fn gbase_o()->BaseBit { BaseBit{base:gbase_ref(), n:nid::O} }
 pub fn gbase_i()->BaseBit { BaseBit{base:gbase_ref(), n:nid::I} }

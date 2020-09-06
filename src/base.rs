@@ -12,9 +12,6 @@ pub trait Base {
   fn new(n:usize)->Self where Self:Sized; // Sized so we can use trait objects.
   fn num_vars(&self)->usize;
 
-  fn var(&mut self, v:u32)->NID { NID::var(v) }
-  fn vir(&mut self, v:u32)->NID { NID::vir(v) }
-
   fn when_hi(&mut self, v:VID, n:NID)->NID;
   fn when_lo(&mut self, v:VID, n:NID)->NID;
 
@@ -66,7 +63,7 @@ pub trait Base {
 /// // example do-nothing decorator
 /// pub struct Decorated<T:Base> { base: T }
 /// impl<T:Base> Base for Decorated<T> {
-///   inherit![ new, num_vars, var, vir, when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ]; }
+///   inherit![ new, num_vars, when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ]; }
 /// ```
 #[macro_export] macro_rules! inherit {
   ( $($i:ident),* ) => { $( inherit_fn!($i); )* }
@@ -76,8 +73,6 @@ pub trait Base {
 #[macro_export] macro_rules! inherit_fn {
   (new) =>      { fn new(_n:usize)->Self where Self:Sized { unimplemented!("you need to explicitly construct the decorator") }};
   (num_vars) => { #[inline] fn num_vars(&self)->usize { self.base.num_vars() }};
-  (var) =>      { #[inline] fn var(&mut self, v:u32)->NID { self.base.var(v) } };
-  (vir) =>      { #[inline] fn vir(&mut self, v:u32)->NID { self.base.vir(v) }};
   (when_hi) =>  { #[inline] fn when_hi(&mut self, v:VID, n:NID)->NID { self.base.when_hi(v, n) }};
   (when_lo) =>  { #[inline] fn when_lo(&mut self, v:VID, n:NID)->NID { self.base.when_lo(v, n) }};
   (and) =>      { #[inline] fn and(&mut self, x:NID, y:NID)->NID { self.base.and(x, y) }};
@@ -95,7 +90,7 @@ pub trait Base {
 // !! start on isolating simplification rules (for use in AST, ANF)
 pub struct Simplify<T:Base> { pub base: T }
 impl<T:Base> Base for Simplify<T> {
-  inherit![ new, num_vars, var, vir, when_hi, when_lo, xor, or, def, tag, get, sub, save, dot ];
+  inherit![ new, num_vars, when_hi, when_lo, xor, or, def, tag, get, sub, save, dot ];
   fn and(&mut self, x:NID, y:NID)->NID {
     if x == y { x }
     else {

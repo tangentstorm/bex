@@ -287,20 +287,17 @@ impl Base for RawASTBase {
 
   fn new(n:usize)->Self {
     let mut res = RawASTBase::empty();
-    for i in 0..n { println!("var({})",i); res.var(i as u32); }
+    res.nvars = n;
     res }
   fn num_vars(&self)->usize { self.nvars }
-
-  fn var(&mut self, v:u32)->NID {
-    for _ in self.nvars as u32 ..= v { self.nvars += 1 }
-    NID::var(v) }
 
   fn when_hi(&mut self, v:vid::VID, n:NID)->NID { self.when(v, nid::I, n) }
   fn when_lo(&mut self, v:vid::VID, n:NID)->NID { self.when(v, nid::O, n) }
 
   fn def(&mut self, s:String, i:vid::VID)->NID {
     let next = self.num_vars() as u32;
-    let nid = self.var(next);
+    let nid = NID::var(next);
+    self.nvars += 1;
     self.tag(nid, format!("{}{:?}", s, i)) }
 
   fn tag(&mut self, n:NID, s:String)->NID {
@@ -384,7 +381,7 @@ impl Base for RawASTBase {
 
 pub struct ASTBase { base: Simplify<RawASTBase> }
 impl Base for ASTBase {
-  inherit![num_vars, var, vir, when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ];
+  inherit![num_vars, when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ];
   fn new(n:usize)->Self { ASTBase{ base: Simplify{ base: <RawASTBase as Base>::new(n) }}}}
 
 impl ASTBase {
@@ -397,7 +394,7 @@ test_base_when!(ASTBase);
 #[test]
 fn ast_vars(){
   let mut b = RawASTBase::empty();
-  let x0 = b.var(0); let x1 = b.var(1);
+  let x0 = NID::var(0); let x1 = NID::var(1);
   assert_eq!(x0.vid().var_ix(), 0);
   assert_eq!(x1.vid().var_ix(), 1);
   assert_eq!(!x0, b.nid(Op::Not(x0))); }
@@ -405,7 +402,7 @@ fn ast_vars(){
 #[test]
 fn ast_and(){
   let mut b = ASTBase::empty();
-  let x0 = b.var(0); let x1 = b.var(1);
+  let x0 = NID::var(0); let x1 = NID::var(1);
   let x01 = b.and(x0,x1);
   let x10 = b.and(x1,x0);
   assert_eq!(x01, x10, "expect $0 & $1 == $1 & $0"); }

@@ -379,16 +379,16 @@ test_base_consts!(ANFBase);
 test_base_when!(ANFBase);
 
 #[test] fn test_anf_hilo() {
-  let mut base = ANFBase::new(1);
-  let a = base.var(0);
+  let base = ANFBase::new(1);
+  let a = NID::var(0);
   let ANF{ v, hi, lo } = base.fetch(a);
   assert_eq!(v, a.vid());
   assert_eq!(hi, I);
   assert_eq!(lo, O); }
 
 #[test] fn test_anf_hilo_not() {
-  let mut base = ANFBase::new(1);
-  let a = base.var(0);
+  let base = ANFBase::new(1);
+  let a = NID::var(0);
   let ANF{ v, hi, lo } = base.fetch(!a);
   assert_eq!(v, a.vid());
   assert_eq!(hi, I);
@@ -399,7 +399,7 @@ test_base_when!(ANFBase);
 
 #[test] fn test_anf_xor() {
   let mut base = ANFBase::new(2);
-  let a = base.var(0); let b = base.var(1);
+  let a = NID::var(0); let b = NID::var(1);
   let (axb, bxa) = (base.xor(a,b), base.xor(b,a));
   assert_eq!(O, base.xor(a,a), "a xor a should be 0");
   assert_eq!(!a, base.xor(I,a), "a xor 1 should be ~a");
@@ -415,7 +415,7 @@ test_base_when!(ANFBase);
 
 #[test] fn test_anf_xor_inv() {
   let mut base = ANFBase::new(2);
-  let a = base.var(0); let b = base.var(1);
+  let a = NID::var(0); let b = NID::var(1);
   let axb = base.xor(a, b);
   let naxb = base.xor(!a, b);
   let axnb = base.xor(a, !b);
@@ -427,14 +427,14 @@ test_base_when!(ANFBase);
 
 #[test] fn test_anf_xor3() {
   let mut base = ANFBase::new(4);
-  let a = base.var(0); let b = base.var(1); let c = base.var(2);
+  let a = NID::var(0); let b = NID::var(1); let c = NID::var(2);
   assert_eq!(expr![base, ((a ^ b) ^ c)],
              expr![base, (a ^ (b ^ c))]); }
 
 
 #[test] fn test_anf_and() {
   let mut base = ANFBase::new(2);
-  let a = base.var(0); let b = base.var(1);
+  let a = NID::var(0); let b = NID::var(1);
   let ab = base.and(a, b);
   let ANF{v, hi, lo} = base.fetch(ab);
   let topv = topmost(a.vid(), b.vid());
@@ -462,7 +462,7 @@ test_base_when!(ANFBase);
 
 #[test] fn test_anf_and3() {
   let mut base = ANFBase::new(4);
-  let a = base.var(0); let b = base.var(1); let c = base.var(2);
+  let a = NID::var(0); let b = NID::var(1); let c = NID::var(2);
   assert_eq!(expr![base, ((a & b) & c)],
              expr![base, (a & (b & c))]); }
 
@@ -470,8 +470,8 @@ test_base_when!(ANFBase);
 #[test] fn test_anf_and_big() {
   // x:(ab+c) * y:(pq+r) --> ab(pq+r) + c(pq+r)
   let mut base = ANFBase::new(4);
-  let a = base.var(0); let b = base.var(1); let c = base.var(2);
-  let p = base.var(3); let q = base.var(4); let r = base.var(5);
+  let a = NID::var(0); let b = NID::var(1); let c = NID::var(2);
+  let p = NID::var(3); let q = NID::var(4); let r = NID::var(5);
   let ab = base.and(a,b); let pq = base.and(p,q);
   let actual = expr![base, ((ab ^ c) & (pq ^ r))];
   let expected = expr![base, ((ab & (pq ^ r)) ^ (c & (pq ^ r)))];
@@ -481,8 +481,8 @@ test_base_when!(ANFBase);
 #[test] fn test_anf_and_same_head() {
   // x:(ab+c) * y:(aq+r) --> abq+abr+acq+cr --> a(b(q+r) + cq)+cr
   let mut base = ANFBase::new(5);
-  let a = base.var(0); let b = base.var(1); let c = base.var(2);
-  let q = base.var(3); let r = base.var(4);
+  let a = NID::var(0); let b = NID::var(1); let c = NID::var(2);
+  let q = NID::var(3); let r = NID::var(4);
   let ab = base.and(a,b); let aq = base.and(a,q);
   let actual = expr![base, ((ab ^ c) & (aq ^ r))];
   let expected = expr![base, ((a & ((b & (q ^ r)) ^ (c&q)))^(c&r))];
@@ -491,8 +491,8 @@ test_base_when!(ANFBase);
 
 #[test] fn test_anf_sub() {
   let mut base = ANFBase::new(6);
-  let a = base.var(0); let b = base.var(1); let c = base.var(2);
-  let x = base.var(3); let y = base.var(4); let z = base.var(5);
+  let a = NID::var(0); let b = NID::var(1); let c = NID::var(2);
+  let x = NID::var(3); let y = NID::var(4); let z = NID::var(5);
   let ctx = expr![base, ((a & b) ^ c) ];
   let xyz = expr![base, ((x & y) ^ z) ];
   assert_eq!(base.sub(a.vid(), xyz, ctx), expr![base, ((xyz & b) ^ c)]);
