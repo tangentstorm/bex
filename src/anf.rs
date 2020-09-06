@@ -376,7 +376,6 @@ impl ANFBase {
 
 // test suite
 test_base_consts!(ANFBase);
-test_base_vars!(ANFBase);
 test_base_when!(ANFBase);
 
 #[test] fn test_anf_hilo() {

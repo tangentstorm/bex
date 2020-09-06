@@ -536,7 +536,6 @@ impl Base for BDDBase {
 
 // generic Base test suite
 test_base_consts!(BDDBase);
-test_base_vars!(BDDBase);
 test_base_when!(BDDBase);
 
 // basic test suite

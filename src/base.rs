@@ -12,9 +12,6 @@ pub trait Base {
   fn new(n:usize)->Self where Self:Sized; // Sized so we can use trait objects.
   fn num_vars(&self)->usize;
 
-  fn o(&self)->NID { nid::O }
-  fn i(&self)->NID { nid::I }
-
   fn var(&mut self, v:u32)->NID { NID::var(v) }
   fn vir(&mut self, v:u32)->NID { NID::vir(v) }
 
@@ -69,7 +66,7 @@ pub trait Base {
 /// // example do-nothing decorator
 /// pub struct Decorated<T:Base> { base: T }
 /// impl<T:Base> Base for Decorated<T> {
-///   inherit![ new, num_vars, i, o, var, vir, when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ]; }
+///   inherit![ new, num_vars, var, vir, when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ]; }
 /// ```
 #[macro_export] macro_rules! inherit {
   ( $($i:ident),* ) => { $( inherit_fn!($i); )* }
@@ -79,8 +76,6 @@ pub trait Base {
 #[macro_export] macro_rules! inherit_fn {
   (new) =>      { fn new(_n:usize)->Self where Self:Sized { unimplemented!("you need to explicitly construct the decorator") }};
   (num_vars) => { #[inline] fn num_vars(&self)->usize { self.base.num_vars() }};
-  (i) =>        { #[inline] fn o(&self)->NID { self.base.o() } };
-  (o) =>        { #[inline] fn i(&self)->NID { self.base.i() } };
   (var) =>      { #[inline] fn var(&mut self, v:u32)->NID { self.base.var(v) } };
   (vir) =>      { #[inline] fn vir(&mut self, v:u32)->NID { self.base.vir(v) }};
   (when_hi) =>  { #[inline] fn when_hi(&mut self, v:VID, n:NID)->NID { self.base.when_hi(v, n) }};
@@ -100,7 +95,7 @@ pub trait Base {
 // !! start on isolating simplification rules (for use in AST, ANF)
 pub struct Simplify<T:Base> { pub base: T }
 impl<T:Base> Base for Simplify<T> {
-  inherit![ new, num_vars, i, o, var, vir, when_hi, when_lo, xor, or, def, tag, get, sub, save, dot ];
+  inherit![ new, num_vars, var, vir, when_hi, when_lo, xor, or, def, tag, get, sub, save, dot ];
   fn and(&mut self, x:NID, y:NID)->NID {
     if x == y { x }
     else {
@@ -154,12 +149,10 @@ macro_rules! base_test {
 
 // Test operations on constants.
 base_test!(test_base_consts, b, 0, {
-  let (o, i) = (b.o(), b.i());
+  use nid;
+  let (o, i) = (nid::O, nid::I);
 
   assert!(o<i, "expect o<i");
-
-  // the const functions should give same answer each time
-  assert!(o==b.o(), "o");  assert!(o==b.o(), "i");
 
   // and
   assert!(o==b.and(o,o), "o∧o");  assert!(o==b.and(i,o), "i∧o");
@@ -169,20 +162,11 @@ base_test!(test_base_consts, b, 0, {
   assert!(o==b.xor(o,o), "o≠o");  assert!(i==b.xor(i,o), "i≠o");
   assert!(i==b.xor(o,i), "o≠i");  assert!(o==b.xor(i,i), "i≠i"); });
 
-
-// Test simple variable operations.
-base_test!(test_base_vars, b, 2, {
-  assert!(b.num_vars() == 2);
-  let x0 = b.var(0); let x02 = b.var(0); let x1 = b.var(1);
-  assert!(x0 == x02, "var(0) should always return the same nid.");
-  assert!(x1 != x0, "different variables should have different nids.");
-  // assert!(b.o() < x0, "expect O < $0");
-  assert!(x0 < b.i(), "expect $0 < I"); });
-
 
 // Test when_lo and when_hi for the simple cases.
 base_test!(test_base_when, b, 2, {
-  let (o, i, n0, n1) = (b.o(), b.i(), b.var(0), b.var(1));
+  use nid::{O,I,NID};
+  let (o, i, n0, n1) = (O, I, NID::var(0), NID::var(1));
   let (x0, x1) = (n0.vid(), n1.vid());
 
   assert_eq!(b.when_lo(x0, o), o, "x0=O should not affect O");

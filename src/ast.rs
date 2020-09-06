@@ -312,20 +312,20 @@ impl Base for RawASTBase {
     else {
       let (lo,hi) = if self.op(x) < self.op(y) { (x,y) } else { (y,x) };
       match (self.op(lo), self.op(hi)) {
-        (Op::O,_) => self.o(),
+        (Op::O,_) => nid::O,
         (Op::I,_) => hi,
-        (Op::Not(n),_) if n==hi => self.o(),
-        (_,Op::Not(n)) if n==lo => self.o(),
+        (Op::Not(n),_) if n==hi => nid::O,
+        (_,Op::Not(n)) if n==lo => nid::O,
         _ => self.nid(Op::And(lo,hi)) }}}
 
   fn xor(&mut self, x:NID, y:NID)->NID {
-    if x == y { self.o() }
+    if x == y { nid::O }
     else {
       let (lo,hi) = if self.op(x) < self.op(y) { (x,y) } else { (y,x) };
       match (self.op(lo), self.op(hi)) {
         (Op::O, _) => hi,
         (Op::I, _) => !hi,
-        (Op::Var(_), Op::Not(n)) if n==lo => self.i(),
+        (Op::Var(_), Op::Not(n)) if n==lo => nid::I,
         _ => self.nid(Op::Xor(lo,hi)) }}}
 
   fn or(&mut self, x:NID, y:NID)->NID {
@@ -334,8 +334,8 @@ impl Base for RawASTBase {
       let (lo,hi) = if self.op(x) < self.op(y) { (x,y) } else { (y,x) };
       match (self.op(lo), self.op(hi)) {
         (Op::O, _) => hi,
-        (Op::I, _) => self.i(),
-        (Op::Var(_), Op::Not(n)) if n==lo => self.i(),
+        (Op::I, _) => nid::I,
+        (Op::Var(_), Op::Not(n)) if n==lo => nid::I,
         (Op::Not(m), Op::Not(n)) => { !self.and(m,n) },
         _ => self.nid(Op::Or(lo,hi)) }}}
 
@@ -345,7 +345,7 @@ impl Base for RawASTBase {
     self.nid(Op::Mj(x,y,z)) }
 
   #[cfg(todo)]
-  fn ch(&mut self, x:NID, y:NID, z:NID)->NID { self.o() }
+  fn ch(&mut self, x:NID, y:NID, z:NID)->NID { nid::O }
 
 
   fn sub(&mut self, _v:vid::VID, _n:NID, _ctx:NID)->NID { todo!("ast::sub") }
@@ -384,7 +384,7 @@ impl Base for RawASTBase {
 
 pub struct ASTBase { base: Simplify<RawASTBase> }
 impl Base for ASTBase {
-  inherit![num_vars, i, o, var, vir, when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ];
+  inherit![num_vars, var, vir, when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ];
   fn new(n:usize)->Self { ASTBase{ base: Simplify{ base: <RawASTBase as Base>::new(n) }}}}
 
 impl ASTBase {
@@ -392,7 +392,6 @@ impl ASTBase {
   pub fn raw_ast(&self)->&RawASTBase { &self.base.base }}
 
 test_base_consts!(ASTBase);
-test_base_vars!(ASTBase);
 test_base_when!(ASTBase);
 
 #[test]
