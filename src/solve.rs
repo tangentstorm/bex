@@ -24,10 +24,11 @@ type B = dyn Base;
 
 pub trait Progress {
   fn on_start(&self);
-  fn on_step(&self, src:&RawASTBase, dest: &mut B, step:usize, secs:u64, oldtop:DstNid, newtop:DstNid);
+  fn on_step(&mut self, src:&RawASTBase, dest: &mut B, step:usize, millis:u128, oldtop:DstNid, newtop:DstNid);
   fn on_done(&self, src:&RawASTBase, dest: &mut B, newtop:DstNid); }
 
 pub struct ProgressReport<'a> {
+  pub millis: u128,
   pub save_dot: bool,
   pub save_dest: bool,
   pub prefix: &'a str }
@@ -38,11 +39,12 @@ pub struct ProgressReport<'a> {
 
 
 impl<'a> Progress for ProgressReport<'a> {
-  fn on_start(&self) { } //println!("step, seconds, topnid, oldtopvar, newtopvar"); }
-  fn on_step(&self, src:&RawASTBase, dest: &mut B, step:usize, secs:u64, oldtop:DstNid, newtop:DstNid) {
+  fn on_start(&self) { } //println!("step, millis, topnid, oldtopvar, newtopvar"); }
+  fn on_step(&mut self, src:&RawASTBase, dest: &mut B, step:usize, millis:u128, oldtop:DstNid, newtop:DstNid) {
+    self.millis += millis;
     let DstNid{ n: new } = newtop;
-    println!("{:4}, {:4}, {:4?} → {:3?}, {:8?}",
-             step, secs, oldtop.n,
+    println!("{:4}, {:8} ms, {:45?} → {:45?}, {:45?}",
+             step, millis, oldtop.n,
              if new.vid().is_vir() {
                format!("{:?}", src.get_op(nid::ixn(new.vid().vir_ix() as u32))) }
              else { format!("{:?}", new)},
@@ -59,12 +61,13 @@ impl<'a> Progress for ProgressReport<'a> {
         // TODO: remove the 'bdd' suffix
         dest.save(format!("{}-{:04}.bdd", self.prefix, step).as_str())
           .expect("failed to save"); }}
-    if step.trailing_zeros() >= 5 { println!("step, seconds, change, newtop"); }
+    if step.trailing_zeros() >= 5 { println!("step, millis, change, newtop"); }
     if self.save_dot && (step.trailing_zeros() >= 5) || (step==446)
     { // on really special occasions, output a diagram
       dest.save_dot(new, format!("{}-{:04}.dot", self.prefix, step).as_str()); } }
 
-  fn on_done(&self, _src:&RawASTBase, _dest: &mut B, _newtop:DstNid) {}}
+  fn on_done(&self, _src:&RawASTBase, _dest: &mut B, _newtop:DstNid) {
+    println!("total time: {} ms", self.millis) }}
 
 
 fn default_bitmask(_src:&RawASTBase, v:VID) -> u64 { v.bitmask() }
@@ -85,7 +88,7 @@ pub fn sort_by_cost(src:&RawASTBase, top:SrcNid)->(RawASTBase,SrcNid) {
   (ast,SrcNid{n}) }
 
 
-pub fn refine<P:Progress>(dest: &mut B, src:&RawASTBase, end:DstNid, pr:P)->DstNid {
+pub fn refine<P:Progress>(dest: &mut B, src:&RawASTBase, end:DstNid, mut pr:P)->DstNid {
   // end is the root of the expression to simplify, as a nid in the src ASTbase.
   // we want its equivalent expression in the dest base:
   let mut top = end;
@@ -99,8 +102,8 @@ pub fn refine<P:Progress>(dest: &mut B, src:&RawASTBase, end:DstNid, pr:P)->DstN
     let old = top;
     top = refine_one(dest, &src, top);
     assert!(old != top, "top should have changed!");
-    let secs = now.elapsed().expect("elapsed?").as_secs();
-    pr.on_step(src, dest, step, secs, old, top);
+    let millis = now.elapsed().expect("elapsed?").as_millis();
+    pr.on_step(src, dest, step, millis, old, top);
     step += 1; }
   pr.on_done(src, dest, top);
   top }
@@ -140,7 +143,7 @@ fn refine_one(dst: &mut B, src:&RawASTBase, d:DstNid)->DstNid {
 pub fn solve(dst:&mut B, src0:&RawASTBase, n:NID)->DstNid {
   let (src, top) = sort_by_cost(&src0, SrcNid{n});
   refine(dst, &src, DstNid{n: NID::vir(nid::idx(top.n) as u32)},
-        ProgressReport{ save_dot: false, save_dest: false, prefix:"x" }) }
+        ProgressReport{ save_dot: false, save_dest: false, prefix:"x", millis: 0 }) }
 
 /// This is an example solver used by the bdd-solve example and the bench-solve benchmark.
 /// It finds all pairs of type $T0 that multiply to $k as a $T1. ($T0 and $T1 are
