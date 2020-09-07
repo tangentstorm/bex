@@ -19,7 +19,7 @@ use {nid, nid::{NID,I,O}};
 use vid::{VID,VidOrdering};
 use cur::{Cursor, CursorPlan};
 use reg::Reg;
-use vhl::{HiLo, HiLoBase};
+use vhl::{HiLo, HiLoBase, Walkable};
 use hashbrown::HashMap;
 use bdd::{BDDBase}; // for solutions
 #[cfg(test)] use vid::{topmost, botmost};
@@ -43,22 +43,15 @@ pub struct ANFBase {
   tags:HashMap<String,NID>}
 
 
-impl ANFBase {
-  // !! TODO: unify walk/step for ANFBase, BDDBase
-
-  /// walk node recursively, without revisiting shared nodes
-  pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
-    let mut seen = HashSet::new();
-    self.step(n,f,&mut seen)}
-
-  /// internal helper: one step in the walk.
-  fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>)
+impl Walkable for ANFBase {
+  fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>, topdown: bool)
   where F: FnMut(NID,VID,NID,NID) {
     if !seen.contains(&n) {
-      seen.insert(n); let ANF{ v, hi, lo, } = self.fetch(n); f(n,v,hi,lo);
-      if !nid::is_const(hi) { self.step(hi, f, seen); }
-      if !nid::is_const(lo) { self.step(lo, f, seen); }}}
-}
+      seen.insert(n); let ANF{ v, hi, lo, } = self.fetch(n);
+      if topdown { f(n,v,hi,lo) }
+      if !nid::is_const(hi) { self.step(hi, f, seen, topdown) }
+      if !nid::is_const(lo) { self.step(lo, f, seen, topdown) }
+      if !topdown { f(n,v,hi,lo) }}}}
 
 
 impl Base for ANFBase {

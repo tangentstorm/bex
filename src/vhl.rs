@@ -1,4 +1,5 @@
 ///! (Var, Hi, Lo) triples
+use std::collections::HashSet;
 use nid::{NID, IDX};
 use vid::VID;
 
@@ -41,11 +42,27 @@ impl VHLParts {
     else { None }}}
 
 
+pub trait Walkable {
+
+  /// walk nodes in graph for nid n recursively, without revisiting shared nodes
+  fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>, topdown:bool)
+  where F: FnMut(NID,VID,NID,NID);
+
+  fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
+    let mut seen = HashSet::new();
+    self.step(n, f, &mut seen, true)}
+
+  /// same as walk, but visit children before firing the function.
+  fn walk_up<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
+    let mut seen = HashSet::new();
+    self.step(n, f, &mut seen, false)}}
+
+
 pub trait HiLoBase {
   fn get_hilo(&self, n:NID)->Option<HiLo>;
 }
-
 
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct HiLoCache {
   /// variable-agnostic hi/lo pairs for individual bdd nodes.
