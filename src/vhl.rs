@@ -41,10 +41,17 @@ impl std::ops::Not for VHL {
   fn not(self)->VHL { VHL { v:self.v, hi:!self.hi, lo: !self.lo }}}
 
 
+/// VHL (for when we really do need the variable)
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct VHL {pub v:VID, pub hi:NID, pub lo:NID}
+
+impl VHL {
+  pub fn new(v: VID, hi:NID, lo:NID)->VHL { VHL{ v, hi, lo } }}
+
+
 /// Enum for referring to the parts of a HiLo (for WIP).
 #[derive(PartialEq,Debug,Copy,Clone)]
 pub enum HiLoPart { HiPart, LoPart }
-
 
 /// a deconstructed VHL (for WIP)
 #[derive(PartialEq,Debug,Copy,Clone)]
