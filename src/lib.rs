@@ -44,3 +44,6 @@ pub mod io;
 
 /// (Experimental) support for algebraic normal form (XOR of AND).
 pub mod anf;
+
+/// swap solver
+pub mod swap;
