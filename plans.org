@@ -1,32 +1,39 @@
 #+title: plans for bex
 
-* TODO plans for version 0.2.0
-** [1/3] better benchmarking
-*** DONE come up with basic decorator pattern scheme for bases
-will use for things like:
-- toggle bookkeeping for benchmarks
-- toggle individual optimizations
-- consolidate BASE/anf normalizers
-- swap out work coordination strategies (swarm/etc)
-- swap out different kinds of normalizer (main vs ITE)
-  (allow preserving the original expression)
-- toggle use of constant truth tables in the nid
-- configure larger constant truth tables at other levels
-- even toggle caching to see what it gets us
-*** TODO implement bookeeping decorators
+* TODO [0/5] plans for version 0.2.0
+** TODO [0/2] better benchmarking
+*** TODO [2/3] collect metrics
+**** what to collect
 - for each benchmark:
   - original AST:
     - time to generate
     - number of nodes (broken down by type?)
-    - number of cache attempts and hits
+    - number of cache tests/fails (not really that important, but might as well?)
   - for each step:
     - time to generate
     - number of nodes at each step
-    - number of cache attempts and hits
-    - calculations saved from short circuits
+    - number of xmemo cache tests/fails (we don't care about hilos)
+    - number calculations saved from short circuits
 
-*** TODO tool to generate and store metrics
-** [0/3] generalize swarm implementation
+**** TODO =Base::ord(nid)= for graph order (number of nodes)
+**** DONE record timing information at each step
+I do this now in seconds. Let's switch to millis.
+**** DONE track cache attempts / hits
+I can't do this in the base itself because copies are shared and therefore immutable.
+
+So instead, use thread-local counters:
+
+  - xmemo lookup
+  - xmemo fail
+  - hilos lookup
+  - hilos fail
+  - hilos create
+
+Query, sum, and reset the counters after each round.
+
+*** TODO store the metrics
+- write (step#, time, ord, lookups, hits, shorts) to csv after each step
+** TODO [0/3] generalize swarm implementation
 *** TODO bdd: extract ite function that returns (V, HiPart, LoPart)
 (In other words, decouple the work for a single node from the work scheduler)
 *** TODO clean up / refactor the swarm code in general
@@ -43,7 +50,7 @@ resolve-nid
   put-xmemo
 
 *** TODO re-use swarm for =ANF= implementation
-** [0/6] solver optimizations
+** TODO [0/6] solver optimizations
 *** TODO optimization: nid-level truth tables for bottom 5 variables
 *** TODO optimization: nid-level truth tables for /any/ 5 variables
 *** TODO bring relevant variables to top in solver
@@ -56,7 +63,7 @@ resolve-nid
 *** TODO optionally, return vars to desired ordering in final output
 *** TODO have swarm workers descend lo branches on their own
 This should help fully utilize each CPU
-** [1/5] better graphviz rendering
+** TODO [1/5] better graphviz rendering
 *** DONE use command line argument instead of macro parameter to toggle solver visualizations
 examples:
 #+begin_src shell
@@ -76,8 +83,22 @@ some combination of these ideas:
    rank=same; }
 #+end_src
 *** TODO draw truth table nodes using braille
-** [1/2] other improvements
+** TODO [4/5] other improvements
 *** DONE move =expr= macro to the base module
+*** DONE come up with basic decorator pattern scheme for bases
+will use for things like:
+- toggle bookkeeping for benchmarks
+- toggle individual optimizations
+- consolidate BASE/anf normalizers
+- swap out work coordination strategies (swarm/etc)
+- swap out different kinds of normalizer (main vs ITE)
+  (allow preserving the original expression)
+- toggle use of constant truth tables in the nid
+- configure larger constant truth tables at other levels
+- even toggle caching to see what it gets us
+*** DONE remove .i, .o, .var, vir from =Base=
+Use the corresponding nid functions instead.
+*** DONE extract =vhl::Walkable= trait, and add =walk_up=
 *** TODO mark each AST node with highest input var, so =NoV= can go away
 
 * potential future work
