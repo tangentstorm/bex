@@ -423,15 +423,22 @@ impl BDDBase {
   /// walk node recursively, without revisiting shared nodes
   pub fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
     let mut seen = HashSet::new();
-    self.step(n,f,&mut seen)}
+    self.step(n, f, &mut seen, true)}
+
+  /// same as walk, but visit children before firing the function.
+  pub fn walk_up<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
+    let mut seen = HashSet::new();
+    self.step(n, f, &mut seen, false)}
 
   /// internal helper: one step in the walk.
-  fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>)
+  fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>, topdown:bool)
   where F: FnMut(NID,VID,NID,NID) {
     if !seen.contains(&n) {
-      seen.insert(n); let (hi,lo) = self.tup(n); f(n,n.vid(),hi,lo);
-      if !hi.is_const() { self.step(hi, f, seen); }
-      if !lo.is_const() { self.step(lo, f, seen); }}}
+      seen.insert(n); let (hi,lo) = self.tup(n);
+      if topdown { f(n, n.vid(), hi, lo) }
+      if !hi.is_const() { self.step(hi, f, seen, topdown) }
+      if !lo.is_const() { self.step(lo, f, seen, topdown) }
+      if !topdown { f(n, n.vid(), hi, lo) }}}
 
   pub fn load(path:&str)->::std::io::Result<BDDBase> {
     let s = io::get(path)?;
