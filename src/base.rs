@@ -32,10 +32,14 @@ pub trait Base {
 
   /// implement this to render a node and its descendents in graphviz *.dot format.
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write);
+}
+
+pub trait GraphViz {
+  fn write_dot(&self, n:NID, wr: &mut dyn std::fmt::Write);
 
   /// render to graphviz *.dot file
   fn save_dot(&self, n:NID, path:&str) {
-    let mut s = String::new(); self.dot(n, &mut s);
+    let mut s = String::new(); self.write_dot(n, &mut s);
     let mut txt = File::create(path).expect("couldn't create dot file");
     txt.write_all(s.as_bytes()).expect("failed to write text to dot file"); }
 
@@ -51,6 +55,11 @@ pub trait Base {
 
   fn show(&self, n:NID) { self.show_named(n, "+bdd") }
 }
+
+impl<T:Base> GraphViz for T {
+  fn write_dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {
+    T::dot(&self,n, wr)}}
+
 
 /// This macro makes it easy to define decorators for `Base` implementations.
 /// Define your decorator as a struct with type parameter `T:Base` and member `base: T`,

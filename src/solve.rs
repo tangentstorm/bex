@@ -16,13 +16,11 @@
 
 use apl;
 use ast::{Op,RawASTBase};
-use base::Base;
+use base::{Base, GraphViz};
 use {nid, nid::NID};
 use {vid::VID};
 
-type B = dyn Base;
-
-pub trait Progress {
+pub trait Progress<B:Base> {
   fn on_start(&self);
   fn on_step(&mut self, src:&RawASTBase, dest: &mut B, step:usize, millis:u128, oldtop:DstNid, newtop:DstNid);
   fn on_done(&self, src:&RawASTBase, dest: &mut B, newtop:DstNid); }
@@ -38,7 +36,7 @@ pub struct ProgressReport<'a> {
 #[derive(Clone, Copy, Debug, PartialEq)] pub struct DstNid { pub n: NID }
 
 
-impl<'a> Progress for ProgressReport<'a> {
+impl<'a, B:Base> Progress<B> for ProgressReport<'a> {
   fn on_start(&self) { } //println!("step, millis, topnid, oldtopvar, newtopvar"); }
   fn on_step(&mut self, src:&RawASTBase, dest: &mut B, step:usize, millis:u128, oldtop:DstNid, newtop:DstNid) {
     self.millis += millis;
@@ -88,7 +86,7 @@ pub fn sort_by_cost(src:&RawASTBase, top:SrcNid)->(RawASTBase,SrcNid) {
   (ast,SrcNid{n}) }
 
 
-pub fn refine<P:Progress>(dest: &mut B, src:&RawASTBase, end:DstNid, mut pr:P)->DstNid {
+pub fn refine<B:Base, P:Progress<B>>(dest: &mut B, src:&RawASTBase, end:DstNid, mut pr:P)->DstNid {
   // end is the root of the expression to simplify, as a nid in the src ASTbase.
   // we want its equivalent expression in the dest base:
   let mut top = end;
@@ -119,8 +117,8 @@ pub fn convert_nid(sn:SrcNid)->DstNid {
     if nid::is_inv(n) { !r0 } else { r0 }};
   DstNid{ n: r } }
 
-/// replace a
-fn refine_one(dst: &mut B, src:&RawASTBase, d:DstNid)->DstNid {
+/// replace node in destintation with its definition form source
+fn refine_one<B:Base>(dst: &mut B, src:&RawASTBase, d:DstNid)->DstNid {
   // println!("refine_one({:?})", d);
   if nid::is_const(d.n) || nid::is_rvar(d.n) { d }
   else {
@@ -140,7 +138,7 @@ fn refine_one(dst: &mut B, src:&RawASTBase, d:DstNid)->DstNid {
     DstNid{n: dst.sub(otv, newdef, d.n) }}}
 
 
-pub fn solve(dst:&mut B, src0:&RawASTBase, n:NID)->DstNid {
+pub fn solve<B:Base>(dst:&mut B, src0:&RawASTBase, n:NID)->DstNid {
   let (src, top) = sort_by_cost(&src0, SrcNid{n});
   refine(dst, &src, DstNid{n: NID::vir(nid::idx(top.n) as u32)},
         ProgressReport{ save_dot: false, save_dest: false, prefix:"x", millis: 0 }) }
@@ -152,7 +150,7 @@ pub fn solve(dst:&mut B, src0:&RawASTBase, n:NID)->DstNid {
 macro_rules! find_factors {
   ($TDEST:ident, $T0:ident, $T1:ident, $k:expr, $expect:expr) => {{
     use std::env;
-    use $crate::{Base,nid, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}, bdd};
+    use $crate::{Base, GraphViz, nid, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}, bdd};
     bdd::COUNT_XMEMO_TEST.with(|c| *c.borrow_mut()=0 ); bdd::COUNT_XMEMO_TEST.with(|c| *c.borrow_mut()=0 ); // TODO: other bases
     GBASE.with(|gb| gb.replace(ASTBase::empty()));   // reset on each test
     let (y, x) = ($T0::def("y"), $T0::def("x")); let lt = x.lt(&y);
