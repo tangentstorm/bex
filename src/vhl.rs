@@ -1,4 +1,5 @@
 ///! (Var, Hi, Lo) triples
+use std::collections::BinaryHeap;
 use std::collections::HashSet;
 use nid::{NID, IDX};
 use vid::VID;
@@ -21,6 +22,23 @@ impl HiLo {
 
   pub fn get_part(&self, which:HiLoPart)->NID {
     if which == HiLoPart::HiPart { self.hi } else { self.lo }} }
+
+impl std::ops::Not for HiLo {
+  type Output = HiLo;
+  fn not(self)-> HiLo {HiLo { hi:!self.hi, lo: !self.lo }}}
+
+
+/// VHL (for when we really do need the variable)
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct VHL {pub v:VID, pub hi:NID, pub lo:NID}
+
+impl VHL {
+  pub fn new(v: VID, hi:NID, lo:NID)->VHL { VHL{ v, hi, lo } }
+  pub fn hilo(&self)->HiLo { HiLo{ hi:self.hi, lo: self.lo } }}
+
+impl std::ops::Not for VHL {
+  type Output = VHL;
+  fn not(self)->VHL { VHL { v:self.v, hi:!self.hi, lo: !self.lo }}}
 
 
 /// Enum for referring to the parts of a HiLo (for WIP).
@@ -53,9 +71,21 @@ pub trait Walkable {
     self.step(n, f, &mut seen, true)}
 
   /// same as walk, but visit children before firing the function.
+  /// note that this walks from "left to right" ("lo' to "hi")
+  /// and bottom to top, starting from the leftmost node.
+  /// if you want the bottommost nodes to come first, use self.as_heap(n)
   fn walk_up<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
     let mut seen = HashSet::new();
-    self.step(n, f, &mut seen, false)}}
+    self.step(n, f, &mut seen, false)}
+
+  /// this is meant for walking nodes ordered by variables from bottom to top.
+  /// it's deprecated because the whole thing ought to be replaced by a nice iterator
+  /// (also, it's not clear to me why the derived Ord for VHL doesn't require Reverse() here)
+  #[deprecated]
+  fn as_heap(&self, n:NID)->BinaryHeap<(VHL, NID)> {
+    let mut result = BinaryHeap::new();
+    self.walk_up(n, &mut |nid, v, hi, lo| result.push((VHL{ v, hi, lo }, nid)));
+    result }}
 
 
 pub trait HiLoBase {
