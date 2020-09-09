@@ -119,31 +119,34 @@ impl VHLScaffold {
   fn invex(&self, ex:NID)->VHL {
     if let Some(ix) = self.vix(ex.vid()) {
       let HiLo{ hi, lo } = self.rows[ix].hl[ex.idx()];
-      VHL{ v: VID::var(ix as u32), hi, lo }}
+      let res = VHL{ v: VID::var(ix as u32), hi, lo };
+      if ex.is_inv() { !res } else { res }}
     else { panic!("nid {} is not in the scaffold.", ex)}}
 
   /// external nid from internal nid
   fn exin(&self, n:NID)->NID {
     if n.is_const() { return n }
     let ev = self.vids[n.vid().var_ix()];
-    if n.is_var() { NID::from_vid(ev) } else { NID::from_vid_idx(ev, n.idx() as u32) }}
+    let res = if n.is_var() { NID::from_vid(ev) } else { NID::from_vid_idx(ev, n.idx() as u32) };
+    if n.is_inv() { !res } else { res }}
 
   /// internal nid from external nid
   fn inen(&self, ne:NID)->NID {
     if ne.is_const() { return ne }
     let iv = if let Some(ix) = self.vix(ne.vid()) { VID::var(ix as u32) } else { panic!("inen({})", ne) };
-    if ne.is_var() { NID::from_vid(iv) } else { NID::from_vid_idx(iv, ne.idx() as u32) }}
+    let res = if ne.is_var() { NID::from_vid(iv) } else { NID::from_vid_idx(iv, ne.idx() as u32) };
+    if ne.is_inv() { !res } else { res }}
 
   /// return external vhl corresponding to external nid
   fn exvex(&self, ex:NID)->VHL {
     if let Some(ix) = self.vix(ex.vid()) {
-      if ex.is_var() {
-        let res = VHL{ v:ex.vid(), hi:nid::I, lo:nid::O };
-        return if ex.is_inv() { !res } else { res }}
-      let HiLo{ hi:h0, lo:l0 } = self.rows[ix].hl[ex.idx()].clone();
-      let hi = self.exin(h0);
-      let lo = self.exin(l0);
-      VHL{ v: ex.vid(), hi, lo }}
+      let res = if ex.is_var() { VHL{ v:ex.vid(), hi:nid::I, lo:nid::O } }
+      else {
+        let HiLo{ hi:h0, lo:l0 } = self.rows[ix].hl[ex.idx()];
+        let hi = self.exin(h0);
+        let lo = self.exin(l0);
+        VHL{ v: ex.vid(), hi, lo }};
+    if ex.is_inv() { !res } else { res }}
     else { panic!("nid {} is not in the scaffold.", ex)}}
 
   fn top_vid(&self)->VID {
@@ -179,9 +182,7 @@ impl GraphViz for VHLScaffold {
         w!("edge[style=solid, arrowhead={}];", arrow(hl.hi));
         w!("  \"{}\"->\"{}\";", n, sink(hl.hi));
         w!("edge[style=dashed, arrowhead={}];", arrow(hl.lo));
-        w!("  \"{}\"->\"{}\";", n, sink(hl.lo));
-      }
-    }
+        w!("  \"{}\"->\"{}\";", n, sink(hl.lo)); }}
     w!("}}"); }}
 
 pub struct SwapSolver<T:Base + Walkable> {
@@ -251,8 +252,8 @@ impl<T:Base + Walkable> Base for SwapSolver<T> {
 
 pub type BddSwapSolver = SwapSolver<BDDBase>;
 
-#[test]
-fn test_scaffold() {
+/// test for subbing in two new variables
+#[test] fn test_two_new() {
   // a: ast node, v: vir
   let a5 = NID::vir(5); let v5 = a5.vid();
   let a4 = NID::vir(4); let v4 = a4.vid();
@@ -260,10 +261,27 @@ fn test_scaffold() {
   let mut s = BddSwapSolver::new(BDDBase::new(0), v5);
   assert_eq!(v5, s.dst.vids[0], "label v5 should map to x0 after new(v5)");
   let key = s.and(a4, a2);
-  // s.base.show_named(key, "bdd");
-  // s.src.print(); s.src.show_named(nid::O, "src"); // visualize the whole src scaffold (not just O)
-  // assert_eq!(res, NID::from_vid(v4), "(v4 AND v2) should have v4 at top");
   let res = s.sub(v5, key, a5);
   // s.dst.print(); //  s.dst.show_named(nid::O, "dst");
-  assert_eq!(res.vid(), v4, "(v4 AND v2) should have v4 at top");
-}
+  assert_eq!(s.dst.exvex(res), VHL { v:v4, hi:a2, lo:nid::O }, "(v4 AND v2) should be (v4 ? v2 : O)"); }
+
+
+/// test for subbing in one new variable
+#[test] fn test_one_new() {
+  // y = x & w
+  let nz = NID::vir(3); let z = nz.vid();
+  let ny = NID::vir(2); let y = ny.vid();
+  let nx = NID::vir(1); let x = nx.vid();
+  let nw = NID::vir(0); let w = nw.vid();
+  // we start with just z on top:
+  let mut s = BddSwapSolver::new(BDDBase::new(0), z);
+  // substitute z -> w ^ y:
+  let key = s.xor(nw, ny);
+  let wy = s.sub(z, key, nz);
+  // substitute y -> x & w  (one new var, one old var)
+  // so (w ^ y) -> (w ^ (x & w))
+  //let key = s.and(nx, nw);
+  //let wxw = s.sub(y, key, wy);
+  // s.dst.print(); //  s.dst.show_named(nid::O, "dst");
+  //assert_eq!(s.dst.exvex(res), VHL { v:v4, hi:a2, lo:nid::O }, "(v4 AND v2) should be (v4 ? v2 : O)"); }
+  }
