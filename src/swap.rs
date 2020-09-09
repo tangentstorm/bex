@@ -225,11 +225,11 @@ impl<T:Base + Walkable> Base for SwapSolver<T> {
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID { // ( wv -> wyz )
     assert_eq!(v, self.dst.top_vid(), "can only sub(v,n,ctx) if v is top vid in the scaffold.");
     assert_eq!(n, self.key, "can only sub(v,n,ctx) if n is result of last and/or/xor call.");
-    self.rebuild_src();
+    let top = self.rebuild_src();
     assert_eq!(self.src.vids.len(), 2, "src scaffold should use exactly 2 vids");
     let (y, z) = (self.src.vids[0], self.src.vids[1]);
     let (yix, zix) = (self.dst.vix(y), self.dst.vix(z));
-    let sz:VHL = self.src.invex(self.key);
+    let sz:VHL = self.src.invex(top);
     let dz:VHL = match (yix, zix) {
       (None, None) => {
         let VHL {v:x, hi:dy1, lo:dy0 } = self.dst.exvex(ctx);
@@ -280,8 +280,8 @@ pub type BddSwapSolver = SwapSolver<BDDBase>;
   let wy = s.sub(z, key, nz);
   // substitute y -> x & w  (one new var, one old var)
   // so (w ^ y) -> (w ^ (x & w))
-  //let key = s.and(nx, nw);
-  //let wxw = s.sub(y, key, wy);
+  let key = s.and(nx, nw);
+  // let wxw = s.sub(y, key, wy);
   // s.dst.print(); //  s.dst.show_named(nid::O, "dst");
   //assert_eq!(s.dst.exvex(res), VHL { v:v4, hi:a2, lo:nid::O }, "(v4 AND v2) should be (v4 ? v2 : O)"); }
   }
