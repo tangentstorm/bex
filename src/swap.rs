@@ -96,7 +96,6 @@ impl VHLScaffold {
       let vix = self.ensure_vix(n.vid());
       if n.is_var() { self.rows[vix].add_vid_ref() }
       else {
-        println!("attempting to lookup {}", n);
         let hilo = self.rows[vix].hl[n.idx()];
         if let Some(mut ixrc) = self.rows[vix].ix.get_mut(&hilo) { ixrc.rc += 1 }
         else { panic!("can't add ref to nid that isn't in the scaffold")}}}}
@@ -112,8 +111,20 @@ impl VHLScaffold {
       _ => {
         let (ihi, ilo) = (self.inen(hi), self.inen(lo));
         let (res, isnew) = self.rows[ix].add_ref(HiLo{ hi:ihi, lo:ilo });
+        if !ihi.is_const(){assert!(ihi.vid().var_ix()<ix, "bad vhl: x{}.hi->{}", ix, ihi)}
+        if !ilo.is_const(){assert!(ilo.vid().var_ix()<ix, "bad vhl: x{}.lo->{}", ix, ilo)}
         if isnew { self.add_nid_ref(hi); self.add_nid_ref(lo); }
         res }}}
+
+  /// return internal VHL from internal NID
+  fn invin(&self, n:NID)->VHL {
+    let v = n.vid();
+    let res =
+      if n.is_lit() { VHL { v, hi:nid::I, lo:nid::O } }
+      else {
+        let HiLo{ hi, lo } = self.rows[v.var_ix()].hl[n.idx()];
+        VHL{ v, hi, lo }};
+    if n.is_inv() { !res } else { res }}
 
   // return the internal VHL corresponding to the external nid
   fn invex(&self, ex:NID)->VHL {
@@ -167,18 +178,18 @@ impl GraphViz for VHLScaffold {
       let iv = VID::var(i as u32);
       if !row.hl.is_empty() {
         write!(wr, "{{rank=same").unwrap();
-        if row.vrc > 0 { write!(wr, " {}", iv).unwrap() }
-        for i in 0..row.hl.len() { write!(wr, " \"{}\"", NID::from_vid_idx(row.v, i as nid::IDX)).unwrap(); }
+        if row.vrc > 0 { write!(wr, " {}", ev).unwrap() }
+        for i in 0..row.hl.len() { write!(wr, " \"{}\"", NID::from_vid_idx(ev, i as nid::IDX)).unwrap(); }
         w!("}}") }
       if row.vrc > 0 {
-        w!(" {}[label=\"{}\"];", iv, ev);
-        w!("edge[style=solid]; {}->I", iv);
-        w!("edge[style=dashed]; {}->O", iv);}
+        w!(" {}[label=\"{}\"];", ev, ev);
+        w!("edge[style=solid]; {}->I", ev);
+        w!("edge[style=dashed]; {}->O", ev);}
       for (j, hl) in row.hl.iter().enumerate() {
         let n = NID::from_vid_idx(row.v, j as nid::IDX);
         w!("  \"{}\"[label=\"{}\"];", n, ev);  // draw the nid itself
         let arrow = |n:NID| if n.is_const() || !n.is_inv() { "normal" } else { "odot" };
-        let sink = |n:NID| if n.is_const() { n } else { nid::raw(n) };
+        let sink = |n:NID| if n.is_const() { n } else { self.exin(nid::raw(n)) };
         w!("edge[style=solid, arrowhead={}];", arrow(hl.hi));
         w!("  \"{}\"->\"{}\";", n, sink(hl.hi));
         w!("edge[style=dashed, arrowhead={}];", arrow(hl.lo));
@@ -245,9 +256,33 @@ impl<T:Base + Walkable> Base for SwapSolver<T> {
           fx0 if fx0 == !NID::var(0) => !dy,
           _ => panic!("what? how is anything below $x1 not in {{ I, O, $x0, ~$x0 }}??") };
         VHL { v:z, hi:map(sz.hi), lo:map(sz.lo) }}
-      (None, Some(_zi)) => { todo!("z exists, y is new") }
-      (Some(_yi), None) => { todo!("y exists, z is new") }
+      (None, Some(_zi)) => { todo!("z exists, y is new: swap y and z!") }
+      (Some(yi), None) => {
+        if yi != self.dst.vids.len()-2 { todo!("<<lift y to just under the top level!>>") }
+        let path = |zx,yx| {
+          let mut n = if zx==1 { sz.hi } else { sz.lo };
+          if n.is_var() {
+            assert!(n.vid().var_ix() == 0, "should be branching on x0!!");
+            let sy = self.src.invin(n);
+            n = if yx==1 { sy.hi } else { sy.lo }}
+            else {} // it doesn't branch on y, so nothing to do
+            assert!( (n==nid::I) || (n==nid::O), "path should lead to a constant!");
+            n == nid::I };
+        // these are all external nodes:
+        let vhl = self.dst.exvex(ctx);
+        let VHL {v:x, hi:x1, lo:x0 } = self.dst.exvex(ctx);
+        let VHL {v:_, hi:x11, lo:x10 } = self.dst.exvex(x1);
+        let VHL {v:_, hi:x01, lo:x00 } = self.dst.exvex(x0);
+        let oo = if path(0, 0) { x01 } else { x00 };
+        let oi = if path(0, 1) { x01 } else { x00 };
+        let io = if path(1, 0) { x11 } else { x10 };
+        let ii = if path(1, 1) { x11 } else { x10 };
+        let zo = if oo == oi { oo } else { self.dst.add_ref(VHL{ v:y, hi:oi, lo:oo }) };
+        let zi = if io == ii { ii } else { self.dst.add_ref(VHL{ v:y, hi:ii, lo:io }) };
+        self.dst.relabel(x, z);
+        VHL{ v:z, hi:zi, lo:zo } }
       (Some(_yi), Some(_zi)) => { todo!("both y and z exist") }};
+    // todo: dec-ref to old top node.
     self.dst.add_ref(dz) }}
 
 pub type BddSwapSolver = SwapSolver<BDDBase>;
@@ -278,10 +313,13 @@ pub type BddSwapSolver = SwapSolver<BDDBase>;
   // substitute z -> w ^ y:
   let key = s.xor(nw, ny);
   let wy = s.sub(z, key, nz);
+  // s.dst.print(); s.src.show_named(nid::O, "src-wy");
   // substitute y -> x & w  (one new var, one old var)
   // so (w ^ y) -> (w ^ (x & w))
   let key = s.and(nx, nw);
-  // let wxw = s.sub(y, key, wy);
-  // s.dst.print(); //  s.dst.show_named(nid::O, "dst");
-  //assert_eq!(s.dst.exvex(res), VHL { v:v4, hi:a2, lo:nid::O }, "(v4 AND v2) should be (v4 ? v2 : O)"); }
-  }
+  let wxw = s.sub(y, key, wy);
+  // s.src.print(); s.src.show_named(nid::O, "src-xw");
+  // println!("--- wxw: ----");
+  // s.dst.print(); s.dst.show_named(nid::O, "wxw");
+  assert_eq!(s.dst.exvex(wxw), VHL { v:x, hi:!nw, lo:nid::O },
+    "(w ^ (x & w)) should be (x ? !w : O)"); }
