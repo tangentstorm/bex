@@ -34,6 +34,8 @@ pub trait Base {
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write);
 }
 
+
+/// trait for visualization using GraphViz
 pub trait GraphViz {
   fn write_dot(&self, n:NID, wr: &mut dyn std::fmt::Write);
 
@@ -59,6 +61,19 @@ pub trait GraphViz {
 impl<T:Base> GraphViz for T {
   fn write_dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {
     T::dot(&self,n, wr)}}
+
+
+/// protocol used by solve.rs. These allow the base to prepare itself for different steps
+/// in a substitution solver.
+pub trait SubSolver {
+  /// prepare for the intitial solving step. Refinement will start with the given virtual variable.
+  fn init_sub(&mut self, _top:NID) { }
+  /// notify the solver about the next intended substitution,
+  /// and allow the solver to override it.
+  fn next_sub(&mut self, ctx:NID)->Option<(VID, NID)> {
+    if ctx.is_const() { None }
+    else if ctx.vid().is_vir() { Some((ctx.vid(), ctx)) }
+    else { None }}}
 
 
 /// This macro makes it easy to define decorators for `Base` implementations.

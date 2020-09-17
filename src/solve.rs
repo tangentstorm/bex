@@ -16,7 +16,7 @@
 
 use apl;
 use ast::{Op,RawASTBase};
-use base::{Base, GraphViz};
+use base::{Base, GraphViz, SubSolver};
 use {nid, nid::NID};
 use {vid::VID};
 
@@ -86,7 +86,7 @@ pub fn sort_by_cost(src:&RawASTBase, top:SrcNid)->(RawASTBase,SrcNid) {
   (ast,SrcNid{n}) }
 
 
-pub fn refine<B:Base, P:Progress<B>>(dest: &mut B, src:&RawASTBase, end:DstNid, mut pr:P)->DstNid {
+pub fn refine<B:Base+SubSolver, P:Progress<B>>(dest: &mut B, src:&RawASTBase, end:DstNid, mut pr:P)->DstNid {
   // end is the root of the expression to simplify, as a nid in the src ASTbase.
   // we want its equivalent expression in the dest base:
   let mut top = end;
@@ -118,11 +118,9 @@ pub fn convert_nid(sn:SrcNid)->DstNid {
   DstNid{ n: r } }
 
 /// replace node in destintation with its definition form source
-fn refine_one<B:Base>(dst: &mut B, src:&RawASTBase, d:DstNid)->DstNid {
+fn refine_one<B:Base+SubSolver>(dst: &mut B, src:&RawASTBase, d:DstNid)->DstNid {
   // println!("refine_one({:?})", d);
-  if nid::is_const(d.n) || nid::is_rvar(d.n) { d }
-  else {
-    let otv = d.n.vid();
+  if let Some((otv, ctx)) = dst.next_sub(d.n) { // ctx nid, old top var
     let op = src.get_op(nid::ixn(otv.vir_ix() as u32));
     let cn = |x0:NID|->NID { convert_nid(SrcNid{n:x0}).n };
     // println!("op: {:?}", op);
@@ -135,10 +133,11 @@ fn refine_one<B:Base>(dst: &mut B, src:&RawASTBase, d:DstNid)->DstNid {
       Op::Xor(x,y) => dst.xor(cn(x), cn(y)),
       Op::Or(x,y) => dst.or(cn(x), cn(y)),
       _ => { panic!("don't know how to translate {:?}", op ) }};
-    DstNid{n: dst.sub(otv, newdef, d.n) }}}
+    DstNid{n: dst.sub(otv, newdef, ctx) }}
+  else { d } }
 
 
-pub fn solve<B:Base>(dst:&mut B, src0:&RawASTBase, n:NID)->DstNid {
+pub fn solve<B:Base+SubSolver>(dst:&mut B, src0:&RawASTBase, n:NID)->DstNid {
   let (src, top) = sort_by_cost(&src0, SrcNid{n});
   refine(dst, &src, DstNid{n: NID::vir(nid::idx(top.n) as u32)},
         ProgressReport{ save_dot: false, save_dest: false, prefix:"x", millis: 0 }) }
@@ -150,7 +149,7 @@ pub fn solve<B:Base>(dst:&mut B, src0:&RawASTBase, n:NID)->DstNid {
 macro_rules! find_factors {
   ($TDEST:ident, $T0:ident, $T1:ident, $k:expr, $expect:expr) => {{
     use std::env;
-    use $crate::{Base, GraphViz, nid, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}, bdd};
+    use $crate::{Base, SubSolver, GraphViz, nid, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}, bdd};
     bdd::COUNT_XMEMO_TEST.with(|c| *c.borrow_mut()=0 ); bdd::COUNT_XMEMO_TEST.with(|c| *c.borrow_mut()=0 ); // TODO: other bases
     GBASE.with(|gb| gb.replace(ASTBase::empty()));   // reset on each test
     let (y, x) = ($T0::def("y"), $T0::def("x")); let lt = x.lt(&y);
@@ -168,7 +167,8 @@ macro_rules! find_factors {
     let (src, top) = sort_by_cost(gb.raw_ast(), SrcNid{n:top0.n});
     assert!(nid::no_var(top.n), "top nid seems to be a literal. (TODO: handle these already solved cases)");
     if show_ast { src.show_named(top.n, "ast"); }
-    let mut dest = $TDEST::new(src.len());
+    // --- now we have the ast, so solve ----
+    let mut dest = $TDEST::new(src.len()); dest.init_sub(top.n);
     let answer:DstNid = solve(&mut dest, &src, top.n);
     if show_res { dest.show_named(answer.n, "result") }
     let expect = $expect;
@@ -192,38 +192,38 @@ macro_rules! find_factors {
   use {bdd::BDDBase, int::{X2,X4}};
   find_factors!(BDDBase, X2, X4, 6, vec![(2,3)]); }
 
-  /// nano test case for ANF: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
-  #[test] pub fn test_nano_anf() {
-     use {anf::ANFBase, int::{X2,X4}};
-     find_factors!(ANFBase, X2, X4, 6, vec![(2,3)]); }
+/// nano test case for ANF: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
+#[test] pub fn test_nano_anf() {
+    use {anf::ANFBase, int::{X2,X4}};
+    find_factors!(ANFBase, X2, X4, 6, vec![(2,3)]); }
 
-     /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
-  #[test] pub fn test_tiny_bdd() {
-    use {bdd::BDDBase, int::{X4,X8}};
-    find_factors!(BDDBase, X4, X8, 210, vec![(14,15)]); }
+    /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
+#[test] pub fn test_tiny_bdd() {
+  use {bdd::BDDBase, int::{X4,X8}};
+  find_factors!(BDDBase, X4, X8, 210, vec![(14,15)]); }
 
-  /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
-  #[test] pub fn test_tiny_anf() {
-    use {anf::ANFBase, int::{X4,X8}};
-    find_factors!(ANFBase, X4, X8, 210, vec![(14,15)]); }
+/// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
+#[test] pub fn test_tiny_anf() {
+  use {anf::ANFBase, int::{X4,X8}};
+  find_factors!(ANFBase, X4, X8, 210, vec![(14,15)]); }
 
-  /// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
-  #[test] pub fn test_multi_bdd() {
-    use {bdd::BDDBase, int::{X4,X8}};
-    find_factors!(BDDBase, X4, X8, 30, vec![(2,15), (3,10), (5,6)]); }
+/// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
+#[test] pub fn test_multi_bdd() {
+  use {bdd::BDDBase, int::{X4,X8}};
+  find_factors!(BDDBase, X4, X8, 30, vec![(2,15), (3,10), (5,6)]); }
 
-  /// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
-  #[test] pub fn test_multi_anf() {
-    use {anf::ANFBase, int::{X4,X8}};
-    find_factors!(ANFBase, X4, X8, 30, vec![(2,15), (3,10), (5,6)]); }
+/// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
+#[test] pub fn test_multi_anf() {
+  use {anf::ANFBase, int::{X4,X8}};
+  find_factors!(ANFBase, X4, X8, 30, vec![(2,15), (3,10), (5,6)]); }
 
-  /// same as tiny test, but multiply 2 bytes to get 210. There are 8 distinct answers.
-  /// this was intended as a unit test but is *way* too slow.
-  /// (11m17.768s on rincewind (hex-core Intel i7-8700K @ 3.70 GHz with 16GB ram) as of 6/16/2020)
-  /// (that's with debug information and no optimizations enabled in rustc)
-  #[cfg(feature="slowtests")]
-  #[test] pub fn test_small_bdd() {
-    use {bdd::BDDBase, int::{X8,X16}};
-    let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
-                        (6, 35), (7, 30), (10,21), (14,15)];
-    find_factors!(BDDBase, X8, X16, 210, expected); }
+/// same as tiny test, but multiply 2 bytes to get 210. There are 8 distinct answers.
+/// this was intended as a unit test but is *way* too slow.
+/// (11m17.768s on rincewind (hex-core Intel i7-8700K @ 3.70 GHz with 16GB ram) as of 6/16/2020)
+/// (that's with debug information and no optimizations enabled in rustc)
+#[cfg(feature="slowtests")]
+#[test] pub fn test_small_bdd() {
+  use {bdd::BDDBase, int::{X8,X16}};
+  let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
+                      (6, 35), (7, 30), (10,21), (14,15)];
+  find_factors!(BDDBase, X8, X16, 210, expected); }

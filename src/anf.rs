@@ -14,7 +14,7 @@
 //! ```
 //! In addition, identical suffixes after factoring always refer to the same node.
 use std::collections::HashSet;
-use base::Base;
+use base::{Base, SubSolver};
 use {nid, nid::{NID,I,O}};
 use vid::{VID,VidOrdering};
 use cur::{Cursor, CursorPlan};
@@ -255,6 +255,8 @@ impl ANFBase {
 } // impl ANFBase
 
 
+impl SubSolver for ANFBase {}
+
 impl HiLoBase for ANFBase {
   fn get_hilo(&self, nid:NID)->Option<HiLo> {
     let ANF { v:_, hi, lo } = self.fetch(nid);

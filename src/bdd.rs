@@ -11,7 +11,7 @@ extern crate num_cpus;
 
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use bincode;
-use base::Base;
+use base::{Base, SubSolver};
 use io;
 use reg::Reg;
 use {vhl, vhl::{HiLo, HiLoPart, HiLoBase, VHLParts, Walkable}};
@@ -825,6 +825,9 @@ impl<'a> Iterator for BDDSolIterator<'a> {
       self.next = self.bdd.next_solution(cur);
       Some(result)}
     else { None }}}
+
+
+impl SubSolver for BDDBase { }
 
 
 
