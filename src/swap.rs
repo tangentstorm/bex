@@ -4,6 +4,7 @@ use hashbrown::{HashMap, hash_map::Entry};
 use {base::{Base,GraphViz,SubSolver}, vid::VID, nid, nid::NID, bdd::BDDBase};
 use vhl::{HiLo, VHL, Walkable};
 use std::mem;
+use std::cmp::Ordering;
 
 /// index + refcount (used by VHLRow)
 struct IxRc { ix:nid::IDX, rc: u32 }
@@ -282,9 +283,9 @@ impl VHLScaffold {
         i+= 1 }
       println!("i: {}", i);
       // path must specify all vars, in order:
-      if i == steps.len() || steps[i].0 != vhl.v {
-        panic!("no step supplied for var {} in path", vhl.v) }
-      println!("i: {}, vhl.v: {}, steps[i]:{:?}", i, vhl.v, steps[i]);
+      // but if we reach a node that doesn't branch on the next variable,
+      // then assume it's below all our variables in the scaffold.
+      if i == steps.len() || steps[i].0 != vhl.v { return res }
       res = if steps[i].1 == 1 { vhl.hi } else { vhl.lo };
       if i == steps.len() || res.is_const() { return res }
       else { i+=1; vhl = self.exvex(res) }}}
@@ -502,6 +503,12 @@ impl<T:Base + Walkable> Base for SwapSolver<T> {
     self.dst.add_ref(dz) }}
 
 
+
+fn max_vid<'r,'s>(a:&'r &VID, b:&'s &VID)-> Ordering {
+  if a.is_above(b) {Ordering::Greater }
+  else if a==b { Ordering::Equal }
+  else { Ordering::Less }}
+
 impl<T:Base+Walkable> SubSolver for SwapSolver<T> {
   fn init_sub(&mut self, top:NID) {
     if top.is_const() { }
@@ -514,27 +521,21 @@ impl<T:Base+Walkable> SubSolver for SwapSolver<T> {
       else { self.dst.push(v); } }}
 
   fn next_sub(&mut self, ctx:NID)->Option<(VID, NID)> {
-    let res = if ctx.is_const() { None }
-    else if ctx.is_var() { // should only be at very start
-      self.init_sub(ctx);
-      Some((ctx.vid(), ctx)) }
-    else if ctx.vid().is_vir() {
-      let v =
-        if let Some(&t) = self.dst.vids.iter().min() {
-          std::cmp::min(ctx.vid(), t) }
-        else {ctx.vid()};
-      if self.dst.vix(v).is_some() {
-        let len = self.dst.vids.len();
-        self.dst.lift(v, len-1); }
-      else { panic!("what to do if the value to substitute isn't in the dag?")}
-      // lifting preserves the meaning of the node at that index,
-      // but the variable label may have changed.
-      let n = NID::from_vid_idx(v, ctx.idx() as u32);
-      Some((v,n))}
-    else { None };
-    println!("{:?} next_sub({})->{:?}", self.dst.vids, ctx, res);
-    res
-  }
+    if ctx.is_const() { None }
+    else {
+      let mv = if let Some(&t) = self.dst.vids.iter().max_by(max_vid) { t } else { ctx.vid() };
+      let res = if mv.is_vir() && ctx.is_var() { // should only be at very start
+        self.init_sub(ctx);
+        Some((ctx.vid(), ctx)) }
+      else if mv.is_vir() {
+        if mv != self.dst.top_vid() { self.dst.lift(mv, self.dst.vids.len()-1); }
+        // lifting preserves the meaning of the node at that index,
+        // but the variable label may have changed.
+        let n = NID::from_vid_idx(mv, ctx.idx() as u32);
+        Some((mv,n))}
+      else { None };
+      println!("{:?} next_sub({})->{:?}", self.dst.vids, ctx, res);
+      res }}
 }
 
 pub type BddSwapSolver = SwapSolver<BDDBase>;
