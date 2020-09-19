@@ -1,6 +1,7 @@
 /// Swap Solver
+use std::slice::Iter;
 use hashbrown::{HashMap, hash_map::Entry};
-use {base::{Base,GraphViz}, vid::VID, nid, nid::NID, bdd::BDDBase};
+use {base::{Base,GraphViz,SubSolver}, vid::VID, nid, nid::NID, bdd::BDDBase};
 use vhl::{HiLo, VHL, Walkable};
 use std::mem;
 
@@ -62,6 +63,7 @@ impl VHLScaffold {
 
   #[allow(dead_code)]
   fn print(&self) {
+    println!("{:?}", self.vids);
     for (i, row) in self.rows.iter().enumerate().rev() {
       print!("row:{:3} ", i);
       row.print()}}
@@ -75,6 +77,13 @@ impl VHLScaffold {
     self.vids.push(v);
     self.rows.push(VHLRow::new(v));
     ix }
+
+  /// drop top var v (double check that it's actually on top)
+  fn drop(&mut self, v:VID) {
+    if *self.vids.last().expect("can't drop from empty scaffold") == v {
+      self.vids.pop();
+      self.rows.pop(); }
+    else { panic!("can't pop {} because it's not on top ({:?})", v, self.vids) }}
 
   /// swap two adjacent vids/rows. s should be 1 row above r. (s==r+1)
   fn swap(&mut self, r:usize, s:usize) {
@@ -101,7 +110,11 @@ impl VHLScaffold {
                oo   oi  io  ii               oo   io  oi   ii
      */
     let mut new_hl = vec![];
-    for old in toprow.hl.iter_mut() {
+    let mut old_rc = vec![];
+    for old in toprow.hl.iter() {
+
+      if let Some(ixrc) = toprow.ix.get(old) { old_rc.push(ixrc.rc) }
+      else { println!("weird: no reference to {:?}", old); old_rc.push(0) }
 
       // helper: if a branch points at row s fetch its hilo. else dup it for the swap
       let old_hilo = |sn:NID|->(NID, NID) {
@@ -130,9 +143,18 @@ impl VHLScaffold {
       let lo = new_ref(io,oo); // oo stays same, oi->io
       let hi = new_ref(ii,oi); // ii stays same, io->oi
       let new = HiLo { hi, lo };
-      assert_ne!(new.hi, new.lo, "swap should result in a distinct HiLo pair");
+      // !! the following is normally true but *not* when lifting the var that's
+      //    just been replaced with a function of two items already in the tree.
+      // assert_ne!(new.hi, new.lo, "swap should result in a distinct HiLo pair");
       new_hl.push(new); }
+
+    // rebuild index. refcounts remain the same.
+    let mut new_ix = HashMap::new();
+    for (ix, (&hl, &rc)) in new_hl.iter().zip(old_rc.iter()).enumerate() {
+      new_ix.insert(hl, IxRc{ ix: ix as u32, rc }); }
+
     toprow.hl = new_hl;
+    toprow.ix = new_ix;
     self.rows[s] = toprow;}
 
   /// lift var v to height ix, by repeatedly swapping upward
@@ -163,7 +185,7 @@ impl VHLScaffold {
       else {
         let hilo = self.rows[vix].hl[n.idx()];
         if let Some(mut ixrc) = self.rows[vix].ix.get_mut(&hilo) { ixrc.rc += 1 }
-        else { panic!("can't add ref to nid that isn't in the scaffold")}}}}
+        else { panic!("can't add ref to nid ({}) that isn't in the scaffold", n)}}}}
 
   /// add ref using internal index and hilo. returns internal nid and whether it was new
   fn add_iref(&mut self, ix:usize, hl:HiLo, rc:u32)->(NID, bool) {
@@ -244,7 +266,35 @@ impl VHLScaffold {
 
   fn top_vid(&self)->VID {
     if let Some(&v) = self.vids.last() { v }
-    else { VID::nov() }}}
+    else { VID::nov() }}
+
+  // this is a helper function for following a path in the source down to its leaves
+  fn path(&self, top:NID, steps:&[(VID,u8)])->NID {
+    let mut res=top; let mut i = 0; let mut vhl = self.exvex(res);
+    println!("---------------------------------------");
+    self.print();
+    println!("steps: {:?}", steps);
+    loop {
+      // scaffold might skip over some vars since it's a reduced structure:
+      println!("vhl: {:?}", vhl);
+      while i < steps.len() && steps[i].0 != vhl.v {
+        println!("skipping var : {}", vhl.v);
+        i+= 1 }
+      println!("i: {}", i);
+      // path must specify all vars, in order:
+      if i == steps.len() || steps[i].0 != vhl.v {
+        panic!("no step supplied for var {} in path", vhl.v) }
+      println!("i: {}, vhl.v: {}, steps[i]:{:?}", i, vhl.v, steps[i]);
+      res = if steps[i].1 == 1 { vhl.hi } else { vhl.lo };
+      if i == steps.len() || res.is_const() { return res }
+      else { i+=1; vhl = self.exvex(res) }}}
+
+  fn const_path(&self, top:NID, steps:&[(VID, u8)])->bool {
+    let res = self.path(top, steps);
+    if !res.is_const() { panic!("path lead to {}, not {{I,O}}", res) }
+    res == nid::I }
+
+} // impl VHLScafffold
 
 impl GraphViz for VHLScaffold {
   fn write_dot(&self, o:NID, wr: &mut dyn std::fmt::Write) {
@@ -281,34 +331,47 @@ pub struct SwapSolver<T:Base + Walkable> {
   /** normal base for delegation    */  base: T,
   /** base nid for last src def     */  key: NID,
   /** the new "top" at each step    */  src: VHLScaffold,
-  /** the solution we're building   */  dst: VHLScaffold }
+  /** the solution we're building   */  dst: VHLScaffold}
 
 impl<T:Base + Walkable> SwapSolver<T> {
 
-    /// constructor
-    fn new(base: T, top:VID)->Self {
-      SwapSolver{ base, key:nid::O, src: VHLScaffold::empty(), dst: VHLScaffold::new(top) }}
+  /// constructor
+  fn new(base: T, top:VID)->Self {
+    SwapSolver{ base, key:nid::O, src: VHLScaffold::empty(), dst: VHLScaffold::new(top) }}
 
-    /// rebuilds the "src" scaffold from self.key (which refers to a node in self.base)
-    /// returns the internal nid
-    fn rebuild_src(&mut self)->NID {
-      let mut nmap:HashMap<NID,NID> = HashMap::new(); // bdd nids -> scaffold nids (external->internal)
-      self.src = VHLScaffold::empty();
-      if self.key.is_const() { panic!("cannot rebuild src from constant key.") }
-      #[allow(deprecated)] let mut heap = self.base.as_heap(self.key); // i just don't want anyone else using this.
-      let mut last_vid = VID::nov();
-      while let Some((VHL{ v:ev, hi, lo }, bnid)) = heap.pop() {
-        if ev != last_vid { self.src.push(ev); last_vid = ev }
-        if bnid.is_var() { /* todo: add ref to var row? */ }
-        else {
-          // both hi and lo should be known to us, since we're traversing bottom-up.
-          let hi1 = if hi.is_lit() { hi } else { *nmap.get(&hi).expect("reference to unvisited hi node(!?)") };
-          let lo1 = if lo.is_lit() { lo } else { *nmap.get(&lo).expect("reference to unvisited lo node(!?)") };
-          nmap.insert(bnid, self.src.add_ref( VHL{ v:ev, hi:hi1, lo:lo1 })); }}
-      nmap[&self.key] }}
+  /// rebuilds the "src" scaffold from self.key (which refers to a node in self.base)
+  /// returns the internal nid
+  fn rebuild_src(&mut self)->NID {
+    let mut nmap:HashMap<NID,NID> = HashMap::new(); // bdd nids -> scaffold nids (external->internal)
+    self.src = VHLScaffold::empty();
+    if self.key.is_const() { panic!("cannot rebuild src from constant key.") }
+    #[allow(deprecated)] let mut heap = self.base.as_heap(self.key); // i just don't want anyone else using this.
+    let mut last_vid = VID::nov();
+    while let Some((VHL{ v:ev, hi, lo }, bnid)) = heap.pop() {
+      if ev != last_vid { self.src.push(ev); last_vid = ev }
+      if bnid.is_var() { /* todo: add ref to var row? */ }
+      else {
+        // both hi and lo should be known to us, since we're traversing bottom-up.
+        let hi1 = if hi.is_lit() { hi } else { *nmap.get(&hi).expect("reference to unvisited hi node(!?)") };
+        let lo1 = if lo.is_lit() { lo } else { *nmap.get(&lo).expect("reference to unvisited lo node(!?)") };
+        nmap.insert(bnid, self.src.add_ref( VHL{ v:ev, hi:hi1, lo:lo1 })); }}
+    nmap[&self.key] }
+
+  pub fn solutions_trunc(&self, _n:NID, _regsize:usize)->Iter<'static, Reg> {
+    println!("TODO: solutions_trunc");
+    // TODO: garbage collection first!
+    // for v in &self.dst.vids { println!("v: {}", v); }
+    self.dst.print();
+    EMPTYVEC.iter() }
+}
+use reg::Reg;
+static EMPTYVEC: Vec<Reg> = vec![];
+
 
 impl<T:Base + Walkable> Base for SwapSolver<T> {
-  inherit![ new, num_vars, when_hi, when_lo, def, tag, get, save, dot ];
+  inherit![ num_vars, when_hi, when_lo, def, tag, get, save, dot ];
+
+  fn new(num_vars:usize)->Self { SwapSolver::new(T::new(num_vars), VID::vir((num_vars-1) as u32)) }
 
   fn and(&mut self, x:NID, y:NID)->NID { self.key = self.base.and(x,y); self.key }
   fn xor(&mut self, x:NID, y:NID)->NID { self.key = self.base.xor(x,y); self.key }
@@ -324,7 +387,15 @@ impl<T:Base + Walkable> Base for SwapSolver<T> {
     //    and even come up with some heuristics for when to raise and when not.
 
     // raise the required vid (v) to the top if it's not there already.
-    if self.dst.top_vid() != v { self.dst.lift(v, self.dst.vids.len()-1) }
+    if self.dst.top_vid() != v {
+      if self.dst.vix(v).is_some() { self.dst.lift(v, self.dst.vids.len()-1) }
+      else if self.dst.vids.len() == 1 {
+        // v isn't there but we just have one node.
+        // TODO: give the solver a protocol to say explicitly what the top virtual variable is,
+        // and then we shouldn't need this.
+        let t = self.dst.top_vid(); self.dst.relabel(t, v); }
+      else { // !! v isn't there to replace. maybe just return unchanged?
+        panic!("can't sub({}) if {} isn't in the scaffold. rubild scaffold with {} on top.", v,v,v) }}
     assert_eq!(v, self.dst.top_vid(), "can only sub(v,n,ctx) if v is top vid in the scaffold.");
 
     // in the other solvers, the algorithm composes a simple VHL from 2 input variables
@@ -334,7 +405,6 @@ impl<T:Base + Walkable> Base for SwapSolver<T> {
     assert_eq!(n, self.key, "can only sub(v,n,ctx) if n is result of last and/or/xor call.");
     // ... and then we can safely copy that VHL from the base to self.src:
     let top = self.rebuild_src();
-    let sz:VHL = self.src.invex(top);
     // because it was a simple substitution, the src now consists of a VHL on 2 variables.
     assert_eq!(self.src.vids.len(), 2, "src scaffold should use exactly 2 vids");
 
@@ -345,26 +415,20 @@ impl<T:Base + Walkable> Base for SwapSolver<T> {
     // let's call the top one z and the bottom one y:
     let (y, z) = (self.src.vids[0], self.src.vids[1]);
 
-    // this is a helper function for following a path in the source down to its leaves
-    let path = |src:&VHLScaffold,zx,yx| {
-      let mut n = if zx==1 { sz.hi } else { sz.lo };
-      if n.is_var() {
-        assert!(n.vid().var_ix() == 0, "should be branching on x0!!");
-        let sy = src.invin(n);
-        n = if yx==1 { sy.hi } else { sy.lo }}
-        else {} // it doesn't branch on y, so nothing to do
-        assert!( (n==nid::I) || (n==nid::O), "path should lead to a constant!");
-        n == nid::I };
+    // used by multiple cases below
+    macro_rules! s_bit { ($zc:expr,$yc:expr) => {
+      self.src.const_path(top, &[(z,$zc), (y,$yc)]) }}
 
     // these two variables may or may not already have their own rows in self.dst,
     // which gives us four possible patterns. We can collapse these into three patterns:
-    let (yix, zix) = (self.dst.vix(y), self.dst.vix(z));
-    let dz:VHL = match (yix, zix) {
+    let dz:VHL = match (self.dst.vix(y), self.dst.vix(z)) {
 
+      // --------------------------------------------------
       // case A: both z and x are new. this is easy. we just push a new variable
       // onto the dst and add the new VHL at the top. we map the I values in the src truth
       // table to dst.top.hi, and O to dst.top.lo
       (None, None) => {  // case_a(ctx, v, y, z);
+        let sz:VHL = self.src.invex(top);
         let VHL {v:x, hi:dy1, lo:dy0 } = self.dst.exvex(ctx);
         assert_eq!(x, v, "replacing {} but ctx branched on {}", v, x);
         self.dst.relabel(x, y);
@@ -379,57 +443,99 @@ impl<T:Base + Walkable> Base for SwapSolver<T> {
           _ => panic!("what? how is anything below $x1 not in {{ I, O, $x0, ~$x0 }}??") };
         VHL { v:z, hi:map(sz.hi), lo:map(sz.lo) }}
 
+      // --------------------------------------------------
       // case B: one of {y,z} is new to self.dst, and one is already present.
       // if z is the one that exists, we need to swap the rows
-      (None, Some(_zi)) => { todo!("z exists, y is new: swap y and z!") }
-      (Some(yi), None) => {
+      (None, Some(_zix)) => { todo!("z exists, y is new: swap y and z!") }
+      (Some(yix), None) => {
         let yp = self.dst.vids.len()-2; // desired position for y
-        if yi != yp { self.dst.lift(y, yp) }
+        if yix != yp { self.dst.lift(y, yp) }
         // these are all external nodes:
-        let VHL {v:x, hi:x1, lo:x0 } = self.dst.exvex(ctx);
-        let VHL {v:_, hi:x11, lo:x10 } = self.dst.exvex(x1);
-        let VHL {v:_, hi:x01, lo:x00 } = self.dst.exvex(x0);
-        let oo = if path(&self.src, 0, 0) { x01 } else { x00 };
-        let oi = if path(&self.src, 0, 1) { x01 } else { x00 };
-        let io = if path(&self.src, 1, 0) { x11 } else { x10 };
-        let ii = if path(&self.src, 1, 1) { x11 } else { x10 };
+        let v00 = self.dst.path(ctx, &[(v, 0),(y, 0)]);
+        let v01 = self.dst.path(ctx, &[(v, 0),(y, 1)]);
+        let v10 = self.dst.path(ctx, &[(v, 1),(y, 0)]);
+        let v11 = self.dst.path(ctx, &[(v, 1),(y, 1)]);
+        let oo = if s_bit!(0,0) { v01 } else { v00 };
+        let oi = if s_bit!(0,1) { v01 } else { v00 };
+        let io = if s_bit!(1,0) { v11 } else { v10 };
+        let ii = if s_bit!(1,1) { v11 } else { v10 };
         let zo = if oo == oi { oo } else { self.dst.add_ref(VHL{ v:y, hi:oi, lo:oo }) };
         let zi = if io == ii { ii } else { self.dst.add_ref(VHL{ v:y, hi:ii, lo:io }) };
-        self.dst.relabel(x, z);
+        self.dst.relabel(v, z);
         VHL{ v:z, hi:zi, lo:zo } }
 
+      // --------------------------------------------------
       // case C: both variables already exist in the dag
-      (Some(mut yi), Some(zi)) => {   // ...yz -> ...yz
-        // ensure that z is on top:
-        let zp = self.dst.vids.len()-1; // desired position for z
-        if zi != zp {
+      (Some(mut yix), Some(zix)) => {   // ...yzv -> ...yz
+
+        // ensure that z is directly under v:
+        let zp = self.dst.vids.len()-2; // desired position for z
+        if zix != zp {
           self.dst.lift(z, zp);
           // this might have changed y's position, so update:
-          yi = self.dst.vix(y).expect("what happened to y?!") };
+          yix = self.dst.vix(y).expect("what happened to y?!") };
 
         // ensure that y is directly under z:
-        let yp = self.dst.vids.len()-2; // desired position for y
-        if yi != yp { self.dst.lift(y, yp) }
+        let yp = self.dst.vids.len()-3; // desired position for y
+        if yix != yp { self.dst.lift(y, yp) }
 
-        // println!("self.dst.vids after lift: {:?}", self.dst.vids);
-        let VHL {v:_, hi:x1, lo:x0 } = self.dst.exvex(ctx);
-        let VHL {v:_, hi:x01, lo:x00 } = self.dst.exvex(x0);
-        let VHL {v:_, hi:x001, lo:x000 } = self.dst.exvex(x00);
-        let VHL {v:_, hi:x011, lo:x010 } = self.dst.exvex(x01);
-        let VHL {v:_, hi:x11, lo:x10 } = self.dst.exvex(x1);
-        let VHL {v:_, hi:x101, lo:x100 } = self.dst.exvex(x10);
-        let VHL {v:_, hi:x111, lo:x110 } = self.dst.exvex(x11);
+        macro_rules! d_nid { ($vc:expr,$zc:expr,$yc:expr) => {
+          self.dst.path(top, &[(v,$vc),(z,$zc), (y,$yc)]) }}
+        let oo = if s_bit!(0,0) { d_nid!(1,0,0) } else { d_nid!(0,0,0) };
+        let oi = if s_bit!(0,1) { d_nid!(1,0,1) } else { d_nid!(0,0,1)};
+        let io = if s_bit!(1,0) { d_nid!(1,1,0) } else { d_nid!(0,1,0) };
+        let ii = if s_bit!(1,1) { d_nid!(1,1,1) } else { d_nid!(0,1,1)};
 
-        let oo = if path(&self.src, 0, 0) { x100 } else { x000 };
-        let oi = if path(&self.src, 0, 1) { x101 } else { x001 };
-        let io = if path(&self.src, 1, 0) { x110 } else { x010 };
-        let ii = if path(&self.src, 1, 1) { x111 } else { x011 };
-        let zlo = if oo == oi { oo } else { self.dst.add_ref(VHL{ v:y, hi:oi, lo:oo }) };
-        let zhi = if io == ii { ii } else { self.dst.add_ref(VHL{ v:y, hi:ii, lo:io }) };
-        VHL{ v:z, hi:zhi, lo:zlo } }};
+        self.dst.drop(v);
+        // TODO: proper garbage collection with refcounts. but this works for now:
+        self.dst.drop(z);  self.dst.drop(y);
+        self.dst.push(y);  self.dst.push(z);
+
+        // now re-add the 0..2 nodes on the y layer:
+        let zo = if oo == oi { oo } else { self.dst.add_ref(VHL{ v:y, hi:oi, lo:oo }) };
+        let zi = if io == ii { ii } else { self.dst.add_ref(VHL{ v:y, hi:ii, lo:io }) };
+
+        // and the z layer:
+        VHL{ v:z, hi:zi, lo:zo } }};
 
     // todo: dec-ref to old top node.
     self.dst.add_ref(dz) }}
+
+
+impl<T:Base+Walkable> SubSolver for SwapSolver<T> {
+  fn init_sub(&mut self, top:NID) {
+    if top.is_const() { }
+    else {
+      let v = if top.vid().is_nov() { VID::vir(top.idx() as u32) } else { top.vid() };
+      if self.dst.top_vid() == v {}
+      else if self.dst.vix(v).is_some() {
+        let len = self.dst.vids.len();
+        self.dst.lift(v, len-1); }
+      else { self.dst.push(v); } }}
+
+  fn next_sub(&mut self, ctx:NID)->Option<(VID, NID)> {
+    let res = if ctx.is_const() { None }
+    else if ctx.is_var() { // should only be at very start
+      self.init_sub(ctx);
+      Some((ctx.vid(), ctx)) }
+    else if ctx.vid().is_vir() {
+      let v =
+        if let Some(&t) = self.dst.vids.iter().min() {
+          std::cmp::min(ctx.vid(), t) }
+        else {ctx.vid()};
+      if self.dst.vix(v).is_some() {
+        let len = self.dst.vids.len();
+        self.dst.lift(v, len-1); }
+      else { panic!("what to do if the value to substitute isn't in the dag?")}
+      // lifting preserves the meaning of the node at that index,
+      // but the variable label may have changed.
+      let n = NID::from_vid_idx(v, ctx.idx() as u32);
+      Some((v,n))}
+    else { None };
+    println!("{:?} next_sub({})->{:?}", self.dst.vids, ctx, res);
+    res
+  }
+}
 
 pub type BddSwapSolver = SwapSolver<BDDBase>;
 
@@ -550,4 +656,5 @@ pub type BddSwapSolver = SwapSolver<BDDBase>;
   let res = s.sub(x, key, res);
   // simplification:                = w ^ v
   assert_eq!(s.dst.exvex(res), VHL { v:w, hi:!nv, lo:nv },
-    "((w|v) ^ (w&v)) should be (w ? !v : v)"); }
+    "((w|v) ^ (w&v)) should be (w ? !v : v)");
+  assert!(s.dst.vix(x).is_none(), "x({}) should be gone from dst after substitution", x); }
