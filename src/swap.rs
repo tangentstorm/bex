@@ -7,6 +7,7 @@ use std::mem;
 use std::cmp::Ordering;
 
 /// index + refcount (used by VHLRow)
+#[derive(Debug, PartialEq, Eq)]
 struct IxRc { ix:nid::IDX, rc: u32 }
 
 /// represents a single row in a VHL-graph
@@ -14,32 +15,31 @@ struct VHLRow {
   /** (external) branch vid label   */  v: VID,
   /** (internal) hilo pairs         */  hl: Vec<HiLo>,
   /** index and refcounts for hilos */  ix: HashMap<HiLo,IxRc>,
-  /** total of ix[].1 (refcounts)   */  trc: u32,
-  /** refcount for this row's vid   */  vrc: u32,
-  /** free list (slots where rc=0)  */  fl: Vec<usize>}
+  /** internal refcount (sum ix[].1)*/  irc: u32,
+  /** refcount for this row's vid   */  vrc: u32}
+  // /** free list (slots where rc=0)  */  fl: Vec<usize>}
 
 impl VHLRow {
-  fn new(v:VID)->Self { VHLRow{ v, hl:vec![], trc:0, vrc:0, ix:HashMap::new(), fl:vec![] }}
+  fn new(v:VID)->Self { VHLRow{ v, hl:vec![], irc:0, vrc:0, ix:HashMap::new()}} //, fl:vec![] }}
 
   fn print(&self) {
-    print!("v:{} rc:{} [", self.v, self.vrc);
+    print!("v:{} vrc:{} [", self.v, self.vrc);
     for hl in &self.hl { print!(" ({}, {})", hl.hi, hl.lo)}
     println!(" ]"); }
 
-  fn add_vid_ref(&mut self) { self.vrc += 1 }
+  fn add_vref(&mut self) { self.vrc += 1 }
 
   /// add a reference to the given (internal) hilo pair, inserting it into the row if necessary.
   /// returns the external nid, and a flag indicating whether the pair was freshly added.
   /// (if it was fresh, the scaffold needs to update the refcounts for each leg)
-  fn add_ref(&mut self, hl0:HiLo, rc:u32)->(NID, bool) {
-    assert!( !(hl0.hi.is_const() && hl0.lo.is_const()), "call add_vid_ref for pure vid references");
+  fn add_iref(&mut self, hl0:HiLo, rc:u32)->(NID, bool) {
+    assert!( !(hl0.hi.is_const() && hl0.lo.is_const()), "call add_vref for pure vid references");
     let inv = hl0.lo.is_inv();
     let hl = if inv { !hl0 } else { hl0 };
     let (res, isnew) = match self.ix.entry(hl) {
       Entry::Occupied (mut e) => {
         let nid = NID::from_vid_idx(self.v, e.get().ix);
         e.get_mut().rc += rc;
-        self.trc += rc;
         (nid, false) }
       Entry::Vacant(e) => {
         let idx = self.hl.len() as nid::IDX;
@@ -47,6 +47,7 @@ impl VHLRow {
         e.insert(IxRc{ ix:idx, rc });
         self.hl.push(hl);
         (nid, true) }};
+    self.irc += rc;
     (if inv { !res } else { res }, isnew)}}
 
 /// A VHL graph broken into separate rows for easy variable reordering.
@@ -182,7 +183,7 @@ impl VHLScaffold {
     if n.is_const() { }
     else {
       let vix = self.ensure_vix(n.vid());
-      if n.is_var() { self.rows[vix].add_vid_ref() }
+      if n.is_var() { self.rows[vix].add_vref() }
       else {
         let hilo = self.rows[vix].hl[n.idx()];
         if let Some(mut ixrc) = self.rows[vix].ix.get_mut(&hilo) { ixrc.rc += 1 }
@@ -192,10 +193,10 @@ impl VHLScaffold {
   fn add_iref(&mut self, ix:usize, hl:HiLo, rc:u32)->(NID, bool) {
     let (nid, isnew) = match (hl.hi, hl.lo) {
       // TODO: put all the nid-swapping and ref counting and const/var checking in their own places!!
-      (nid::I, nid::O) => { self.rows[ix].add_vid_ref(); ( NID::var(ix as u32), false) }
-      (nid::O, nid::I) => { self.rows[ix].add_vid_ref(); (!NID::var(ix as u32), false) }
+      (nid::I, nid::O) => { self.rows[ix].add_vref(); ( NID::var(ix as u32), false) }
+      (nid::O, nid::I) => { self.rows[ix].add_vref(); (!NID::var(ix as u32), false) }
       _ => {
-        let (ex, isnew) = self.rows[ix].add_ref(hl, rc);
+        let (ex, isnew) = self.rows[ix].add_iref(hl, rc);
         (self.inen(ex), isnew) }};
     (nid,isnew)}
 
@@ -206,8 +207,8 @@ impl VHLScaffold {
     let VHL { v, hi, lo } = vhl;
     let ix = self.ensure_vix(v);
     match (vhl.hi, vhl.lo) {
-      (nid::I, nid::O) => { self.rows[ix].add_vid_ref();  NID::from_vid(v) }
-      (nid::O, nid::I) => { self.rows[ix].add_vid_ref(); !NID::from_vid(v) }
+      (nid::I, nid::O) => { self.rows[ix].add_vref();  NID::from_vid(v) }
+      (nid::O, nid::I) => { self.rows[ix].add_vref(); !NID::from_vid(v) }
       _ => {
         let (ihi, ilo) = (self.inen(hi), self.inen(lo));
         if !ihi.is_const(){assert!(ihi.vid().var_ix()<ix, "bad vhl: x{}.hi->{}", ix, ihi)}

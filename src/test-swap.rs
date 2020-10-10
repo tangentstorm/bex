@@ -1,3 +1,45 @@
+// test suite for swap solver. (included at bottom of  swap.rs)
+
+#[test] fn test_row_vrefs() {
+  let mut row = VHLRow::new(VID::vir(2));
+  assert_eq!(0, row.vrc, "shouldn't have any vid references yet.");
+  assert_eq!(0, row.irc, "total internal refcount should be 0.");
+  row.add_vref();
+  assert_eq!(1, row.vrc, "should have a vid reference now.");
+  assert_eq!(0, row.irc, "total internal refcount should still be 0."); }
+
+#[test] fn test_row_irefs() {
+  let (x0, x1, x2) = (NID::var(0), NID::var(1), NID::var(2));
+  let mut row = VHLRow::new(x2.vid());
+  assert_eq!(0, row.irc, "total internal refcount should be 0.");
+
+  let f = HiLo{hi: !x0, lo: x0};
+  let (f0, f0_new) = row.add_iref(f, 1);
+  assert_eq!(1, row.irc, "total internal refcount should be 1.");
+  assert!(f0_new, "f was first ref, so should be fresh");
+
+  let g = HiLo{hi: x1, lo:!x0};
+  let (g0, g0_new) = row.add_iref(g, 1);
+  assert_eq!(2, row.irc, "total internal refcount should be 2.");
+  assert!(g0_new, "g was first ref, so should be fresh");
+
+  assert_ne!(f0, g0, "nids for different functions should be different!");
+
+  let (f1, f1_new) = row.add_iref(f, 1);
+  assert_eq!(f0, f1, "same hilo pair should yield the same nid");
+  assert!(!f1_new, "f was duplicate ref, so shouldn't be fresh");
+  assert_eq!(3, row.irc, "total internal refcount should be 3.");
+
+  let (nf0, nf0_new) = row.add_iref(!f, 1);
+  assert_eq!(nf0, !f0, "flipping the signs should give the negated nid");
+  assert!(!nf0_new, "negated isn't a new ref");
+  assert_eq!(4, row.irc, "total internal refcount should be 4.");
+
+  let ix = row.ix;
+  assert_eq!(Some(&IxRc{ix: 0, rc: 3}), ix.get(&f), "Should be 3 refs to f, at index 0");
+  // note g.lo is inverted. to normalize g vs !g, the VHLRow should store !g
+  assert_eq!(Some(&IxRc{ix: 1, rc: 1}), ix.get(&!g), "Should be 1 ref to !g, at index 1"); }
+
 
 /// test for subbing in two new variables
 #[test] fn test_two_new() {
@@ -53,14 +95,6 @@
   assert_eq!(s.src.exin(internal), NID::from_vid_idx(s.src.top_vid(),0));
   assert_eq!(s.src.exvin(internal), VHL { v:y, hi:nid::O, lo:nz },
     "after swap (z ^ !y) should be (y ? O : z)"); }
-
-#[test] fn test_row_refs() {
-  let x1 = NID::var(1);
-  let x0 = NID::var(0);
-  let mut row = VHLRow::new(x1.vid());
-  let (f,_) = row.add_ref(HiLo{hi: x0, lo:!x0}, 1);
-  let (g,_) = row.add_ref(HiLo{hi: !x0, lo:x0}, 1);
-  assert_ne!(f,g,"nids for different funtions should be different!"); }
 
 #[test] fn test_scaffold_refs() {
   let x1 = NID::var(1);
