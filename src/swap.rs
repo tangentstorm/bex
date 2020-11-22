@@ -31,16 +31,15 @@ impl VHLRow {
     for hl in &self.hl { print!(" ({}, {})", hl.hi, hl.lo)}
     println!(" ]"); }
 
-  fn add_vref(&mut self) { self.vrc_ += 1 }
 
   fn vrc(&self)->u32 { self.vrc_ }
   fn irc(&self)->u32 { self.irc_ }
 
+  /// (new interface)
   /// add a reference to the given (internal) hilo pair, inserting it into the row if necessary.
   /// returns the external nid, and a flag indicating whether the pair was freshly added.
   /// (if it was fresh, the scaffold needs to update the refcounts for each leg)
-  fn add_iref(&mut self, hl0:HiLo, rc:u32)->(NID, bool) {
-    assert!( !(hl0.hi.is_const() && hl0.lo.is_const()), "call add_vref for pure vid references");
+  fn add_ref(&mut self, hl0:HiLo, rc:u32)->(NID, bool) {
     let inv = hl0.lo.is_inv();
     let hl = if inv { !hl0 } else { hl0 };
     let (res, isnew) = match self.ix.entry(hl) {
@@ -55,7 +54,18 @@ impl VHLRow {
         self.hl.push(hl);
         (nid, true) }};
     self.irc_ += rc;
-    (if inv { !res } else { res }, isnew)}}
+    (if inv { !res } else { res }, isnew) }
+
+  /// (old interface) add variable-specific reference
+  fn add_vref(&mut self) {
+    self.add_ref(HiLo{ hi: nid::I, lo: nid::O }, 1);
+    self.irc_ -= 1;
+    self.vrc_ += 1; }
+
+  /// (old interface) add hilo-specific reference(s)
+  fn add_iref(&mut self, hl0:HiLo, rc:u32)->(NID, bool) {
+    assert!( !(hl0.hi.is_const() && hl0.lo.is_const()), "call add_vref for pure vid references");
+    self.add_ref(hl0, rc)}}
 
 /// A VHL graph broken into separate rows for easy variable reordering.
 struct VHLScaffold {
