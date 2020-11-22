@@ -15,19 +15,22 @@ struct VHLRow {
   /** (external) branch vid label   */  v: VID,
   /** (internal) hilo pairs         */  hl: Vec<HiLo>,
   /** index and refcounts for hilos */  ix: HashMap<HiLo,IxRc>,
-  /** internal refcount (sum ix[].1)*/  irc: u32,
-  /** refcount for this row's vid   */  vrc: u32}
+  /** internal refcount (sum ix[].1)*/  irc_: u32,
+  /** refcount for this row's vid   */  vrc_: u32}
   // /** free list (slots where rc=0)  */  fl: Vec<usize>}
 
 impl VHLRow {
-  fn new(v:VID)->Self { VHLRow{ v, hl:vec![], irc:0, vrc:0, ix:HashMap::new()}} //, fl:vec![] }}
+  fn new(v:VID)->Self { VHLRow{ v, hl:vec![], irc_:0, vrc_:0, ix:HashMap::new()}} //, fl:vec![] }}
 
   fn print(&self) {
-    print!("v:{} vrc:{} [", self.v, self.vrc);
+    print!("v:{} vrc:{} [", self.v, self.vrc());
     for hl in &self.hl { print!(" ({}, {})", hl.hi, hl.lo)}
     println!(" ]"); }
 
-  fn add_vref(&mut self) { self.vrc += 1 }
+  fn add_vref(&mut self) { self.vrc_ += 1 }
+
+  fn vrc(&self)->u32 { self.vrc_ }
+  fn irc(&self)->u32 { self.irc_ }
 
   /// add a reference to the given (internal) hilo pair, inserting it into the row if necessary.
   /// returns the external nid, and a flag indicating whether the pair was freshly added.
@@ -47,7 +50,7 @@ impl VHLRow {
         e.insert(IxRc{ ix:idx, rc });
         self.hl.push(hl);
         (nid, true) }};
-    self.irc += rc;
+    self.irc_ += rc;
     (if inv { !res } else { res }, isnew)}}
 
 /// A VHL graph broken into separate rows for easy variable reordering.
@@ -311,10 +314,10 @@ impl GraphViz for VHLScaffold {
     for (&ev, row) in self.vids.iter().zip(self.rows.iter()) {
       if !row.hl.is_empty() {
         write!(wr, "{{rank=same").unwrap();
-        if row.vrc > 0 { write!(wr, " {}", ev).unwrap() }
+        if row.vrc() > 0 { write!(wr, " {}", ev).unwrap() }
         for i in 0..row.hl.len() { write!(wr, " \"{}\"", NID::from_vid_idx(ev, i as nid::IDX)).unwrap(); }
         w!("}}") }
-      if row.vrc > 0 {
+      if row.vrc() > 0 {
         w!(" {}[label=\"{}\"];", ev, ev);
         w!("edge[style=solid]; {}->I", ev);
         w!("edge[style=dashed]; {}->O", ev);}
