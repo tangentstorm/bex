@@ -1,4 +1,8 @@
 /// Swap Solver
+/// This solver attempts to optimize the BDD concept for substitution solving.
+/// It adjusts the input variable ordering by swapping adjacent inputs until the
+/// one to be replaced next is at the top of the BDD. The actual replacement work
+/// at each step then only involves the top three rows.
 use std::slice::Iter;
 use hashbrown::{HashMap, hash_map::Entry};
 use {base::{Base,GraphViz,SubSolver}, vid::VID, nid, nid::NID, bdd::BDDBase};
@@ -10,7 +14,7 @@ use std::cmp::Ordering;
 #[derive(Debug, PartialEq, Eq)]
 struct IxRc { ix:nid::IDX, rc: u32 }
 
-/// represents a single row in a VHL-graph
+/// VHLRow represents a single row in a VHL-graph
 struct VHLRow {
   /** (external) branch vid label   */  v: VID,
   /** (internal) hilo pairs         */  hl: Vec<HiLo>,
