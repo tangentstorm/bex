@@ -38,9 +38,9 @@
   assert_eq!(4, row.irc(), "total internal refcount should be 4.");
 
   let ix = row.ix;
-  assert_eq!(Some(&IxRc{ix: 0, rc: 3}), ix.get(&f), "Should be 3 refs to f, at index 0");
+  assert_eq!(Some(&IxRc0{ix: 0, rc: 3}), ix.get(&f), "Should be 3 refs to f, at index 0");
   // note g.lo is inverted. to normalize g vs !g, the VHLRow should store !g
-  assert_eq!(Some(&IxRc{ix: 1, rc: 1}), ix.get(&!g), "Should be 1 ref to !g, at index 1"); }
+  assert_eq!(Some(&IxRc0{ix: 1, rc: 1}), ix.get(&!g), "Should be 1 ref to !g, at index 1"); }
 
 // -- SwapSolver --------------------------------------------------------------
 

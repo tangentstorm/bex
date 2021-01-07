@@ -5,20 +5,113 @@
 /// at each step then only involves the top three rows.
 use std::slice::Iter;
 use hashbrown::{HashMap, hash_map::Entry};
-use {base::{Base,GraphViz,SubSolver}, vid::VID, nid, nid::NID, bdd::BDDBase};
+use {base::{Base,GraphViz,SubSolver}, vid::VID, vid::NOV, nid, nid::NID, bdd::BDDBase};
 use vhl::{HiLo, VHL, Walkable};
 use std::mem;
 use std::cmp::Ordering;
 
+/// An index-based unique identifier for nodes.
+/// In a regular NID, the branch variable is embedded directly in the ID
+/// for easy comparisions. In particular, a NID representing a pure variable
+/// is only ever a NID, and never stored internally. But for the swap solver,
+/// every node has to be able to change its branch variable, even those that
+/// represent pure variables. So unless we want to walk the whole graph above
+/// the change and paste every NID in place, we need a new solution.
+/// Basically, we want to store the node information in something like a VHL,
+/// and then *always* look up that information from the source, rather than
+/// relying on some cached property of the reference itself.
+///
+/// XID provides a simple index-based reference scheme. We could use pointers
+/// instead, but a) this is a lot of work in rust, and b) I want this to be
+/// a representation that can persist on disk, so a simple flat index into an
+/// array of XVHLs is fine for me.
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+struct XID { x: i64 }
+const XID_O:XID = XID { x: 0 };
+const XID_I:XID = XID { x: !0 };
+impl XID {
+  fn O()->XID { XID_O }
+  fn I()->XID { XID_I }
+  fn is_inv(&self) -> bool { self.x<0 }
+  fn inv(&self) -> XID { XID { x: !self.x } }}
+impl std::ops::Not for XID { type Output = XID; fn not(self)->XID { self.inv() }}
+
+/// Like Hilo, but uses XIDs instead of NIDs
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct XHiLo { pub hi: XID, pub lo: XID }
+impl std::ops::Not for XHiLo { type Output = XHiLo; fn not(self)->XHiLo { XHiLo { hi:!self.hi, lo:!self.lo }}}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+struct XVHL { pub v: VID, pub hi: XID, pub lo: XID }
+impl XVHL {
+  fn hilo(&self)->XHiLo { XHiLo { hi:self.hi, lo:self.lo }}}
+impl std::ops::Not for XVHL { type Output = XVHL; fn not(self)->XVHL { XVHL { v:self.v, hi:!self.hi, lo:!self.lo }}}
+
+/// Dummy value to stick into vhls[0]
+const XVHL_O:XVHL = XVHL{ v: NOV, hi:XID_O, lo:XID_I };
+
+/// index + refcount
+#[derive(Debug, PartialEq, Eq)]
+struct IxRc { ix:usize, rc: usize }
+
+/**
+We need to map:
+
+  ix -> XVHL   (so we can look up info about the node)
+  XVHL -> ix   (so we can avoid creating duplicates)
+  v -> [ix]    (so we can quickly locate all nodes associated with a variable, and change them)
+
+  these last two can and should be combined into v -> {XHiLo -> IxRc0}
+  because we want to frequently swap out whole rows of variables.
+  we'll call this XVHLRow
+*/
+struct XVHLRow { v: VID, hm: HashMap<XHiLo, IxRc> }
+impl XVHLRow {
+  fn new(v:VID)->Self {XVHLRow{ v, hm: HashMap::new() }}}
+
+/// The scaffold itself contains the master list of records (vhls) and
+/// the per-row index
+struct XVHLScaffold {
+  vhls: Vec<XVHL>,
+  rows: HashMap<VID, XVHLRow> }
+
+impl XVHLScaffold {
+  fn new()->Self { XVHLScaffold{ vhls:vec![XVHL_O], rows: HashMap::new() } }
+
+  /// add a reference to the given XVHL, inserting it into the row if necessary.
+  /// returns the external nid, and a flag indicating whether the pair was freshly added.
+  /// (if it was fresh, the scaffold needs to update the refcounts for each leg)
+  fn add_ref(&mut self, hl0:XVHL, rc:usize)->(XID, bool) {
+    let inv = hl0.lo.is_inv();
+    let vhl = if inv { !hl0 } else { hl0 };
+    let row = self.rows.entry(vhl.v).or_insert_with(|| XVHLRow::new(vhl.v));
+    let hl = vhl.hilo();
+    let (res, isnew) = match row.hm.entry(hl) {
+      Entry::Occupied (mut e) => {
+        let ix = e.get().ix;
+        e.get_mut().rc += rc;
+        (XID{ x:ix as i64}, false) }
+      Entry::Vacant(e) => {
+        let ix = self.vhls.len();
+        e.insert(IxRc{ ix, rc });
+        self.vhls.push(vhl);
+        (XID { x:ix as i64 }, true) }};
+    (if inv { !res } else { res }, isnew) }
+}
+
+
+
+
+
 /// index + refcount (used by VHLRow)
 #[derive(Debug, PartialEq, Eq)]
-struct IxRc { ix:nid::IDX, rc: u32 }
+struct IxRc0 { ix:nid::IDX, rc: u32 }
 
 /// VHLRow represents a single row in a VHL-graph
 struct VHLRow {
   /** (external) branch vid label   */  v: VID,
   /** (internal) hilo pairs         */  hl: Vec<HiLo>,
-  /** index and refcounts for hilos */  ix: HashMap<HiLo,IxRc>,
+  /** index and refcounts for hilos */  ix: HashMap<HiLo,IxRc0>,
   /** internal refcount (sum ix[].1)*/  irc_: u32,
   /** refcount for this row's vid   */  vrc_: u32}
   // /** free list (slots where rc=0)  */  fl: Vec<usize>}
@@ -50,7 +143,7 @@ impl VHLRow {
       Entry::Vacant(e) => {
         let idx = self.hl.len() as nid::IDX;
         let nid = NID::from_vid_idx(self.v, idx);
-        e.insert(IxRc{ ix:idx, rc });
+        e.insert(IxRc0{ ix:idx, rc });
         self.hl.push(hl);
         (nid, true) }};
     self.irc_ += rc;
@@ -132,7 +225,7 @@ impl VHLScaffold {
     let mut old_rc = vec![];
     for old in toprow.hl.iter() {
 
-      if let Some(ixrc) = toprow.ix.get(old) { old_rc.push(ixrc.rc) }
+      if let Some(IxRc0) = toprow.ix.get(old) { old_rc.push(IxRc0.rc) }
       else { println!("weird: no reference to {:?}", old); old_rc.push(0) }
 
       // helper: if a branch points at row s fetch its hilo. else dup it for the swap
@@ -170,7 +263,7 @@ impl VHLScaffold {
     // rebuild index. refcounts remain the same.
     let mut new_ix = HashMap::new();
     for (ix, (&hl, &rc)) in new_hl.iter().zip(old_rc.iter()).enumerate() {
-      new_ix.insert(hl, IxRc{ ix: ix as u32, rc }); }
+      new_ix.insert(hl, IxRc0{ ix: ix as u32, rc }); }
 
     toprow.hl = new_hl;
     toprow.ix = new_ix;
@@ -203,7 +296,7 @@ impl VHLScaffold {
       if n.is_var() { self.rows[vix].add_vref() }
       else {
         let hilo = self.rows[vix].hl[n.idx()];
-        if let Some(mut ixrc) = self.rows[vix].ix.get_mut(&hilo) { ixrc.rc += 1 }
+        if let Some(mut IxRc0) = self.rows[vix].ix.get_mut(&hilo) { IxRc0.rc += 1 }
         else { panic!("can't add ref to nid ({}) that isn't in the scaffold", n)}}}}
 
   /// add ref using internal index and hilo. returns internal nid and whether it was new

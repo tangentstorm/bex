@@ -23,6 +23,7 @@ use self::VidEnum::*;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VID { v:VidEnum }
+pub const NOV:VID = VID { v:NoV };
 
 fn cmp_depth_idx(x:u32, y:&u32)->VidOrdering {
   match x.cmp(y) {
