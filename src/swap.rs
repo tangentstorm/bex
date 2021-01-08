@@ -72,11 +72,31 @@ impl XVHLRow {
 /// The scaffold itself contains the master list of records (vhls) and
 /// the per-row index
 struct XVHLScaffold {
+  vids: Vec<VID>,
   vhls: Vec<XVHL>,
   rows: HashMap<VID, XVHLRow> }
 
 impl XVHLScaffold {
-  fn new()->Self { XVHLScaffold{ vhls:vec![XVHL_O], rows: HashMap::new() } }
+  fn new()->Self { XVHLScaffold{ vids:vec![], vhls:vec![XVHL_O], rows: HashMap::new() } }
+
+  /// return the index (height) of the given variable within the scaffold (if it exists)
+  fn vix(&self, v:VID)->Option<usize> { self.vids.iter().position(|&x| x == v) }
+
+  /// add a new vid to the top of the stack. return its position.
+  fn push(&mut self, v:VID)->usize {
+    // TODO: check for duplicates
+    let ix = self.vids.len();
+    self.vids.push(v);
+    self.rows.insert(v, XVHLRow::new(v));
+    ix }
+
+  /// drop top var v (double check that it's actually on top)
+  fn drop(&mut self, v:VID) {
+    if *self.vids.last().expect("can't drop from empty scaffold") == v {
+      self.vids.pop();
+      self.rows.remove(&v); }
+    else { panic!("can't pop {} because it's not on top ({:?})", v, self.vids) }}
+
 
   /// add a reference to the given XVHL, inserting it into the row if necessary.
   /// returns the external nid, and a flag indicating whether the pair was freshly added.
@@ -97,9 +117,41 @@ impl XVHLScaffold {
         self.vhls.push(vhl);
         (XID { x:ix as i64 }, true) }};
     (if inv { !res } else { res }, isnew) }
+
+  // swap two adjacent rows (by indices r and s=r+1)
+  fn swap_up(&mut self, r:usize) {
+    let s = r + 1;
+    assert!(s < self.vids.len(), "can't swap a row that's not in the scaffold.");
+    // start: y=vids[s] is above z=vids[r]
+    let (y, z) = (self.vids[s], self.vids[r]);
+    // goal: z=vids[s] is above y=vids[r]
+    self.vids.swap(r, s);
+    // row[s] (oldtop) will now be rewritten in place.
+    // row[r] *or any row below it* may have refcount changes.
+    // let mut oldtop = self.rows.remove(&y).unwrap();
+
+    /*
+      row s:   y ____                        z ____
+               :     \                       :     \
+      row r:   z __    z __      =>          y __    y __
+               :   \    :  \                 :   \    :   \
+               oo   oi  io  ii               oo   io  oi   ii
+
+    we are lifting row r up 1. row r nodes cannot possibly refer to variable s,
+      so we will not remove anything from this row.
+      we will add a new entry whenever nodes in row s refer to r
+    we are pushing row s down 1, so we may have nodes that refer to r.
+      for each node in s:
+        node refers to r if at least one of its legs xids are in the set of xids in {v.ix for v in row_s.values()}
+        match hi_r, lo_r:
+          0 0 -> s?hi:lo   (nothing to actually do)
+          0 1 -> r?(s? hi:lo) : (s? oi:oo)     s.add_ref() to both legs, r.add_ref() to new top.
+          1 0 -> r?(s? ii:io) : (s? hi:lo)     ''
+          1 1 -> r?(s? ii:io) : (s? oi:oo)     ''
+    */
+
+  }
 }
-
-
 
 
 
