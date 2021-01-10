@@ -37,22 +37,22 @@ impl XID {
 impl std::ops::Not for XID { type Output = XID; fn not(self)->XID { self.inv() }}
 
 /// Like Hilo, but uses XIDs instead of NIDs
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 struct XHiLo { pub hi: XID, pub lo: XID }
 impl std::ops::Not for XHiLo { type Output = XHiLo; fn not(self)->XHiLo { XHiLo { hi:!self.hi, lo:!self.lo }}}
+impl XHiLo { fn as_tup(&self)->(XID,XID) { (self.hi, self.lo) }}
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 struct XVHL { pub v: VID, pub hi: XID, pub lo: XID }
-impl XVHL {
-  fn hilo(&self)->XHiLo { XHiLo { hi:self.hi, lo:self.lo }}}
+impl XVHL { fn hilo(&self)->XHiLo { XHiLo { hi:self.hi, lo:self.lo } }}
 impl std::ops::Not for XVHL { type Output = XVHL; fn not(self)->XVHL { XVHL { v:self.v, hi:!self.hi, lo:!self.lo }}}
 
 /// Dummy value to stick into vhls[0]
 const XVHL_O:XVHL = XVHL{ v: NOV, hi:XID_O, lo:XID_I };
 
 /// index + refcount
-#[derive(Debug, PartialEq, Eq)]
-struct IxRc { ix:usize, rc: usize }
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+struct IxRc { ix:XID, rc: usize }
 
 /**
 We need to map:
@@ -108,50 +108,191 @@ impl XVHLScaffold {
     let hl = vhl.hilo();
     let (res, isnew) = match row.hm.entry(hl) {
       Entry::Occupied (mut e) => {
-        let ix = e.get().ix;
+        let xid = e.get().ix;
         e.get_mut().rc += rc;
-        (XID{ x:ix as i64}, false) }
+        (xid, false) }
       Entry::Vacant(e) => {
         let ix = self.vhls.len();
-        e.insert(IxRc{ ix, rc });
+        let xid = XID { x: ix as i64 };
+        e.insert(IxRc{ ix:xid, rc });
         self.vhls.push(vhl);
-        (XID { x:ix as i64 }, true) }};
+        (xid, true) }};
     (if inv { !res } else { res }, isnew) }
 
-  // swap two adjacent rows (by indices r and s=r+1)
-  fn swap_up(&mut self, r:usize) {
-    let s = r + 1;
-    assert!(s < self.vids.len(), "can't swap a row that's not in the scaffold.");
-    // start: y=vids[s] is above z=vids[r]
-    let (y, z) = (self.vids[s], self.vids[r]);
-    // goal: z=vids[s] is above y=vids[r]
-    self.vids.swap(r, s);
-    // row[s] (oldtop) will now be rewritten in place.
-    // row[r] *or any row below it* may have refcount changes.
-    // let mut oldtop = self.rows.remove(&y).unwrap();
+  // lift variable v up by one level
+  fn lift(&mut self, v:VID) {
+    let vi = self.vix(v).expect("requested vid was not in the scaffold.");
+    if vi+1 == self.vids.len() { println!("warning: attempt to lift top vid {}", v); return }
+    let w = self.vids[vi+1]; // start: v is 1 level below w
+    self.vids.swap(vi+1, vi);
 
-    /*
-      row s:   y ____                        z ____
-               :     \                       :     \
-      row r:   z __    z __      =>          y __    y __
-               :   \    :  \                 :   \    :   \
-               oo   oi  io  ii               oo   io  oi   ii
+    //  row wi:  w ____                v        v ____
+    //            :     \                        :     \
+    //  row vi:  v __    v __      =>  w   =>   w __    w __
+    //           :   \    :  \                  :   \    :   \
+    //           oo   oi  io  ii                oo   io  oi   ii
+    // we are lifting row v up 1. row v nodes cannot possibly refer to variable w,
+    //  so we will not remove anything from this row.
+    //  But we will add a new entry whenever nodes in row w refer to v
+    let mut rv = self.rows.remove(&v).unwrap();
 
-    we are lifting row r up 1. row r nodes cannot possibly refer to variable s,
-      so we will not remove anything from this row.
-      we will add a new entry whenever nodes in row s refer to r
-    we are pushing row s down 1, so we may have nodes that refer to r.
-      for each node in s:
-        node refers to r if at least one of its legs xids are in the set of xids in {v.ix for v in row_s.values()}
-        match hi_r, lo_r:
-          0 0 -> s?hi:lo   (nothing to actually do)
-          0 1 -> r?(s? hi:lo) : (s? oi:oo)     s.add_ref() to both legs, r.add_ref() to new top.
-          1 0 -> r?(s? ii:io) : (s? hi:lo)     ''
-          1 1 -> r?(s? ii:io) : (s? oi:oo)     ''
-    */
+    // row w may contain nodes that refer to v, which now need to be moved to row v.
+    let mut rw = self.rows.remove(&w).unwrap();
 
-  }
-}
+    // build a map of xid->hilo for row v, so we know every xid that branches on v,
+    // and can quickly retrieve its high and lo branches.
+    let mut vx:HashMap<XID,(XID,XID)> = HashMap::new();
+    for (vhl, ixrc) in rv.hm.iter() { vx.insert(ixrc.ix, vhl.as_tup()); }
+
+    // moving a node from w->v modifies the old node in place, so no new xid is used.
+    // (we know it's not already on row v because before the lift, row v could not refer to w)
+    // at least one of the node's children will be replaced by a new node on row w. proof:
+    //     general pattern of 3rd level rewrite is   abcd ->  acbd
+    //     we can consolidate one side of the swap: abac -> aabc (so we get v?a:w?b:c)
+    //     but we can't consodilate both:  abab -> abba, because abab can't appear in a bdd.
+    //     no other pattern would result in consolidating both sides. (qed)
+    // therefore: worst case for growth is every node in w moves to v and creates 2 new children.
+    // a block of 2*w.len ids for this algorithm to assign.
+    // so: in the future, if we want to create new nodes with unique ids in a distributed way,
+    // we should allocate 2*w.len ids for this function to assign to the new nodes.
+    // reference counts elsewhere in the graph can change, but never drop to 0.
+    // if they did, then swaping the rows back would have to create new nodes elsewhere.
+
+    // helpers to track which new nodes are to be created.
+    // i am doing this because i don't want to refer to self -- partially to appease the
+    // borrow checker immediately, but also because in the future i'd like this to be done
+    // in a distributed process, which will modify the two rows in place and then send the
+    // refcount and branch variable changes to a central repo.
+    enum XWIP0 { XID(XID), HL(XID,XID) }
+
+    let mut edec:Vec<XID> = vec![];          // external nodes to decref
+    let mut new_w = |hi, lo|->XWIP0 {
+      if hi == lo { edec.push(hi); XWIP0::XID(lo) } // meld nodes (so dec ref)
+      else { XWIP0::HL(hi, lo) }};
+
+    let mut vdec = |xid| {
+      let (hi, lo)=vx.get(&xid).unwrap();
+      rv.hm.get_mut(&XHiLo{hi:*hi, lo:*lo}).unwrap().rc -= 1 };
+
+    let mut wmov0: Vec<(XHiLo,XWIP0,XWIP0)> = vec![];
+    let mut new_v = |whl,ii,io,oi,oo| { wmov0.push((whl, new_w(ii,oi), new_w(io,oo))) };
+
+    for (whl, ixrc) in rw.hm.iter() {
+      let (hi, lo) = whl.as_tup();
+      match (vx.get(&hi), vx.get(&lo)) {
+        (None,          None         ) => {},  // no refs, so nothing to do.
+        (None,          Some((oi,oo))) => { new_v(*whl, hi, lo,*oi,*oo); vdec(lo) },
+        (Some((ii,io)), None         ) => { new_v(*whl,*ii,*io, hi, lo); vdec(hi) },
+        (Some((ii,io)), Some((oi,oo))) => { new_v(*whl,*ii,*io,*oi,*oo); vdec(hi); vdec(lo) }}}
+
+    // convert the XWIP0::HL entries to XWIP1::NEW
+    enum XWIP1 { XID(XID), NEW(i64) }
+    let mut wnix:i64 = 0; // next index for new node
+    let mut wnew: HashMap<(XID,XID), IxRc> = HashMap::new();
+    let mut eref: Vec<XID> = vec![]; // external nodes to incref
+    let mut resolve = |xw0|->XWIP1 {
+      match xw0 {
+        XWIP0::XID(x) => { eref.push(x); XWIP1::XID(x) },
+        XWIP0::HL(hi,lo) => {
+          // these are the new children on the w level. it may turn out that these already
+          // existed on w, in the set of nodes that did not refer to v. So either we incref
+          // the existing node, or we create a new node:
+          // TODO: this isn't really an IxRc since the xid is virtual
+          match wnew.entry((hi, lo)) {
+            Entry::Occupied(mut e) => { e.get_mut().rc += 1; XWIP1::NEW(e.get().ix.x) }
+            Entry::Vacant(e) => {
+              let x = wnix as i64; wnix += 1;
+              e.insert(IxRc{ ix:XID{x}, rc:1 });
+              XWIP1::NEW(x) }}}}};
+
+    // make the removals from row w, and fill in wnew, wtov, eref
+    let mut wtov: Vec<(IxRc,XWIP1,XWIP1)> = vec![];
+    for (whl, wip_hi, wip_lo) in wmov0 {
+      // construct new child nodes on the w level, or add new references to external nodes:
+      let (hi, lo) = (resolve(wip_hi), resolve(wip_lo));
+      // delete the old node from row w. the newly created nodes don't depend on v, and
+      // the node to delete does depend on v, so there's never a conflict here.
+      let ixrc = rw.hm.remove(&whl).expect("I saw a whl that wasn't there!");
+      // we can't add directly to row v until we resolve the XWIP1::NEW entries,
+      // but we can make a list of the work to be done:
+      wtov.push((ixrc, hi, lo)); }
+
+    // garbage collect on row v. these won't conflict with vnew because we will never
+    // add a *completely* new node on row v - only move existing nodes from w, and
+    // these will never match existing nodes on because at least one leg always
+    // points at w (and this wasn't possible before the lift). But we may need to delete
+    // nodes because the rc dropped to 0 (when the node was only referenced by row w).
+    let mut vdel:Vec<XID> = vec![];
+    rv.hm.retain(|_, ixrc| {
+      if ixrc.rc == 0 { vdel.push(ixrc.ix); false }
+      else { true }});
+
+    // If we are deleting from v and adding to w, we can re-use the xids.
+    // otherwise, allocate some new xids.
+    let xids: Vec<XID> = {
+      let have = vdel.len();
+      let need = wnew.len(); assert_eq!(need, wnix as usize);
+      if need <= have {
+        let tmp = vdel.split_off(need);
+        let res = vdel; vdel = tmp;
+        res }
+      else {
+        let mut res = vdel; vdel = vec![];
+        res.extend(self.alloc(have-need));
+        res }};
+
+    // [commit wnew]
+    // we now have a xid for each newly constructed (XWIP) child node on row w,
+    // so go ahead and add them. we will also map the temp ix to the actual ix.
+    let mut wipxid = vec![XID_O; wnix as usize];
+    for ((hi,lo), ixrc0) in wnew.iter() {
+      let mut ixrc = *ixrc0;
+      let wipix = ixrc0.ix.x as usize;
+      ixrc.ix = xids[wipix as usize];  // map the temp xid -> true xid
+      wipxid[wipix as usize] = ixrc.ix; // remember for w2x, below.
+      rv.hm.insert(XHiLo{hi:*hi, lo:*lo}, ixrc);
+      // and now update the master store:
+      self.vhls[ixrc.ix.x as usize] = XVHL{ v:w, hi:*hi, lo:*lo }; }
+
+    // [commit wtov]
+    // with those nodes created, we can finish moving the nodes from w to v.
+    let w2x = |wip:&XWIP1| {
+      match wip {
+        XWIP1::XID(x) => *x,
+        XWIP1::NEW(x) => { wipxid[*x as usize] } }};
+    for (ixrc, wip_hi, wip_lo) in wtov.iter() {
+      let (hi, lo) = (w2x(wip_hi), w2x(wip_lo));
+      rw.hm.insert(XHiLo{hi, lo}, *ixrc);
+      self.vhls[ixrc.ix.x as usize] = XVHL{ v, hi, lo }; }
+
+    // TODO: [ commit vdel ]
+    // we've already removed them from the local copy. just need to add the
+    // original entries to a linked list.
+
+    // TODO: [ commit eref changes ]
+    // TODO: merge eref and edec into a hashmap of (XID->drc:usize)
+    // it should be usize rather than i64 because nothing outside of these two rows
+    // will ever have its refcount drop all the way to 0.
+    // (each decref is something like (w?(v?a:b):(v?a:c))->(v?a:w?b:c) so we're just
+    // merging two references into one, never completely deleting one).
+
+    // finally, put the rows back where we found them:
+    self.rows.insert(v, rv);
+    self.rows.insert(w, rw);
+
+  } // fn lift
+
+  fn alloc(&mut self, count:usize)->Vec<XID> {
+    let mut i = count; let mut res = vec![];
+    while i > 0 {
+      // TODO: reclaim garbage collected xids.
+      let x = self.vhls.len() as i64;
+      self.vhls.push(XVHL_O);
+      res.push(XID{x});
+      i-=1 }
+    res }
+
+} // impl XVHLScaffold
 
 
 
