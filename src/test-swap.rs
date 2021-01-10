@@ -1,5 +1,21 @@
 // test suite for swap solver. (included at bottom of  swap.rs)
 
+// -- XSDebug ------------------------------------------------------------------
+
+#[test] fn test_xsdebug() {
+  let mut xsd = XSDebug::new("abcvw");
+  let a = xsd.xid('a');
+  let b = xsd.xid('b');
+  let v = xsd.xid('v');
+  let c = xsd.ite(v,a,b);
+  let x = xsd.xid("abv?");
+  assert_eq!(c,x);
+  let y = xsd.xid("acv?");
+  let w = xsd.xid('w');
+  let z = xsd.ite(w,x,y);
+  assert_eq!(xsd.fmt(z), "abv? acv? w?"); }
+
+
 // -- VHLRow ------------------------------------------------------------------
 
 #[test] fn test_row_vrefs() {

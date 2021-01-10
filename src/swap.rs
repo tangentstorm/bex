@@ -10,21 +10,34 @@ use vhl::{HiLo, VHL, Walkable};
 use std::mem;
 use std::cmp::Ordering;
 
-/// An index-based unique identifier for nodes.
-/// In a regular NID, the branch variable is embedded directly in the ID
-/// for easy comparisions. In particular, a NID representing a pure variable
-/// is only ever a NID, and never stored internally. But for the swap solver,
-/// every node has to be able to change its branch variable, even those that
-/// represent pure variables. So unless we want to walk the whole graph above
-/// the change and paste every NID in place, we need a new solution.
-/// Basically, we want to store the node information in something like a VHL,
-/// and then *always* look up that information from the source, rather than
-/// relying on some cached property of the reference itself.
+/// XID: An index-based unique identifier for nodes.
 ///
-/// XID provides a simple index-based reference scheme. We could use pointers
-/// instead, but a) this is a lot of work in rust, and b) I want this to be
-/// a representation that can persist on disk, so a simple flat index into an
-/// array of XVHLs is fine for me.
+/// In a regular NID, the branch variable is embedded directly in the ID for easy
+/// comparisions. The working assumption is always that the variable refers to
+/// the level ofthe tree, and that the levels are numbered in ascending order.
+///
+/// In contrast, the swap solver works by shuffling the levels so that the next
+/// substitution happens at the top, where there are only a small number of nodes.
+///
+/// When two adjacent levels are swapped, nodes on the old top level that refer to
+/// the old bottom level are rewritten as nodes on the new top level. But nodes on
+/// the old top level that do not refer to the bottom level remain on the old top
+/// (new bottom) level. So some of the nodes with the old top brach variable change
+/// their variable, and some do not.
+///
+/// NIDs are designed to optimize cases where comparing branch variables are important
+/// and so the variable is encoded directly in the reference to avoid frequent lookups.
+/// For the swap solver, however, this encoding would force us to rewrite the nids in
+/// every layer above each swap, and references held outside the base would quickly
+/// fall out of sync.
+///
+/// So instead, XIDs are simple indices into an array (XID=indeX ID). If we want to
+/// know the branch variable for a XID, we simply look it up by index in a central
+/// vector.
+///
+/// We could use pointers instead of array indices, but I want this to be a representation
+/// that can persist on disk, so a simple flat index into an array of XVHLs is fine for me.
+
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 struct XID { x: i64 }
 const XID_O:XID = XID { x: 0 };
@@ -69,9 +82,8 @@ struct XVHLRow { v: VID, hm: HashMap<XHiLo, IxRc> }
 impl XVHLRow {
   fn new(v:VID)->Self {XVHLRow{ v, hm: HashMap::new() }}}
 
-/// The scaffold itself contains the master list of records (vhls) and
-/// the per-row index
-struct XVHLScaffold {
+/// The scaffold itself contains the master list of records (vhls) and the per-row index
+pub struct XVHLScaffold {
   vids: Vec<VID>,
   vhls: Vec<XVHL>,
   rows: HashMap<VID, XVHLRow> }
@@ -120,7 +132,7 @@ impl XVHLScaffold {
     (if inv { !res } else { res }, isnew) }
 
   // lift variable v up by one level
-  fn lift(&mut self, v:VID) {
+  fn swap(&mut self, v:VID) {
     let vi = self.vix(v).expect("requested vid was not in the scaffold.");
     if vi+1 == self.vids.len() { println!("warning: attempt to lift top vid {}", v); return }
     let w = self.vids[vi+1]; // start: v is 1 level below w
@@ -177,7 +189,7 @@ impl XVHLScaffold {
     let mut wmov0: Vec<(XHiLo,XWIP0,XWIP0)> = vec![];
     let mut new_v = |whl,ii,io,oi,oo| { wmov0.push((whl, new_w(ii,oi), new_w(io,oo))) };
 
-    for (whl, ixrc) in rw.hm.iter() {
+    for whl in rw.hm.keys() {
       let (hi, lo) = whl.as_tup();
       match (vx.get(&hi), vx.get(&lo)) {
         (None,          None         ) => {},  // no refs, so nothing to do.
@@ -295,6 +307,34 @@ impl XVHLScaffold {
 } // impl XVHLScaffold
 
 
+/// A simple RPN debugger to make testing easier.
+struct XSDebug {
+  /** scaffold */   xs: XVHLScaffold,
+  /** vid->char */  vc: HashMap<VID,char>,
+  /** char->vid */  cv: HashMap<char,VID>,
+  /** data stack */ ds: Vec<XID>}
+
+impl XSDebug {
+  pub fn new(vars:&str)->Self {
+    let mut this = XSDebug {
+      xs: XVHLScaffold::new(),
+      vc: HashMap::new(),
+      cv: HashMap::new(),
+      ds: vec![] };
+    for c in vars.chars() { this.var(c) }
+    this }
+  fn var(&mut self, c:char) {
+    let ix = self.xs.vids.len();
+    let v = VID::var(ix as u32);
+    self.xs.push(v);
+    self.vc.insert(v, c);
+    self.cv.insert(c, v);}
+  fn pop(&mut self)->XID { self.ds.pop().expect("stack underflow") }
+  fn xid()
+}
+
+
+// ------------------------------------------------------
 
 /// index + refcount (used by VHLRow)
 #[derive(Debug, PartialEq, Eq)]
