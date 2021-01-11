@@ -4,16 +4,16 @@
 
 #[test] fn test_xsdebug() {
   let mut xsd = XSDebug::new("abcvw");
-  let a = xsd.xid('a');
-  let b = xsd.xid('b');
-  let v = xsd.xid('v');
+  let a = xsd.xid("a");
+  let b = xsd.xid("b");
+  let v = xsd.xid("v");
   let c = xsd.ite(v,a,b);
   let x = xsd.xid("abv?");
   assert_eq!(c,x);
   let y = xsd.xid("acv?");
-  let w = xsd.xid('w');
+  let w = xsd.xid("w");
   let z = xsd.ite(w,x,y);
-  assert_eq!(xsd.fmt(z), "abv? acv? w?"); }
+  assert_eq!(xsd.fmt(z), "abv? acv? w? "); }
 
 
 // -- VHLRow ------------------------------------------------------------------

@@ -310,29 +310,52 @@ impl XVHLScaffold {
 /// A simple RPN debugger to make testing easier.
 struct XSDebug {
   /** scaffold */   xs: XVHLScaffold,
-  /** vid->char */  vc: HashMap<VID,char>,
-  /** char->vid */  cv: HashMap<char,VID>,
+  /** xid->char */  xc: HashMap<XID,char>,  // used in fmt for direct var refs
+  /** vid->char */  vc: HashMap<VID,char>,  // used in fmt for branch vars from xs
+  /** char->xid */  cx: HashMap<char,XID>,  // used in run to map iden->xid
+  /** xid->vid */   xv: HashMap<XID,VID>,   // used in ite
   /** data stack */ ds: Vec<XID>}
 
 impl XSDebug {
   pub fn new(vars:&str)->Self {
     let mut this = XSDebug {
-      xs: XVHLScaffold::new(),
-      vc: HashMap::new(),
-      cv: HashMap::new(),
-      ds: vec![] };
+      xs: XVHLScaffold::new(), ds: vec![],
+      xc: HashMap::new(), vc:HashMap::new(), cx: HashMap::new(), xv: HashMap::new() };
     for c in vars.chars() { this.var(c) }
     this }
   fn var(&mut self, c:char) {
-    let ix = self.xs.vids.len();
-    let v = VID::var(ix as u32);
+    let ix = self.xs.vids.len(); let v = VID::var(ix as u32);
     self.xs.push(v);
-    self.vc.insert(v, c);
-    self.cv.insert(c, v);}
+    let x:XID = self.xs.add_ref(XVHL{ v, hi:XID_I, lo:XID_O}, 1).0;
+    self.xc.insert(x, c); self.vc.insert(v, c);
+    self.cx.insert(c, x); self.xv.insert(x, v);}
   fn pop(&mut self)->XID { self.ds.pop().expect("stack underflow") }
-  fn xid()
-}
-
+  fn xid(&mut self, s:&str)->XID { self.run(s); self.pop() }
+  fn run(&mut self, s:&str) {
+    for c in s.chars() {
+      match c {
+        'a'..='z' => if let Some(&x) = self.cx.get(&c) { self.ds.push(x) }
+          else { panic!("unknown variable: {}", c)},
+        '0' => self.ds.push(XID_O),
+        '1' => self.ds.push(XID_I),
+        '!' => { let x= self.pop(); self.ds.push(!x) },
+        ' ' => {}, // no-op
+        '?' => { let vx=self.pop(); let lo = self.pop(); let hi = self.pop(); self.ite(vx,hi,lo); },
+        _ => panic!("unrecognized character: {}", c)}}}
+  fn ite(&mut self, vx:XID, hi:XID, lo:XID)->XID {
+    if let Some(&v) = self.xv.get(&vx) {
+      let res = self.xs.add_ref(XVHL{ v, hi, lo }, 1).0;
+      self.ds.push(res); res }
+    else {  panic!("not a branch var: {}", self.fmt(vx)) }}
+  fn fmt(&mut self, x:XID)->String {
+    match x {
+      XID_O => "0".to_string(),
+      XID_I => "1".to_string(),
+      _ => if let Some(&c) = self.xc.get(&x) { format!("{}", c).to_string() }
+           else { // todo: handle inverses
+            let XVHL{v,hi,lo} = self.xs.vhls[x.x as usize];
+            let vc:char = *self.vc.get(&v).expect(&format!("couldn't map branch var back to char: {:?}", v));
+            format!("{}{}{}? ", self.fmt(hi), self.fmt(lo), vc) } }}}
 
 // ------------------------------------------------------
 
