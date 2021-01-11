@@ -15,48 +15,22 @@
   let z = xsd.ite(w,x,y);
   assert_eq!(xsd.fmt(z), "abv? acv? w? "); }
 
+// -- XVHLScaffold ------------------------------------------------------------
 
-// -- VHLRow ------------------------------------------------------------------
 
-#[test] fn test_row_vrefs() {
-  let mut row = VHLRow::new(VID::vir(2));
-  assert_eq!(0, row.vrc(), "shouldn't have any vid references yet.");
-  assert_eq!(0, row.irc(), "total internal refcount should be 0.");
-  row.add_vref();
-  assert_eq!(1, row.vrc(), "should have a vid reference now.");
-  assert_eq!(0, row.irc(), "total internal refcount should still be 0."); }
+fn check_swap(old:&str, new:&str) {
+  let mut xsd = XSDebug::new("abcdvw");
+  let v = xsd.vid('v');
+  let x = xsd.xid(old);
+  xsd.xs.swap(v);
+  assert_eq!(xsd.fmt(x), new.to_string(), "unexpected results after swap.")}
 
-#[test] fn test_row_irefs() {
-  let (x0, x1, x2) = (NID::var(0), NID::var(1), NID::var(2));
-  let mut row = VHLRow::new(x2.vid());
-  assert_eq!(0, row.irc(), "total internal refcount should be 0.");
+#[test] fn test_scaffold() {
+  check_swap("abv? cdv? w?", "acw? bdw? v? ");
+  check_swap("abv? acv? w?", "abcw? v? ");
+  check_swap("a abv? w?", "aabw? v? "); // TODO: fails with stack overflow?!
+ }
 
-  let f = HiLo{hi: !x0, lo: x0};
-  let (f0, f0_new) = row.add_iref(f, 1);
-  assert_eq!(1, row.irc(), "total internal refcount should be 1.");
-  assert!(f0_new, "f was first ref, so should be fresh");
-
-  let g = HiLo{hi: x1, lo:!x0};
-  let (g0, g0_new) = row.add_iref(g, 1);
-  assert_eq!(2, row.irc(), "total internal refcount should be 2.");
-  assert!(g0_new, "g was first ref, so should be fresh");
-
-  assert_ne!(f0, g0, "nids for different functions should be different!");
-
-  let (f1, f1_new) = row.add_iref(f, 1);
-  assert_eq!(f0, f1, "same hilo pair should yield the same nid");
-  assert!(!f1_new, "f was duplicate ref, so shouldn't be fresh");
-  assert_eq!(3, row.irc(), "total internal refcount should be 3.");
-
-  let (nf0, nf0_new) = row.add_iref(!f, 1);
-  assert_eq!(nf0, !f0, "flipping the signs should give the negated nid");
-  assert!(!nf0_new, "negated isn't a new ref");
-  assert_eq!(4, row.irc(), "total internal refcount should be 4.");
-
-  let ix = row.ix;
-  assert_eq!(Some(&IxRc0{ix: 0, rc: 3}), ix.get(&f), "Should be 3 refs to f, at index 0");
-  // note g.lo is inverted. to normalize g vs !g, the VHLRow should store !g
-  assert_eq!(Some(&IxRc0{ix: 1, rc: 1}), ix.get(&!g), "Should be 1 ref to !g, at index 1"); }
 
 // -- SwapSolver --------------------------------------------------------------
 

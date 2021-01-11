@@ -331,7 +331,8 @@ impl XSDebug {
     self.cx.insert(c, x); self.xv.insert(x, v);}
   fn pop(&mut self)->XID { self.ds.pop().expect("stack underflow") }
   fn xid(&mut self, s:&str)->XID { self.run(s); self.pop() }
-  fn run(&mut self, s:&str) {
+  fn vid(&self, c:char)->VID { *self.cx.get(&c).map(|x| self.xv.get(x).unwrap()).unwrap() }
+  fn run(&mut self, s:&str)->String {
     for c in s.chars() {
       match c {
         'a'..='z' => if let Some(&x) = self.cx.get(&c) { self.ds.push(x) }
@@ -341,13 +342,14 @@ impl XSDebug {
         '!' => { let x= self.pop(); self.ds.push(!x) },
         ' ' => {}, // no-op
         '?' => { let vx=self.pop(); let lo = self.pop(); let hi = self.pop(); self.ite(vx,hi,lo); },
-        _ => panic!("unrecognized character: {}", c)}}}
+        _ => panic!("unrecognized character: {}", c)}}
+    if let Some(&x) = self.ds.last() { self.fmt(x) } else { "".to_string() }}
   fn ite(&mut self, vx:XID, hi:XID, lo:XID)->XID {
     if let Some(&v) = self.xv.get(&vx) {
       let res = self.xs.add_ref(XVHL{ v, hi, lo }, 1).0;
       self.ds.push(res); res }
     else {  panic!("not a branch var: {}", self.fmt(vx)) }}
-  fn fmt(&mut self, x:XID)->String {
+  fn fmt(&self, x:XID)->String {
     match x {
       XID_O => "0".to_string(),
       XID_I => "1".to_string(),
