@@ -193,8 +193,8 @@ impl XVHLScaffold {
       let (hi, lo) = whl.as_tup();
       match (vx.get(&hi), vx.get(&lo)) {
         (None,          None         ) => {},  // no refs, so nothing to do.
-        (None,          Some((oi,oo))) => { new_v(*whl, hi, lo,*oi,*oo); vdec(lo) },
-        (Some((ii,io)), None         ) => { new_v(*whl,*ii,*io, hi, lo); vdec(hi) },
+        (None,          Some((oi,oo))) => { new_v(*whl, hi, hi,*oi,*oo); vdec(lo) },
+        (Some((ii,io)), None         ) => { new_v(*whl,*ii,*io, lo, lo); vdec(hi) },
         (Some((ii,io)), Some((oi,oo))) => { new_v(*whl,*ii,*io,*oi,*oo); vdec(hi); vdec(lo) }}}
 
     // convert the XWIP0::HL entries to XWIP1::NEW
