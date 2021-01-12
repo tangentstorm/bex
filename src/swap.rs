@@ -697,17 +697,17 @@ impl GraphViz for VHLScaffold {
         w!("  \"{}\"->\"{}\";", n, sink(hl.lo)); }}
     w!("}}"); }}
 
-pub struct SwapSolver<T:Base + Walkable> {
+pub struct OldSwapSolver<T:Base + Walkable> {
   /** normal base for delegation    */  base: T,
   /** base nid for last src def     */  key: NID,
   /** the new "top" at each step    */  src: VHLScaffold,
   /** the solution we're building   */  dst: VHLScaffold}
 
-impl<T:Base + Walkable> SwapSolver<T> {
+impl<T:Base + Walkable> OldSwapSolver<T> {
 
   /// constructor
   fn new(base: T, top:VID)->Self {
-    SwapSolver{ base, key:nid::O, src: VHLScaffold::empty(), dst: VHLScaffold::new(top) }}
+    OldSwapSolver { base, key:nid::O, src: VHLScaffold::empty(), dst: VHLScaffold::new(top) }}
 
   /// rebuilds the "src" scaffold from self.key (which refers to a node in self.base)
   /// returns the internal nid
@@ -738,10 +738,10 @@ use reg::Reg;
 static EMPTYVEC: Vec<Reg> = vec![];
 
 
-impl<T:Base + Walkable> Base for SwapSolver<T> {
+impl<T:Base + Walkable> Base for OldSwapSolver<T> {
   inherit![ num_vars, when_hi, when_lo, def, tag, get, save, dot ];
 
-  fn new(num_vars:usize)->Self { SwapSolver::new(T::new(num_vars), VID::vir((num_vars-1) as u32)) }
+  fn new(num_vars:usize)->Self { OldSwapSolver::new(T::new(num_vars), VID::vir((num_vars-1) as u32)) }
 
   fn and(&mut self, x:NID, y:NID)->NID { self.key = self.base.and(x,y); self.key }
   fn xor(&mut self, x:NID, y:NID)->NID { self.key = self.base.xor(x,y); self.key }
@@ -878,7 +878,7 @@ fn max_vid<'r,'s>(a:&'r &VID, b:&'s &VID)-> Ordering {
   else if a==b { Ordering::Equal }
   else { Ordering::Less }}
 
-impl<T:Base+Walkable> SubSolver for SwapSolver<T> {
+impl<T:Base+Walkable> SubSolver for OldSwapSolver<T> {
   fn init_sub(&mut self, top:NID) {
     if top.is_const() { }
     else {
@@ -907,6 +907,6 @@ impl<T:Base+Walkable> SubSolver for SwapSolver<T> {
       res }}
 }
 
-pub type BddSwapSolver = SwapSolver<BDDBase>;
+pub type BddSwapSolver = OldSwapSolver<BDDBase>;
 
 include!("test-swap.rs");

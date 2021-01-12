@@ -17,52 +17,34 @@
 
 // -- XVHLScaffold ------------------------------------------------------------
 
-
 fn check_swap(old:&str, new:&str) {
   let mut xsd = XSDebug::new("abcdvw");
-  let v = xsd.vid('v');
-  let x = xsd.xid(old);
+  let (v, x) = (xsd.vid('v'), xsd.xid(old));
   xsd.xs.swap(v);
   assert_eq!(xsd.fmt(x), new.to_string(), "unexpected results after swap.")}
 
-#[test] fn test_scaffold() {
+#[test] fn test_swap() {
   check_swap("abv? cdv? w?", "acw? bdw? v? ");
   check_swap("abv? acv? w?", "abcw? v? ");
-  check_swap("a abv? w?", "aabw? v? "); // TODO: fails with stack overflow?!
- }
+  check_swap("a abv? w?", "aabw? v? ");
+  check_swap("abv? b w?", "abw? bv? "); }
 
 
 // -- SwapSolver --------------------------------------------------------------
 
-#[test] fn test_swap() {
-  let nz = NID::vir(3); let z = nz.vid();
-  let ny = NID::vir(2); let y = ny.vid();
-  let mut s = BddSwapSolver::new(BDDBase::new(0), z);
-  let key = s.and(nz, !ny);
-  s.rebuild_src();
-  // s.src.print();
-  assert_eq!(s.src.top_vid(), z, "z=v3 should start out on top");
-  assert_eq!(s.src.exvex(key), VHL { v:z, hi:!ny, lo:nid::O },
-    "(z ^ !y) should be (z ? !y : O)");
-  // println!("key: {}", key);
-  let internal = s.src.inen(key);
-  s.src.swap(0,1);
-  assert_eq!(s.src.top_vid(), y, "y=v2 should be on top now");
-  // s.src.print();
-  // println!("src.vids: {:?}", s.src.vids);
-  // TODO: double check this.
-  assert_eq!(s.src.exin(internal), NID::from_vid_idx(s.src.top_vid(),0));
-  assert_eq!(s.src.exvin(internal), VHL { v:y, hi:nid::O, lo:nz },
-    "after swap (z ^ !y) should be (y ? O : z)"); }
-
-#[test] fn test_scaffold_refs() {
-  let x1 = NID::var(1);
-  let x0 = NID::var(0);
-  let mut s = VHLScaffold::new(x0.vid());
-  s.push(x1.vid());
-  let (f,_) = s.add_iref(1, HiLo{hi: x0, lo:!x0}, 1);
-  let (g,_) = s.add_iref(1, HiLo{hi: !x0, lo:x0}, 1);
-  assert_ne!(f,g,"nids for different funtions should be different!");}
+/// test for subbing in two new variables
+#[test] fn test_two_new() {
+  // a: ast node, v: vir
+  let a5 = NID::vir(5); let v5 = a5.vid();
+  let a4 = NID::vir(4); let v4 = a4.vid();
+  let a2 = NID::vir(2);
+  let mut s = BddSwapSolver::new(BDDBase::new(0), v5);
+  assert_eq!(v5, s.dst.vids[0], "label v5 should map to x0 after new(v5)");
+  let key = s.and(a4, a2);
+  let res = s.sub(v5, key, a5);
+  // s.dst.print(); //  s.dst.show_named(nid::O, "dst");
+  assert_eq!(s.dst.exvex(res), VHL { v:v4, hi:a2, lo:nid::O },
+    "(v4 AND v2) should be (v4 ? v2 : O)"); }
 
 /// test for subbing in two existing variables
 #[test] fn test_two_old() {
@@ -111,22 +93,6 @@ fn check_swap(old:&str, new:&str) {
   assert_eq!(s.dst.exvex(res), VHL { v:w, hi:!nv, lo:nv },
     "((w|v) ^ (w&v)) should be (w ? !v : v)");
   assert!(s.dst.vix(x).is_none(), "x({}) should be gone from dst after substitution", x); }
-
-// -- Substitution Logic ------------------------------------------------------
-
-/// test for subbing in two new variables
-#[test] fn test_two_new() {
-  // a: ast node, v: vir
-  let a5 = NID::vir(5); let v5 = a5.vid();
-  let a4 = NID::vir(4); let v4 = a4.vid();
-  let a2 = NID::vir(2);
-  let mut s = BddSwapSolver::new(BDDBase::new(0), v5);
-  assert_eq!(v5, s.dst.vids[0], "label v5 should map to x0 after new(v5)");
-  let key = s.and(a4, a2);
-  let res = s.sub(v5, key, a5);
-  // s.dst.print(); //  s.dst.show_named(nid::O, "dst");
-  assert_eq!(s.dst.exvex(res), VHL { v:v4, hi:a2, lo:nid::O },
-    "(v4 AND v2) should be (v4 ? v2 : O)"); }
 
 /// test for subbing in one new variable
 #[test] fn test_one_new() {
