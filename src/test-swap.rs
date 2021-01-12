@@ -34,6 +34,14 @@ fn check_swap(old:&str, new:&str) {
 
 /// test for subbing in two new variables
 #[test] fn test_two_new() {
+  // # vars: "abxyz"
+  // # syntax: x y v %   <---> replace v with y in x
+  // xy* --> x0y?   # and
+  // xy^ --> x!xy?  # xor
+  // xy+ --> 1xy?   # or
+  // expect: z    xy* z %  --> xy*
+  // expect: abz? xy* z %  --> abx? b y?
+
   // a: ast node, v: vir
   let a5 = NID::vir(5); let v5 = a5.vid();
   let a4 = NID::vir(4); let v4 = a4.vid();
@@ -48,6 +56,17 @@ fn check_swap(old:&str, new:&str) {
 
 /// test for subbing in two existing variables
 #[test] fn test_two_old() {
+  //   stack                     input
+  //                             xy^
+  //   x!xy?                     vw+    y%       # x^(v+w)
+  //   x!   x!   xv?    w?       vw*    x%       # (v*w)^(v+w)
+  // = vw*! vw*! vw* v? w?    # x-> (vw*)
+  // = vw*! 1w*! 0w* v? w?    # fill in v
+  // = vw*! w! 0 v? w?        # simplify const exprs
+  // = v1*! 0! 0 v? w?        # fill in w
+  // = v!   1 0 v?  w?        # simplify
+  // = v!   v  w?             # simplify
+
   let nz = NID::vir(4); let z = nz.vid();
   let ny = NID::vir(3); let y = ny.vid();
   let nx = NID::vir(2); let x = nx.vid();
@@ -96,6 +115,16 @@ fn check_swap(old:&str, new:&str) {
 
 /// test for subbing in one new variable
 #[test] fn test_one_new() {
+  //                                   wy^
+  //   w!     w    y?                  xw*   y%
+  // = w!     w    y?  x0w?  y%
+  // = w!     w    x0w??            # replace y
+  // = (w!w x0w??) (w!w x0w??) x?   # decompose on x
+  // = (w!w 10w??) (w!w 00w??) x?   # subst x
+  // = (w!w   w?)  (w!w   0?)  x?   # simplify 10w?->w  00w?->0
+  // = (1!0   w?)  w  x?            # distribute w? on left,  apply 0? on right
+  // = 00w?  w  x?                  # apply ! to 1
+  // = 0 w x?                       # final answer
   let nz = NID::vir(3); let z = nz.vid();
   let ny = NID::vir(2); let y = ny.vid();
   let nx = NID::vir(1); let x = nx.vid();
@@ -109,5 +138,5 @@ fn check_swap(old:&str, new:&str) {
   // so (w ^ y) -> (w ^ (x & w))
   let key = s.and(nx, nw);
   let wxw = s.sub(y, key, wy);
-  assert_eq!(s.dst.exvex(wxw), VHL { v:x, hi:!nw, lo:nid::O },
-    "(w ^ (x & w)) should be (x ? !w : O)"); }
+  assert_eq!(s.dst.exvex(wxw), VHL { v:x, hi:nid::O, lo:nw },
+    "(w ^ (x & w)) should be (x ? O : w)"); }
