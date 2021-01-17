@@ -45,7 +45,13 @@ const XID_I:XID = XID { x: !0 };
 impl XID {
   fn O()->XID { XID_O }
   fn I()->XID { XID_I }
-  fn is_inv(&self) -> bool { self.x<0 }
+  fn ix(&self)->usize { self.x as usize }
+  fn raw(&self)->XID { if self.x >= 0 { *self } else { !*self }}
+  fn is_inv(&self)->bool { self.x<0 }
+  fn is_const(&self)->bool { *self == XID_O || *self == XID_I }
+  fn to_bool(&self)->bool {
+    if self.is_const() { *self == XID_I }
+    else { panic!("attempted to convert non-constant XID->bool") }}
   fn inv(&self) -> XID { XID { x: !self.x } }}
 impl std::ops::Not for XID { type Output = XID; fn not(self)->XID { self.inv() }}
 
@@ -94,6 +100,12 @@ impl XVHLScaffold {
   /// return the index (height) of the given variable within the scaffold (if it exists)
   fn vix(&self, v:VID)->Option<usize> { self.vids.iter().position(|&x| x == v) }
 
+  /// return the vid immediately above v in the scaffold, or None
+  /// if v is top vid. Panics if v is not in the scaffold.
+  fn vid_above(&self, v:VID)->Option<&VID> {
+    if let Some(x) = self.vix(v) { self.vids.get(x+1) }
+    else { panic!("vid_above(v:{}): v not in the scaffold.", v) }}
+
   /// add a new vid to the top of the stack. return its position.
   fn push(&mut self, v:VID)->usize {
     // TODO: check for duplicates
@@ -108,7 +120,6 @@ impl XVHLScaffold {
       self.vids.pop();
       self.rows.remove(&v); }
     else { panic!("can't pop {} because it's not on top ({:?})", v, self.vids) }}
-
 
   /// add a reference to the given XVHL, inserting it into the row if necessary.
   /// returns the external nid, and a flag indicating whether the pair was freshly added.
@@ -131,7 +142,21 @@ impl XVHLScaffold {
         (xid, true) }};
     (if inv { !res } else { res }, isnew) }
 
-  // lift variable v up by one level
+  /// decrement refcount for ix. return new refcount.
+  fn dec_ref_ix(&mut self, ix:XID)->usize {
+    println!("todo: dec_ref_ix");
+    1 }
+
+  /// fetch the XVHL for the given xid (if we know it)
+  fn get(&self, x:XID)->Option<XVHL> {
+    self.vhls.get(x.raw().ix()).map(|&y| if x.is_inv() { !y } else { y }) }
+
+  /// follow the hi or lo branch of x
+  fn follow(&self, x:XID, which:bool)->XID {
+    let vhl = self.get(x).unwrap();
+    if which { vhl.hi } else { vhl.lo }}
+
+  /// lift variable v up by one level
   fn swap(&mut self, v:VID) {
     let vi = self.vix(v).expect("requested vid was not in the scaffold.");
     if vi+1 == self.vids.len() { println!("warning: attempt to lift top vid {}", v); return }
@@ -696,6 +721,51 @@ impl GraphViz for VHLScaffold {
         w!("edge[style=dashed, arrowhead={}];", arrow(hl.lo));
         w!("  \"{}\"->\"{}\";", n, sink(hl.lo)); }}
     w!("}}"); }}
+
+
+pub struct SwapSolver {
+  /** the solution we're building   */  xs: XVHLScaffold}
+
+impl SwapSolver {
+  /// constructor
+  fn new(top: VID) -> Self {
+    let mut xs = XVHLScaffold::new(); xs.push(top);
+    SwapSolver { xs }}
+
+  fn arrange_vars(&mut self) { todo!("arrange_vars()") }
+  fn tbl(&self, x:XID, limit:Option<VID>)->Vec<XID> { todo!("tbl()") }
+
+  /// Replace v with src in dst
+  fn sub(&mut self, v:VID, src:XID, dst:XID)->XID {
+
+    // 1. permute vars.
+    self.arrange_vars();
+
+    // 2. let q = truth table for src
+    let q: Vec<bool> = self.tbl(src, None).iter().map(|x|{ x.to_bool() }).collect();
+
+    // 3. let p = (partial) truth table for dst at row v.
+    //    (each item is either a const or branches on v)
+    let p: Vec<XID> = self.tbl(dst, Some(v));
+
+    // 4. let r = the partial truth table for result at row v.
+    let mut r:Vec<XID> = p.iter().zip(q.iter()).map(|(&di,&qi)| {
+      if di.is_const() { di } else { self.xs.follow(di, qi) }}).collect();
+
+    // 5. rebuild the rows above r.
+    let mut u = v;
+    while let Some(&w) = self.xs.vid_above(u) {
+      u = w;
+      r = r.chunks(2).map(|hl:&[XID]| {
+        let (hi, lo) = (hl[0], hl[1]);
+        if hi == lo { self.xs.dec_ref_ix(hi); lo } // 2 refs -> 1
+        else {
+          let t = self.xs.add_ref(XVHL{ v:u, hi, lo }, 1).0;
+          self.xs.dec_ref_ix(hi); self.xs.dec_ref_ix(lo);
+          t } }).collect() }
+
+    // 5. garbage collect and return r[0]
+    r[0] }} // sub, SwapSolver
 
 pub struct OldSwapSolver<T:Base + Walkable> {
   /** normal base for delegation    */  base: T,
