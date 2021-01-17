@@ -4,7 +4,7 @@
 /// one to be replaced next is at the top of the BDD. The actual replacement work
 /// at each step then only involves the top three rows.
 use std::slice::Iter;
-use hashbrown::{HashMap, hash_map::Entry};
+use hashbrown::{HashMap, hash_map::Entry, HashSet};
 use {base::{Base,GraphViz,SubSolver}, vid::VID, vid::NOV, nid, nid::NID, bdd::BDDBase};
 use vhl::{HiLo, VHL, Walkable};
 use std::mem;
@@ -178,7 +178,17 @@ impl XVHLScaffold {
       i-=1}
     xs}
 
-  /// lift variable v up by one level
+  fn alloc(&mut self, count:usize)->Vec<XID> {
+    let mut i = count; let mut res = vec![];
+    while i > 0 {
+      // TODO: reclaim garbage collected xids.
+      let x = self.vhls.len() as i64;
+      self.vhls.push(XVHL_O);
+      res.push(XID{x});
+      i-=1 }
+    res }
+
+  /// swap v up by one level
   fn swap(&mut self, v:VID) {
     let vi = self.vix(v).expect("requested vid was not in the scaffold.");
     if vi+1 == self.vids.len() { println!("warning: attempt to lift top vid {}", v); return }
@@ -341,15 +351,26 @@ impl XVHLScaffold {
 
   } // fn lift
 
-  fn alloc(&mut self, count:usize)->Vec<XID> {
-    let mut i = count; let mut res = vec![];
-    while i > 0 {
-      // TODO: reclaim garbage collected xids.
-      let x = self.vhls.len() as i64;
-      self.vhls.push(XVHL_O);
-      res.push(XID{x});
-      i-=1 }
-    res }
+  /// arrange row order to match the given groups.
+  /// the groups are given in bottom-up order, and should
+  /// completely partition the scaffold vids.
+  // TODO: executes these swaps in parallel
+  fn regroup(&mut self, groups:Vec<HashSet<VID>>) {
+    // TODO: check for complete partition
+    let mut lc = -1;  // left cursor
+    let mut rc = -1;  // right cursor
+    let mut ni = 0; // number of items in groups we've seen
+    for g in groups {
+      ni += g.len() as i64;
+        while lc < ni {
+          // if we're looking at something in right place, skip it
+          while g.contains(&self.vids[lc as usize]) { lc+=1 }
+          if lc < ni {
+            // scan ahead for next group member
+            rc = lc+1;
+            while !g.contains(&self.vids[rc as usize]) { rc+=1 }
+            // now drag the misplaced row down
+            while rc > lc { rc -= 1; self.swap(self.vids[rc as usize]) }}}}}
 
 } // impl XVHLScaffold
 
