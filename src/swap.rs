@@ -156,6 +156,28 @@ impl XVHLScaffold {
     let vhl = self.get(x).unwrap();
     if which { vhl.hi } else { vhl.lo }}
 
+  /// produce the fully expandend "truth table" for a bdd
+  /// down to the given row, by building rows of the corresponding
+  /// binary tree. xids in the result will either be constants,
+  /// branch on the limit var, or branch on some variable below it.
+  fn tbl(&self, top:XID, limit:Option<VID>)->Vec<XID> {
+    let mut xs = vec![top];
+    let z = if let Some(lim) = limit {
+      self.vix(lim).expect("limit var isn't in scaffold") as i64}
+      else {-1}; // 0 would leave nodes branching on bottom var
+    let mut v = self.get(top).expect("top wasn't in the scaffold").v;
+    let mut i = self.vix(v).unwrap() as i64;
+    assert!(i >= z, "invalid limit depth {} for node on row {}", z, i);
+    while i > z {                       // copy-and-expand for each row down to limit
+      v = self.vids[i as usize];     // redundant 1st time but can't put at end b/c -1
+      let tmp = xs; xs = vec![];
+      for x in tmp {
+        let vhl = self.get(x).unwrap();
+        if vhl.v == v { xs.push(vhl.lo); xs.push(vhl.hi); }
+        else { xs.push(x); xs.push(x); }}
+      i-=1}
+    xs}
+
   /// lift variable v up by one level
   fn swap(&mut self, v:VID) {
     let vi = self.vix(v).expect("requested vid was not in the scaffold.");
@@ -380,7 +402,8 @@ impl XSDebug {
       XID_I => "1".to_string(),
       _ => if let Some(&c) = self.xc.get(&x) { format!("{}", c).to_string() }
            else { // todo: handle inverses
-            let XVHL{v,hi,lo} = self.xs.vhls[x.x as usize];
+            let ix = if x.x >= 0 { x.x as usize } else { !x.x as usize };
+            let XVHL{v,hi,lo} = self.xs.vhls[ix];
             let vc:char = *self.vc.get(&v).expect(&format!("couldn't map branch var back to char: {:?}", v));
             format!("{}{}{}? ", self.fmt(hi), self.fmt(lo), vc) } }}}
 
@@ -733,7 +756,6 @@ impl SwapSolver {
     SwapSolver { xs }}
 
   fn arrange_vars(&mut self) { todo!("arrange_vars()") }
-  fn tbl(&self, x:XID, limit:Option<VID>)->Vec<XID> { todo!("tbl()") }
 
   /// Replace v with src in dst
   fn sub(&mut self, v:VID, src:XID, dst:XID)->XID {
@@ -742,11 +764,11 @@ impl SwapSolver {
     self.arrange_vars();
 
     // 2. let q = truth table for src
-    let q: Vec<bool> = self.tbl(src, None).iter().map(|x|{ x.to_bool() }).collect();
+    let q: Vec<bool> = self.xs.tbl(src, None).iter().map(|x|{ x.to_bool() }).collect();
 
     // 3. let p = (partial) truth table for dst at row v.
     //    (each item is either a const or branches on v)
-    let p: Vec<XID> = self.tbl(dst, Some(v));
+    let p: Vec<XID> = self.xs.tbl(dst, Some(v));
 
     // 4. let r = the partial truth table for result at row v.
     let mut r:Vec<XID> = p.iter().zip(q.iter()).map(|(&di,&qi)| {

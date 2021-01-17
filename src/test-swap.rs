@@ -29,6 +29,12 @@ fn check_swap(old:&str, new:&str) {
   check_swap("a abv? w?", "aabw? v? ");
   check_swap("abv? b w?", "abw? bv? "); }
 
+#[test] fn test_tbl() {
+  let mut xsd = XSDebug::new("abc");
+  let x = xsd.xid("a 1 b? 0 c?");
+  let o = XID_O; let i = XID_I;
+  assert_eq!(xsd.xs.tbl(x, None), vec![o,o,o,o, i,i, o, i])}
+
 
 // -- SwapSolver --------------------------------------------------------------
 
