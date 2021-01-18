@@ -357,20 +357,20 @@ impl XVHLScaffold {
   // TODO: executes these swaps in parallel
   fn regroup(&mut self, groups:Vec<HashSet<VID>>) {
     // TODO: check for complete partition
-    let mut lc = -1;  // left cursor
-    let mut rc = -1;  // right cursor
+    let mut lc = 0; // left cursor
+    let mut rc = 0; // right cursor
     let mut ni = 0; // number of items in groups we've seen
     for g in groups {
-      ni += g.len() as i64;
-        while lc < ni {
-          // if we're looking at something in right place, skip it
-          while g.contains(&self.vids[lc as usize]) { lc+=1 }
-          if lc < ni {
-            // scan ahead for next group member
-            rc = lc+1;
-            while !g.contains(&self.vids[rc as usize]) { rc+=1 }
-            // now drag the misplaced row down
-            while rc > lc { rc -= 1; self.swap(self.vids[rc as usize]) }}}}}
+      ni += g.len();
+      while lc < ni {
+        // if we're looking at something in right place, skip it
+        while lc < ni && g.contains(&self.vids[lc as usize]) { lc+=1 }
+        if lc < ni {
+          // scan ahead for next group member
+          rc = lc+1;
+          while !g.contains(&self.vids[rc]) { rc+=1 }
+          // now drag the misplaced row down
+          while rc > lc { rc -= 1; self.swap(self.vids[rc]) }}}}}
 
 } // impl XVHLScaffold
 
@@ -833,6 +833,7 @@ impl SwapSolver {
     // 5. rebuild the rows above r.
     let mut u = self.rv;
     while let Some(&w) = self.dst.vid_above(u) {
+      if r.len() == 1 { break }
       u = w;
       r = r.chunks(2).map(|hl:&[XID]| {
         let (hi, lo) = (hl[0], hl[1]);

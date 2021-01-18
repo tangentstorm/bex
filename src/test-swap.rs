@@ -4,14 +4,10 @@
 
 #[test] fn test_xsdebug() {
   let mut xsd = XSDebug::new("abcvw");
-  let a = xsd.xid("a");
-  let b = xsd.xid("b");
-  let v = xsd.xid("v");
-  let c = xsd.ite(v,a,b);
+  let (a, b, v) = (xsd.xid("a"), xsd.xid("b"), xsd.xid("v"));
   let x = xsd.xid("abv?");
-  assert_eq!(c,x);
-  let y = xsd.xid("acv?");
-  let w = xsd.xid("w");
+  assert_eq!(xsd.ite(v,a,b), x);
+  let (y,w) = (xsd.xid("acv?"), xsd.xid("w"));
   let z = xsd.ite(w,x,y);
   assert_eq!(xsd.fmt(z), "abv? acv? w? "); }
 
@@ -40,6 +36,30 @@ fn check_swap(old:&str, new:&str) {
 
 /// test for subbing in two new variables
 #[test] fn test_two_new() {
+  let mut dst = XSDebug::new("abzxy");
+  let dx = dst.xid("abz?");
+  let rv = dst.vid('z');
+
+  // src has fake "ABZ" just so the vid numbering is consistent
+  let mut src = XSDebug::new("ABZxy");
+  // but now that we've allocated it, remove the extra variables:
+  src.xs.vids = src.xs.vids.iter().skip(3).cloned().collect();
+  let sx = src.xid("x0y?"); // xy*
+
+  // perform the substitution
+  let (ss, xid) = {
+    let mut ss = SwapSolver::new(rv);
+    ss.dst = dst.xs; ss.dx = dx;
+    ss.src = src.xs; ss.sx = sx;
+    let xid = ss.sub();
+    (ss, xid)};
+
+  // move scaffold back to the debugger and see what we have:
+  dst.xs = ss.dst;
+  assert_eq!(dst.fmt(xid), dst.run("abx? b y?"));}
+
+/// test for subbing in two new variables
+#[test] fn old_test_two_new() {
   // # vars: "abxyz"
   // # syntax: x y v %   <---> replace v with y in x
   // xy* --> x0y?   # and
