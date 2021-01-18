@@ -390,11 +390,11 @@ impl XSDebug {
     let mut this = XSDebug {
       xs: XVHLScaffold::new(), ds: vec![],
       xc: HashMap::new(), vc:HashMap::new(), cx: HashMap::new(), xv: HashMap::new() };
-    for c in vars.chars() { this.var(c) }
+    for (i, c) in vars.chars().enumerate() { this.var(i, c) }
     this }
-  fn var(&mut self, c:char) {
-    let ix = self.xs.vids.len(); let v = VID::var(ix as u32);
-    self.xs.push(v);
+  fn var(&mut self, i:usize, c:char) {
+    let v = VID::var(i as u32); self.xs.push(v); self.name_var(v, c); }
+  fn name_var(&mut self, v:VID, c:char) {
     let x:XID = self.xs.add_ref(XVHL{ v, hi:XID_I, lo:XID_O}, 1).0;
     self.xc.insert(x, c); self.vc.insert(v, c);
     self.cx.insert(c, x); self.xv.insert(x, v);}

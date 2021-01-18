@@ -34,18 +34,33 @@ fn check_swap(old:&str, new:&str) {
 
 // -- SwapSolver --------------------------------------------------------------
 
+/// Mini-test framework.
 /// replace v with src in dst, and check that it gives goal
+/// vids format is "c|d|s", where:
+///    c lists the character names for all variables
+///    d lists the initial order of those variables in dst
+///    s lists the initial order of those variables in src
 fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
-  let mut dst = XSDebug::new(vids);
+
+  let mut dst = XSDebug::new("");
+  let mut src = XSDebug::new("");
+
+  // global map of all variables for this test
+  let mut cv:HashMap<char,usize> = HashMap::new();
+  let mut phase = 0;
+  for (i,c) in  vids.char_indices() {
+    if c == '|' { phase += 1 }
+    else { match phase {
+      0 => { cv.insert(c, i); },
+      1 => dst.var(*cv.get(&c).expect("bad entry in dst vars"), c),
+      2 => src.var(*cv.get(&c).expect("bad entry in src vars"), c),
+      _ => panic!("too many '|' chars encountered!") }}}
+
+  println!("building dst");
   let dx = dst.xid(dst_s);
   let rv = dst.vid(v);
 
-  let mut src = XSDebug::new(vids);
-  let ix = src.xs.vix(src.vid(v)).unwrap();
- // remove v from src so the assertion in arrange_vids passes
-  src.xs.push(VID::vir(999));
-  src.xs.vids[ix] = VID::vir(999);
-  src.xs.vids.pop();
+  println!("building src");
   let sx = src.xid(src_s);
 
   // perform the substitution
@@ -56,15 +71,17 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
     let xid = ss.sub();
     (ss, xid)};
 
-  // move scaffold back to the debugger and see what we have:
-  dst.xs = ss.dst;
+  println!("check results");
+  dst.xs = ss.dst; // move result back to the debugger for inspection.
+  // all vars should now be in dst.xs, but we copy the names so fmt knows what to call them.
+  for (&c, &i) in cv.iter() { if let None = dst.cx.get(&c) { dst.name_var(VID::var(i as u32), c) }}
   assert_eq!(dst.fmt(xid), dst.run(goal));}
 
 #[test] fn test_sub_simple_0() {
-  check_sub("xy", "x", 'x', "y", "y")}
+  check_sub("xy|x|y", "x", 'x', "y", "y")}
 
 #[test] fn test_sub_simple_1() {
-  check_sub("wvxy", "vxy?", 'v', "w", "wxy?")}
+  check_sub("wvxy|vxy|w", "vxy?", 'v', "w", "wxy?")}
 
 /// test for subbing in two new variables
 #[test] fn test_two_new() {
@@ -75,7 +92,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   // xy+ --> 1xy?   # or
   // expect: z    xy* z %  --> xy*
   // expect: abz? xy* z %  --> abx? b y?
-  check_sub("abzxy", "abz?", 'z', "x0y?", "abx? b y?")}
+  check_sub("abzxy|abz|xy", "abz?", 'z', "x0y?", "abx? b y?")}
 
 /// test for subbing in two new variables
 #[test] fn old_test_two_new() {
