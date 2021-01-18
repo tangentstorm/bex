@@ -34,17 +34,19 @@ fn check_swap(old:&str, new:&str) {
 
 // -- SwapSolver --------------------------------------------------------------
 
-/// test for subbing in two new variables
-#[test] fn test_two_new() {
-  let mut dst = XSDebug::new("abzxy");
-  let dx = dst.xid("abz?");
-  let rv = dst.vid('z');
+/// replace v with src in dst, and check that it gives goal
+fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
+  let mut dst = XSDebug::new(vids);
+  let dx = dst.xid(dst_s);
+  let rv = dst.vid(v);
 
-  // src has fake "ABZ" just so the vid numbering is consistent
-  let mut src = XSDebug::new("ABZxy");
-  // but now that we've allocated it, remove the extra variables:
-  src.xs.vids = src.xs.vids.iter().skip(3).cloned().collect();
-  let sx = src.xid("x0y?"); // xy*
+  let mut src = XSDebug::new(vids);
+  let ix = src.xs.vix(src.vid(v)).unwrap();
+ // remove v from src so the assertion in arrange_vids passes
+  src.xs.push(VID::vir(999));
+  src.xs.vids[ix] = VID::vir(999);
+  src.xs.vids.pop();
+  let sx = src.xid(src_s);
 
   // perform the substitution
   let (ss, xid) = {
@@ -56,7 +58,24 @@ fn check_swap(old:&str, new:&str) {
 
   // move scaffold back to the debugger and see what we have:
   dst.xs = ss.dst;
-  assert_eq!(dst.fmt(xid), dst.run("abx? b y?"));}
+  assert_eq!(dst.fmt(xid), dst.run(goal));}
+
+#[test] fn test_sub_simple_0() {
+  check_sub("xy", "x", 'x', "y", "y")}
+
+#[test] fn test_sub_simple_1() {
+  check_sub("wvxy", "vxy?", 'v', "w", "wxy?")}
+
+/// test for subbing in two new variables
+#[test] fn test_two_new() {
+  // # vars: "abxyz"
+  // # syntax: x y v %   <---> replace v with y in x
+  // xy* --> x0y?   # and
+  // xy^ --> x!xy?  # xor
+  // xy+ --> 1xy?   # or
+  // expect: z    xy* z %  --> xy*
+  // expect: abz? xy* z %  --> abx? b y?
+  check_sub("abzxy", "abz?", 'z', "x0y?", "abx? b y?")}
 
 /// test for subbing in two new variables
 #[test] fn old_test_two_new() {
