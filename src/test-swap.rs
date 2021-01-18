@@ -33,9 +33,10 @@ fn check_swap(old:&str, new:&str) {
 
 #[test] fn test_untbl() {
   let mut xsd = XSDebug::new("abc");
-  assert_eq!(xsd.run("01#"), "a");
+  assert_eq!(xsd.run(" 01#"), "a");
   assert_eq!(xsd.run(".0101#"), "a");
-  assert_eq!(xsd.run(".0111#"), "1ab? ");}
+  assert_eq!(xsd.run(".0111#"), "1ab? ");
+  assert_eq!(xsd.run(".01b#"), "b"); }
 
 // -- SwapSolver --------------------------------------------------------------
 

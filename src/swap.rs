@@ -102,8 +102,12 @@ impl XVHLScaffold {
 
   /// return the vid immediately above v in the scaffold, or None
   /// if v is top vid. Panics if v is not in the scaffold.
-  fn vid_above(&self, v:VID)->Option<&VID> {
-    if let Some(x) = self.vix(v) { self.vids.get(x+1) }
+  fn vid_above(&self, v:VID)->Option<VID> {
+    if let Some(x) = self.vix(v) { self.vids.get(x+1).cloned() }
+    else { panic!("vid_above(v:{}): v not in the scaffold.", v) }}
+
+  fn vid_below(&self, v:VID)->Option<VID> {
+    if let Some(x) = self.vix(v) { if x>0 { self.vids.get(x-1).cloned()} else { None }}
     else { panic!("vid_above(v:{}): v not in the scaffold.", v) }}
 
   /// add a new vid to the top of the stack. return its position.
@@ -164,7 +168,8 @@ impl XVHLScaffold {
     let mut xs = vec![top];
     let z = if let Some(lim) = limit {
       self.vix(lim).expect("limit var isn't in scaffold") as i64}
-      else {-1}; // 0 would leave nodes branching on bottom var
+      else {0};
+    let z = z - 1; // move one more row down.
     let mut v = self.get(top).expect("top wasn't in the scaffold").v;
     let mut i = self.vix(v).unwrap() as i64;
     assert!(i >= z, "invalid limit depth {} for node on row {}", z, i);
@@ -183,8 +188,7 @@ impl XVHLScaffold {
   fn untbl(&mut self, mut xs: Vec<XID>, base:Option<VID>)->XID {
     let mut v = base.unwrap_or(self.vids[0]);
     assert!(xs.len().is_power_of_two(), "untbl: xs len must be 2^x. len: {} {:?}", xs.len(), xs);
-    while let Some(&u) = self.vid_above(v) {
-      if xs.len() == 1 { break };
+    loop {
       xs = xs.chunks(2).map(|lh:&[XID]| {
         let (lo, hi) = (lh[0], lh[1]);
         if lo == hi { self.dec_ref_ix(hi); lo } // 2 refs -> 1
@@ -192,7 +196,8 @@ impl XVHLScaffold {
           let t = self.add_ref(XVHL{ v, hi, lo }, 1).0;
           self.dec_ref_ix(hi); self.dec_ref_ix(lo);
           t } }).collect();
-      v = u}
+      if xs.len() == 1 { break }
+      v = self.vid_above(v).expect("not enough vars in scaffold to untbl!"); }
     xs[0]}
 
   fn alloc(&mut self, count:usize)->Vec<XID> {
@@ -848,15 +853,19 @@ impl SwapSolver {
     let q: Vec<bool> = self.src.tbl(self.sx, None).iter().map(|x|{ x.to_bool() }).collect();
 
     // 3. let p = (partial) truth table for dst at row v.
-    //    (each item is either a const or branches on v)
+    //    (each item is either a const or branches on a var below v)
     let p: Vec<XID> = self.dst.tbl(self.dx, Some(self.rv));
 
     // 4. let r = the partial truth table for result at row v.
     let mut r:Vec<XID> = p.iter().zip(q.iter()).map(|(&di,&qi)| {
       if di.is_const() { di } else { self.dst.follow(di, qi) }}).collect();
+    println!("p: {:?}\nq: {:?}\nr: {:?}", p, q, r);
 
     // 5. rebuild the rows above r, and return new top node
-    self.dx = self.dst.untbl(r, Some(self.rv));
+    println!("vids: {:?}, rv: {:?}, above: {:?}", self.dst.vids, self.rv, self.dst.vid_above(self.rv));
+    self.dx = self.dst.untbl(r, self.dst.vid_above(self.rv));
+
+    println!("final result: {:?}", self.dst.get(self.dx));
 
     // 6. garbage collect (TODO?) and return result
     self.dx }} // sub, SwapSolver
