@@ -178,6 +178,23 @@ impl XVHLScaffold {
       i-=1}
     xs}
 
+  /// Given a truth table, construct the corresponding bdd
+  /// Starts at the lowest row variable unless base is given.
+  fn untbl(&mut self, mut xs: Vec<XID>, base:Option<VID>)->XID {
+    let mut v = base.unwrap_or(self.vids[0]);
+    assert!(xs.len().is_power_of_two(), "untbl: xs len must be 2^x. len: {} {:?}", xs.len(), xs);
+    while let Some(&u) = self.vid_above(v) {
+      if xs.len() == 1 { break };
+      xs = xs.chunks(2).map(|lh:&[XID]| {
+        let (lo, hi) = (lh[0], lh[1]);
+        if lo == hi { self.dec_ref_ix(hi); lo } // 2 refs -> 1
+        else {
+          let t = self.add_ref(XVHL{ v, hi, lo }, 1).0;
+          self.dec_ref_ix(hi); self.dec_ref_ix(lo);
+          t } }).collect();
+      v = u}
+    xs[0]}
+
   fn alloc(&mut self, count:usize)->Vec<XID> {
     let mut i = count; let mut res = vec![];
     while i > 0 {
@@ -410,6 +427,12 @@ impl XSDebug {
         '1' => self.ds.push(XID_I),
         '!' => { let x= self.pop(); self.ds.push(!x) },
         ' ' => {}, // no-op
+        '#' => { // untbl
+          let v = if self.ds.len()&1 == 0 { None } else {
+            let x = self.pop();
+            Some(*self.xv.get(&x).expect("last item in odd-len stack was not var for #"))};
+          let x = self.xs.untbl(self.ds.clone(), v); // TODO: how can I just move ds here?
+          self.ds = vec![x]; },
         '?' => { let vx=self.pop(); let lo = self.pop(); let hi = self.pop(); self.ite(vx,hi,lo); },
         _ => panic!("unrecognized character: {}", c)}}
     if let Some(&x) = self.ds.last() { self.fmt(x) } else { "".to_string() }}
@@ -831,21 +854,10 @@ impl SwapSolver {
     let mut r:Vec<XID> = p.iter().zip(q.iter()).map(|(&di,&qi)| {
       if di.is_const() { di } else { self.dst.follow(di, qi) }}).collect();
 
-    // 5. rebuild the rows above r.
-    let mut u = self.rv;
-    while let Some(&w) = self.dst.vid_above(u) {
-      if r.len() == 1 { break }
-      u = w;
-      r = r.chunks(2).map(|hl:&[XID]| {
-        let (lo, hi) = (hl[0], hl[1]);
-        if hi == lo { self.dst.dec_ref_ix(hi); lo } // 2 refs -> 1
-        else {
-          let t = self.dst.add_ref(XVHL{ v:u, hi, lo }, 1).0;
-          self.dst.dec_ref_ix(hi); self.dst.dec_ref_ix(lo);
-          t } }).collect() }
+    // 5. rebuild the rows above r, and return new top node
+    self.dx = self.dst.untbl(r, Some(self.rv));
 
-    // 5. garbage collect and return r[0]
-    self.dx = r[0];
+    // 6. garbage collect (TODO?) and return result
     self.dx }} // sub, SwapSolver
 
 pub struct OldSwapSolver<T:Base + Walkable> {
