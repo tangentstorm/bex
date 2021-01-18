@@ -768,47 +768,83 @@ impl GraphViz for VHLScaffold {
 
 
 pub struct SwapSolver {
-  /** the solution we're building   */  xs: XVHLScaffold}
+  /** the result (destination) bdd  */  dst: XVHLScaffold,
+  /** top node in the destination   */  dx: XID,
+  /** the variable we're replacing  */  rv: VID,
+  /** the replacement (source) bdd  */  src: XVHLScaffold,
+  /** top node in the source bdd    */  sx: XID }
 
 impl SwapSolver {
   /// constructor
-  fn new(top: VID) -> Self {
-    let mut xs = XVHLScaffold::new(); xs.push(top);
-    SwapSolver { xs }}
+  fn new(v: VID) -> Self {
+    let mut dst = XVHLScaffold::new(); dst.push(v);
+    let dx = dst.add_ref(XVHL{ v, hi:XID_I, lo:XID_O }, 1).0;
+    let src = XVHLScaffold::new();
+    SwapSolver{ dst, dx, rv:v, src, sx: XID_O }}
 
-  fn arrange_vars(&mut self) { todo!("arrange_vars()") }
+  /// Arrange the two scaffolds so that their variable orders match.
+  ///  1. vids shared between src and dst (set n) are above rv
+  ///  2. vids that are only in the dst (set d) are below rv
+  ///  3. new vids from src (set s) are above rv and below set n.
+  /// so from bottom to top: ( d, v, s, n )
+  /// (the d vars are not actually copied to the src, but otherwise the
+  /// orders should match exactly when we're done.)
+  fn arrange_vids(&mut self) {
 
-  /// Replace v with src in dst
-  fn sub(&mut self, v:VID, src:XID, dst:XID)->XID {
+    type VS = HashSet<VID>;
+    let set = |vec:Vec<VID>|->VS { vec.iter().cloned().collect() };
+    self.dst.vix(self.rv).expect("rv not found in dst!");
+    let v:VS = set(vec![self.rv]);
+    let sv:VS = set(self.src.vids.clone());  assert!(!sv.contains(&self.rv));
+    let dv:VS = set(self.dst.vids.clone()).difference(&v).cloned().collect();
+    let n:VS = dv.intersection(&sv).cloned().collect(); // n = intersection (shared set)
+    let s:VS = sv.difference(&n).cloned().collect();    // s = only src
+    let d:VS = dv.difference(&n).cloned().collect();    // d = only dst
+    self.dst.regroup(vec![d, v, n]);
+
+    // the order of n has to match in both. we'll use the
+    // existing order of n from dst because it's probably bigger.
+    let vix = self.dst.vix(self.rv).unwrap()+1;
+    let mut sg = vec![s];
+    for ni in vix..self.dst.vids.len() { sg.push(set(vec![self.dst.vids[ni]])) }
+    self.src.regroup(sg); // final order: [s,n]
+
+    // now whatever order the s group wound up in, we can insert
+    // them in the dst directly above v. final order: [ d,v,s,n ]
+    for &si in self.src.vids.iter().rev() { self.dst.vids.insert(vix, si) }}
+
+  /// Replace rv with src(sx) in dst(dx)
+  fn sub(&mut self)->XID {
 
     // 1. permute vars.
-    self.arrange_vars();
+    self.arrange_vids();
 
     // 2. let q = truth table for src
-    let q: Vec<bool> = self.xs.tbl(src, None).iter().map(|x|{ x.to_bool() }).collect();
+    let q: Vec<bool> = self.src.tbl(self.sx, None).iter().map(|x|{ x.to_bool() }).collect();
 
     // 3. let p = (partial) truth table for dst at row v.
     //    (each item is either a const or branches on v)
-    let p: Vec<XID> = self.xs.tbl(dst, Some(v));
+    let p: Vec<XID> = self.dst.tbl(self.dx, Some(self.rv));
 
     // 4. let r = the partial truth table for result at row v.
     let mut r:Vec<XID> = p.iter().zip(q.iter()).map(|(&di,&qi)| {
-      if di.is_const() { di } else { self.xs.follow(di, qi) }}).collect();
+      if di.is_const() { di } else { self.dst.follow(di, qi) }}).collect();
 
     // 5. rebuild the rows above r.
-    let mut u = v;
-    while let Some(&w) = self.xs.vid_above(u) {
+    let mut u = self.rv;
+    while let Some(&w) = self.dst.vid_above(u) {
       u = w;
       r = r.chunks(2).map(|hl:&[XID]| {
         let (hi, lo) = (hl[0], hl[1]);
-        if hi == lo { self.xs.dec_ref_ix(hi); lo } // 2 refs -> 1
+        if hi == lo { self.dst.dec_ref_ix(hi); lo } // 2 refs -> 1
         else {
-          let t = self.xs.add_ref(XVHL{ v:u, hi, lo }, 1).0;
-          self.xs.dec_ref_ix(hi); self.xs.dec_ref_ix(lo);
+          let t = self.dst.add_ref(XVHL{ v:u, hi, lo }, 1).0;
+          self.dst.dec_ref_ix(hi); self.dst.dec_ref_ix(lo);
           t } }).collect() }
 
     // 5. garbage collect and return r[0]
-    r[0] }} // sub, SwapSolver
+    self.dx = r[0];
+    self.dx }} // sub, SwapSolver
 
 pub struct OldSwapSolver<T:Base + Walkable> {
   /** normal base for delegation    */  base: T,
