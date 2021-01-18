@@ -240,8 +240,9 @@ impl XVHLScaffold {
       else { XWIP0::HL(hi, lo) }};
 
     let mut vdec = |xid| {
+      println!("TODO: vdec");
       let (hi, lo)=vx.get(&xid).unwrap();
-      rv.hm.get_mut(&XHiLo{hi:*hi, lo:*lo}).unwrap().rc -= 1 };
+      rv.hm.get_mut(&XHiLo{hi:*hi, lo:*lo}).unwrap().rc -= 0 }; // TODO: -=1
 
     let mut wmov0: Vec<(XHiLo,XWIP0,XWIP0)> = vec![];
     let mut new_v = |whl,ii,io,oi,oo| { wmov0.push((whl, new_w(ii,oi), new_w(io,oo))) };
@@ -307,7 +308,7 @@ impl XVHLScaffold {
         res }
       else {
         let mut res = vdel; vdel = vec![];
-        res.extend(self.alloc(have-need));
+        res.extend(self.alloc(need-have));
         res }};
 
     // [commit wnew]
@@ -319,7 +320,7 @@ impl XVHLScaffold {
       let wipix = ixrc0.ix.x as usize;
       ixrc.ix = xids[wipix as usize];  // map the temp xid -> true xid
       wipxid[wipix as usize] = ixrc.ix; // remember for w2x, below.
-      rv.hm.insert(XHiLo{hi:*hi, lo:*lo}, ixrc);
+      rw.hm.insert(XHiLo{hi:*hi, lo:*lo}, ixrc);
       // and now update the master store:
       self.vhls[ixrc.ix.x as usize] = XVHL{ v:w, hi:*hi, lo:*lo }; }
 
@@ -331,7 +332,7 @@ impl XVHLScaffold {
         XWIP1::NEW(x) => { wipxid[*x as usize] } }};
     for (ixrc, wip_hi, wip_lo) in wtov.iter() {
       let (hi, lo) = (w2x(wip_hi), w2x(wip_lo));
-      rw.hm.insert(XHiLo{hi, lo}, *ixrc);
+      rv.hm.insert(XHiLo{hi, lo}, *ixrc);
       self.vhls[ixrc.ix.x as usize] = XVHL{ v, hi, lo }; }
 
     // TODO: [ commit vdel ]
@@ -836,7 +837,7 @@ impl SwapSolver {
       if r.len() == 1 { break }
       u = w;
       r = r.chunks(2).map(|hl:&[XID]| {
-        let (hi, lo) = (hl[0], hl[1]);
+        let (lo, hi) = (hl[0], hl[1]);
         if hi == lo { self.dst.dec_ref_ix(hi); lo } // 2 refs -> 1
         else {
           let t = self.dst.add_ref(XVHL{ v:u, hi, lo }, 1).0;
