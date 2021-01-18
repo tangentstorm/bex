@@ -1,8 +1,8 @@
 /// Swap Solver
-/// This solver attempts to optimize the BDD concept for substitution solving.
-/// It adjusts the input variable ordering by swapping adjacent inputs until the
-/// one to be replaced next is at the top of the BDD. The actual replacement work
-/// at each step then only involves the top three rows.
+/// This solver attempts to optimize the BDD concept for substitution solving.
+/// It adjusts the input variable ordering by swapping adjacent inputs until the
+/// one to be replaced next is at the top of the BDD. The actual replacement work
+/// at each step then only involves the top three rows.
 use std::slice::Iter;
 use hashbrown::{HashMap, hash_map::Entry, HashSet};
 use {base::{Base,GraphViz,SubSolver}, vid::VID, vid::NOV, nid, nid::NID, bdd::BDDBase};
