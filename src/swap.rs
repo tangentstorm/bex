@@ -425,6 +425,7 @@ impl XSDebug {
           else { panic!("unknown variable: {}", c)},
         '0' => self.ds.push(XID_O),
         '1' => self.ds.push(XID_I),
+        '.' => { self.ds.pop(); },
         '!' => { let x= self.pop(); self.ds.push(!x) },
         ' ' => {}, // no-op
         '#' => { // untbl
