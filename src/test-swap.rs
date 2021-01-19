@@ -51,6 +51,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
 
   let mut dst = XSDebug::new("");
   let mut src = XSDebug::new("");
+  let mut expected_order = "";
 
   // global map of all variables for this test
   let mut cv:HashMap<char,usize> = HashMap::new();
@@ -61,6 +62,10 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
       0 => { cv.insert(c, i); },
       1 => dst.var(*cv.get(&c).expect("bad entry in dst vars"), c),
       2 => src.var(*cv.get(&c).expect("bad entry in src vars"), c),
+      3 => {
+        let mut parts = vids.split('|');
+        expected_order = (if c=='=' { parts.next() } else { parts.last() }).unwrap();
+        break },
       _ => panic!("too many '|' chars encountered!") }}}
 
   println!("building dst");
@@ -78,17 +83,25 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
     let xid = ss.sub();
     (ss, xid)};
 
-  println!("check results");
   dst.xs = ss.dst; // move result back to the debugger for inspection.
   // all vars should now be in dst.xs, but we copy the names so fmt knows what to call them.
   for (&c, &i) in cv.iter() { if let None = dst.cx.get(&c) { dst.name_var(VID::var(i as u32), c) }}
+  assert_eq!(dst.vids(), expected_order, "unexpected vid ordering at end");
   assert_eq!(dst.fmt(xid), dst.run(goal));}
 
 #[test] fn test_sub_simple_0() {
-  check_sub("xy|x|y", "x", 'x', "y", "y")}
+  check_sub("xy|x|y|yx", "x", 'x', "y", "y") }
 
 #[test] fn test_sub_simple_1() {
-  check_sub("wvxy|vxy|w", "vxy?", 'v', "w", "wxy?")}
+  // goal: 'vxy?   v w %'
+  // sets:   sv: w   dv: xy v:v     n: /  s:w d:xy
+  // perm:   wvxy > wxvy > xwvy > xwyv > xywv > xyvw
+  ///  wxy?
+  //   wxy? wxy? w?     // decompose on w
+  //   0xy? 1xy? w?     // eval w
+  //   0xy? 0x!y?! w?   // how fmt displays inverted xids.   !! have format not do this?
+  // TODO: the 1xy? is not being inverted.
+  check_sub("wvxy|vxy|w|xywv", "vxy?", 'v', "w", "0xy? 1xy? w?")}
 
 /// test for subbing in two new variables
 #[test] fn test_two_new() {
@@ -99,7 +112,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   // xy+ --> 1xy?   # or
   // expect: z    xy* z %  --> xy*
   // expect: abz? xy* z %  --> abx? b y?
-  check_sub("abzxy|abz|xy", "abz?", 'z', "x0y?", "abx? b y?")}
+  check_sub("abzxy|abz|xy|abxyz", "abz?", 'z', "x0y?", "abx? b y?")}
 
 /// test for subbing in two new variables
 #[test] fn old_test_two_new() {

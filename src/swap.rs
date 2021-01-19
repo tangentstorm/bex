@@ -160,6 +160,8 @@ impl XVHLScaffold {
     let vhl = self.get(x).unwrap();
     if which { vhl.hi } else { vhl.lo }}
 
+  fn branch_var(&self, x:XID)->VID { self.get(x).unwrap().v }
+
   /// produce the fully expandend "truth table" for a bdd
   /// down to the given row, by building rows of the corresponding
   /// binary tree. xids in the result will either be constants,
@@ -416,6 +418,7 @@ impl XSDebug {
     this }
   fn var(&mut self, i:usize, c:char) {
     let v = VID::var(i as u32); self.xs.push(v); self.name_var(v, c); }
+  fn vids(&self)->String { self.xs.vids.iter().map(|v| *self.vc.get(v).unwrap()).collect() }
   fn name_var(&mut self, v:VID, c:char) {
     let x:XID = self.xs.add_ref(XVHL{ v, hi:XID_I, lo:XID_O}, 1).0;
     self.xc.insert(x, c); self.vc.insert(v, c);
@@ -815,11 +818,11 @@ impl SwapSolver {
   /// Arrange the two scaffolds so that their variable orders match.
   ///  1. vids shared between src and dst (set n) are above rv
   ///  2. vids that are only in the dst (set d) are below rv
-  ///  3. new vids from src (set s) are above rv and below set n.
-  /// so from bottom to top: ( d, v, s, n )
+  ///  3. new vids from src (set s) are between rv and set d.
+  /// so from bottom to top: ( d, s, v, n )
   /// (the d vars are not actually copied to the src, but otherwise the
   /// orders should match exactly when we're done.)
-  fn arrange_vids(&mut self) {
+  fn arrange_vids(&mut self)->usize {
 
     type VS = HashSet<VID>;
     let set = |vec:Vec<VID>|->VS { vec.iter().cloned().collect() };
@@ -834,36 +837,40 @@ impl SwapSolver {
 
     // the order of n has to match in both. we'll use the
     // existing order of n from dst because it's probably bigger.
-    let vix = self.dst.vix(self.rv).unwrap()+1;
+    let vix = self.dst.vix(self.rv).unwrap();
     let mut sg = vec![s];
-    for ni in vix..self.dst.vids.len() { sg.push(set(vec![self.dst.vids[ni]])) }
+    for ni in (vix+1)..self.dst.vids.len() { sg.push(set(vec![self.dst.vids[ni]])) }
     self.src.regroup(sg); // final order: [s,n]
 
     // now whatever order the s group wound up in, we can insert
     // them in the dst directly above v. final order: [ d,v,s,n ]
-    for &si in self.src.vids.iter().rev() { self.dst.vids.insert(vix, si) }}
+    for &si in self.src.vids.iter().rev() { self.dst.vids.insert(vix, si) }
+
+    // return the row index at the bottom of set x
+    vix}
 
   /// Replace rv with src(sx) in dst(dx)
   fn sub(&mut self)->XID {
 
     // 1. permute vars.
-    self.arrange_vids();
+    let vix = self.arrange_vids();
 
     // 2. let q = truth table for src
     let q: Vec<bool> = self.src.tbl(self.sx, None).iter().map(|x|{ x.to_bool() }).collect();
 
-    // 3. let p = (partial) truth table for dst at row v.
-    //    (each item is either a const or branches on a var below v)
+    // 3. let p = (partial) truth table for dst at the row branching on rv.
+    //    (each item is either a const or branches on a var equal to or below rv)
     let p: Vec<XID> = self.dst.tbl(self.dx, Some(self.rv));
 
-    // 4. let r = the partial truth table for result at row v.
-    let mut r:Vec<XID> = p.iter().zip(q.iter()).map(|(&di,&qi)| {
-      if di.is_const() { di } else { self.dst.follow(di, qi) }}).collect();
+    // 4. let r = the partial truth table for result at row rv.
+    //    We're removing rv from p here.
+    let mut r:Vec<XID> = p.iter().zip(q.iter()).map(|(&di,&qi)|
+      if self.dst.branch_var(di) == self.rv { self.dst.follow(di, qi) } else { di }).collect();
     println!("p: {:?}\nq: {:?}\nr: {:?}", p, q, r);
 
-    // 5. rebuild the rows above r, and return new top node
+    // 5. rebuild the rows above set d, and return new top node
     println!("vids: {:?}, rv: {:?}, above: {:?}", self.dst.vids, self.rv, self.dst.vid_above(self.rv));
-    self.dx = self.dst.untbl(r, self.dst.vid_above(self.rv));
+    self.dx = self.dst.untbl(r, Some(self.dst.vids[vix]));
 
     println!("final result: {:?}", self.dst.get(self.dx));
 
