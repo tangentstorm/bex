@@ -6,9 +6,9 @@
   let mut xsd = XSDebug::new("abcvw");
   let (a, b, v) = (xsd.xid("a"), xsd.xid("b"), xsd.xid("v"));
   let x = xsd.xid("abv?");
-  assert_eq!(xsd.ite(v,a,b), x);
+  assert_eq!(xsd.ite(v,b,a), x);
   let (y,w) = (xsd.xid("acv?"), xsd.xid("w"));
-  let z = xsd.ite(w,x,y);
+  let z = xsd.ite(w,y,x);
   assert_eq!(xsd.fmt(z), "abv? acv? w? "); }
 
 // -- XVHLScaffold ------------------------------------------------------------
@@ -29,13 +29,14 @@ fn check_swap(old:&str, new:&str) {
   let mut xsd = XSDebug::new("abc");
   let x = xsd.xid("a 1 b? 0 c?");
   let o = XID_O; let i = XID_I;
-  assert_eq!(xsd.xs.tbl(x, None), vec![o,o,o,o, i,i, o, i])}
+  assert_eq!(xsd.xs.tbl(x, None), vec![o,i,i,i, o,o,o,o])}
 
 #[test] fn test_untbl() {
   let mut xsd = XSDebug::new("abc");
   assert_eq!(xsd.run(" 01#"), "a");
+  assert_eq!(xsd.run(".10#"), "a!");
   assert_eq!(xsd.run(".0101#"), "a");
-  assert_eq!(xsd.run(".0111#"), "1ab? ");
+  assert_eq!(xsd.run(".0111#"), "a1b? ");
   assert_eq!(xsd.run(".01b#"), "b"); }
 
 // -- SwapSolver --------------------------------------------------------------

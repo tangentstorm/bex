@@ -439,7 +439,7 @@ impl XSDebug {
             Some(*self.xv.get(&x).expect("last item in odd-len stack was not var for #"))};
           let x = self.xs.untbl(self.ds.clone(), v); // TODO: how can I just move ds here?
           self.ds = vec![x]; },
-        '?' => { let vx=self.pop(); let lo = self.pop(); let hi = self.pop(); self.ite(vx,hi,lo); },
+        '?' => { let vx=self.pop(); let hi = self.pop(); let lo = self.pop(); self.ite(vx,hi,lo); },
         _ => panic!("unrecognized character: {}", c)}}
     if let Some(&x) = self.ds.last() { self.fmt(x) } else { "".to_string() }}
   fn ite(&mut self, vx:XID, hi:XID, lo:XID)->XID {
@@ -451,12 +451,12 @@ impl XSDebug {
     match x {
       XID_O => "0".to_string(),
       XID_I => "1".to_string(),
-      _ => if let Some(&c) = self.xc.get(&x) { format!("{}", c).to_string() }
-           else { // todo: handle inverses
-            let ix = if x.x >= 0 { x.x as usize } else { !x.x as usize };
-            let XVHL{v,hi,lo} = self.xs.vhls[ix];
-            let vc:char = *self.vc.get(&v).expect(&format!("couldn't map branch var back to char: {:?}", v));
-            format!("{}{}{}? ", self.fmt(hi), self.fmt(lo), vc) } }}}
+      _ => { let inv = x.x < 0; let x = x.raw(); let sign = if inv { "!" } else { "" };
+        if let Some(&c) = self.xc.get(&x) { format!("{}{}", c, sign).to_string() }
+        else {
+          let XVHL{v,hi,lo} = self.xs.vhls[x.x as usize];
+          let vc:char = *self.vc.get(&v).expect(&format!("couldn't map branch var back to char: {:?}", v));
+          format!("{}{}{}?{} ", self.fmt(lo), self.fmt(hi), vc, sign) } } }}}
 
 // ------------------------------------------------------
 
