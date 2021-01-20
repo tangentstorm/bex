@@ -96,7 +96,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   // goal: 'vxy?   v w %'
   // sets:   sv: w   dv: xy v:v     n: /  s:w d:xy
   // perm:   wvxy > wxvy > xwvy > xwyv > xywv > xyvw
-  ///  wxy?
+  //   wxy?
   //   wxy? wxy? w?     // decompose on w
   //   0xy? 1xy? w?     // eval w
   //   0xy? 0x!y?! w?   // how fmt displays inverted xids.   !! have format not do this?

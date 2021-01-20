@@ -372,9 +372,7 @@ impl XVHLScaffold {
 
     // finally, put the rows back where we found them:
     self.rows.insert(v, rv);
-    self.rows.insert(w, rw);
-
-  } // fn lift
+    self.rows.insert(w, rw); }
 
   /// arrange row order to match the given groups.
   /// the groups are given in bottom-up order, and should
@@ -843,10 +841,10 @@ impl SwapSolver {
     self.src.regroup(sg); // final order: [s,n]
 
     // now whatever order the s group wound up in, we can insert
-    // them in the dst directly above v. final order: [ d,v,s,n ]
+    // them in the dst directly below v. final order: [ d,s,v,n ]
     for &si in self.src.vids.iter().rev() { self.dst.vids.insert(vix, si) }
 
-    // return the row index at the bottom of set x
+    // return the row index at the bottom of set s
     vix}
 
   /// Replace rv with src(sx) in dst(dx)
