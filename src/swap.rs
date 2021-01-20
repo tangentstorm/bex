@@ -268,6 +268,18 @@ impl XVHLScaffold {
       let (hi, lo)=vx.get(&xid).unwrap();
       rv.hm.get_mut(&XHiLo{hi:*hi, lo:*lo}).unwrap().rc -= 0 }; // TODO: -=1
 
+    // 1. Partition nodes on rw into two groups:
+    // group I (independent):
+    //   These are nodes that do not reference row v.
+    //   These remain on rw, unchanged.
+    // group D (dependent):
+    //   These are nodes with at least one child on row v.
+    //   These must be rewritten in place to branch on v (and moved to rv).
+    //   "In place" means that their XIDs must be preserved.
+    //   The moved nodes will have children on row w:
+    //      These may be new nodes, or may already exist in group I.
+    //   The old children (on row v) may see their refcounts drop to 0.
+
     let mut wmov0: Vec<(XHiLo,XWIP0,XWIP0)> = vec![];
     let mut new_v = |whl,ii,io,oi,oo| { wmov0.push((whl, new_w(ii,oi), new_w(io,oo))) };
 
@@ -287,23 +299,29 @@ impl XVHLScaffold {
     let mut resolve = |xw0|->XWIP1 {
       match xw0 {
         XWIP0::XID(x) => { eref.push(x); XWIP1::XID(x) },
-        XWIP0::HL(hi,lo) => {
+        XWIP0::HL(hi0,lo0) => {
           // these are the new children on the w level. it may turn out that these already
           // existed on w, in the set of nodes that did not refer to v. So either we incref
           // the existing node, or we create a new node:
           // TODO: this isn't really an IxRc since the xid is virtual
+          let (hi,lo,inv) = if lo0.is_inv() { (!hi0, !lo0, true) } else { (hi0,lo0,false) };
           match wnew.entry((hi, lo)) {
             Entry::Occupied(mut e) => { e.get_mut().rc += 1; XWIP1::NEW(e.get().ix.x) }
             Entry::Vacant(e) => {
               let x = wnix as i64; wnix += 1;
               e.insert(IxRc{ ix:XID{x}, rc:1 });
-              XWIP1::NEW(x) }}}}};
+              XWIP1::NEW(if inv { !x } else { x }) }}}}};
 
     // make the removals from row w, and fill in wnew, wtov, eref
     let mut wtov: Vec<(IxRc,XWIP1,XWIP1)> = vec![];
     for (whl, wip_hi, wip_lo) in wmov0 {
       // construct new child nodes on the w level, or add new references to external nodes:
       let (hi, lo) = (resolve(wip_hi), resolve(wip_lo));
+      // the lo branch should never be inverted:
+      // the lo-lo path doesn't change in a swap, and lo branches are always raw
+      // in the scaffold. (This means we only have to deal with inverted xids in)
+      // the newly-created hi branches.
+      if let XWIP1::NEW(x) = lo { assert!(x >= 0, "unexpected !lo branch");}
       // delete the old node from row w. the newly created nodes don't depend on v, and
       // the node to delete does depend on v, so there's never a conflict here.
       let ixrc = rw.hm.remove(&whl).expect("I saw a whl that wasn't there!");
@@ -341,7 +359,8 @@ impl XVHLScaffold {
     let mut wipxid = vec![XID_O; wnix as usize];
     for ((hi,lo), ixrc0) in wnew.iter() {
       let mut ixrc = *ixrc0;
-      let wipix = ixrc0.ix.x as usize;
+      let inv = ixrc0.ix.x < 0;
+      let wipix = if inv { !ixrc0.ix.x } else { ixrc0.ix.x };
       ixrc.ix = xids[wipix as usize];  // map the temp xid -> true xid
       wipxid[wipix as usize] = ixrc.ix; // remember for w2x, below.
       rw.hm.insert(XHiLo{hi:*hi, lo:*lo}, ixrc);
@@ -353,7 +372,7 @@ impl XVHLScaffold {
     let w2x = |wip:&XWIP1| {
       match wip {
         XWIP1::XID(x) => *x,
-        XWIP1::NEW(x) => { wipxid[*x as usize] } }};
+        XWIP1::NEW(x) => { if *x<0 { !wipxid[!*x as usize]  } else { wipxid[*x as usize ]}}}};
     for (ixrc, wip_hi, wip_lo) in wtov.iter() {
       let (hi, lo) = (w2x(wip_hi), w2x(wip_lo));
       rv.hm.insert(XHiLo{hi, lo}, *ixrc);

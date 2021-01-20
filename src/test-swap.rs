@@ -100,7 +100,6 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   //   wxy? wxy? w?     // decompose on w
   //   0xy? 1xy? w?     // eval w
   //   0xy? 0x!y?! w?   // how fmt displays inverted xids.   !! have format not do this?
-  // TODO: the 1xy? is not being inverted.
   check_sub("wvxy|vxy|w|xywv", "vxy?", 'v', "w", "0xy? 1xy? w?")}
 
 /// test for subbing in two new variables
