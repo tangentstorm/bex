@@ -110,8 +110,14 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   // xy^ --> x!xy?  # xor
   // xy+ --> 1xy?   # or
   // expect: z    xy* z %  --> xy*
-  // expect: abz? xy* z %  --> abx? b y?
-  check_sub("abzxy|abz|xy|abxyz", "abz?", 'z', "x0y?", "abx? b y?")}
+  // expect: abz? xy* z %  --> abx? a y?
+  // ab(x0y?) ab(x0y?) (x0y)?
+  // ab(x0y?) ab(x0y?) (x0y)? ab(x0y?) ab(x0y?) (x0y)? y?
+  // ab(x00?) ab(x00?) (x00)? ab(x01?) ab(x01?) (x01)? y?
+  // abx?     abx?      x?    ab0?     ab0?      0? y?
+  //                    abx?    ab0?   y?
+  // abx? ay?
+  check_sub("abzxy|abz|xy|abxyz", "abz?", 'z', "x0y?", "abx? ay?")}
 
 /// test for subbing in two new variables
 #[test] fn old_test_two_new() {

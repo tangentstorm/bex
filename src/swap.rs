@@ -170,8 +170,7 @@ impl XVHLScaffold {
     let mut xs = vec![top];
     let z = if let Some(lim) = limit {
       self.vix(lim).expect("limit var isn't in scaffold") as i64}
-      else {0};
-    let z = z - 1; // move one more row down.
+      else {-1};
     let mut v = self.get(top).expect("top wasn't in the scaffold").v;
     let mut i = self.vix(v).unwrap() as i64;
     assert!(i >= z, "invalid limit depth {} for node on row {}", z, i);
@@ -877,12 +876,18 @@ impl SwapSolver {
 
     // 3. let p = (partial) truth table for dst at the row branching on rv.
     //    (each item is either a const or branches on a var equal to or below rv)
-    let p: Vec<XID> = self.dst.tbl(self.dx, Some(self.rv));
+    //    Scale p to the size of q by repeatedly doubling the entries.
+    //    !! yes, this is a wasteful algorithm but the expectation is that p
+    //       and q are quite small: < 2^n items where n = number of vars in
+    //       the replacement. I expect n<16, since if n is too much higher than
+    //       that, I expect this whole algorithm to break down anyway.
+    let mut p: Vec<XID> = self.dst.tbl(self.dx, Some(self.rv));
+    if p.len() < q.len() { p = p.iter().cycle().take(q.len()).cloned().collect() }
 
     // 4. let r = the partial truth table for result at row rv.
     //    We're removing rv from p here.
-    let mut r:Vec<XID> = p.iter().zip(q.iter()).map(|(&di,&qi)|
-      if self.dst.branch_var(di) == self.rv { self.dst.follow(di, qi) } else { di }).collect();
+    let mut r:Vec<XID> = p.iter().zip(q.iter()).map(|(&pi,&qi)|
+      if self.dst.branch_var(pi) == self.rv { self.dst.follow(pi, qi) } else { pi }).collect();
     println!("p: {:?}\nq: {:?}\nr: {:?}", p, q, r);
 
     // 5. rebuild the rows above set d, and return new top node
