@@ -136,8 +136,8 @@ impl XVHLScaffold {
           assert_eq!(ix, i, "hashmap stored wrong index ({:?}) for vhl[{}]: {:?} ", ixrc.ix, i, x)}
         else { panic!("no hashmap reference to vhl[{}]: {:?}", i, x) }}
 
-      // TODO: check reference counts
-      }
+        // TODO: check reference counts
+        }
       println!("@/validate")}
 
 
@@ -309,13 +309,15 @@ impl XVHLScaffold {
     enum XWIP0 { XID(XID), HL(XID,XID) }
 
     let mut edec:Vec<XID> = vec![];          // external nodes to decref
-    let mut new_w = |hi, lo|->XWIP0 {
-      if hi == lo { edec.push(hi); XWIP0::XID(lo) } // meld nodes (so dec ref)
-      else { XWIP0::HL(hi, lo) }};
+    let mut child = |h:XID, l:XID|->XWIP0 {    // reference a node on/below row w, or or create a node on row w
+      let (hi, lo, inv) = if l.is_inv() {(!h, !l, true)} else {(h, l, false)};
+      if hi == lo { edec.push(hi); XWIP0::XID(if inv { !lo } else { lo }) } // meld nodes (so dec ref)
+      else if let Some(ixrc) = rw.hm.get(&XHiLo{ hi, lo}) { XWIP0::XID(if inv {!ixrc.ix} else {ixrc.ix}) }
+      else if inv { XWIP0::HL(!hi, !lo) } else { XWIP0::HL(hi, lo) }};
 
-    let mut vdec = |xid| {
+    let mut vdec = |xid:XID| {
       println!("TODO: vdec");
-      let (hi, lo)=vx.get(&xid).unwrap();
+      let (hi, lo)=vx.get(&xid.raw()).unwrap();
       rv.hm.get_mut(&XHiLo{hi:*hi, lo:*lo}).unwrap().rc -= 0 }; // TODO: -=1
 
     // 1. Partition nodes on rw into two groups:
@@ -331,15 +333,17 @@ impl XVHLScaffold {
     //   The old children (on row v) may see their refcounts drop to 0.
 
     let mut wmov0: Vec<(XHiLo,XWIP0,XWIP0)> = vec![];
-    let mut new_v = |whl,ii,io,oi,oo| { wmov0.push((whl, new_w(ii,oi), new_w(io,oo))) };
+    let mut new_v = |whl,ii,io,oi,oo| { wmov0.push((whl, child(ii,oi), child(io,oo))) };
 
     for whl in rw.hm.keys() {
       let (hi, lo) = whl.as_tup();
-      match (vx.get(&hi), vx.get(&lo)) {
+      let vget = |xid:XID|->Option<(XID,XID)> {
+        if xid.is_inv() { vx.get(&xid.raw()).cloned().map(|(h,l)| (!h,!l)) } else { vx.get(&xid).cloned() }};
+      match (vget(hi), vget(lo)) {
         (None,          None         ) => {},  // no refs, so nothing to do.
-        (None,          Some((oi,oo))) => { new_v(*whl, hi, hi,*oi,*oo); vdec(lo) },
-        (Some((ii,io)), None         ) => { new_v(*whl,*ii,*io, lo, lo); vdec(hi) },
-        (Some((ii,io)), Some((oi,oo))) => { new_v(*whl,*ii,*io,*oi,*oo); vdec(hi); vdec(lo) }}}
+        (None,          Some((oi,oo))) => { new_v(*whl, hi, hi, oi, oo); vdec(lo) },
+        (Some((ii,io)), None         ) => { new_v(*whl, ii, io, lo, lo); vdec(hi) },
+        (Some((ii,io)), Some((oi,oo))) => { new_v(*whl, ii, io, oi, oo); vdec(hi); vdec(lo) }}}
 
     // convert the XWIP0::HL entries to XWIP1::NEW
     enum XWIP1 { XID(XID), NEW(i64) }
@@ -413,6 +417,8 @@ impl XVHLScaffold {
       let wipix = if inv { !ixrc0.ix.x } else { ixrc0.ix.x };
       ixrc.ix = xids[wipix as usize];  // map the temp xid -> true xid
       wipxid[wipix as usize] = ixrc.ix; // remember for w2x, below.
+      assert!(!ixrc.ix.is_inv());
+      assert!(rw.hm.get(&(XHiLo{hi:*hi, lo:*lo})).is_none());
       rw.hm.insert(XHiLo{hi:*hi, lo:*lo}, ixrc);
       // and now update the master store:
       self.vhls[ixrc.ix.x as usize] = XVHL{ v:w, hi:*hi, lo:*lo }; }
@@ -431,6 +437,7 @@ impl XVHLScaffold {
     // TODO: [ commit vdel ]
     // we've already removed them from the local copy. just need to add the
     // original entries to a linked list.
+    for xid in vdel { self.vhls[xid.raw().ix()].v = NOV }
 
     // TODO: [ commit eref changes ]
     // TODO: merge eref and edec into a hashmap of (XID->drc:usize)

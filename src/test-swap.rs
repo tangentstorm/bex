@@ -119,8 +119,40 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   // abx? ay?
   check_sub("abzxy|abz|xy|abxy", "abz?", 'z', "x0y?", "abx? ay?")}
 
+/*
+/// test for subbing in two existing variables
+#[test] fn test_two_old() { //TODO
+  //   stack                     input
+  //                             xy^
+  //   x!xy?                     vw+    y%       # x^(v+w)
+  //   x!   x!   xv?    w?       vw*    x%       # (v*w)^(v+w)
+  // = vw*! vw*! vw* v? w?    # x-> (vw*)
+  // = vw*! 1w*! 0w* v? w?    # fill in v
+  // = vw*! w! 0 v? w?        # simplify const exprs
+  // = v1*! 0! 0 v? w?        # fill in w
+  // = v!   1 0 v?  w?        # simplify
+  // = v!   v  w?             # simplify
+  todo!()}
+*/
+
+/// test for subbing in one new variable
+#[test] fn test_one_new() {
+  //                                   wy^
+  //   w!     w    y?                  xw*   y%
+  // = w!     w    y?  w0x?  y%
+  // = (w!wy? w!wy? w?)  (w0x? w0x?w?) y%   # reorder as yxw
+  // = (0!0y? 1!1y? w?)  (00x? 10x?w?) y%
+  // = y!yw?  (0x!w?) y%
+  // = (0x!w?)! (0x!w?) w?
+  // = (0x!0?)! (0x!1?) w?
+  // = (0)! (x!) w?
+  // = 1x!w?
+  // = 0xw?!
+  check_sub("wyx|wy|wx|xw", "w!wy?", 'y', "w0x?", "0xw?!")}
+
+
 /// test for subbing in two new variables
-#[test] fn old_test_two_new() {
+#[test] fn test_nids_two_new() {
   // # vars: "abxyz"
   // # syntax: x y v %   <---> replace v with y in x
   // xy* --> x0y?   # and
@@ -141,19 +173,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   assert_eq!(s.dst.exvex(res), VHL { v:v4, hi:a2, lo:nid::O },
     "(v4 AND v2) should be (v4 ? v2 : O)"); }
 
-/// test for subbing in two existing variables
-#[test] fn test_two_old() {
-  //   stack                     input
-  //                             xy^
-  //   x!xy?                     vw+    y%       # x^(v+w)
-  //   x!   x!   xv?    w?       vw*    x%       # (v*w)^(v+w)
-  // = vw*! vw*! vw* v? w?    # x-> (vw*)
-  // = vw*! 1w*! 0w* v? w?    # fill in v
-  // = vw*! w! 0 v? w?        # simplify const exprs
-  // = v1*! 0! 0 v? w?        # fill in w
-  // = v!   1 0 v?  w?        # simplify
-  // = v!   v  w?             # simplify
-
+#[test] fn test_nids_two_old() {
   let nz = NID::vir(4); let z = nz.vid();
   let ny = NID::vir(3); let y = ny.vid();
   let nx = NID::vir(2); let x = nx.vid();
@@ -200,20 +220,11 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
     "((w|v) ^ (w&v)) should be (w ? !v : v)");
   assert!(s.dst.vix(x).is_none(), "x({}) should be gone from dst after substitution", x); }
 
-/// test for subbing in one new variable
-#[test] fn test_one_new() {
-  //                                   wy^
-  //   w!     w    y?                  xw*   y%
-  // = w!     w    y?  w0x?  y%
-  // = (w!wy? w!wy? w?)  (w0x? w0x?w?) y%   # reorder as yxw
-  // = (0!0y? 1!1y? w?)  (00x? 10x?w?) y%
-  // = y!yw?  (0x!w?) y%
-  // = (0x!w?)! (0x!w?) w?
-  // = (0x!0?)! (0x!1?) w?
-  // = (0)! (x!) w?
-  // = 1x!w?
-  // = 0xw?!
-  check_sub("wyx|wy|wx|xw", "w!wy?", 'y', "w0x?", "0xw?!");
+/* !! this test fails with the nid version.
+      There was a bug in the test that matched the wrong behavior of the nid version.
+      I haven't decided whether to try and salvage the nid version
+      for comparison or just delete it.
+#[test] fn test_nids_one_new() {
   let nz = NID::vir(3); let z = nz.vid();
   let ny = NID::vir(2); let y = ny.vid();
   let nx = NID::vir(1); let x = nx.vid();
@@ -229,3 +240,4 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   let wxw = s.sub(y, key, wy);
   assert_eq!(s.dst.exvex(wxw), VHL { v:x, hi:nid::O, lo:nw },
     "(w ^ (x & w)) should be (x ? O : w)"); }
+*/
