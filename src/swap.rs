@@ -100,6 +100,11 @@ impl XVHLScaffold {
   /// validate that this scaffold is well formed. (this is for debugging)
   pub fn validate(&self) {
 
+    println!("@validate");
+    println!("${:?}", self.vids);
+    for &x in self.vhls.iter() {
+      println!("^{},{},{}", x.v, x.hi.x, x.lo.x)}
+
     // vids must be unique:
     let mut vids:HashMap<VID, usize> = self.vids.iter().cloned().enumerate().map(|(i,v)|(v,i+1)).collect();
     assert_eq!(vids.len(), self.vids.len(), "duplicate vid(s) in list: {:?}", self.vids);
@@ -132,7 +137,8 @@ impl XVHLScaffold {
         else { panic!("no hashmap reference to vhl[{}]: {:?}", i, x) }}
 
       // TODO: check reference counts
-      }}
+      }
+      println!("@/validate")}
 
 
   /// return the index (height) of the given variable within the scaffold (if it exists)

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<!--
+  visual debugger for output of validate() function in swap.rs
+  usage:
+     cargo test --lib | grep -e '^[@$^]' > viewbex.txt
+     npm install -g light-server
+     light-server -s .
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>viewbex</title>
+  <script src="https://d3js.org/d3.v6.min.js"></script>
+  <script src="https://unpkg.com/vue@next"></script>
+</head>
+<body>
+
+<div id="app">
+  <pre>{{text}}</pre>
+  <div class="graph" v-for="g in bdds">
+    {{g}}
+  </div>
+</div>
+
+<script>
+  let app, vm
+  fetch("viewbex.txt").then(r=>r.text())
+  .then(text=>{ // convert txt to [txt, [bdd]]
+    // parse the lines for each validate() run:
+    let bdds = text.replace('\r','').split('@/validate').map(x=>x.trim().split('\n').slice(1,-1)).map(run=>{
+      console.log(run);
+//      if (run.shift()!=='@validate') { throw new Error(`bad run: ${JSON.stringify(run)}`) }
+      // first line is the vids:
+      let vids = ['NoV'].concat(run.shift().slice(2,-1).split(', '));
+      let vix = Object.fromEntries(vids.map((x,i)=>[x,i]))
+      if (run[run.length-1].startsWith('@/validate')){ run.pop() } // todo: color code the failing one(s)?
+      let vhls = run.map(x=>{
+        let [v,h,l] = x.slice(1).split(',')
+        return [v,+h,+l] })
+      let rows = {} // v -> [hl]
+      return {vids, vhls} })
+    return {text, bdds} })
+  .then(data=>{
+    app = Vue.createApp({ data() { return data } })
+    vm = app.mount("#app") })
+
+</script>
+
+</body>
+</html>
