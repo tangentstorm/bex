@@ -67,7 +67,7 @@ impl XVHL { fn hilo(&self)->XHiLo { XHiLo { hi:self.hi, lo:self.lo } }}
 impl std::ops::Not for XVHL { type Output = XVHL; fn not(self)->XVHL { XVHL { v:self.v, hi:!self.hi, lo:!self.lo }}}
 
 /// Dummy value to stick into vhls[0]
-const XVHL_O:XVHL = XVHL{ v: NOV, hi:XID_O, lo:XID_I };
+const XVHL_O:XVHL = XVHL{ v: NOV, hi:XID_O, lo:XID_O };
 
 /// index + refcount
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -96,6 +96,44 @@ pub struct XVHLScaffold {
 
 impl XVHLScaffold {
   fn new()->Self { XVHLScaffold{ vids:vec![], vhls:vec![XVHL_O], rows: HashMap::new() } }
+
+  /// validate that this scaffold is well formed. (this is for debugging)
+  pub fn validate(&self) {
+
+    // vids must be unique:
+    let mut vids:HashMap<VID, usize> = self.vids.iter().cloned().enumerate().map(|(i,v)|(v,i+1)).collect();
+    assert_eq!(vids.len(), self.vids.len(), "duplicate vid(s) in list: {:?}", self.vids);
+    vids.insert(NOV, 0);
+
+    let mut seen : HashMap<XVHL,usize> = HashMap::new();
+    // validate the rows:
+    for (i, &x) in self.vhls.iter().enumerate() {
+      // the vid should be in the scaffold, or cleared out to indicate a blank row.
+      assert!(vids.contains_key(&x.v), "invalid v for vhls[{}]: {}", i, x.v);
+      // the lo branch should not be inverted.
+      assert!(!x.lo.is_inv(), "found inverted lo branch in vhls[{}]: {:?}", i, x);
+
+      // with the exception of garbage / O :
+      if x.v != NOV {
+        // the lo branch should be different from the hi branch
+        assert_ne!(x.lo, x.hi, "unmerged branches in vhl[{}]: {:?}", i, x);
+        // the hi and lo branches should point "downward"
+        assert!(vids[&self.branch_var(x.lo)] < vids[&x.v], "upward lo branch @vhl[{}]: {:?}", i, x);
+        assert!(vids[&self.branch_var(x.hi)] < vids[&x.v], "upward hi branch @vhl[{}]: {:?}", i, x);
+
+        // there should be no duplicate entries.
+        if let Some(j) = seen.get(&x) { panic!("vhl[{}] is a duplicate of vhl[{}]: {:?}", i, j, x) }
+        else { seen.insert(x, i); }
+
+        // there should be a hashmap entry pointing back to the item:
+        if let Some(ixrc) = self.rows[&x.v].hm.get(&XHiLo{ hi:x.hi, lo:x.lo }) {
+          let ix = ixrc.ix.raw().x as usize;
+          assert_eq!(ix, i, "hashmap stored wrong index ({:?}) for vhl[{}]: {:?} ", ixrc.ix, i, x)}
+        else { panic!("no hashmap reference to vhl[{}]: {:?}", i, x) }}
+
+      // TODO: check reference counts
+      }}
+
 
   /// return the index (height) of the given variable within the scaffold (if it exists)
   fn vix(&self, v:VID)->Option<usize> { self.vids.iter().position(|&x| x == v) }
@@ -168,12 +206,14 @@ impl XVHLScaffold {
   /// branch on the limit var, or branch on some variable below it.
   fn tbl(&self, top:XID, limit:Option<VID>)->Vec<XID> {
     let mut xs = vec![top];
-    let z = if let Some(lim) = limit {
-      self.vix(lim).expect("limit var isn't in scaffold") as i64}
-      else {-1};
+    println!("tbl/xs: {:?}", xs);
+    for (i,&x) in xs.iter().enumerate() { println!("  [{}]: x:{} = {:?}", i, x.x, self.get(x).unwrap())}
+    let (z,lv) = if let Some(lim) = limit {
+      (self.vix(lim).expect("limit var isn't in scaffold") as i64, lim)}
+      else {(-1, VID::nov())};
     let mut v = self.get(top).expect("top wasn't in the scaffold").v;
     let mut i = self.vix(v).unwrap() as i64;
-    assert!(i >= z, "invalid limit depth {} for node on row {}", z, i);
+    assert!(i >= z, "invalid limit depth {} (var({})) for node on row {}", z, lv, i);
     while i > z {                       // copy-and-expand for each row down to limit
       v = self.vids[i as usize];     // redundant 1st time but can't put at end b/c -1
       let tmp = xs; xs = vec![];
@@ -181,6 +221,8 @@ impl XVHLScaffold {
         let vhl = self.get(x).unwrap();
         if vhl.v == v { xs.push(vhl.lo); xs.push(vhl.hi); }
         else { xs.push(x); xs.push(x); }}
+      println!("tbl/xs v:{:?}", v);
+      for (i,&x) in xs.iter().enumerate() { println!("  [{}]: x:{} = {:?}", i, x.x, self.get(x).unwrap())}
       i-=1}
     xs}
 
@@ -197,6 +239,7 @@ impl XVHLScaffold {
           let t = self.add_ref(XVHL{ v, hi, lo }, 1).0;
           self.dec_ref_ix(hi); self.dec_ref_ix(lo);
           t } }).collect();
+      println!("untbl/xs: {:?}", xs);
       if xs.len() == 1 { break }
       v = self.vid_above(v).expect("not enough vars in scaffold to untbl!"); }
     xs[0]}
@@ -213,6 +256,8 @@ impl XVHLScaffold {
 
   /// swap v up by one level
   fn swap(&mut self, v:VID) {
+    #[cfg(test)] {
+      println!("swap({}) in {:?}. validating.", v, self.vids); self.validate(); println!("ok! begin swap.") }
     let vi = self.vix(v).expect("requested vid was not in the scaffold.");
     if vi+1 == self.vids.len() { println!("warning: attempt to lift top vid {}", v); return }
     let w = self.vids[vi+1]; // start: v is 1 level below w
@@ -330,7 +375,7 @@ impl XVHLScaffold {
 
     // garbage collect on row v. these won't conflict with vnew because we will never
     // add a *completely* new node on row v - only move existing nodes from w, and
-    // these will never match existing nodes on because at least one leg always
+    // these will never match existing nodes on v because at least one leg always
     // points at w (and this wasn't possible before the lift). But we may need to delete
     // nodes because the rc dropped to 0 (when the node was only referenced by row w).
     let mut vdel:Vec<XID> = vec![];
@@ -390,7 +435,8 @@ impl XVHLScaffold {
 
     // finally, put the rows back where we found them:
     self.rows.insert(v, rv);
-    self.rows.insert(w, rw); }
+    self.rows.insert(w, rw);
+    #[cfg(test)] { println!("swap complete. validating."); self.validate(); println!("valid!") }}
 
   /// arrange row order to match the given groups.
   /// the groups are given in bottom-up order, and should
@@ -834,8 +880,8 @@ impl SwapSolver {
   /// Arrange the two scaffolds so that their variable orders match.
   ///  1. vids shared between src and dst (set n) are above rv
   ///  2. vids that are only in the dst (set d) are below rv
-  ///  3. new vids from src (set s) are between rv and set d.
-  /// so from bottom to top: ( d, s, v, n )
+  ///  3. new vids from src (set s) are directly above rv.
+  /// so from bottom to top: ( d, v, s, n )
   /// (the d vars are not actually copied to the src, but otherwise the
   /// orders should match exactly when we're done.)
   fn arrange_vids(&mut self)->usize {
@@ -854,13 +900,17 @@ impl SwapSolver {
     // the order of n has to match in both. we'll use the
     // existing order of n from dst because it's probably bigger.
     let vix = self.dst.vix(self.rv).unwrap();
-    let mut sg = vec![s];
+    let mut sg = vec![s.clone()];
     for ni in (vix+1)..self.dst.vids.len() { sg.push(set(vec![self.dst.vids[ni]])) }
     self.src.regroup(sg); // final order: [s,n]
 
     // now whatever order the s group wound up in, we can insert
-    // them in the dst directly below v. final order: [ d,s,v,n ]
-    for &si in self.src.vids.iter().rev() { self.dst.vids.insert(vix, si) }
+    // them in the dst directly *above* v. final order: [ d,v,s,n ]
+    for &si in self.src.vids.iter().rev() {
+      if s.contains(&si) { self.dst.vids.insert(vix+1, si) }}
+
+    println!("dst.vids: {:?}", self.dst.vids);
+    println!("src.vids: {:?}", self.src.vids);
 
     // return the row index at the bottom of set s
     vix}
@@ -876,23 +926,37 @@ impl SwapSolver {
 
     // 3. let p = (partial) truth table for dst at the row branching on rv.
     //    (each item is either a const or branches on a var equal to or below rv)
+    let mut p: Vec<XID> = self.dst.tbl(self.dx, Some(self.rv));
+    println!("rv: {:?}", self.rv);
+    println!("p0: {:?}", p);
+    for (i, &x) in p.iter().enumerate() { println!("p0[{}]: {:?}", i, self.dst.get(x).unwrap()) }
+    println!("---------------");
     //    Scale p to the size of q by repeatedly doubling the entries.
     //    !! yes, this is a wasteful algorithm but the expectation is that p
     //       and q are quite small: < 2^n items where n = number of vars in
     //       the replacement. I expect n<16, since if n is too much higher than
     //       that, I expect this whole algorithm to break down anyway.
-    let mut p: Vec<XID> = self.dst.tbl(self.dx, Some(self.rv));
     if p.len() < q.len() { p = p.iter().cycle().take(q.len()).cloned().collect() }
+    println!("p: {:?}", p);
+    for (i, &x) in p.iter().enumerate() { println!("p[{}]: {:?}", i, self.dst.get(x).unwrap()) }
+    println!("---------------");
 
     // 4. let r = the partial truth table for result at row rv.
-    //    We're removing rv from p here.
+    //    We're removing rv from p (and dst itself) here.
     let mut r:Vec<XID> = p.iter().zip(q.iter()).map(|(&pi,&qi)|
       if self.dst.branch_var(pi) == self.rv { self.dst.follow(pi, qi) } else { pi }).collect();
     println!("p: {:?}\nq: {:?}\nr: {:?}", p, q, r);
+    for (i, &x) in p.iter().enumerate() { println!("r[{}]: {:?}", i, self.dst.get(x).unwrap()) }
+    println!("---------------");
+    for (i, &x) in r.iter().enumerate() { println!("r[{}]: {:?}", i, self.dst.get(x).unwrap()) }
+
+    self.dst.vids.remove(self.dst.vix(self.rv).unwrap());
+    self.dst.rows.remove(&self.rv);
 
     // 5. rebuild the rows above set d, and return new top node
-    println!("vids: {:?}, rv: {:?}, above: {:?}", self.dst.vids, self.rv, self.dst.vid_above(self.rv));
-    self.dx = self.dst.untbl(r, Some(self.dst.vids[vix]));
+    let bv = self.dst.vids[vix]; // whatever the new branch var in that slot is
+    println!("vids: {:?}, bv: {:?}, above: {:?}", self.dst.vids, bv, self.dst.vid_above(bv));
+    self.dx = self.dst.untbl(r, Some(bv));
 
     println!("final result: {:?}", self.dst.get(self.dx));
 
