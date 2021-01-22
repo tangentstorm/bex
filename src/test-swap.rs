@@ -90,7 +90,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   assert_eq!(dst.fmt(xid), dst.run(goal));}
 
 #[test] fn test_sub_simple_0() {
-  check_sub("xy|x|y|yx", "x", 'x', "y", "y") }
+  check_sub("xy|x|y|y", "x", 'x', "y", "y") }
 
 #[test] fn test_sub_simple_1() {
   // goal: 'vxy?   v w %'
@@ -100,7 +100,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   //   wxy? wxy? w?     // decompose on w
   //   0xy? 1xy? w?     // eval w
   //   0xy? 0x!y?! w?   // how fmt displays inverted xids.   !! have format not do this?
-  check_sub("wvxy|vxy|w|xywv", "vxy?", 'v', "w", "0xy? 1xy? w?")}
+  check_sub("wvxy|vxy|w|xyw", "vxy?", 'v', "w", "0xy? 1xy? w?")}
 
 /// test for subbing in two new variables
 #[test] fn test_two_new() {
@@ -117,7 +117,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   // abx?     abx?      x?    ab0?     ab0?      0? y?
   //                    abx?    ab0?   y?
   // abx? ay?
-  check_sub("abzxy|abz|xy|abxyz", "abz?", 'z', "x0y?", "abx? ay?")}
+  check_sub("abzxy|abz|xy|abxy", "abz?", 'z', "x0y?", "abx? ay?")}
 
 /// test for subbing in two new variables
 #[test] fn old_test_two_new() {
@@ -204,14 +204,16 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
 #[test] fn test_one_new() {
   //                                   wy^
   //   w!     w    y?                  xw*   y%
-  // = w!     w    y?  x0w?  y%
-  // = w!     w    x0w??            # replace y
-  // = (w!w x0w??) (w!w x0w??) x?   # decompose on x
-  // = (w!w 10w??) (w!w 00w??) x?   # subst x
-  // = (w!w   w?)  (w!w   0?)  x?   # simplify 10w?->w  00w?->0
-  // = (1!0   w?)  w  x?            # distribute w? on left,  apply 0? on right
-  // = 00w?  w  x?                  # apply ! to 1
-  // = 0 w x?                       # final answer
+  // = w!     w    y?  w0x?  y%
+  // = (w!wy? w!wy? w?)  (w0x? w0x?w?) y%   # reorder as yxw
+  // = (0!0y? 1!1y? w?)  (00x? 10x?w?) y%
+  // = y!yw?  (0x!w?) y%
+  // = (0x!w?)! (0x!w?) w?
+  // = (0x!0?)! (0x!1?) w?
+  // = (0)! (x!) w?
+  // = 1x!w?
+  // = 0xw?!
+  check_sub("wyx|wy|wx|xw", "w!wy?", 'y', "w0x?", "0xw?!");
   let nz = NID::vir(3); let z = nz.vid();
   let ny = NID::vir(2); let y = ny.vid();
   let nx = NID::vir(1); let x = nx.vid();
