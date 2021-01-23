@@ -5,10 +5,11 @@
 /// to delete this or try and repair it.
 use std::slice::Iter;
 use hashbrown::{HashMap, hash_map::Entry, HashSet};
-use {base::{Base,GraphViz,SubSolver}, vid::VID, vid::NOV, nid, nid::NID, bdd::BDDBase};
+use {base::{Base,GraphViz}, vid::VID, vid::NOV, nid, nid::NID, bdd::BDDBase};
 use vhl::{HiLo, VHL, Walkable};
 use std::mem;
 use std::cmp::Ordering;
+use solve::SubSolver;
 
 /// index + refcount (used by VHLRow)
 #[derive(Debug, PartialEq, Eq)]
@@ -529,6 +530,10 @@ fn max_vid<'r,'s>(a:&'r &VID, b:&'s &VID)-> Ordering {
   else if a==b { Ordering::Equal }
   else { Ordering::Less }}
 
+// !! TODO: re-implement SubSolver for OldSwapSolver (to benchmark against SwapSolver)
+// !! OldSwapSolver implementing Base was just a hack to hook it up to the SubSolver,
+// !! but now there's a generic implementation for base which conflicts with this.
+/*
 impl<T:Base+Walkable> SubSolver for OldSwapSolver<T> {
   fn init_sub(&mut self, top:NID) {
     if top.is_const() { }
@@ -557,7 +562,7 @@ impl<T:Base+Walkable> SubSolver for OldSwapSolver<T> {
       println!("{:?} next_sub({})->{:?}", self.dst.vids, ctx, res);
       res }}
 }
-
+*/
 
 
 pub type BddSwapSolver = OldSwapSolver<BDDBase>;

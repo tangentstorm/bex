@@ -5,7 +5,7 @@
 /// at each step then only involves the top three rows.
 use std::slice::Iter;
 use hashbrown::{HashMap, hash_map::Entry, HashSet};
-use {base::{Base,GraphViz,SubSolver}, vid::VID, vid::NOV, nid, nid::NID, bdd::BDDBase};
+use {base::{Base,GraphViz}, vid::VID, vid::NOV, nid, nid::NID, bdd::BDDBase};
 use vhl::{HiLo, VHL, Walkable};
 use std::mem;
 use std::cmp::Ordering;

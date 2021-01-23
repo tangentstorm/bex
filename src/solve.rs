@@ -16,9 +16,24 @@
 
 use apl;
 use ast::{Op,RawASTBase};
-use base::{Base, GraphViz, SubSolver};
+use base::{Base, GraphViz};
 use {nid, nid::NID};
 use {vid::VID};
+
+
+/// protocol used by solve.rs. These allow the base to prepare itself for different steps
+/// in a substitution solver.
+pub trait SubSolver {
+  /// prepare for the intitial solving step. Refinement will start with the given virtual variable.
+  fn init_sub(&mut self, _top:NID) { }
+  /// notify the solver about the next intended substitution,
+  /// and allow the solver to override it.
+  fn next_sub(&mut self, ctx:NID)->Option<(VID, NID)> {
+    if ctx.is_const() { None }
+    else if ctx.vid().is_vir() { Some((ctx.vid(), ctx)) }
+    else { None }}}
+
+impl<B:Base> SubSolver for B { }
 
 pub trait Progress<B:Base> {
   fn on_start(&self);
@@ -99,7 +114,7 @@ pub fn refine<B:Base+SubSolver, P:Progress<B>>(dest: &mut B, src:&RawASTBase, en
     let now = std::time::SystemTime::now();
     let old = top;
     top = refine_one(dest, &src, top);
-    assert!(old != top, "top should have changed!");
+    assert_ne!(old, top, "top should have changed!");
     let millis = now.elapsed().expect("elapsed?").as_millis();
     pr.on_step(src, dest, step, millis, old, top);
     step += 1; }
@@ -117,7 +132,7 @@ pub fn convert_nid(sn:SrcNid)->DstNid {
     if nid::is_inv(n) { !r0 } else { r0 }};
   DstNid{ n: r } }
 
-/// replace node in destintation with its definition form source
+/// replace node in destination with its definition form source
 fn refine_one<B:Base+SubSolver>(dst: &mut B, src:&RawASTBase, d:DstNid)->DstNid {
   // println!("refine_one({:?})", d);
   if let Some((otv, ctx)) = dst.next_sub(d.n) { // ctx nid, old top var
@@ -149,7 +164,7 @@ pub fn solve<B:Base+SubSolver>(dst:&mut B, src0:&RawASTBase, n:NID)->DstNid {
 macro_rules! find_factors {
   ($TDEST:ident, $T0:ident, $T1:ident, $k:expr, $expect:expr) => {{
     use std::env;
-    use $crate::{Base, SubSolver, GraphViz, nid, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}, bdd};
+    use $crate::{Base, GraphViz, nid, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}, bdd};
     bdd::COUNT_XMEMO_TEST.with(|c| *c.borrow_mut()=0 ); bdd::COUNT_XMEMO_TEST.with(|c| *c.borrow_mut()=0 ); // TODO: other bases
     GBASE.with(|gb| gb.replace(ASTBase::empty()));   // reset on each test
     let (y, x) = ($T0::def("y"), $T0::def("x")); let lt = x.lt(&y);
