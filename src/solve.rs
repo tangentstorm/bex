@@ -14,7 +14,7 @@
 /// (the --nocapture is an optional argument to the test engine. it turns off
 /// capturing of stdout so that you can see debug lines from the solver)
 
-use apl;
+use ::{apl, ops};
 use ast::{Op,RawASTBase};
 use base::{Base, GraphViz};
 use {nid, nid::NID};
@@ -31,7 +31,9 @@ pub trait SubSolver {
   /// prepare for the initial solving step. Refinement will start with the given virtual variable.
   fn init(&mut self, _top: VID) {}
   /// tell the implementation to perform a substitution step.
-  fn subst(&mut self, _vid:VID, _ops:&Ops) {}
+  /// context NIDs are passed in and out so the implementation
+  /// itself doesn't have to remember it.
+  fn subst(&mut self, ctx:NID, _vid:VID, _ops:&Ops) ->NID { ctx }
   /// fetch a solution, (if one exists)
   fn get_one(&self)->Option<Reg> { None }
   /// fetch all solutions
@@ -41,11 +43,24 @@ pub trait SubSolver {
   /// Dump the current internal state for inspection by some external process.
   /// Generally this means writing to a graphviz (*.dot) file.
   /// The step number, status note, and a copy of the arguments to the
-  /// previous sub() are provided, in case the dump format can make use of them in some way.
-  fn dump(&self, _path:&Path, _note:&str, _step:usize, _vid:VID, _ops:&Ops); }
+  /// previous subst(), and the result are provided, in case the dump format
+  /// can make use of them in some way.
+  fn dump(&self, _path:&Path, _note:&str, _step:usize, _old:NID, _vid:VID, _ops:&Ops, _new:NID); }
 
 impl<B:Base> SubSolver for B {
-  fn dump(&self, _path:&Path, _note:&str, _step:usize, _vid:VID, _ops:&Ops) { }}
+  fn subst(&mut self, ctx:NID, v:VID, ops:&Ops) ->NID {
+    let def = match ops {
+      Ops::RPN(x) => if x.len() == 3 {
+        match x[2] {
+          ops::AND => self.and(x[0], x[1]),
+          ops::XOR => self.xor(x[0], x[1]),
+          ops::VEL => self.or(x[0], x[1]),
+          _ => panic!("don't know how to translate {:?}", ops)}}
+        else { todo!("SubSolver impl for Base can only handle simple dyadic ops for now.") },
+      _ => { todo!("SubSolver impl for Base can only handle RPN for now")}};
+    self.sub(v, def, ctx)}
+
+  fn dump(&self, _path:&Path, _note:&str, _step:usize, _old:NID, _vid:VID, _ops:&Ops, _new:NID) {}}
 
 pub trait Progress<B:Base> {
   fn on_start(&self);
@@ -145,7 +160,7 @@ pub fn convert_nid(sn:SrcNid)->DstNid {
   DstNid{ n: r } }
 
 /// replace node in destination with its definition form source
-fn refine_one<B:Base+ SubSolver>(dst: &mut B, src:&RawASTBase, d:DstNid) ->DstNid {
+fn refine_one(dst: &mut SubSolver, src:&RawASTBase, d:DstNid) ->DstNid {
   // println!("refine_one({:?})", d)
   let ctx = d.n;
   if ctx.is_const() { return d }
@@ -154,16 +169,12 @@ fn refine_one<B:Base+ SubSolver>(dst: &mut B, src:&RawASTBase, d:DstNid) ->DstNi
     let op = src.get_op(nid::ixn(otv.vir_ix() as u32));
     let cn = |x0:NID|->NID { convert_nid(SrcNid{n:x0}).n };
     // println!("op: {:?}", op);
-    let newdef:NID = match op {
-      Op::O | Op::I | Op::Var(_) | Op::Not(_) => panic!("Src base should not contain {:?}", op),
-      // the VIDs on the right here are because we're treating each step in the
-      // calculation as a 'virtual' input variable, and just slowly simplifying
-      // until the virtual variables are all gone.
-      Op::And(x,y) => dst.and(cn(x), cn(y)),
-      Op::Xor(x,y) => dst.xor(cn(x), cn(y)),
-      Op::Or(x,y) => dst.or(cn(x), cn(y)),
-      _ => { panic!("don't know how to translate {:?}", op ) }};
-    DstNid{n: dst.sub(otv, newdef, ctx) }}
+    let def:Ops = match op {
+      Op::And(x,y) => ops::rpn(&[cn(x), cn(y), ops::AND]),
+      Op::Xor(x,y) => ops::rpn(&[cn(x), cn(y), ops::XOR]),
+      Op::Or(x,y)  => ops::rpn(&[cn(x), cn(y), ops::VEL]),
+      _ => { panic!("don't know how to translate {:?}", op)}};
+    DstNid{n: dst.subst(ctx, otv, &def) }}
   else { d } /* ignore consts and vars */ }
 
 
