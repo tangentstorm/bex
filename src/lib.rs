@@ -24,6 +24,8 @@ pub mod reg;
 pub mod vhl;
 /// Structures for storing work in progress.
 pub mod wip;
+/// RPN-like serialization structure for expressions.
+pub mod ops;
 
 // Cursors (register + stack and scope) for navigating vhl-graphs (Bdd, Anf, etc)
 pub mod cur;
@@ -47,4 +49,6 @@ pub mod anf;
 
 /// swap solver
 pub mod swap;
+
+// older version of the swap solver. will probably go away
 mod oldswap;

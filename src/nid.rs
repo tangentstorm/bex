@@ -58,7 +58,9 @@ const RVAR:u64 = 1<<60;  // is *real* variable?
 /// (All nids represent functions, but this bit indicates that rather
 /// than referring to an existing node, it is a function of <=5 inputs
 /// and the entire truth table is stored in the index field.
-/// TODO: This bit probably ought to be merged with T.
+// !TODO: Decide whether or not to merge F(unction) with T(able). If separate,
+// then F+T might mean treat this as a function with a table, and F+!T would
+// tell the interpreter to apply some previously defined expression as a function.
 const F:u64 = 1<<59;
 
 /// Constant used to extract the index part of a NID.
@@ -93,6 +95,7 @@ pub const I:NID = new(T|INV);
 #[inline(always)] pub fn idx(x:NID)->usize { (x.n & IDX_MASK) as usize }
 
 /// On which variable does this node branch? (I and O branch on TV)
+/// TODO: there should probably be a self.get_vid() instead
 #[inline(always)] pub fn var(x:NID)->VID { ((x.n & !(INV|VAR)) >> 32) as VID}
 /// Same as var() but strips out the RVAR bit.
 #[inline(always)] pub fn rvar(x:NID)->VID { ((x.n & !(INV|VAR|RVAR)) >> 32) as VID}
@@ -110,10 +113,21 @@ pub const I:NID = new(T|INV);
 #[inline(always)] pub fn nvi(v:VID,i:IDX)->NID { new(((v as u64) << 32) + i as u64) }
 
 /// construct an F node
-#[inline(always)] pub fn fun(tbl:u32)->NID { NID { n:(tbl as u64) + F } }
+#[inline(always)] pub const fn fun(arity:u8,tbl:u32)->NID { NID { n:F+(tbl as u64)+((arity as u64)<< 32)}}
 #[inline(always)] pub fn is_fun(x:&NID)->bool { x.n & F == F }
 #[inline(always)] pub fn tbl(x:&NID)->Option<u32> { if is_fun(x){ Some(idx(*x) as u32)} else {None}}
-
+#[inline(always)] pub fn arity(x:&NID)->usize {
+  if is_fun(x){ (x.n >> 32 & 0xff) as usize }
+  else if is_lit(*x) { 0 }
+  // !! TODO: decide what arity means for general nids.
+  // !! if the node is already bound to variables. We could think of this as the number
+  // !! of distinct variables it contains, *or* we could think of it as an expression that
+  // !! takes no parameters. (Maybe the F bit, combined with the "T=Table" bit toggles this?)
+  // !! Also, it's not obvious how to track the number of variables when combining two nodes
+  // !! without a lot of external storage. The best we can do is look at the top var and
+  // !! get an upper bound. With virs, we can't even do that. In any case, I don't actually
+  // !! need this at the moment, so I will just leave it unimplemented.
+  else { todo!("arity is only implemented for fun and lit nids at the moment") }}
 
 
 impl std::ops::Not for NID {
@@ -200,9 +214,10 @@ impl NID {
   pub fn is_lit(&self)->bool { is_lit(*self) }
   pub fn is_inv(&self)->bool { is_inv(*self) }
   pub fn idx(&self)->usize { idx(*self) }
-  pub fn fun(tbl:u32)->Self { fun(tbl) }
+  pub const fn fun(arity:u8, tbl:u32)->Self { fun(arity,tbl) }
   pub fn is_fun(&self)->bool { is_fun(self) }
   pub fn tbl(&self)->Option<u32> { tbl(self) }
+  pub fn arity(&self)->Option<usize> { Some(arity(self)) }
   /// is it possible nid depends on var v?
   /// the goal here is to avoid exploring a subgraph if we don't have to.
   #[inline] pub fn might_depend_on(&self, v:vid::VID)->bool {
