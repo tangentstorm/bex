@@ -43,16 +43,23 @@ const INV:u64 = 1<<63;  // is inverted?
 /// and numerous enough that we don't bother actually storing them.)
 const VAR:u64 = 1<<62;   // is variable?
 
-/// In addition, for solving, we want to distinguish between "virtual" variables which
-/// represent some intermediate, unsimplified calculation, and "real" variables, which
-/// represent actual input variables. That's what this bit does.
-const RVAR:u64 = 1<<60;  // is *real* variable?
-
 /// Single-bit mask indicating that the NID represents a constant. The corresponding
 /// virtual node branches on constant "true" value, hence the letter T. There is only
 /// one such node -- O (I is its inverse) but having this bit in the NID lets us
 /// easily detect and optimize the cases.
 const T:u64 = 1<<61;    // T: max VID (hack so O/I nodes show up at bottom)
+
+/// In addition, for solving, we want to distinguish between "virtual" variables which
+/// represent some intermediate, unsimplified calculation, and "real" variables, which
+/// represent actual input variables. That's what this bit does.
+const RVAR:u64 = 1<<60;  // is *real* variable?
+
+/// This bit indicates that the NID is meant to be used as a function.
+/// (All nids represent functions, but this bit indicates that rather
+/// than referring to an existing node, it is a function of <=5 inputs
+/// and the entire truth table is stored in the index field.
+/// TODO: This bit probably ought to be merged with T.
+const F:u64 = 1<<59;
 
 /// Constant used to extract the index part of a NID.
 const IDX_MASK:u64 = (1<<32)-1;
@@ -101,6 +108,12 @@ pub const I:NID = new(T|INV);
 
 /// Construct a NID with the given variable and index.
 #[inline(always)] pub fn nvi(v:VID,i:IDX)->NID { new(((v as u64) << 32) + i as u64) }
+
+/// construct an F node
+#[inline(always)] pub fn fun(tbl:u32)->NID { NID { n:(tbl as u64) + F } }
+#[inline(always)] pub fn is_fun(x:&NID)->bool { x.n & F == F }
+#[inline(always)] pub fn tbl(x:&NID)->Option<u32> { if is_fun(x){ Some(idx(*x) as u32)} else {None}}
+
 
 
 impl std::ops::Not for NID {
@@ -187,6 +200,9 @@ impl NID {
   pub fn is_lit(&self)->bool { is_lit(*self) }
   pub fn is_inv(&self)->bool { is_inv(*self) }
   pub fn idx(&self)->usize { idx(*self) }
+  pub fn fun(tbl:u32)->Self { fun(tbl) }
+  pub fn is_fun(&self)->bool { is_fun(self) }
+  pub fn tbl(&self)->Option<u32> { tbl(self) }
   /// is it possible nid depends on var v?
   /// the goal here is to avoid exploring a subgraph if we don't have to.
   #[inline] pub fn might_depend_on(&self, v:vid::VID)->bool {
