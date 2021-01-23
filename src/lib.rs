@@ -47,3 +47,4 @@ pub mod anf;
 
 /// swap solver
 pub mod swap;
+mod oldswap;
