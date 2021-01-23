@@ -4,7 +4,7 @@ use std::mem::size_of;
 use vid::VID;
 
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Reg { nvars: usize, data: Vec<usize> }
 
 const USIZE:usize = size_of::<usize>() * 8;

@@ -19,21 +19,33 @@ use ast::{Op,RawASTBase};
 use base::{Base, GraphViz};
 use {nid, nid::NID};
 use {vid::VID};
+use ops::Ops;
+use reg::Reg;
+use hashbrown::HashSet;
+use std::path::Path;
 
 
 /// protocol used by solve.rs. These allow the base to prepare itself for different steps
 /// in a substitution solver.
 pub trait SubSolver {
-  /// prepare for the intitial solving step. Refinement will start with the given virtual variable.
-  fn init_sub(&mut self, _top:NID) { }
-  /// notify the solver about the next intended substitution,
-  /// and allow the solver to override it.
-  fn next_sub(&mut self, ctx:NID)->Option<(VID, NID)> {
-    if ctx.is_const() { None }
-    else if ctx.vid().is_vir() { Some((ctx.vid(), ctx)) }
-    else { None }}}
+  /// prepare for the initial solving step. Refinement will start with the given virtual variable.
+  fn init(&mut self, _top: VID) {}
+  /// tell the implementation to perform a substitution step.
+  fn subst(&mut self, _vid:VID, _ops:&Ops) {}
+  /// fetch a solution, (if one exists)
+  fn get_one(&self)->Option<Reg> { None }
+  /// fetch all solutions
+  fn get_all(&self)->HashSet<Reg> { HashSet::new() }
+  // a status message for the progress report
+  fn status(&self)->String { "".to_string() }
+  /// Dump the current internal state for inspection by some external process.
+  /// Generally this means writing to a graphviz (*.dot) file.
+  /// The step number, status note, and a copy of the arguments to the
+  /// previous sub() are provided, in case the dump format can make use of them in some way.
+  fn dump(&self, _path:&Path, _note:&str, _step:usize, _vid:VID, _ops:&Ops); }
 
-impl<B:Base> SubSolver for B { }
+impl<B:Base> SubSolver for B {
+  fn dump(&self, _path:&Path, _note:&str, _step:usize, _vid:VID, _ops:&Ops) { }}
 
 pub trait Progress<B:Base> {
   fn on_start(&self);
@@ -101,7 +113,7 @@ pub fn sort_by_cost(src:&RawASTBase, top:SrcNid)->(RawASTBase,SrcNid) {
   (ast,SrcNid{n}) }
 
 
-pub fn refine<B:Base+SubSolver, P:Progress<B>>(dest: &mut B, src:&RawASTBase, end:DstNid, mut pr:P)->DstNid {
+pub fn refine<B:Base+ SubSolver, P:Progress<B>>(dest: &mut B, src:&RawASTBase, end:DstNid, mut pr:P) ->DstNid {
   // end is the root of the expression to simplify, as a nid in the src ASTbase.
   // we want its equivalent expression in the dest base:
   let mut top = end;
@@ -133,9 +145,12 @@ pub fn convert_nid(sn:SrcNid)->DstNid {
   DstNid{ n: r } }
 
 /// replace node in destination with its definition form source
-fn refine_one<B:Base+SubSolver>(dst: &mut B, src:&RawASTBase, d:DstNid)->DstNid {
-  // println!("refine_one({:?})", d);
-  if let Some((otv, ctx)) = dst.next_sub(d.n) { // ctx nid, old top var
+fn refine_one<B:Base+ SubSolver>(dst: &mut B, src:&RawASTBase, d:DstNid) ->DstNid {
+  // println!("refine_one({:?})", d)
+  let ctx = d.n;
+  if ctx.is_const() { return d }
+  let otv = ctx.vid(); // old top var
+  if otv.is_vir() {
     let op = src.get_op(nid::ixn(otv.vir_ix() as u32));
     let cn = |x0:NID|->NID { convert_nid(SrcNid{n:x0}).n };
     // println!("op: {:?}", op);
@@ -149,10 +164,10 @@ fn refine_one<B:Base+SubSolver>(dst: &mut B, src:&RawASTBase, d:DstNid)->DstNid 
       Op::Or(x,y) => dst.or(cn(x), cn(y)),
       _ => { panic!("don't know how to translate {:?}", op ) }};
     DstNid{n: dst.sub(otv, newdef, ctx) }}
-  else { d } }
+  else { d } /* ignore consts and vars */ }
 
 
-pub fn solve<B:Base+SubSolver>(dst:&mut B, src0:&RawASTBase, n:NID)->DstNid {
+pub fn solve<B:Base+ SubSolver>(dst:&mut B, src0:&RawASTBase, n:NID) ->DstNid {
   let (src, top) = sort_by_cost(&src0, SrcNid{n});
   refine(dst, &src, DstNid{n: NID::vir(nid::idx(top.n) as u32)},
         ProgressReport{ save_dot: false, save_dest: false, prefix:"x", millis: 0 }) }
@@ -183,7 +198,7 @@ macro_rules! find_factors {
     assert!(nid::no_var(top.n), "top nid seems to be a literal. (TODO: handle these already solved cases)");
     if show_ast { src.show_named(top.n, "ast"); }
     // --- now we have the ast, so solve ----
-    let mut dest = $TDEST::new(src.len()); dest.init_sub(top.n);
+    let mut dest = $TDEST::new(src.len()); dest.init(top.n.vid());
     let answer:DstNid = solve(&mut dest, &src, top.n);
     if show_res { dest.show_named(answer.n, "result") }
     let expect = $expect;
