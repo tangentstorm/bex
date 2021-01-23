@@ -119,21 +119,22 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   // abx? ay?
   check_sub("abzxy|abz|xy|abxy", "abz?", 'z', "x0y?", "abx? ay?")}
 
-/*
-/// test for subbing in two existing variables
-#[test] fn test_two_old() { //TODO
-  //   stack                     input
-  //                             xy^
-  //   x!xy?                     vw+    y%       # x^(v+w)
-  //   x!   x!   xv?    w?       vw*    x%       # (v*w)^(v+w)
-  // = vw*! vw*! vw* v? w?    # x-> (vw*)
-  // = vw*! 1w*! 0w* v? w?    # fill in v
-  // = vw*! w! 0 v? w?        # simplify const exprs
-  // = v1*! 0! 0 v? w?        # fill in w
-  // = v!   1 0 v?  w?        # simplify
-  // = v!   v  w?             # simplify
-  todo!()}
-*/
+/// Test for subbing in two existing variables.
+/// This test is also interesting because in the process of running it,
+/// one of the remaining variables after substitution cancels out.
+#[test] fn test_two_old() {
+  //   xyz?    z!zx? y%             #  groups: d={}, v={y}, s={}, n={xz}
+  // = xyz?   (z!zx? z!zx? z?) y%   # nothing changes for d, reorder src
+  // = xyz?  (0!0x? 1!1x? z?) y%
+  // = xyz?  (10x? 01x? z?) y%
+  // = xyz?  (x!xz?) y%
+  // = x(x!xz?)z?
+  // = x(x!xz?)z? x(x!xz?)z? z?
+  // = x(x!x0?)0? x(x!x1?)1? z?
+  // = x (x!x1?) z?
+  // = x x z?
+  // = x
+  check_sub("xyz|xyz|zx|xz", "xyz?", 'y', "z!zx?", "x")}
 
 /// test for subbing in one new variable
 #[test] fn test_one_new() {
