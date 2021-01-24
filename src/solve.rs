@@ -28,12 +28,13 @@ use std::path::Path;
 /// protocol used by solve.rs. These allow the base to prepare itself for different steps
 /// in a substitution solver.
 pub trait SubSolver {
-  /// prepare for the initial solving step. Refinement will start with the given virtual variable.
-  fn init(&mut self, _top: VID) {}
+  /// Initialize the solver by constructing the node corresponding to the final
+  /// virtual variable in the expression. Return its nid.
+  fn init(&mut self, top: VID)->NID { NID::from_vid(top) }
   /// tell the implementation to perform a substitution step.
   /// context NIDs are passed in and out so the implementation
   /// itself doesn't have to remember it.
-  fn subst(&mut self, ctx:NID, _vid:VID, _ops:&Ops)->NID { ctx }
+  fn subst(&mut self, ctx:NID, _vid:VID, _ops:&Ops)->NID;
   /// fetch a solution, (if one exists)
   fn get_one(&self, ctx:NID, nvars:usize)->Option<Reg> {
     println!("Warning: default SubSolver::get_one() calls get_all(). Override this!");
@@ -68,7 +69,7 @@ impl<B:Base> SubSolver for B {
   fn dump(&self, _path:&Path, _note:&str, _step:usize, _old:NID, _vid:VID, _ops:&Ops, _new:NID) {}}
 
 pub trait Progress<B:Base> {
-  fn on_start(&self);
+  fn on_start(&self, ctx:&DstNid) { println!("INITIAL ctx: {:?}", ctx) }
   fn on_step(&mut self, src:&RawASTBase, dest: &mut B, step:usize, millis:u128, oldtop:DstNid, newtop:DstNid);
   fn on_done(&self, src:&RawASTBase, dest: &mut B, newtop:DstNid); }
 
@@ -84,7 +85,6 @@ pub struct ProgressReport<'a> {
 
 
 impl<'a, B:Base> Progress<B> for ProgressReport<'a> {
-  fn on_start(&self) { } //println!("step, millis, topnid, oldtopvar, newtopvar"); }
   fn on_step(&mut self, src:&RawASTBase, dest: &mut B, step:usize, millis:u128, oldtop:DstNid, newtop:DstNid) {
     self.millis += millis;
     let DstNid{ n: new } = newtop;
@@ -131,25 +131,6 @@ pub fn sort_by_cost(src:&RawASTBase, top:SrcNid)->(RawASTBase,SrcNid) {
   (ast,SrcNid{n}) }
 
 
-pub fn refine<B:Base+ SubSolver, P:Progress<B>>(dest: &mut B, src:&RawASTBase, end:DstNid, mut pr:P) ->DstNid {
-  // end is the root of the expression to simplify, as a nid in the src ASTBase.
-  // we want its equivalent expression in the dest base:
-  let mut ctx = end;
-  println!("INITIAL ctx: {:?}", ctx);
-  // step is just a number. we're packing it in a nid as a kludge
-  let step_node = dest.get(&"step".to_string()).unwrap_or_else(||NID::var(0));
-  let mut step:usize = step_node.vid().var_ix();
-  pr.on_start();
-  while !(nid::is_rvar(ctx.n) || nid::is_const(ctx.n)) {
-    let now = std::time::SystemTime::now();
-    let old = ctx;
-    ctx = refine_one(dest, ctx.n.vid(), &src, ctx);
-    let millis = now.elapsed().expect("elapsed?").as_millis();
-    pr.on_step(src, dest, step, millis, old, ctx);
-    step += 1; }
-  pr.on_done(src, dest, ctx);
-  ctx}
-
 /// map a nid from the source to a (usually virtual) variable in the destination
 pub fn convert_nid(sn:SrcNid)->DstNid {
   let SrcNid{ n } = sn;
@@ -178,10 +159,75 @@ fn refine_one(dst: &mut dyn SubSolver, v:VID, src:&RawASTBase, d:DstNid)->DstNid
   DstNid{n: dst.subst(ctx, v, &def) }}
 
 
-pub fn solve<B:Base+ SubSolver>(dst:&mut B, src0:&RawASTBase, n:NID)->DstNid {
-  let (src, top) = sort_by_cost(&src0, SrcNid{n});
-  refine(dst, &src, DstNid{n: NID::vir(nid::idx(top.n) as u32)},
-        ProgressReport{ save_dot: false, save_dest: false, prefix:"x", millis: 0 }) }
+/// This is the core algorithm for solving by substitution. We are given a (presumably empty)
+/// destination (the `SubSolver`), a source ASTBase (`src0`), and a source nid (`sn`),
+/// pointing to a node inside the ASTBase.
+///
+/// The source nids we encounter are indices into the ASTBase. We begin by sorting/rewriting
+/// the ASTBase in terms of "cost", so that a node at index k is only dependent on nodes
+/// with indices < k. We also filter out any nodes that are not actually used (for example,
+/// there may be nodes in the middle of the AST that are expensive to calculate on their own,
+/// but get canceled out later on (perhaps by XORing with itself, or ANDing with 0) -- there's
+/// no point including these at all as we work backwards.
+///
+/// After this sorting and filtering, we map each nid in the AST to a `VID::vir` with
+/// the corresponding index. We then initialize `dst` with the highest vid (the one
+/// corresponding to the topmost/highest cost node in the AST).
+///
+/// We then replace each VID in turn with its definition. The definition of each intermediate
+/// node is always in terms of either other AST nodes (mapped to `VID::vir` in the destination,
+/// or actual input variables (`VID::var`), which are added to the destination directly).
+///
+/// The dependency ordering ensures that we never re-introduce a node after substitution,
+/// so the number of substitution steps is equal to the number of AST nodes.
+///
+/// Of course, the cost of each substitution is likely to increase as the destination
+/// becomes more and more detailed. Depending on the implementation, this cost may even
+/// grow exponentially. However, the hope is that by working "backward" from the final
+/// result, we will have access to the maximal number of constraints, and there
+/// will be opportunities to streamline and cancel out even more nodes. The hope is that
+/// no matter how slow this process is, it will be less slow that trying to fully solve
+/// each intermediate node by working "forward".
+pub fn solve<B:Base+ SubSolver>(dst:&mut B, src0:&RawASTBase, sn:NID)->DstNid {
+  // AST nids don't contain VIR nodes (they "are" vir nodes).
+  // If it's already a const or a VID::var, though, there's nothing to do.
+  if sn.is_lit() { DstNid{n:sn} }
+  else {
+    // renumber and garbage collect, leaving only the AST nodes reachable from sn
+    let (mut src, top) = sort_by_cost(&src0, SrcNid{n:sn});
+
+    // step is just a number that counts downward.
+    let mut step:usize = nid::idx(top.n);
+
+    // !! These lines were a kludge to allow storing the step number in the dst,
+    //    with the idea of persisting the destination to disk to resume later.
+    //    The current solvers are so slow that I'm not actually using them for
+    //    anything but testing, though, so I don't need this yet.
+    // TODO: re-enable the ability to save and load the destination mid-run.
+    // let step_node = dst.get(&"step".to_string()).unwrap_or_else(||NID::var(0));
+    // let mut step:usize = step_node.vid().var_ix();
+
+    // v is the next virtual variable to replace.
+    let mut v = VID::vir(step as u32);
+
+    // The context is the evolving top-level node in the destination.
+    // It begins with just the vir representing the top node in the AST.
+    let mut ctx = DstNid{n: dst.init(v)};
+
+    // This just lets us log and record timing info. TODO: pr probably should be an input parameter.
+    let mut pr = ProgressReport{ save_dot: false, save_dest: false, prefix:"x", millis: 0 };
+    <Progress<B>>::on_start(&pr, &ctx);
+
+    // main loop:
+    while !(nid::is_rvar(ctx.n) || nid::is_const(ctx.n)) {
+      let now = std::time::SystemTime::now();
+      let old = ctx; ctx = refine_one(dst, v, &src, ctx);
+      let millis = now.elapsed().expect("elapsed?").as_millis();
+      pr.on_step(&src, dst, step, millis, old, ctx);
+      if step == 0 { break } else { step -= 1; v=VID::vir(step as u32) }}
+    pr.on_done(&src, dst, ctx);
+    ctx}}
+
 
 /// This is an example solver used by the bdd-solve example and the bench-solve benchmark.
 /// It finds all pairs of type $T0 that multiply to $k as a $T1. ($T0 and $T1 are
@@ -241,7 +287,7 @@ macro_rules! find_factors {
     use {anf::ANFBase, int::{X2,X4}};
     find_factors!(ANFBase, X2, X4, 6, vec![(2,3)]); }
 
-    /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
+/// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny_bdd() {
   use {bdd::BDDBase, int::{X4,X8}};
   find_factors!(BDDBase, X4, X8, 210, vec![(14,15)]); }
