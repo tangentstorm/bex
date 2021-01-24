@@ -7,6 +7,8 @@ use std::io::Write;
 use std::process::Command;      // for creating and viewing digarams
 use {nid, nid::{NID}};
 use vid::VID;
+use reg::Reg;
+use hashbrown::HashSet;
 
 pub trait Base {
   fn new(n:usize)->Self where Self:Sized; // Sized so we can use trait objects.
@@ -32,6 +34,10 @@ pub trait Base {
 
   /// implement this to render a node and its descendents in graphviz *.dot format.
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write);
+
+  /// generate ALL solutions. This is a terrible idea, but it's the best I can do right now.
+  // TODO: figure out the right way to return an iterator in a trait.
+  fn solution_set(&self, n:NID, nvars:usize)->HashSet<Reg> { unimplemented!() }
 }
 
 

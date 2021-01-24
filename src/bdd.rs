@@ -560,7 +560,11 @@ impl Base for BDDBase {
     self.walk(n, &mut |n,_,t,_| w!("  \"{}\"->\"{}\";", n, t));
     w!("edge[style=dashed];");
     self.walk(n, &mut |n,_,_,e| w!("  \"{}\"->\"{}\";", n, e));
-    w!("}}"); }}
+    w!("}}"); }
+
+  fn solution_set(&self, n: NID, nvars: usize)->hashbrown::HashSet<Reg> {
+    self.solutions_trunc(n, nvars).collect() }}
+
 
 // generic Base test suite
 test_base_consts!(BDDBase);

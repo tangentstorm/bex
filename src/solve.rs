@@ -33,11 +33,13 @@ pub trait SubSolver {
   /// tell the implementation to perform a substitution step.
   /// context NIDs are passed in and out so the implementation
   /// itself doesn't have to remember it.
-  fn subst(&mut self, ctx:NID, _vid:VID, _ops:&Ops) ->NID { ctx }
+  fn subst(&mut self, ctx:NID, _vid:VID, _ops:&Ops)->NID { ctx }
   /// fetch a solution, (if one exists)
-  fn get_one(&self)->Option<Reg> { None }
+  fn get_one(&self, ctx:NID, nvars:usize)->Option<Reg> {
+    println!("Warning: default SubSolver::get_one() calls get_all(). Override this!");
+    self.get_all(ctx, nvars).iter().next().cloned() }
   /// fetch all solutions
-  fn get_all(&self)->HashSet<Reg> { HashSet::new() }
+  fn get_all(&self, ctx:NID, nvars:usize)->HashSet<Reg>;
   // a status message for the progress report
   fn status(&self)->String { "".to_string() }
   /// Dump the current internal state for inspection by some external process.
@@ -48,6 +50,7 @@ pub trait SubSolver {
   fn dump(&self, _path:&Path, _note:&str, _step:usize, _old:NID, _vid:VID, _ops:&Ops, _new:NID); }
 
 impl<B:Base> SubSolver for B {
+
   fn subst(&mut self, ctx:NID, v:VID, ops:&Ops) ->NID {
     let def = match ops {
       Ops::RPN(x) => if x.len() == 3 {
@@ -59,6 +62,8 @@ impl<B:Base> SubSolver for B {
         else { todo!("SubSolver impl for Base can only handle simple dyadic ops for now.") },
       _ => { todo!("SubSolver impl for Base can only handle RPN for now")}};
     self.sub(v, def, ctx)}
+
+  fn get_all(&self, ctx:NID, nvars:usize)->HashSet<Reg> { self.solution_set(ctx, nvars) }
 
   fn dump(&self, _path:&Path, _note:&str, _step:usize, _old:NID, _vid:VID, _ops:&Ops, _new:NID) {}}
 
@@ -115,11 +120,9 @@ fn default_bitmask(_src:&RawASTBase, v:VID) -> u64 { v.bitmask() }
 /// This function renumbers the NIDs so that nodes with higher IDs "cost" more.
 /// Sorting your AST this way dramatically reduces the cost of converting to
 /// another form. (For example, the test_tiny benchmark drops from 5282 steps to 111 for BDDBase)
-#[allow(clippy::needless_range_loop)]
 pub fn sort_by_cost(src:&RawASTBase, top:SrcNid)->(RawASTBase,SrcNid) {
   let (mut src0,kept0) = src.repack(vec![top.n]);
   src0.tag(kept0[0], "-top-".to_string());
-
   // m:mask (which input vars are required?); c:cost (in steps before we can calculate)
   let (_m0,c0) = src0.masks_and_costs(default_bitmask);
   let p = apl::gradeup(&c0); // p[new idx] = old idx
@@ -129,24 +132,23 @@ pub fn sort_by_cost(src:&RawASTBase, top:SrcNid)->(RawASTBase,SrcNid) {
 
 
 pub fn refine<B:Base+ SubSolver, P:Progress<B>>(dest: &mut B, src:&RawASTBase, end:DstNid, mut pr:P) ->DstNid {
-  // end is the root of the expression to simplify, as a nid in the src ASTbase.
+  // end is the root of the expression to simplify, as a nid in the src ASTBase.
   // we want its equivalent expression in the dest base:
-  let mut top = end;
-  println!("INITIAL TOPNID: {:?}", top);
+  let mut ctx = end;
+  println!("INITIAL ctx: {:?}", ctx);
   // step is just a number. we're packing it in a nid as a kludge
   let step_node = dest.get(&"step".to_string()).unwrap_or_else(||NID::var(0));
   let mut step:usize = step_node.vid().var_ix();
   pr.on_start();
-  while !(nid::is_rvar(top.n) || nid::is_const(top.n)) {
+  while !(nid::is_rvar(ctx.n) || nid::is_const(ctx.n)) {
     let now = std::time::SystemTime::now();
-    let old = top;
-    top = refine_one(dest, &src, top);
-    assert_ne!(old, top, "top should have changed!");
+    let old = ctx;
+    ctx = refine_one(dest, ctx.n.vid(), &src, ctx);
     let millis = now.elapsed().expect("elapsed?").as_millis();
-    pr.on_step(src, dest, step, millis, old, top);
+    pr.on_step(src, dest, step, millis, old, ctx);
     step += 1; }
-  pr.on_done(src, dest, top);
-  top }
+  pr.on_done(src, dest, ctx);
+  ctx}
 
 /// map a nid from the source to a (usually virtual) variable in the destination
 pub fn convert_nid(sn:SrcNid)->DstNid {
@@ -160,25 +162,23 @@ pub fn convert_nid(sn:SrcNid)->DstNid {
   DstNid{ n: r } }
 
 /// replace node in destination with its definition form source
-fn refine_one(dst: &mut SubSolver, src:&RawASTBase, d:DstNid) ->DstNid {
+fn refine_one(dst: &mut dyn SubSolver, v:VID, src:&RawASTBase, d:DstNid)->DstNid {
   // println!("refine_one({:?})", d)
   let ctx = d.n;
-  if ctx.is_const() { return d }
-  let otv = ctx.vid(); // old top var
-  if otv.is_vir() {
-    let op = src.get_op(nid::ixn(otv.vir_ix() as u32));
-    let cn = |x0:NID|->NID { convert_nid(SrcNid{n:x0}).n };
-    // println!("op: {:?}", op);
-    let def:Ops = match op {
-      Op::And(x,y) => ops::rpn(&[cn(x), cn(y), ops::AND]),
-      Op::Xor(x,y) => ops::rpn(&[cn(x), cn(y), ops::XOR]),
-      Op::Or(x,y)  => ops::rpn(&[cn(x), cn(y), ops::VEL]),
-      _ => { panic!("don't know how to translate {:?}", op)}};
-    DstNid{n: dst.subst(ctx, otv, &def) }}
-  else { d } /* ignore consts and vars */ }
+  // convert_nid should have already checked this
+  #[cfg(test)] if ctx.is_const() || !ctx.vid().is_vir() { panic!("refine_one ctx!=vir") }
+  let op = src.get_op(nid::ixn(v.vir_ix() as u32));
+  let cn = |x0:NID|->NID { convert_nid(SrcNid{n:x0}).n };
+  // println!("op: {:?}", op);
+  let def:Ops = match op {
+    Op::And(x,y) => ops::rpn(&[cn(x), cn(y), ops::AND]),
+    Op::Xor(x,y) => ops::rpn(&[cn(x), cn(y), ops::XOR]),
+    Op::Or(x,y)  => ops::rpn(&[cn(x), cn(y), ops::VEL]),
+    _ => { panic!("don't know how to translate {:?}", op)}};
+  DstNid{n: dst.subst(ctx, v, &def) }}
 
 
-pub fn solve<B:Base+ SubSolver>(dst:&mut B, src0:&RawASTBase, n:NID) ->DstNid {
+pub fn solve<B:Base+ SubSolver>(dst:&mut B, src0:&RawASTBase, n:NID)->DstNid {
   let (src, top) = sort_by_cost(&src0, SrcNid{n});
   refine(dst, &src, DstNid{n: NID::vir(nid::idx(top.n) as u32)},
         ProgressReport{ save_dot: false, save_dest: false, prefix:"x", millis: 0 }) }
@@ -212,16 +212,19 @@ macro_rules! find_factors {
     let mut dest = $TDEST::new(src.len()); dest.init(top.n.vid());
     let answer:DstNid = solve(&mut dest, &src, top.n);
     if show_res { dest.show_named(answer.n, "result") }
-    let expect = $expect;
-    let answer = answer.n;
-    let actual:Vec<(u64, u64)> = dest.solutions_trunc(answer, 2*$T0::n() as usize).map(|r|{
+    // except in this case we want to m
+    type Factors = (u64,u64);
+    let to_factors = |r:&Reg|->Factors {
       let t = r.as_usize();
       let x = t & ((1<<$T0::n())-1);
       let y = t >> $T0::n();
-      (y as u64, x as u64) }).collect();
-    assert_eq!(actual, expect);
+      (y as u64, x as u64) };
+    let actual_regs:HashSet<Reg> = dest.get_all(answer.n, 2*$T0::n() as usize);
+    let actual:HashSet<Factors> = actual_regs.iter().map(to_factors).collect();
+    let expect:HashSet<Factors> = $expect.iter().map(|&(x,y)| (x as u64, y as u64)).collect();
     assert_eq!(actual.len(), expect.len(), "check number of solutions");
-    for i in 0..expect.len() { assert_eq!(actual[i], expect[i], "mismatch at i={}", i) }
+    assert_eq!(actual, expect);
+    // for i in 0..expect.len() { assert_eq!(actual[i], expect[i], "mismatch at i={}", i) }
     let tests = bdd::COUNT_XMEMO_TEST.with(|c| *c.borrow() );
     let fails = bdd::COUNT_XMEMO_FAIL.with(|c| *c.borrow() );
     println!("TOTAL XMEMO STATS: tests: {} fails: {} hits: {}", tests, fails, tests-fails); }}
