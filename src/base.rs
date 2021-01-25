@@ -37,7 +37,7 @@ pub trait Base {
 
   /// generate ALL solutions. This is a terrible idea, but it's the best I can do right now.
   // TODO: figure out the right way to return an iterator in a trait.
-  fn solution_set(&self, n:NID, nvars:usize)->HashSet<Reg> { unimplemented!() }
+  fn solution_set(&self, _n:NID, _nvars:usize)->HashSet<Reg> { unimplemented!() }
 }
 
 

@@ -3,13 +3,13 @@
 /// NIDS (with variables encoded in them) but also depends on
 /// changing the branch variable. I haven't decided yet whether
 /// to delete this or try and repair it.
-use std::slice::Iter;
-use hashbrown::{HashMap, hash_map::Entry, HashSet};
-use {base::{Base,GraphViz}, vid::VID, vid::NOV, nid, nid::NID, bdd::BDDBase};
+use hashbrown::{HashMap, hash_map::Entry};
+use {base::{Base,GraphViz}, vid::VID, nid, nid::NID, bdd::BDDBase};
 use vhl::{HiLo, VHL, Walkable};
 use std::mem;
-use std::cmp::Ordering;
-use solve::SubSolver;
+// use std::slice::Iter;
+// use std::cmp::Ordering;
+// use reg::Reg;
 
 /// index + refcount (used by VHLRow)
 #[derive(Debug, PartialEq, Eq)]
@@ -34,7 +34,7 @@ impl VHLRow {
 
 
   fn vrc(&self)->u32 { self.vrc_ }
-  fn irc(&self)->u32 { self.irc_ }
+  // fn irc(&self)->u32 { self.irc_ }
 
   /// (new interface)
   /// add a reference to the given (internal) hilo pair, inserting it into the row if necessary.
@@ -133,7 +133,7 @@ impl VHLScaffold {
     let mut old_rc = vec![];
     for old in toprow.hl.iter() {
 
-      if let Some(IxRc0) = toprow.ix.get(old) { old_rc.push(IxRc0.rc) }
+      if let Some(ixrc0) = toprow.ix.get(old) { old_rc.push(ixrc0.rc) }
       else { println!("weird: no reference to {:?}", old); old_rc.push(0) }
 
       // helper: if a branch points at row s fetch its hilo. else dup it for the swap
@@ -204,7 +204,7 @@ impl VHLScaffold {
       if n.is_var() { self.rows[vix].add_vref() }
       else {
         let hilo = self.rows[vix].hl[n.idx()];
-        if let Some(mut IxRc0) = self.rows[vix].ix.get_mut(&hilo) { IxRc0.rc += 1 }
+        if let Some(mut ixrc0) = self.rows[vix].ix.get_mut(&hilo) { ixrc0.rc += 1 }
         else { panic!("can't add ref to nid ({}) that isn't in the scaffold", n)}}}}
 
   /// add ref using internal index and hilo. returns internal nid and whether it was new
@@ -282,7 +282,7 @@ impl VHLScaffold {
       if ex.is_inv() { !res } else { res }}
     else { panic!("nid {} is not in the scaffold.", ex)}}
 
-  pub fn exvin(&self, n:NID)->VHL { self.exvex(self.exin(n)) }
+  // pub fn exvin(&self, n:NID)->VHL { self.exvex(self.exin(n)) }
 
   fn top_vid(&self)->VID {
     if let Some(&v) = self.vids.last() { v }
@@ -378,15 +378,15 @@ impl<T:Base + Walkable> OldSwapSolver<T> {
         nmap.insert(bnid, self.src.add_ref( VHL{ v:ev, hi:hi1, lo:lo1 })); }}
     nmap[&self.key] }
 
-  pub fn solutions_trunc(&self, _n:NID, _regsize:usize)->Iter<'static, Reg> {
-    println!("TODO: solutions_trunc");
-    // TODO: garbage collection first!
-    // for v in &self.dst.vids { println!("v: {}", v); }
-    self.dst.print();
-    EMPTYVEC.iter() }
+  // pub fn solutions_trunc(&self, _n:NID, _regsize:usize)->Iter<'static, Reg> {
+  //   println!("TODO: solutions_trunc");
+  //   // TODO: garbage collection first!
+  //   // for v in &self.dst.vids { println!("v: {}", v); }
+  //   self.dst.print();
+  //   EMPTYVEC.iter() }
 }
-use reg::Reg;
-static EMPTYVEC: Vec<Reg> = vec![];
+
+// static EMPTYVEC: Vec<Reg> = vec![];
 
 
 impl<T:Base + Walkable> Base for OldSwapSolver<T> {
@@ -525,10 +525,10 @@ impl<T:Base + Walkable> Base for OldSwapSolver<T> {
 
 
 
-fn max_vid<'r,'s>(a:&'r &VID, b:&'s &VID)-> Ordering {
-  if a.is_above(b) {Ordering::Greater }
-  else if a==b { Ordering::Equal }
-  else { Ordering::Less }}
+// fn max_vid<'r,'s>(a:&'r &VID, b:&'s &VID)-> Ordering {
+//   if a.is_above(b) {Ordering::Greater }
+//   else if a==b { Ordering::Equal }
+//   else { Ordering::Less }}
 
 // !! TODO: re-implement SubSolver for OldSwapSolver (to benchmark against SwapSolver)
 // !! OldSwapSolver implementing Base was just a hack to hook it up to the SubSolver,

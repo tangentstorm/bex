@@ -3,18 +3,14 @@
 /// It adjusts the input variable ordering by swapping adjacent inputs until the
 /// one to be replaced next is at the top of the BDD. The actual replacement work
 /// at each step then only involves the top three rows.
-use std::slice::Iter;
 use hashbrown::{HashMap, hash_map::Entry, HashSet};
-use {base::{Base,GraphViz}, vid::VID, vid::NOV, nid, nid::NID, bdd::BDDBase};
-use vhl::{HiLo, VHL, Walkable};
-use std::mem;
-use std::cmp::Ordering;
+use {vid::VID, vid::NOV};
 
 /// XID: An index-based unique identifier for nodes.
 ///
 /// In a regular NID, the branch variable is embedded directly in the ID for easy
-/// comparisions. The working assumption is always that the variable refers to
-/// the level ofthe tree, and that the levels are numbered in ascending order.
+/// comparisons. The working assumption is always that the variable refers to
+/// the level of the tree, and that the levels are numbered in ascending order.
 ///
 /// In contrast, the swap solver works by shuffling the levels so that the next
 /// substitution happens at the top, where there are only a small number of nodes.
@@ -22,7 +18,7 @@ use std::cmp::Ordering;
 /// When two adjacent levels are swapped, nodes on the old top level that refer to
 /// the old bottom level are rewritten as nodes on the new top level. But nodes on
 /// the old top level that do not refer to the bottom level remain on the old top
-/// (new bottom) level. So some of the nodes with the old top brach variable change
+/// (new bottom) level. So some of the nodes with the old top branch variable change
 /// their variable, and some do not.
 ///
 /// NIDs are designed to optimize cases where comparing branch variables are important
@@ -31,7 +27,7 @@ use std::cmp::Ordering;
 /// every layer above each swap, and references held outside the base would quickly
 /// fall out of sync.
 ///
-/// So instead, XIDs are simple indices into an array (XID=indeX ID). If we want to
+/// So instead, XIDs are simple indices into an array (XID=index ID). If we want to
 /// know the branch variable for a XID, we simply look it up by index in a central
 /// vector.
 ///
@@ -43,8 +39,6 @@ struct XID { x: i64 }
 const XID_O:XID = XID { x: 0 };
 const XID_I:XID = XID { x: !0 };
 impl XID {
-  fn O()->XID { XID_O }
-  fn I()->XID { XID_I }
   fn ix(&self)->usize { self.x as usize }
   fn raw(&self)->XID { if self.x >= 0 { *self } else { !*self }}
   fn is_inv(&self)->bool { self.x<0 }
@@ -84,9 +78,8 @@ We need to map:
   because we want to frequently swap out whole rows of variables.
   we'll call this XVHLRow
 */
-struct XVHLRow { v: VID, hm: HashMap<XHiLo, IxRc> }
-impl XVHLRow {
-  fn new(v:VID)->Self {XVHLRow{ v, hm: HashMap::new() }}}
+struct XVHLRow { hm: HashMap<XHiLo, IxRc> }
+impl XVHLRow { fn new()->Self {XVHLRow{ hm: HashMap::new() }}}
 
 /// The scaffold itself contains the master list of records (vhls) and the per-row index
 pub struct XVHLScaffold {
@@ -150,24 +143,24 @@ impl XVHLScaffold {
     if let Some(x) = self.vix(v) { self.vids.get(x+1).cloned() }
     else { panic!("vid_above(v:{}): v not in the scaffold.", v) }}
 
-  fn vid_below(&self, v:VID)->Option<VID> {
-    if let Some(x) = self.vix(v) { if x>0 { self.vids.get(x-1).cloned()} else { None }}
-    else { panic!("vid_above(v:{}): v not in the scaffold.", v) }}
+  // fn vid_below(&self, v:VID)->Option<VID> {
+  //   if let Some(x) = self.vix(v) { if x>0 { self.vids.get(x-1).cloned()} else { None }}
+  //   else { panic!("vid_below(v:{}): v not in the scaffold.", v) }}
 
   /// add a new vid to the top of the stack. return its position.
   fn push(&mut self, v:VID)->usize {
     // TODO: check for duplicates
     let ix = self.vids.len();
     self.vids.push(v);
-    self.rows.insert(v, XVHLRow::new(v));
+    self.rows.insert(v, XVHLRow::new());
     ix }
 
-  /// drop top var v (double check that it's actually on top)
-  fn drop(&mut self, v:VID) {
-    if *self.vids.last().expect("can't drop from empty scaffold") == v {
-      self.vids.pop();
-      self.rows.remove(&v); }
-    else { panic!("can't pop {} because it's not on top ({:?})", v, self.vids) }}
+  // /// drop top var v (double check that it's actually on top)
+  // fn drop(&mut self, v:VID) {
+  //   if *self.vids.last().expect("can't drop from empty scaffold") == v {
+  //     self.vids.pop();
+  //     self.rows.remove(&v); }
+  //   else { panic!("can't pop {} because it's not on top ({:?})", v, self.vids) }}
 
   /// add a reference to the given XVHL, inserting it into the row if necessary.
   /// returns the external nid, and a flag indicating whether the pair was freshly added.
@@ -175,9 +168,9 @@ impl XVHLScaffold {
   fn add_ref(&mut self, hl0:XVHL, rc:usize)->(XID, bool) {
     let inv = hl0.lo.is_inv();
     let vhl = if inv { !hl0 } else { hl0 };
-    let row = self.rows.entry(vhl.v).or_insert_with(|| XVHLRow::new(vhl.v));
+    let row = self.rows.entry(vhl.v).or_insert_with(|| XVHLRow::new());
     let hl = vhl.hilo();
-    let (res, isnew) = match row.hm.entry(hl) {
+    let (res, is_new) = match row.hm.entry(hl) {
       Entry::Occupied (mut e) => {
         let xid = e.get().ix;
         e.get_mut().rc += rc;
@@ -188,10 +181,10 @@ impl XVHLScaffold {
         e.insert(IxRc{ ix:xid, rc });
         self.vhls.push(vhl);
         (xid, true) }};
-    (if inv { !res } else { res }, isnew) }
+    (if inv { !res } else { res }, is_new) }
 
   /// decrement refcount for ix. return new refcount.
-  fn dec_ref_ix(&mut self, ix:XID)->usize {
+  fn dec_ref_ix(&mut self, _ix:XID)->usize {
     println!("todo: dec_ref_ix");
     1 }
 
@@ -206,7 +199,7 @@ impl XVHLScaffold {
 
   fn branch_var(&self, x:XID)->VID { self.get(x).unwrap().v }
 
-  /// produce the fully expandend "truth table" for a bdd
+  /// produce the fully expanded "truth table" for a bdd
   /// down to the given row, by building rows of the corresponding
   /// binary tree. xids in the result will either be constants,
   /// branch on the limit var, or branch on some variable below it.
@@ -292,14 +285,14 @@ impl XVHLScaffold {
     // at least one of the node's children will be replaced by a new node on row w. proof:
     //     general pattern of 3rd level rewrite is   abcd ->  acbd
     //     we can consolidate one side of the swap: abac -> aabc (so we get v?a:w?b:c)
-    //     but we can't consodilate both:  abab -> abba, because abab can't appear in a bdd.
+    //     but we can't consolidate both:  abab -> abba, because abab can't appear in a bdd.
     //     no other pattern would result in consolidating both sides. (qed)
     // therefore: worst case for growth is every node in w moves to v and creates 2 new children.
     // a block of 2*w.len ids for this algorithm to assign.
     // so: in the future, if we want to create new nodes with unique ids in a distributed way,
     // we should allocate 2*w.len ids for this function to assign to the new nodes.
     // reference counts elsewhere in the graph can change, but never drop to 0.
-    // if they did, then swaping the rows back would have to create new nodes elsewhere.
+    // if they did, then swapping the rows back would have to create new nodes elsewhere.
 
     // helpers to track which new nodes are to be created.
     // i am doing this because i don't want to refer to self -- partially to appease the
@@ -458,7 +451,7 @@ impl XVHLScaffold {
   fn regroup(&mut self, groups:Vec<HashSet<VID>>) {
     // TODO: check for complete partition
     let mut lc = 0; // left cursor
-    let mut rc = 0; // right cursor
+    let mut rc;     // right cursor
     let mut ni = 0; // number of items in groups we've seen
     for g in groups {
       ni += g.len();
@@ -619,7 +612,7 @@ impl SwapSolver {
 
     // 4. let r = the partial truth table for result at row rv.
     //    We're removing rv from p (and dst itself) here.
-    let mut r:Vec<XID> = p.iter().zip(q.iter()).map(|(&pi,&qi)|
+    let r:Vec<XID> = p.iter().zip(q.iter()).map(|(&pi,&qi)|
       if self.dst.branch_var(pi) == self.rv { self.dst.follow(pi, qi) } else { pi }).collect();
     println!("p: {:?}\nq: {:?}\nr: {:?}", p, q, r);
     for (i, &x) in p.iter().enumerate() { println!("r[{}]: {:?}", i, self.dst.get(x).unwrap()) }

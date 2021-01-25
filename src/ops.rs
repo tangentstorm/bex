@@ -12,8 +12,7 @@ impl Ops {
   ///! Again, just for future proofing.
   pub fn to_rpn(&self)->Iter<'_, NID> {
     match self {
-      Ops::RPN(vec) => vec.iter(),
-      _ => todo!("to_rpn") }}}
+      Ops::RPN(vec) => vec.iter() }}}
 
 /// constructor for rpn
 pub fn rpn(xs:&[NID])->Ops { Ops::RPN(xs.to_vec()) }

@@ -60,8 +60,8 @@ impl<B:Base> SubSolver for B {
           ops::XOR => self.xor(x[0], x[1]),
           ops::VEL => self.or(x[0], x[1]),
           _ => panic!("don't know how to translate {:?}", ops)}}
-        else { todo!("SubSolver impl for Base can only handle simple dyadic ops for now.") },
-      _ => { todo!("SubSolver impl for Base can only handle RPN for now")}};
+        else { todo!("SubSolver impl for Base can only handle simple dyadic ops for now.") }};
+      //_ => { todo!("SubSolver impl for Base can only handle RPN for now")}};
     self.sub(v, def, ctx)}
 
   fn get_all(&self, ctx:NID, nvars:usize)->HashSet<Reg> { self.solution_set(ctx, nvars) }
@@ -194,7 +194,7 @@ pub fn solve<B:Base+ SubSolver>(dst:&mut B, src0:&RawASTBase, sn:NID)->DstNid {
   if sn.is_lit() { DstNid{n:sn} }
   else {
     // renumber and garbage collect, leaving only the AST nodes reachable from sn
-    let (mut src, top) = sort_by_cost(&src0, SrcNid{n:sn});
+    let (src, top) = sort_by_cost(&src0, SrcNid{n:sn});
 
     // step is just a number that counts downward.
     let mut step:usize = nid::idx(top.n);
@@ -216,7 +216,7 @@ pub fn solve<B:Base+ SubSolver>(dst:&mut B, src0:&RawASTBase, sn:NID)->DstNid {
 
     // This just lets us log and record timing info. TODO: pr probably should be an input parameter.
     let mut pr = ProgressReport{ save_dot: false, save_dest: false, prefix:"x", millis: 0 };
-    <Progress<B>>::on_start(&pr, &ctx);
+    <dyn Progress<B>>::on_start(&pr, &ctx);
 
     // main loop:
     while !(nid::is_rvar(ctx.n) || nid::is_const(ctx.n)) {
