@@ -68,10 +68,10 @@ impl<B:Base> SubSolver for B {
 
   fn dump(&self, _path:&Path, _note:&str, _step:usize, _old:NID, _vid:VID, _ops:&Ops, _new:NID) {}}
 
-pub trait Progress<B:Base> {
+pub trait Progress<S:SubSolver> {
   fn on_start(&self, ctx:&DstNid) { println!("INITIAL ctx: {:?}", ctx) }
-  fn on_step(&mut self, src:&RawASTBase, dest: &mut B, step:usize, millis:u128, oldtop:DstNid, newtop:DstNid);
-  fn on_done(&self, src:&RawASTBase, dest: &mut B, newtop:DstNid); }
+  fn on_step(&mut self, src:&RawASTBase, dest: &mut S, step:usize, millis:u128, oldtop:DstNid, newtop:DstNid);
+  fn on_done(&self, src:&RawASTBase, dest: &mut S, newtop:DstNid); }
 
 pub struct ProgressReport<'a> {
   pub millis: u128,
@@ -84,8 +84,8 @@ pub struct ProgressReport<'a> {
 #[derive(Clone, Copy, Debug, PartialEq)] pub struct DstNid { pub n: NID }
 
 
-impl<'a, B:Base> Progress<B> for ProgressReport<'a> {
-  fn on_step(&mut self, src:&RawASTBase, dest: &mut B, step:usize, millis:u128, oldtop:DstNid, newtop:DstNid) {
+impl<'a, S:SubSolver> Progress<S> for ProgressReport<'a> {
+  fn on_step(&mut self, src:&RawASTBase, dest: &mut S, step:usize, millis:u128, oldtop:DstNid, newtop:DstNid) {
     self.millis += millis;
     let DstNid{ n: new } = newtop;
     println!("{:4}, {:8} ms, {:45?} → {:45?}, {:45?}",
@@ -102,16 +102,19 @@ impl<'a, B:Base> Progress<B> for ProgressReport<'a> {
         println!("\n# newtop: {:?}  step:{}/{} ({:.2}%)",
                  newtop.n.vid(), step, src.len(), percent_done); }
       if self.save_dest {
-        dest.tag(new, "top".to_string()); dest.tag(NID::var(step as u32), "step".to_string());
+        println!("TODO: save_dest for SwapSolver instead of Base")
+        // dest.tag(new, "top".to_string()); dest.tag(NID::var(step as u32), "step".to_string());
         // TODO: remove the 'bdd' suffix
-        dest.save(format!("{}-{:04}.bdd", self.prefix, step).as_str())
-          .expect("failed to save"); }}
+        // dest.save(format!("{}-{:04}.bdd", self.prefix, step).as_str()).expect("failed to save");
+       }}
     if step.trailing_zeros() >= 5 { println!("step, millis, change, newtop"); }
     if self.save_dot && (step.trailing_zeros() >= 5) || (step==446)
     { // on really special occasions, output a diagram
-      dest.save_dot(new, format!("{}-{:04}.dot", self.prefix, step).as_str()); } }
+      println!("TODO: re-enable save_dot")
+      // dest.save_dot(new, format!("{}-{:04}.dot", self.prefix, step).as_str());
+    } }
 
-  fn on_done(&self, _src:&RawASTBase, _dest: &mut B, _newtop:DstNid) {
+  fn on_done(&self, _src:&RawASTBase, _dest: &mut S, _newtop:DstNid) {
     println!("total time: {} ms", self.millis) }}
 
 
@@ -188,7 +191,7 @@ fn refine_one(dst: &mut dyn SubSolver, v:VID, src:&RawASTBase, d:DstNid)->DstNid
 /// will be opportunities to streamline and cancel out even more nodes. The hope is that
 /// no matter how slow this process is, it will be less slow that trying to fully solve
 /// each intermediate node by working "forward".
-pub fn solve<B:Base+ SubSolver>(dst:&mut B, src0:&RawASTBase, sn:NID)->DstNid {
+pub fn solve<S:SubSolver>(dst:&mut S, src0:&RawASTBase, sn:NID)->DstNid {
   // AST nids don't contain VIR nodes (they "are" vir nodes).
   // If it's already a const or a VID::var, though, there's nothing to do.
   if sn.is_lit() { DstNid{n:sn} }
@@ -214,9 +217,9 @@ pub fn solve<B:Base+ SubSolver>(dst:&mut B, src0:&RawASTBase, sn:NID)->DstNid {
     // It begins with just the vir representing the top node in the AST.
     let mut ctx = DstNid{n: dst.init(v)};
 
-    // This just lets us log and record timing info. TODO: pr probably should be an input parameter.
+    // This just lets us record timing info. TODO: pr probably should be an input parameter.
     let mut pr = ProgressReport{ save_dot: false, save_dest: false, prefix:"x", millis: 0 };
-    <dyn Progress<B>>::on_start(&pr, &ctx);
+    <dyn Progress<S>>::on_start(&pr, &ctx);
 
     // main loop:
     while !(nid::is_rvar(ctx.n) || nid::is_const(ctx.n)) {
@@ -257,7 +260,7 @@ macro_rules! find_factors {
     // --- now we have the ast, so solve ----
     let mut dest = $TDEST::new(src.len()); dest.init(top.n.vid());
     let answer:DstNid = solve(&mut dest, &src, top.n);
-    if show_res { dest.show_named(answer.n, "result") }
+    // if show_res { dest.show_named(answer.n, "result") }
     // except in this case we want to m
     type Factors = (u64,u64);
     let to_factors = |r:&Reg|->Factors {
