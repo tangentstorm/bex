@@ -80,6 +80,13 @@ impl Reg {
       tmp >>= 1;}
     res }
 
+  // permute the bits according to the given permutation vector.
+  // b=pv[i] means to grab bit b from x and move to position i in the result.
+  pub fn permute_bits(&self, pv:&[usize])->Self {
+    let mut res = self.clone();
+    for (i,b) in pv.iter().enumerate() { res.put(i, self.get(*b)); }
+    res}
+
 
   /// ripple add with carry within the region specified by start and end
   /// (inclusive), returning Some position where a 0 became a 1, or None on overflow.
