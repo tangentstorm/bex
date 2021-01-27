@@ -5,6 +5,7 @@
 /// at each step then only involves the top three rows.
 use hashbrown::{HashMap, hash_map::Entry, HashSet};
 use {vid::VID, vid::NOV};
+use {solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops, std::path::Path, base::Base};
 
 /// XID: An index-based unique identifier for nodes.
 ///
@@ -43,6 +44,13 @@ impl XID {
   fn raw(&self)->XID { if self.x >= 0 { *self } else { !*self }}
   fn is_inv(&self)->bool { self.x<0 }
   fn is_const(&self)->bool { *self == XID_O || *self == XID_I }
+  fn from_nid(x:NID)->Self {
+    if x.is_lit() { panic!("don't know how to convert lit nid -> xid")}
+    if x.vid()!=NOV { panic!("don't know how to convert nid.var(v!=NOV) -> xid")}
+    if x.is_inv() { !XID{ x: x.idx() as i64 }} else { XID{ x: x.idx() as i64 } }}
+  fn to_nid(&self)->NID {
+    if self.is_inv() { !NID::from_vid_idx(NOV, !self.x as u32)}
+    else { NID::from_vid_idx(NOV, self.x as u32) }}
   fn to_bool(&self)->bool {
     if self.is_const() { *self == XID_I }
     else { panic!("attempted to convert non-constant XID->bool") }}
@@ -485,7 +493,8 @@ impl XSDebug {
     for (i, c) in vars.chars().enumerate() { this.var(i, c) }
     this }
   fn var(&mut self, i:usize, c:char) {
-    let v = VID::var(i as u32); self.xs.push(v); self.name_var(v, c); }
+    let v = VID::var(i as u32); self.xs.push(v); self.xs.add_ref(XVHL{v, hi:XID_I, lo:XID_O}, 1);
+    self.name_var(v, c); }
   fn vids(&self)->String { self.xs.vids.iter().map(|v| *self.vc.get(v).unwrap()).collect() }
   fn name_var(&mut self, v:VID, c:char) {
     let x:XID = self.xs.add_ref(XVHL{ v, hi:XID_I, lo:XID_O}, 1).0;
@@ -540,11 +549,11 @@ pub struct SwapSolver {
 
 impl SwapSolver {
   /// constructor
-  fn new(v: VID) -> Self {
-    let mut dst = XVHLScaffold::new(); dst.push(v);
-    let dx = dst.add_ref(XVHL{ v, hi:XID_I, lo:XID_O }, 1).0;
+  // TODO: remove the nvars parameter to new()?
+  pub fn new(_nvars: usize) -> Self {
+    let dst = XVHLScaffold::new();
     let src = XVHLScaffold::new();
-    SwapSolver{ dst, dx, rv:v, src, sx: XID_O }}
+    SwapSolver{ dst, dx:XID_O, rv:NOV, src, sx: XID_O }}
 
   /// Arrange the two scaffolds so that their variable orders match.
   ///  1. vids shared between src and dst (set n) are above rv
@@ -632,6 +641,85 @@ impl SwapSolver {
     // 6. garbage collect (TODO?) and return result
     self.dx }} // sub, SwapSolver
 
+impl SubSolver for SwapSolver {
 
+  fn init(&mut self, v: VID)->NID {
+    self.dst = XVHLScaffold::new(); self.dst.push(v);
+    self.rv = v;
+    self.dx = self.dst.add_ref(XVHL{ v, hi:XID_I, lo:XID_O}, 1).0;
+    self.dx.to_nid() }
+
+  fn subst(&mut self, ctx: NID, v: VID, ops: &Ops)->NID {
+    self.src = XVHLScaffold::new();
+    let mut rpn:Vec<NID> = ops.to_rpn().cloned().collect();
+    let f0 = rpn.pop().expect("empty ops passed to subst");
+    assert!(f0.is_fun());
+    let ar = f0.arity().unwrap();
+    assert_eq!(ar, rpn.len() as u8);
+
+    // if any of the input vars are negated, update the function to
+    // negate the corresponding argument. this way we can just always
+    // branch on the raw variable.
+    let mut bits:u8 = 0;
+    for (i,nid) in rpn.iter().enumerate() { if nid.is_inv() { bits |= 1 << i; } }
+    let f = f0.fun_flip_inputs(bits);
+
+    // so now, src.vids is just the raw input variables (probably virtual ones).
+    for nid in rpn { assert!(nid.is_var()); self.src.push(nid.vid()); }
+
+    // untbl the function to give us the full BDD of our substitution.
+    let mut tbl = vec![XID_O;(2^ar) as usize];
+    let ft = f.tbl().expect("final op wasn't a function");
+    for i in 0..2^ar { if ft & (1<<i) != 0 { tbl[i as usize] = XID_I; }}
+    self.sx = self.src.untbl(tbl, None);
+
+    // everything's ready now, so just do it!
+    self.dx = XID::from_nid(ctx);
+    self.rv = v;
+    self.sub().to_nid()}
+
+  fn get_all(&self, ctx: NID, nvars: usize)->HashSet<Reg> {
+
+    // TODO: prove that we're only copying the nodes directly reachable from xctx.
+    // Proper garbage collection should be sufficient for this.
+
+    // Copy from the scaffold to the BDD Base.
+    let mut x2n:HashMap<XID,NID> = HashMap::new();
+    x2n.insert(XID_O, O);
+
+    // copy each row over, from bottom to top...
+    // vids[i] in the scaffold becomes var(i) in the bdd.
+    let mut bdd = crate::bdd::BDDBase::new(nvars);
+    for (i,rv) in self.dst.vids.iter().enumerate() {
+      let bv = NID::from_vid(VID::var(i as u32));
+      for (x, ixrc) in self.dst.rows[rv].hm.iter() {
+        if ixrc.rc > 0 {
+          let nx = |x:XID|->NID { if x.is_inv() { !x2n[&!x] } else { x2n[&x] }};
+          let (hi, lo) = (nx(x.hi), nx(x.lo));
+          // !! row pairs are never inverted, so we shouldn't have to mess with inv() (... right??)
+          x2n.insert(ixrc.ix, bdd.ite(bv, hi, lo)); }}}
+
+    // Now the base solutions back to the original input ordering.
+    // Each solution `Reg` contains one bit per input var.
+    // To map it back to problem-land:  problem_var[i] = solution_var[self.vix(var(i))]
+    // "pv" actually stands for permutation vector, but problem var works too. :)
+    let mut pv:Vec<usize> = vec![0;self.dst.vids.len()];
+    for (i,v) in self.dst.vids.iter().enumerate() { pv[v.var_ix()] = i; }
+
+    // TODO: fill in extra problem vars that got removed from the final scaffold.
+    // !! It may be the case that the problem collapsed from n vars to n-k vars, but
+    //    we still need the solution to be in terms of all n vars... Alternately, the
+    //    SubSolver protocol could have an output field for discarded inputs.
+
+    let mut res:HashSet<Reg> = HashSet::new();
+    let nctx = x2n[&XID::from_nid(ctx)];
+    for reg in bdd.solutions_trunc(nctx, nvars) { res.insert(reg.permute_bits(&pv)); }
+    res}
+
+  fn status(&self) -> String { "".to_string() } // TODO
+  fn dump(&self, _path: &Path, _note: &str, _step: usize, _old: NID, _vid: VID, _ops: &Ops, _new: NID) {
+    // TODO: SubSolver::dump()
+  }
+}
 
 include!("test-swap.rs");

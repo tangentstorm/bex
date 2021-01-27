@@ -290,6 +290,11 @@ macro_rules! find_factors {
     use {anf::ANFBase, int::{X2,X4}};
     find_factors!(ANFBase, X2, X4, 6, vec![(2,3)]); }
 
+/// nano test case for swap solver: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
+#[test] pub fn test_nano_swap() {
+  use {swap::SwapSolver, int::{X2,X4}};
+  find_factors!(SwapSolver, X2, X4, 6, vec![(2,3)]); }
+
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny_bdd() {
   use {bdd::BDDBase, int::{X4,X8}};

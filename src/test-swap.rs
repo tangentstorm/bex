@@ -77,7 +77,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
 
   // perform the substitution
   let (ss, xid) = {
-    let mut ss = SwapSolver::new(rv);
+    let mut ss = SwapSolver::new(0); ss.init(rv);
     ss.dst = dst.xs; ss.dx = dx;
     ss.src = src.xs; ss.sx = sx;
     let xid = ss.sub();
@@ -119,9 +119,9 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   // abx? ay?
   check_sub("abzxy|abz|xy|abxy", "abz?", 'z', "x0y?", "abx? ay?")}
 
-/// Test for subbing in two existing variables.
+/// test for subbing in two existing variables.
 /// This test is also interesting because in the process of running it,
-/// one of the remaining variables after substitution cancels out.
+/// one of the variables cancels out.
 #[test] fn test_two_old() {
   //   xyz?    z!zx? y%             #  groups: d={}, v={y}, s={}, n={xz}
   // = xyz?   (z!zx? z!zx? z?) y%   # nothing changes for d, reorder src
