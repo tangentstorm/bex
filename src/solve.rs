@@ -149,8 +149,6 @@ pub fn convert_nid(sn:SrcNid)->DstNid {
 fn refine_one(dst: &mut dyn SubSolver, v:VID, src:&RawASTBase, d:DstNid)->DstNid {
   // println!("refine_one({:?})", d)
   let ctx = d.n;
-  // convert_nid should have already checked this
-  #[cfg(test)] if ctx.is_const() || !ctx.vid().is_vir() { panic!("refine_one ctx!=vir") }
   let op = src.get_op(nid::ixn(v.vir_ix() as u32));
   let cn = |x0:NID|->NID { convert_nid(SrcNid{n:x0}).n };
   // println!("op: {:?}", op);
