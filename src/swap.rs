@@ -99,17 +99,21 @@ impl XVHLScaffold {
   fn new()->Self { XVHLScaffold{ vids:vec![], vhls:vec![XVHL_O], rows: HashMap::new() } }
 
   /// validate that this scaffold is well formed. (this is for debugging)
-  pub fn validate(&self) {
+  pub fn validate(&self, msg: &str) {
 
-    println!("@validate");
+    println!("@validate: {}", msg);
     println!("${:?}", self.vids);
+    println!("%{:?}", self.rows.keys().collect::<Vec<&VID>>());
     for &x in self.vhls.iter() {
       println!("^{},{},{}", x.v, x.hi.x, x.lo.x)}
 
     // vids must be unique:
     let mut vids:HashMap<VID, usize> = self.vids.iter().cloned().enumerate().map(|(i,v)|(v,i+1)).collect();
     assert_eq!(vids.len(), self.vids.len(), "duplicate vid(s) in list: {:?}", self.vids);
+    assert_eq!(vids.len(), self.rows.len(), "vids and rows should have the same len()");
     vids.insert(NOV, 0);
+
+    println!("vids:{:?}", vids);
 
     let mut seen : HashMap<XVHL,usize> = HashMap::new();
     // validate the rows:
@@ -123,9 +127,16 @@ impl XVHLScaffold {
       if x.v != NOV {
         // the lo branch should be different from the hi branch
         assert_ne!(x.lo, x.hi, "unmerged branches in vhl[{}]: {:?}", i, x);
+
+        let hi = self.get(x.hi.raw()).expect("hi branch points nowhere");
+        let lo = self.get(x.lo.raw()).expect("lo branch points nowhere");
+
+        if hi.v == NOV && hi != XVHL_O { panic!("hi branch to garbage-collected node")}
+        if lo.v == NOV && lo != XVHL_O { panic!("lo branch to garbage-collected node")}
+
         // the hi and lo branches should point "downward"
-        assert!(vids[&self.branch_var(x.lo)] < vids[&x.v], "upward lo branch @vhl[{}]: {:?}", i, x);
-        assert!(vids[&self.branch_var(x.hi)] < vids[&x.v], "upward hi branch @vhl[{}]: {:?}", i, x);
+        assert!(vids[&lo.v] < vids[&x.v], "upward lo branch @vhl[{}]: {:?}", i, x);
+        assert!(vids[&hi.v] < vids[&x.v], "upward hi branch @vhl[{}]: {:?}", i, x);
 
         // there should be no duplicate entries.
         if let Some(j) = seen.get(&x) { panic!("vhl[{}] is a duplicate of vhl[{}]: {:?}", i, j, x) }
@@ -157,7 +168,7 @@ impl XVHLScaffold {
 
   /// add a new vid to the top of the stack. return its position.
   fn push(&mut self, v:VID)->usize {
-    // TODO: check for duplicates
+    if self.vix(v).is_some() { panic!("pushed variable that was already in the scaffold: {:?}", v) }
     let ix = self.vids.len();
     self.vids.push(v);
     self.rows.insert(v, XVHLRow::new());
@@ -176,6 +187,8 @@ impl XVHLScaffold {
   fn add_ref(&mut self, hl0:XVHL, rc:usize)->(XID, bool) {
     let inv = hl0.lo.is_inv();
     let vhl = if inv { !hl0 } else { hl0 };
+    // allocate a xid just in case
+    let (alloc, alloc_new) = self.alloc_one();
     let row = self.rows.entry(vhl.v).or_insert_with(|| XVHLRow::new());
     let hl = vhl.hilo();
     let (res, is_new) = match row.hm.entry(hl) {
@@ -184,17 +197,20 @@ impl XVHLScaffold {
         e.get_mut().rc += rc;
         (xid, false) }
       Entry::Vacant(e) => {
-        let ix = self.vhls.len();
-        let xid = XID { x: ix as i64 };
-        e.insert(IxRc{ ix:xid, rc });
-        self.vhls.push(vhl);
-        (xid, true) }};
+        e.insert(IxRc{ ix:alloc, rc });
+        if alloc_new { self.vhls.push(vhl) } else { self.vhls[alloc.x as usize] = vhl };
+        (alloc, true) }};
     (if inv { !res } else { res }, is_new) }
 
   /// decrement refcount for ix. return new refcount.
-  fn dec_ref_ix(&mut self, _ix:XID)->usize {
-    println!("todo: dec_ref_ix");
-    1 }
+  fn dec_ref_ix(&mut self, ix:XID)->usize {
+    let vhl = self.vhls[ix.raw().x as usize];
+    if let Some(row) = self.rows.get_mut(&vhl.v) {
+      if let Some(mut ixrc) = row.hm.get_mut(&vhl.hilo()) {
+        if ixrc.rc > 0 { ixrc.rc -= 1; ixrc.rc }
+        else { println!("dec_ref warning: ixrc was already 0 for {:?}", vhl); 0 }}
+      else { println!("dec_ref warning: entry not found for {:?}", vhl); 0}}
+    else { println!("dec_ref warning: row not found for {:?}", vhl.v); 0 }}
 
   /// fetch the XVHL for the given xid (if we know it)
   fn get(&self, x:XID)->Option<XVHL> {
@@ -220,7 +236,8 @@ impl XVHLScaffold {
       else {(-1, VID::nov())};
     let mut v = self.get(top).expect("top wasn't in the scaffold").v;
     let mut i = self.vix(v).unwrap() as i64;
-    assert!(i >= z, "invalid limit depth {} (var({})) for node on row {}", z, lv, i);
+    // i is index of top var (from XID), z of limit var, so i must be above z.
+    assert!(i >= z, "invalid limit depth {} ({}) for node on row {}", z, lv, i);
     while i > z {                       // copy-and-expand for each row down to limit
       v = self.vids[i as usize];     // redundant 1st time but can't put at end b/c -1
       let tmp = xs; xs = vec![];
@@ -251,10 +268,23 @@ impl XVHLScaffold {
       v = self.vid_above(v).expect("not enough vars in scaffold to untbl!"); }
     xs[0]}
 
+  /// allocate a single xid. returs (xid, isnew)
+  // TODO: cache the empty slots so this doesn't take O(n) time.
+  fn alloc_one(&self)->(XID, bool) {
+    for (j,vhl) in self.vhls.iter().enumerate().skip(1) {
+      if vhl.v == NOV { return (XID{x:j as i64 }, false)}}
+    (XID{x:self.vhls.len() as i64}, true)}
+
+  /// allocate free xids
   fn alloc(&mut self, count:usize)->Vec<XID> {
     let mut i = count; let mut res = vec![];
+    // reclaim garbage collected xids.
+    for (j,vhl) in self.vhls.iter().enumerate().skip(1) {
+      if vhl.v == NOV {
+        res.push(XID{x:j as i64});
+        i-= 1;  if i == 0 { break; }}}
+    // create new xids if there weren't enough reclaimed
     while i > 0 {
-      // TODO: reclaim garbage collected xids.
       let x = self.vhls.len() as i64;
       self.vhls.push(XVHL_O);
       res.push(XID{x});
@@ -264,7 +294,7 @@ impl XVHLScaffold {
   /// swap v up by one level
   fn swap(&mut self, v:VID) {
     #[cfg(test)] {
-      println!("swap({}) in {:?}. validating.", v, self.vids); self.validate(); println!("ok! begin swap.") }
+      self.validate(&format!("swap({}) in {:?}.", v, self.vids)); println!("ok! begin swap.") }
     let vi = self.vix(v).expect("requested vid was not in the scaffold.");
     if vi+1 == self.vids.len() { println!("warning: attempt to lift top vid {}", v); return }
     let w = self.vids[vi+1]; // start: v is 1 level below w
@@ -278,7 +308,9 @@ impl XVHLScaffold {
     // we are lifting row v up 1. row v nodes cannot possibly refer to variable w,
     //  so we will not remove anything from this row.
     //  But we will add a new entry whenever nodes in row w refer to v
-    let mut rv = self.rows.remove(&v).unwrap();
+    println!("vids: {:?}", self.vids);
+    println!("row keys: {:?}", self.rows.keys().collect::<Vec<&VID>>());
+    let mut rv = self.rows.remove(&v).unwrap_or_else(|| panic!("row {:?} not found",v));
 
     // row w may contain nodes that refer to v, which now need to be moved to row v.
     let mut rw = self.rows.remove(&w).unwrap();
@@ -450,7 +482,7 @@ impl XVHLScaffold {
     // finally, put the rows back where we found them:
     self.rows.insert(v, rv);
     self.rows.insert(w, rw);
-    #[cfg(test)] { println!("swap complete. validating."); self.validate(); println!("valid!") }}
+    #[cfg(test)] { self.validate("after swap."); println!("valid!") }}
 
   /// arrange row order to match the given groups.
   /// the groups are given in bottom-up order, and should
@@ -573,8 +605,13 @@ impl SwapSolver {
     let n:VS = dv.intersection(&sv).cloned().collect(); // n = intersection (shared set)
     let s:VS = sv.difference(&n).cloned().collect();    // s = only src
     let d:VS = dv.difference(&n).cloned().collect();    // d = only dst
+    println!("dst order before regroup: {:?}", self.dst.vids);
+    println!("d: {:?}", d);
+    println!("v: {:?}", v);
+    println!("n: {:?}", n);
     self.dst.regroup(vec![d, v, n]);
-
+    println!("dst order after regroup: {:?}", self.dst.vids);
+    println!("s: {:?}", s);
     // the order of n has to match in both. we'll use the
     // existing order of n from dst because it's probably bigger.
     let vix = self.dst.vix(self.rv).unwrap();
@@ -585,7 +622,9 @@ impl SwapSolver {
     // now whatever order the s group wound up in, we can insert
     // them in the dst directly *above* v. final order: [ d,v,s,n ]
     for &si in self.src.vids.iter().rev() {
-      if s.contains(&si) { self.dst.vids.insert(vix+1, si) }}
+      if s.contains(&si) {
+        self.dst.rows.insert(si, XVHLRow::new());
+        self.dst.vids.insert(vix+1, si) }}
 
     println!("dst.vids: {:?}", self.dst.vids);
     println!("src.vids: {:?}", self.src.vids);
@@ -596,11 +635,19 @@ impl SwapSolver {
   /// Replace rv with src(sx) in dst(dx)
   fn sub(&mut self)->XID {
 
+    println!(">>>>>>>>>> self.dx: {:?}", self.dst.get(self.dx));
+
     // 1. permute vars.
+    self.dst.validate("before permute");
     let vix = self.arrange_vids();
+    self.dst.validate("after permute");
+
+    let vhl = self.dst.get(self.dx).unwrap();
+    if self.dst.vix(self.rv) > self.dst.vix(vhl.v) { return self.dx }
 
     // 2. let q = truth table for src
     let q: Vec<bool> = self.src.tbl(self.sx, None).iter().map(|x|{ x.to_bool() }).collect();
+    self.src.validate("replacement bdd");
 
     // 3. let p = (partial) truth table for dst at the row branching on rv.
     //    (each item is either a const or branches on a var equal to or below rv)
@@ -628,8 +675,17 @@ impl SwapSolver {
     println!("---------------");
     for (i, &x) in r.iter().enumerate() { println!("r[{}]: {:?}", i, self.dst.get(x).unwrap()) }
 
+    println!("dst.vids: {:?}", self.dst.vids);
+    println!("===========>removing {:?}", self.rv);
     self.dst.vids.remove(self.dst.vix(self.rv).unwrap());
+
+    println!("dst.vids: {:?}", self.dst.vids);
+    // Mark VHLS as garbage (to pass the self-check)
+    for ixrc in self.dst.rows[&self.rv].hm.values() { self.dst.vhls[ixrc.ix.raw().x as usize] = XVHL_O }
+    println!("rows before: {:?}", self.dst.rows.keys().collect::<Vec<&VID>>());
     self.dst.rows.remove(&self.rv);
+    println!("rows after: {:?}", self.dst.rows.keys().collect::<Vec<&VID>>());
+    self.dst.validate("after removing rv");
 
     // 5. rebuild the rows above set d, and return new top node
     let bv = self.dst.vids[vix]; // whatever the new branch var in that slot is
@@ -637,6 +693,7 @@ impl SwapSolver {
     self.dx = self.dst.untbl(r, Some(bv));
 
     println!("final result: {:?}", self.dst.get(self.dx));
+    self.dst.validate("after substitution");
 
     // 6. garbage collect (TODO?) and return result
     self.dx }} // sub, SwapSolver
@@ -668,9 +725,9 @@ impl SubSolver for SwapSolver {
     for nid in rpn { assert!(nid.is_var()); self.src.push(nid.vid()); }
 
     // untbl the function to give us the full BDD of our substitution.
-    let mut tbl = vec![XID_O;(2^ar) as usize];
+    let mut tbl = vec![XID_O;(1<<ar) as usize];
     let ft = f.tbl().expect("final op wasn't a function");
-    for i in 0..2^ar { if ft & (1<<i) != 0 { tbl[i as usize] = XID_I; }}
+    for i in 0..(1<<ar) { if ft & (1<<i) != 0 { tbl[i as usize] = XID_I; }}
     self.sx = self.src.untbl(tbl, None);
 
     // everything's ready now, so just do it!
@@ -683,6 +740,8 @@ impl SubSolver for SwapSolver {
     // TODO: prove that we're only copying the nodes directly reachable from xctx.
     // Proper garbage collection should be sufficient for this.
 
+    self.dst.validate("before get_all");
+
     // Copy from the scaffold to the BDD Base.
     let mut x2n:HashMap<XID,NID> = HashMap::new();
     x2n.insert(XID_O, O);
@@ -691,9 +750,11 @@ impl SubSolver for SwapSolver {
     // vids[i] in the scaffold becomes var(i) in the bdd.
     let mut bdd = crate::bdd::BDDBase::new(nvars);
     for (i,rv) in self.dst.vids.iter().enumerate() {
+      println!("i,rv: {} {:?}",i,rv);
       let bv = NID::from_vid(VID::var(i as u32));
       for (x, ixrc) in self.dst.rows[rv].hm.iter() {
         if ixrc.rc > 0 {
+          println!("x: {:?}", x);
           let nx = |x:XID|->NID { if x.is_inv() { !x2n[&!x] } else { x2n[&x] }};
           let (hi, lo) = (nx(x.hi), nx(x.lo));
           // !! row pairs are never inverted, so we shouldn't have to mess with inv() (... right??)
