@@ -236,8 +236,8 @@ impl XVHLScaffold {
       else {(-1, VID::nov())};
     let mut v = self.get(top).expect("top wasn't in the scaffold").v;
     let mut i = self.vix(v).unwrap() as i64;
-    // i is index of top var (from XID), z of limit var, so i must be above z.
-    assert!(i >= z, "invalid limit depth {} ({}) for node on row {}", z, lv, i);
+    // i is index of top var (from XID), z of limit var, so i should be above z.
+    // if i < z it just means top is lower than limit, so return vec![top]
     while i > z {                       // copy-and-expand for each row down to limit
       v = self.vids[i as usize];     // redundant 1st time but can't put at end b/c -1
       let tmp = xs; xs = vec![];

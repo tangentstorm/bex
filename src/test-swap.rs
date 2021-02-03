@@ -26,10 +26,16 @@ fn check_swap(old:&str, new:&str) {
   check_swap("abv? b w?", "abw? bv? "); }
 
 #[test] fn test_tbl() {
-  let mut xsd = XSDebug::new("abc");
+  let mut xsd = XSDebug::new("abcd");
   let x = xsd.xid("a 1 b? 0 c?");
   let o = XID_O; let i = XID_I;
-  assert_eq!(xsd.xs.tbl(x, None), vec![o,i,i,i, o,o,o,o])}
+  assert_eq!(xsd.xs.tbl(x, None), vec![o,i,i,i, o,o,o,o]);
+  let a = xsd.xid("a");
+  assert_eq!(xsd.xs.tbl(x, Some(VID::var(0))), vec![a,i,o,o]);
+  let y = xsd.xid("a 1 b?");
+  assert_eq!(xsd.xs.tbl(x, Some(VID::var(1))), vec![y,o]);
+  assert_eq!(xsd.xs.tbl(x, Some(VID::var(2))), vec![x]);
+  assert_eq!(xsd.xs.tbl(x, Some(VID::var(3))), vec![x]);}
 
 #[test] fn test_untbl() {
   let mut xsd = XSDebug::new("abc");
