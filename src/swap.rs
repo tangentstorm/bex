@@ -231,15 +231,15 @@ impl XVHLScaffold {
     let mut xs = vec![top];
     println!("tbl/xs: {:?}", xs);
     for (i,&x) in xs.iter().enumerate() { println!("  [{}]: x:{} = {:?}", i, x.x, self.get(x).unwrap())}
-    let (z,lv) = if let Some(lim) = limit {
-      (self.vix(lim).expect("limit var isn't in scaffold") as i64, lim)}
-      else {(-1, VID::nov())};
+    let z = if let Some(lim) = limit {
+      self.vix(lim).expect("limit var isn't in scaffold") as i64}
+      else {-1};
     let mut v = self.get(top).expect("top wasn't in the scaffold").v;
     let mut i = self.vix(v).unwrap() as i64;
     // i is index of top var (from XID), z of limit var, so i should be above z.
     // if i < z it just means top is lower than limit, so return vec![top]
-    while i > z {                       // copy-and-expand for each row down to limit
-      v = self.vids[i as usize];     // redundant 1st time but can't put at end b/c -1
+    while i > z {                     // copy-and-expand for each row down to limit
+      v = self.vids[i as usize];
       let tmp = xs; xs = vec![];
       for x in tmp {
         let vhl = self.get(x).unwrap();
