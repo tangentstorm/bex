@@ -37,6 +37,26 @@ fn check_swap(old:&str, new:&str) {
   assert_eq!(xsd.xs.tbl(x, Some(VID::var(2))), vec![x]);
   assert_eq!(xsd.xs.tbl(x, Some(VID::var(3))), vec![x]);}
 
+#[test] fn test_tbl_inv() {
+  let mut xsd = XSDebug::new("abcd");
+  let x = xsd.xid("a 1 b? 0 c?");
+  let o = XID_O; let i = XID_I;
+  assert_eq!(xsd.xs.tbl(!x, None), vec![i,o,o,o, i,i,i,i]);
+  let a = xsd.xid("a");
+  assert_eq!(xsd.xs.tbl(!x, Some(VID::var(0))), vec![!a,o,i,i]);
+  let y = xsd.xid("a 1 b?");
+  assert_eq!(xsd.xs.tbl(!x, Some(VID::var(1))), vec![!y,i]);
+  assert_eq!(xsd.xs.tbl(!x, Some(VID::var(2))), vec![!x]);
+  assert_eq!(xsd.xs.tbl(!x, Some(VID::var(3))), vec![!x]);}
+
+#[test] fn test_tbl_skip() {
+  // this bdd skips over the 'b' row
+  let mut xsd = XSDebug::new("abc");
+  let x = xsd.xid("a a! c?");
+  let o = XID_O; let i = XID_I;
+  assert_eq!(xsd.xs.tbl(x, None), vec![o,i,o,i, i,o,i,o]);}
+
+
 #[test] fn test_untbl() {
   let mut xsd = XSDebug::new("abc");
   assert_eq!(xsd.run(" 01#"), "a");
