@@ -6,6 +6,7 @@
 use hashbrown::{HashMap, hash_map::Entry, HashSet};
 use {vid::VID, vid::NOV};
 use {solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops, std::path::Path, base::Base};
+use std::fmt;
 
 /// XID: An index-based unique identifier for nodes.
 ///
@@ -35,8 +36,13 @@ use {solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops, std::path::Path, base::
 /// We could use pointers instead of array indices, but I want this to be a representation
 /// that can persist on disk, so a simple flat index into an array of XVHLs is fine for me.
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
 struct XID { x: i64 }
+impl fmt::Debug for XID {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    if *self == XID_O { write!(f, "XO")}
+    else if *self == XID_I { write!(f, "XI")}
+    else { write!(f, "{}#{}", if self.is_inv() { "!" } else {""}, self.raw().x)}}}
 const XID_O:XID = XID { x: 0 };
 const XID_I:XID = XID { x: !0 };
 impl XID {
@@ -105,7 +111,7 @@ impl XVHLScaffold {
     println!("${:?}", self.vids);
     println!("%{:?}", self.rows.keys().collect::<Vec<&VID>>());
     for &x in self.vhls.iter() {
-      println!("^{},{},{}", x.v, x.hi.x, x.lo.x)}
+      println!("^{},{:?},{:?}", x.v, x.hi, x.lo)}
 
     // vids must be unique:
     let mut vids:HashMap<VID, usize> = self.vids.iter().cloned().enumerate().map(|(i,v)|(v,i+1)).collect();
