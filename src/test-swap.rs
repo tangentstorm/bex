@@ -111,7 +111,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
 
   dst.xs = ss.dst; // move result back to the debugger for inspection.
   // all vars should now be in dst.xs, but we copy the names so fmt knows what to call them.
-  for (&c, &i) in cv.iter() { if let None = dst.cx.get(&c) { dst.name_var(VID::var(i as u32), c) }}
+  for (&c, &i) in cv.iter() { if let None = dst.cv.get(&c) { dst.name_var(VID::var(i as u32), c) }}
   assert_eq!(dst.vids(), expected_order, "unexpected vid ordering at end");
   assert_eq!(dst.fmt(xid), dst.run(goal));}
 
