@@ -116,10 +116,10 @@ impl XVHLScaffold {
       println!("^{},{:?},{:?}", x.v, x.hi, x.lo)}
 
     // vids must be unique:
-    let mut vids:HashMap<VID, usize> = self.vids.iter().cloned().enumerate().map(|(i,v)|(v,i+1)).collect();
+    let mut vids:HashMap<VID, i64> = self.vids.iter().cloned().enumerate().map(|(i,v)|(v,i as i64)).collect();
     assert_eq!(vids.len(), self.vids.len(), "duplicate vid(s) in list: {:?}", self.vids);
     assert_eq!(vids.len(), self.rows.len(), "vids and rows should have the same len()");
-    vids.insert(NOV, 0);
+    vids.insert(NOV, -1);
 
     println!("vids:{:?}", vids);
 
@@ -139,8 +139,8 @@ impl XVHLScaffold {
         let hi = self.get(x.hi.raw()).expect("hi branch points nowhere");
         let lo = self.get(x.lo.raw()).expect("lo branch points nowhere");
 
-        if hi.v == NOV && hi != XVHL_O { panic!("hi branch to garbage-collected node")}
-        if lo.v == NOV && lo != XVHL_O { panic!("lo branch to garbage-collected node")}
+        if hi.v == NOV && x.hi.raw() != XID_O { panic!("hi branch to garbage-collected node")}
+        if lo.v == NOV && x.lo.raw() != XID_O { panic!("lo branch to garbage-collected node")}
 
         // the hi and lo branches should point "downward"
         assert!(vids[&lo.v] < vids[&x.v], "upward lo branch @vhl[{}]: {:?}", i, x);
