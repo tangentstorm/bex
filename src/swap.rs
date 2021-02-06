@@ -192,9 +192,10 @@ impl XVHLScaffold {
   /// add a reference to the given XVHL, inserting it into the row if necessary.
   /// returns the external nid, and a flag indicating whether the pair was freshly added.
   /// (if it was fresh, the scaffold needs to update the refcounts for each leg)
-  fn add_ref(&mut self, hl0:XVHL, rc:usize)->(XID, bool) {
+  fn add_ref(&mut self, hl0:XVHL, rc:usize)->XID {
     let inv = hl0.lo.is_inv();
     let vhl = if inv { !hl0 } else { hl0 };
+    if vhl == XVHL_O { return if inv { XID_I } else { XID_O }}
     // allocate a xid just in case
     let (alloc, alloc_new) = self.alloc_one();
     let row = self.rows.entry(vhl.v).or_insert_with(|| XVHLRow::new());
@@ -208,10 +209,14 @@ impl XVHLScaffold {
         e.insert(IxRc{ ix:alloc, rc });
         if alloc_new { self.vhls.push(vhl) } else { self.vhls[alloc.x as usize] = vhl };
         (alloc, true) }};
-    (if inv { !res } else { res }, is_new) }
+    if is_new {
+      let hi = self.get(vhl.hi).unwrap(); self.add_ref(hi,1);
+      let lo = self.get(vhl.lo).unwrap(); self.add_ref(lo,1); }
+    if inv { !res } else { res }}
 
   /// decrement refcount for ix. return new refcount.
   fn dec_ref_ix(&mut self, ix:XID)->usize {
+    if ix.is_const() { return 1 }
     let vhl = self.vhls[ix.raw().x as usize];
     if let Some(row) = self.rows.get_mut(&vhl.v) {
       if let Some(mut ixrc) = row.hm.get_mut(&vhl.hilo()) {
@@ -268,8 +273,8 @@ impl XVHLScaffold {
         let (lo, hi) = (lh[0], lh[1]);
         if lo == hi { self.dec_ref_ix(hi); lo } // 2 refs -> 1
         else {
-          let t = self.add_ref(XVHL{ v, hi, lo }, 1).0;
           self.dec_ref_ix(hi); self.dec_ref_ix(lo);
+          let t = self.add_ref(XVHL{ v, hi, lo }, 1);
           t } }).collect();
       println!("untbl/xs: {:?}", xs);
       if xs.len() == 1 { break }
@@ -357,9 +362,10 @@ impl XVHLScaffold {
       else if inv { XWIP0::HL(!hi, !lo) } else { XWIP0::HL(hi, lo) }};
 
     let mut vdec = |xid:XID| {
-      println!("TODO: vdec");
       let (hi, lo)=vx.get(&xid.raw()).unwrap();
-      rv.hm.get_mut(&XHiLo{hi:*hi, lo:*lo}).unwrap().rc -= 0 }; // TODO: -=1
+      let ixrc = rv.hm.get_mut(&XHiLo{hi:*hi, lo:*lo}).unwrap();
+      if ixrc.rc == 0 { println!("warning: rc was already 0"); }
+      else { ixrc.rc -= 1; }};
 
     // 1. Partition nodes on rw into two groups:
     // group I (independent):
@@ -478,7 +484,7 @@ impl XVHLScaffold {
     // TODO: [ commit vdel ]
     // we've already removed them from the local copy. just need to add the
     // original entries to a linked list.
-    for xid in vdel { self.vhls[xid.raw().ix()].v = NOV }
+    for xid in vdel { self.vhls[xid.raw().ix()] = XVHL_O }
 
     // TODO: [ commit eref changes ]
     // TODO: merge eref and edec into a hashmap of (XID->drc:usize)
@@ -542,7 +548,7 @@ impl XSDebug {
     for c in s.chars() {
       match c {
         'a'..='z' =>
-          if let Some(&v) = self.cv.get(&c) { self.ds.push(self.xs.add_ref(XVHL{v,hi:XID_I,lo:XID_O},1).0) }
+          if let Some(&v) = self.cv.get(&c) { self.ds.push(self.xs.add_ref(XVHL{v,hi:XID_I,lo:XID_O},1)) }
           else { panic!("unknown variable: {}", c)},
         '0' => self.ds.push(XID_O),
         '1' => self.ds.push(XID_I),
@@ -563,7 +569,8 @@ impl XSDebug {
   fn ite(&mut self, vx:XID, hi:XID, lo:XID)->XID {
     if let Some(xvhl) = self.xs.get(vx) {
       if !xvhl.is_var() { panic!("not a branch var: {} ({:?})", self.fmt(vx), xvhl) }
-      let res = self.xs.add_ref(XVHL{v:xvhl.v, hi, lo}, 1).0; self.ds.push(res); res }
+      assert_ne!(hi, lo, "hi and lo branches must be different");
+      let res = self.xs.add_ref(XVHL{v:xvhl.v, hi, lo}, 1); self.ds.push(res); res }
     else { panic!("limit not found for '#': {:?}", vx) }}
   fn fmt(&self, x:XID)->String {
     match x {
@@ -640,7 +647,16 @@ impl SwapSolver {
   /// Replace rv with src(sx) in dst(dx)
   fn sub(&mut self)->XID {
 
-    println!(">>>>>>>>>> self.dx: {:?}", self.dst.get(self.dx));
+    println!(">>>>>>>>>> self.dx: {:?} -> {:?}", self.dx, self.dst.get(self.dx));
+
+    let rvix = self.dst.vix(self.rv);
+    if rvix.is_none() { return self.dx } // rv isn't in the scaffold, so do nothing.
+    let vhl = self.dst.get(self.dx).unwrap();
+    let vvix = self.dst.vix(vhl.v);
+    if vvix.is_none() { panic!("bad vhl:{:?} for self.dx:{:?} ", vhl, self.dx); }
+
+    // !! this is a kludge. the ref count should already be at least 1.
+    self.dst.add_ref(vhl, 1);
 
     // 1. permute vars.
     self.dst.validate("before permute");
@@ -708,7 +724,7 @@ impl SubSolver for SwapSolver {
   fn init(&mut self, v: VID)->NID {
     self.dst = XVHLScaffold::new(); self.dst.push(v);
     self.rv = v;
-    self.dx = self.dst.add_ref(XVHL{ v, hi:XID_I, lo:XID_O}, 1).0;
+    self.dx = self.dst.add_ref(XVHL{ v, hi:XID_I, lo:XID_O}, 1);
     self.dx.to_nid() }
 
   fn subst(&mut self, ctx: NID, v: VID, ops: &Ops)->NID {
