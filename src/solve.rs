@@ -269,9 +269,7 @@ macro_rules! find_factors {
     let actual_regs:HashSet<Reg> = dest.get_all(answer.n, 2*$T0::n() as usize);
     let actual:HashSet<Factors> = actual_regs.iter().map(to_factors).collect();
     let expect:HashSet<Factors> = $expect.iter().map(|&(x,y)| (x as u64, y as u64)).collect();
-    assert_eq!(actual.len(), expect.len(), "check number of solutions");
     assert_eq!(actual, expect);
-    // for i in 0..expect.len() { assert_eq!(actual[i], expect[i], "mismatch at i={}", i) }
     let tests = bdd::COUNT_XMEMO_TEST.with(|c| *c.borrow() );
     let fails = bdd::COUNT_XMEMO_FAIL.with(|c| *c.borrow() );
     println!("TOTAL XMEMO STATS: tests: {} fails: {} hits: {}", tests, fails, tests-fails); }}
