@@ -663,8 +663,13 @@ impl SwapSolver {
     let vix = self.arrange_vids();
     self.dst.validate("after permute");
 
+    // same test again, but after the permute:
     let vhl = self.dst.get(self.dx).unwrap();
-    if self.dst.vix(self.rv) > self.dst.vix(vhl.v) { return self.dx }
+    let vvix = self.dst.vix(vhl.v);
+    if vvix.is_none() {
+      panic!("bad vhl:{:?} for self.dx:{:?} after arrange-vids. how can this happen??", vhl, self.dx); }
+    // if the expression doesn't depend on the replacement var, do nothing.
+    if rvix.unwrap() > vvix.unwrap() { return self.dx }
 
     // 2. let q = truth table for src
     let q: Vec<bool> = self.src.tbl(self.sx, None).iter().map(|x|{ x.to_bool() }).collect();
@@ -691,22 +696,30 @@ impl SwapSolver {
     //    We're removing rv from p (and dst itself) here.
     let r:Vec<XID> = p.iter().zip(q.iter()).map(|(&pi,&qi)|
       if self.dst.branch_var(pi) == self.rv { self.dst.follow(pi, qi) } else { pi }).collect();
-    println!("p: {:?}\nq: {:?}\nr: {:?}", p, q, r);
-    for (i, &x) in p.iter().enumerate() { println!("r[{}]: {:?}", i, self.dst.get(x).unwrap()) }
-    println!("---------------");
-    for (i, &x) in r.iter().enumerate() { println!("r[{}]: {:?}", i, self.dst.get(x).unwrap()) }
 
-    println!("dst.vids: {:?}", self.dst.vids);
-    println!("===========>removing {:?}", self.rv);
-    self.dst.vids.remove(self.dst.vix(self.rv).unwrap());
+    // clear all rows above v in the scaffold, and then delete v
+    println!("clearing vids={:?} down to rv={:?}", self.dst.vids, self.rv);
+    let mut ix = self.dst.vids.len()-1;
+    loop {
+      let v = self.dst.vids[ix];
+      println!("clearing row: {:?}", v);
+      // Mark VHLS as garbage (to pass the self-check)
+      for (vhl, ixrc) in self.dst.rows[&v].hm.iter() {
+        assert_eq!(v, self.dst.vhls[ixrc.ix.raw().x as usize].v,
+                   "about to collect garbage that isn't mine to collect");
+        self.dst.vhls[ixrc.ix.raw().x as usize] = XVHL_O }
+      if v == self.rv {
+        self.dst.vids.remove(ix);
+        self.dst.rows.remove(&v);
+        break }
+      else {
+        self.dst.rows.insert(v, XVHLRow::new());
+        ix -= 1 }}
+    assert_eq!(ix,vix);
 
-    println!("dst.vids: {:?}", self.dst.vids);
-    // Mark VHLS as garbage (to pass the self-check)
-    for ixrc in self.dst.rows[&self.rv].hm.values() { self.dst.vhls[ixrc.ix.raw().x as usize] = XVHL_O }
-    println!("rows before: {:?}", self.dst.rows.keys().collect::<Vec<&VID>>());
-    self.dst.rows.remove(&self.rv);
-    println!("rows after: {:?}", self.dst.rows.keys().collect::<Vec<&VID>>());
-    self.dst.validate("after removing rv");
+    // -- should be valid again now.
+    println!("self.dst.vids: after removing {:?} {:?}", self.rv, self.dst.vids);
+    self.dst.validate("after removing top rows");
 
     // 5. rebuild the rows above set d, and return new top node
     let bv = self.dst.vids[vix]; // whatever the new branch var in that slot is
