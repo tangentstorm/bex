@@ -12,7 +12,25 @@ impl Ops {
   ///! Again, just for future proofing.
   pub fn to_rpn(&self)->Iter<'_, NID> {
     match self {
-      Ops::RPN(vec) => vec.iter() }}}
+      Ops::RPN(vec) => vec.iter() }}
+
+  /// ensure that last item is a function of n inputs,
+  /// len is n+1, and first n inputs are not inverted.
+  pub fn norm(&self)->Ops {
+    let mut rpn:Vec<NID> = self.to_rpn().cloned().collect();
+    let f0 = rpn.pop().expect("norm() expects at least one f-nid");
+    assert!(f0.is_fun());
+    let ar = f0.arity().unwrap();
+    assert_eq!(ar, rpn.len() as u8);
+
+    // if any of the input vars are negated, update the function to
+    // negate the corresponding argument. this way we can just always
+    // branch on the raw variable.
+    let mut bits:u8 = 0;
+    for (i,nid) in rpn.iter().enumerate() { if nid.is_inv() { bits |= 1 << i; } }
+    let f = f0.fun_flip_inputs(bits);
+    rpn.push(f);
+    Ops::RPN(rpn)}}
 
 /// constructor for rpn
 pub fn rpn(xs:&[NID])->Ops { Ops::RPN(xs.to_vec()) }

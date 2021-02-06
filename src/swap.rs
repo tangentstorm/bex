@@ -749,26 +749,19 @@ impl SubSolver for SwapSolver {
     self.dx.to_nid() }
 
   fn subst(&mut self, ctx: NID, v: VID, ops: &Ops)->NID {
-    self.src = XVHLScaffold::new();
-    let mut rpn:Vec<NID> = ops.to_rpn().cloned().collect();
-    let f0 = rpn.pop().expect("empty ops passed to subst");
-    assert!(f0.is_fun());
-    let ar = f0.arity().unwrap();
-    assert_eq!(ar, rpn.len() as u8);
+    let Ops::RPN(mut rpn) = ops.norm();
+    println!("@:sub {:?} -> {:?}", v, ops);
 
-    // if any of the input vars are negated, update the function to
-    // negate the corresponding argument. this way we can just always
-    // branch on the raw variable.
-    let mut bits:u8 = 0;
-    for (i,nid) in rpn.iter().enumerate() { if nid.is_inv() { bits |= 1 << i; } }
-    let f = f0.fun_flip_inputs(bits);
+    let f = rpn.pop().unwrap(); // guaranteed by norm() to be a fun-nid
+    let ar = f.arity().unwrap();
+    let ft = f.tbl().unwrap();
 
     // so now, src.vids is just the raw input variables (probably virtual ones).
-    for nid in rpn { assert!(nid.is_var()); self.src.push(nid.vid()); }
+    self.src = XVHLScaffold::new();
+    for nid in rpn.iter() { assert!(nid.is_var()); self.src.push(nid.vid()); }
 
     // untbl the function to give us the full BDD of our substitution.
     let mut tbl = vec![XID_O;(1<<ar) as usize];
-    let ft = f.tbl().expect("final op wasn't a function");
     for i in 0..(1<<ar) { if ft & (1<<i) != 0 { tbl[i as usize] = XID_I; }}
     self.sx = self.src.untbl(tbl, None);
 
