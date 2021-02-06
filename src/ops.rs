@@ -67,3 +67,21 @@ pub fn vel<X:ToNID,Y:ToNID>(x:X,y:Y)->Ops { rpn(&[x.to_nid(), y.to_nid(), VEL]) 
 
 /// construct the expression `x IMP y` ("x implies y")
 pub fn imp<X:ToNID,Y:ToNID>(x:X,y:Y)->Ops { rpn(&[x.to_nid(), y.to_nid(), IMP]) }
+
+#[test] fn test_flip_and() {
+  assert_eq!(AND.tbl().unwrap()                    & 0b1111, 0b0001 );
+  assert_eq!(AND.fun_flip_inputs(1).tbl().unwrap() & 0b1111, 0b0010 );
+  assert_eq!(AND.fun_flip_inputs(2).tbl().unwrap() & 0b1111, 0b0100 );
+  assert_eq!(AND.fun_flip_inputs(3).tbl().unwrap() & 0b1111, 0b1000 );}
+
+#[test] fn test_flip_vel() {
+  assert_eq!(VEL.tbl().unwrap()                    & 0b1111, 0b0111 );
+  assert_eq!(VEL.fun_flip_inputs(1).tbl().unwrap() & 0b1111, 0b1011 );
+  assert_eq!(VEL.fun_flip_inputs(2).tbl().unwrap() & 0b1111, 0b1101 );
+  assert_eq!(VEL.fun_flip_inputs(3).tbl().unwrap() & 0b1111, 0b1110 );}
+
+#[test] fn test_flip_xor() {
+  assert_eq!(XOR.tbl().unwrap()                    & 0b1111, 0b0110 );
+  assert_eq!(XOR.fun_flip_inputs(1).tbl().unwrap() & 0b1111, 0b1001 );
+  assert_eq!(XOR.fun_flip_inputs(2).tbl().unwrap() & 0b1111, 0b1001 );
+  assert_eq!(XOR.fun_flip_inputs(3).tbl().unwrap() & 0b1111, 0b0110 );}
