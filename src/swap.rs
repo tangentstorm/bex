@@ -750,7 +750,8 @@ impl SubSolver for SwapSolver {
 
   fn subst(&mut self, ctx: NID, v: VID, ops: &Ops)->NID {
     let Ops::RPN(mut rpn) = ops.norm();
-    println!("@:sub {:?} -> {:?}", v, ops);
+    println!("@:sub {:>4} -> {:>24} -> {:>20}",
+      format!("{:?}",v), format!("{:?}", ops), format!("{:?}", rpn));
 
     let f = rpn.pop().unwrap(); // guaranteed by norm() to be a fun-nid
     let ar = f.arity().unwrap();
