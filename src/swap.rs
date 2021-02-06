@@ -196,6 +196,7 @@ impl XVHLScaffold {
     let inv = hl0.lo.is_inv();
     let vhl = if inv { !hl0 } else { hl0 };
     if vhl == XVHL_O { return if inv { XID_I } else { XID_O }}
+    assert_ne!(vhl.hi, vhl.lo, "hi and lo should be different"); // to trigger traceback and find the culprit
     // allocate a xid just in case
     let (alloc, alloc_new) = self.alloc_one();
     let row = self.rows.entry(vhl.v).or_insert_with(|| XVHLRow::new());
@@ -406,12 +407,15 @@ impl XVHLScaffold {
           // the existing node, or we create a new node:
           // TODO: this isn't really an IxRc since the xid is virtual
           let (hi,lo,inv) = if lo0.is_inv() { (!hi0, !lo0, true) } else { (hi0,lo0,false) };
-          match wnew.entry((hi, lo)) {
-            Entry::Occupied(mut e) => { e.get_mut().rc += 1; XWIP1::NEW(e.get().ix.x) }
+          let x = match wnew.entry((hi, lo)) {
+            Entry::Occupied(mut e) => {
+              e.get_mut().rc += 1;
+              e.get().ix.x }
             Entry::Vacant(e) => {
               let x = wnix as i64; wnix += 1;
               e.insert(IxRc{ ix:XID{x}, rc:1 });
-              XWIP1::NEW(if inv { !x } else { x }) }}}}};
+              x }};
+          XWIP1::NEW(if inv { !x } else { x }) }}};
 
     // make the removals from row w, and fill in wnew, wtov, eref
     let mut wtov: Vec<(IxRc,XWIP1,XWIP1)> = vec![];
@@ -468,6 +472,7 @@ impl XVHLScaffold {
       assert!(rw.hm.get(&(XHiLo{hi:*hi, lo:*lo})).is_none());
       rw.hm.insert(XHiLo{hi:*hi, lo:*lo}, ixrc);
       // and now update the master store:
+      debug_assert_ne!(hi, lo, "hi=lo when committing wnew");
       self.vhls[ixrc.ix.x as usize] = XVHL{ v:w, hi:*hi, lo:*lo }; }
 
     // [commit wtov]
@@ -478,6 +483,7 @@ impl XVHLScaffold {
         XWIP1::NEW(x) => { if *x<0 { !wipxid[!*x as usize]  } else { wipxid[*x as usize ]}}}};
     for (ixrc, wip_hi, wip_lo) in wtov.iter() {
       let (hi, lo) = (w2x(wip_hi), w2x(wip_lo));
+      debug_assert_ne!(hi, lo, "hi=lo when committing wtov");
       rv.hm.insert(XHiLo{hi, lo}, *ixrc);
       self.vhls[ixrc.ix.x as usize] = XVHL{ v, hi, lo }; }
 
