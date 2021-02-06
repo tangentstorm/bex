@@ -27,7 +27,7 @@ impl Ops {
     // negate the corresponding argument. this way we can just always
     // branch on the raw variable.
     let mut bits:u8 = 0;
-    for (i,nid) in rpn.iter().enumerate() { if nid.is_inv() { bits |= 1 << i; } }
+    for (i,nid) in rpn.iter_mut().enumerate() { if nid.is_inv() { bits |= 1 << i;  *nid = !*nid; }}
     let f = f0.fun_flip_inputs(bits);
     rpn.push(f);
     Ops::RPN(rpn)}}
@@ -85,3 +85,12 @@ pub fn imp<X:ToNID,Y:ToNID>(x:X,y:Y)->Ops { rpn(&[x.to_nid(), y.to_nid(), IMP]) 
   assert_eq!(XOR.fun_flip_inputs(1).tbl().unwrap() & 0b1111, 0b1001 );
   assert_eq!(XOR.fun_flip_inputs(2).tbl().unwrap() & 0b1111, 0b1001 );
   assert_eq!(XOR.fun_flip_inputs(3).tbl().unwrap() & 0b1111, 0b0110 );}
+
+#[test] fn test_norm() {
+  assert_eq!(AND.tbl().unwrap()                    & 0b1111, 0b0001 );
+  let ops = Ops::RPN(vec![NID::var(0), !NID::var(1), AND]);
+  let mut rpn:Vec<NID> = ops.norm().to_rpn().cloned().collect();
+  let f = rpn.pop().unwrap();
+  assert_eq!(2, f.arity().unwrap());
+  assert_eq!(f.tbl().unwrap() & 0b1111, 0b0100);
+  assert_eq!(rpn, vec![NID::var(0), NID::var(1)]);}
