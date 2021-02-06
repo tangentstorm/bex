@@ -139,6 +139,11 @@ impl std::ops::Not for NID {
 impl fmt::Display for NID {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     if is_const(*self) { if is_inv(*self) { write!(f, "I") } else { write!(f, "O") } }
+    else if self.is_fun() {
+      let ar:u8 = self.arity().unwrap();
+      let ft:u32 = self.tbl().unwrap() & ((2<<ar as u32)-1);
+      if ar == 2 { write!(f, "<{:04b}>", ft)} // TODO: dynamically format to a length
+      else {  write!(f, "<{:b}>", ft) }}
     else { if is_inv(*self) { write!(f, "¬")?; }
            if is_var(*self) { write!(f, "{}", self.vid()) }
            else if is_rvar(*self) { write!(f, "@[{}:{}]", self.vid(), idx(*self)) }
