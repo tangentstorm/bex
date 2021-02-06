@@ -688,11 +688,13 @@ impl SwapSolver {
     println!("p0: {:?}", p);
     for (i, &x) in p.iter().enumerate() { println!("p0[{}]: {:?}", i, self.dst.get(x).unwrap()) }
     println!("---------------");
-    //    Scale p to the size of q by repeatedly doubling the entries.
-    //    !! yes, this is a wasteful algorithm but the expectation is that p
-    //       and q are quite small: < 2^n items where n = number of vars in
-    //       the replacement. I expect n<16, since if n is too much higher than
-    //       that, I expect this whole algorithm to break down anyway.
+    // !! tbl() branches from the top var in dx, not the top var in the scaffold.
+    //    src may contain vars above branch(dx), so p=tbl(dx) may be smaller than q=tbl(sx).
+    //    So: Scale p to the size of q by repeatedly doubling the entries.
+    // !! yes, this is a wasteful algorithm but the expectation is that p
+    //    and q are quite small: < 2^n items where n = number of vars in
+    //    the replacement. I expect n<16, since if n is too much higher than
+    //    that, I expect this whole algorithm to break down anyway.
     if p.len() < q.len() { p = p.iter().cycle().take(q.len()).cloned().collect() }
     println!("p: {:?}", p);
     for (i, &x) in p.iter().enumerate() { println!("p[{}]: {:?}", i, self.dst.get(x).unwrap()) }
