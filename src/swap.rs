@@ -712,7 +712,7 @@ impl SwapSolver {
       let v = self.dst.vids[ix];
       println!("clearing row: {:?}", v);
       // Mark VHLS as garbage (to pass the self-check)
-      for (vhl, ixrc) in self.dst.rows[&v].hm.iter() {
+      for ixrc in self.dst.rows[&v].hm.values() {
         assert_eq!(v, self.dst.vhls[ixrc.ix.raw().x as usize].v,
                    "about to collect garbage that isn't mine to collect");
         self.dst.vhls[ixrc.ix.raw().x as usize] = XVHL_O }
