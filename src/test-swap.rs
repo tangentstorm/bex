@@ -56,7 +56,6 @@ fn check_swap(old:&str, new:&str) {
   let o = XID_O; let i = XID_I;
   assert_eq!(xsd.xs.tbl(x, None), vec![o,i,o,i, i,o,i,o]);}
 
-
 #[test] fn test_untbl() {
   let mut xsd = XSDebug::new("abc");
   assert_eq!(xsd.run(" 01#"), "a");
@@ -64,6 +63,14 @@ fn check_swap(old:&str, new:&str) {
   assert_eq!(xsd.run(".0101#"), "a");
   assert_eq!(xsd.run(".0111#"), "a1b? ");
   assert_eq!(xsd.run(".01b#"), "b"); }
+
+#[test] fn test_untbl_base() {
+  let mut xsd = XSDebug::new("abc");
+  assert_eq!(xsd.run(" 01b#"), "b");
+  assert_eq!(xsd.run(".10b#"), "b!");
+  assert_eq!(xsd.run(".0101b#"), "b");
+  assert_eq!(xsd.run(".0111b#"), "b1c? ");
+  assert_eq!(xsd.run(".01c#"), "c"); }
 
 // -- SwapSolver --------------------------------------------------------------
 
