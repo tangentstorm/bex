@@ -346,14 +346,15 @@ impl XVHLScaffold {
     // a block of 2*w.len ids for this algorithm to assign.
     // so: in the future, if we want to create new nodes with unique ids in a distributed way,
     // we should allocate 2*w.len ids for this function to assign to the new nodes.
-    // reference counts elsewhere in the graph can change, but never drop to 0.
-    // if they did, then swapping the rows back would have to create new nodes elsewhere.
+    // reference counts elsewhere in the graph can change (!!! really? they don't change in this step.),
+    // but never drop to 0. if they did, then swapping the rows back would have to create new nodes elsewhere.
 
-
-    let mut edec:Vec<XID> = vec![];          // external nodes to decref
-    let mut child = |h:XID, l:XID|->XWIP0 {    // reference a node on/below row w, or or create a node on row w
+    let child = |h:XID, l:XID|->XWIP0 {    // reference a node on/below row w, or create a node on row w
       let (hi, lo, inv) = if l.is_inv() {(!h, !l, true)} else {(h, l, false)};
-      if hi == lo { edec.push(hi); XWIP0::XID(if inv { !lo } else { lo }) } // meld nodes (so dec ref)
+      // hi == lo only when the match passes hi,hi or lo,lo. So: this is always a single external reference
+      // that we've passed twice, and we're not really dropping a reference here.
+      // No refcount changes happen outside rows v and w. (!!! at least in this step?)
+      if hi == lo { XWIP0::XID(if inv { !lo } else { lo }) } //
       else if let Some(ixrc) = rw.hm.get(&XHiLo{ hi, lo}) { XWIP0::XID(if inv {!ixrc.ix} else {ixrc.ix}) }
       else if inv { XWIP0::HL(!hi, !lo) } else { XWIP0::HL(hi, lo) }};
 
@@ -363,7 +364,7 @@ impl XVHLScaffold {
       if ixrc.rc == 0 { println!("warning: rc was already 0"); }
       else { ixrc.rc -= 1; }};
 
-    // 1. Partition nodes on rw into two groups:
+    // Partition nodes on rw into two groups:
     // group I (independent):
     //   These are nodes that do not reference row v.
     //   These remain on rw, unchanged.
@@ -383,7 +384,7 @@ impl XVHLScaffold {
       let vget = |xid:XID|->Option<(XID,XID)> {
         if xid.is_inv() { vx.get(&xid.raw()).cloned().map(|(h,l)| (!h,!l)) } else { vx.get(&xid).cloned() }};
       match (vget(hi), vget(lo)) {
-        (None,          None         ) => {},  // no refs, so nothing to do.
+        (None,          None         ) => {},  // independent of row v, so nothing to do.
         (None,          Some((oi,oo))) => { new_v(*whl, hi, hi, oi, oo); vdec(lo) },
         (Some((ii,io)), None         ) => { new_v(*whl, ii, io, lo, lo); vdec(hi) },
         (Some((ii,io)), Some((oi,oo))) => { new_v(*whl, ii, io, oi, oo); vdec(hi); vdec(lo) }}}
@@ -484,8 +485,7 @@ impl XVHLScaffold {
     self.reclaim_nodes(vdel);
 
     // TODO: [ commit eref changes ]
-    // TODO: merge eref and edec into a hashmap of (XID->drc:usize)
-    // it should be usize rather than i64 because nothing outside of these two rows
+        // it should be usize rather than i64 because nothing outside of these two rows
     // will ever have its refcount drop all the way to 0.
     // (each decref is something like (w?(v?a:b):(v?a:c))->(v?a:w?b:c) so we're just
     // merging two references into one, never completely deleting one).
