@@ -307,8 +307,7 @@ impl XVHLScaffold {
 
   /// swap v up by one level
   fn swap(&mut self, v:VID) {
-    #[cfg(test)] {
-      self.validate(&format!("swap({}) in {:?}.", v, self.vids)); println!("ok! begin swap.") }
+    #[cfg(test)] { self.validate(&format!("swap({}) in {:?}.", v, self.vids)); println!("ok! begin swap.") }
     let vi = self.vix(v).expect("requested vid was not in the scaffold.");
     if vi+1 == self.vids.len() { println!("warning: attempt to lift top vid {}", v); return }
     let w = self.vids[vi+1]; // start: v is 1 level below w
@@ -329,6 +328,8 @@ impl XVHLScaffold {
     // row w may contain nodes that refer to v, which now need to be moved to row v.
     let mut rw = self.rows.remove(&w).unwrap();
 
+
+
     // build a map of xid->hilo for row v, so we know every xid that branches on v,
     // and can quickly retrieve its high and lo branches.
     let mut vx:HashMap<XID,(XID,XID)> = HashMap::new();
@@ -348,12 +349,6 @@ impl XVHLScaffold {
     // reference counts elsewhere in the graph can change, but never drop to 0.
     // if they did, then swapping the rows back would have to create new nodes elsewhere.
 
-    // helpers to track which new nodes are to be created.
-    // i am doing this because i don't want to refer to self -- partially to appease the
-    // borrow checker immediately, but also because in the future i'd like this to be done
-    // in a distributed process, which will modify the two rows in place and then send the
-    // refcount and branch variable changes to a central repo.
-    enum XWIP0 { XID(XID), HL(XID,XID) }
 
     let mut edec:Vec<XID> = vec![];          // external nodes to decref
     let mut child = |h:XID, l:XID|->XWIP0 {    // reference a node on/below row w, or or create a node on row w
@@ -394,7 +389,6 @@ impl XVHLScaffold {
         (Some((ii,io)), Some((oi,oo))) => { new_v(*whl, ii, io, oi, oo); vdec(hi); vdec(lo) }}}
 
     // convert the XWIP0::HL entries to XWIP1::NEW
-    enum XWIP1 { XID(XID), NEW(i64) }
     let mut wnix:i64 = 0; // next index for new node
     let mut wnew: HashMap<(XID,XID), IxRc> = HashMap::new();
     let mut eref: Vec<XID> = vec![]; // external nodes to incref
@@ -487,10 +481,7 @@ impl XVHLScaffold {
       rv.hm.insert(XHiLo{hi, lo}, *ixrc);
       self.vhls[ixrc.ix.x as usize] = XVHL{ v, hi, lo }; }
 
-    // TODO: [ commit vdel ]
-    // we've already removed them from the local copy. just need to add the
-    // original entries to a linked list.
-    for xid in vdel { self.vhls[xid.raw().ix()] = XVHL_O }
+    self.reclaim_nodes(vdel);
 
     // TODO: [ commit eref changes ]
     // TODO: merge eref and edec into a hashmap of (XID->drc:usize)
@@ -503,6 +494,10 @@ impl XVHLScaffold {
     self.rows.insert(v, rv);
     self.rows.insert(w, rw);
     #[cfg(test)] { self.validate("after swap."); println!("valid!") }}
+
+  /// Reclaim the records for a list of garbage collected nodes.
+  // TODO: add to some kind of linked list so they're easier to find.
+  fn reclaim_nodes(&mut self, xids:Vec<XID>) { for xid in xids { self.vhls[xid.raw().ix()] = XVHL_O }}
 
   /// arrange row order to match the given groups.
   /// the groups are given in bottom-up order, and should
@@ -523,10 +518,26 @@ impl XVHLScaffold {
           rc = lc+1;
           while !g.contains(&self.vids[rc]) { rc+=1 }
           // now drag the misplaced row down
-          while rc > lc { rc -= 1; self.swap(self.vids[rc]) }}}}}
+          while rc > lc { rc -= 1; self.swap(self.vids[rc]) }}}}}}
 
-} // impl XVHLScaffold
+// ---- swap worker -----------------------------------------------------
 
+// helpers to track which new nodes are to be created.
+// i am doing this because i don't want to refer to self -- partially to appease the
+// borrow checker immediately, but also because in the future i'd like this to be done
+// in a distributed process, which will modify the two rows in place and then send the
+// refcount and branch variable changes to a central repo.
+
+/// in the first WIP step, we either work with existing xids
+/// and hilo pairs that may or may not already exist.
+enum XWIP0 { XID(XID), HL(XID,XID) }
+
+/// in the second wip step, the hilo pairs are all resolved to existing
+/// xids or mapped to a new one
+enum XWIP1 { XID(XID), NEW(i64) }
+
+
+// -- debugger ------------------------------------------------------------
 
 /// A simple RPN debugger to make testing easier.
 struct XSDebug {
