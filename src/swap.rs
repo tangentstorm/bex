@@ -216,15 +216,17 @@ impl XVHLScaffold {
     if inv { !res } else { res }}
 
   /// decrement refcount for ix. return new refcount.
-  fn dec_ref_ix(&mut self, ix:XID)->usize {
+  fn dec_ref_ix(&mut self, ix:XID)->usize { self.add_ref_ix(ix, -1) }
+
+  fn add_ref_ix(&mut self, ix:XID, drc:i64)->usize {
     if ix.is_const() { return 1 }
     let vhl = self.vhls[ix.raw().x as usize];
     if let Some(row) = self.rows.get_mut(&vhl.v) {
       if let Some(mut ixrc) = row.hm.get_mut(&vhl.hilo()) {
-        if ixrc.rc > 0 { ixrc.rc -= 1; ixrc.rc }
-        else { println!("dec_ref warning: ixrc was already 0 for {:?}", vhl); 0 }}
-      else { println!("dec_ref warning: entry not found for {:?}", vhl); 0}}
-    else { println!("dec_ref warning: row not found for {:?}", vhl.v); 0 }}
+        if drc < 0 && (drc + ixrc.rc as i64 ) < 0 { panic!("this would result in negative refcount")}
+        else { ixrc.rc = (ixrc.rc as i64 + drc) as usize;  ixrc.rc }}
+      else { println!("add_ref_ix warning: entry not found for {:?}", vhl); 0}}
+    else { println!("add_ref_ix warning: row not found for {:?}", vhl.v); 0 }}
 
   /// fetch the XVHL for the given xid (if we know it)
   fn get(&self, x:XID)->Option<XVHL> {
@@ -330,7 +332,7 @@ impl XVHLScaffold {
 
     // collect the list of nodes on row w that reference row v, and thus have to be moved
     // to row v. also decrement those refcounts as we find them.
-    let wmov0:Vec<(XHiLo,XWIP0,XWIP0)> = wtov(&rw, &mut rv);
+    let (wmov0,edec):(Vec<(XHiLo,XWIP0,XWIP0)>, Vec<XID>) = wtov(&rw, &mut rv);
 
     // convert the XWIP0::HL entries to XWIP1::NEW
     let mut wnix:i64 = 0; // next index for new node
@@ -427,8 +429,13 @@ impl XVHLScaffold {
 
     self.reclaim_nodes(vdel);
 
-    // TODO: [ commit eref changes ]
-        // it should be usize rather than i64 because nothing outside of these two rows
+    // [ commit edec/eref changes ]
+    if !(edec.is_empty() && eref.is_empty()) {
+      let mut sum:HashMap<XID, i64> = HashMap::new();
+      for &xid in eref.iter() { *sum.entry(xid).or_insert(0) += 1; }
+      for &xid in edec.iter() { *sum.entry(xid).or_insert(0) -= 1; }
+      for (xid, drc) in sum.iter() { self.add_ref_ix(*xid, *drc); }}
+    // it should be usize rather than i64 because nothing outside of these two rows
     // will ever have its refcount drop all the way to 0.
     // (each decref is something like (w?(v?a:b):(v?a:c))->(v?a:w?b:c) so we're just
     // merging two references into one, never completely deleting one).
@@ -483,7 +490,7 @@ enum XWIP1 { XID(XID), NEW(i64) }
 /// to move to row v. (that is, rows that have a reference to row v).
 /// rv is mutable here because we will decrease the refcount as we find
 /// each reference.
-fn wtov(rw:&XVHLRow, rv:&mut XVHLRow)->Vec<(XHiLo, XWIP0, XWIP0)> {
+fn wtov(rw:&XVHLRow, rv:&mut XVHLRow)->(Vec<(XHiLo, XWIP0, XWIP0)>, Vec<XID>) {
   // build a map of xid->hilo for row v, so we know every xid that branches on v,
   // and can quickly retrieve its high and lo branches.
   let mut vx:HashMap<XID,(XID,XID)> = HashMap::new();
@@ -502,12 +509,14 @@ fn wtov(rw:&XVHLRow, rv:&mut XVHLRow)->Vec<(XHiLo, XWIP0, XWIP0)> {
   // reference counts elsewhere in the graph can change (!!! really? they don't change in this step.),
   // but never drop to 0. if they did, then swapping the rows back would have to create new nodes elsewhere.
 
-  let child = |h:XID, l:XID|->XWIP0 {    // reference a node on/below row w, or create a node on row w
+  let mut edec:Vec<XID> = vec![];
+  // vv here indicates that both sides referenced v originally, so there is a chance for refcount changes.
+  let mut child = |h:XID, l:XID,vv:bool|->XWIP0 { // reference a node on/below row w, or create a node on row w
     let (hi, lo, inv) = if l.is_inv() {(!h, !l, true)} else {(h, l, false)};
     // hi == lo only when the match passes hi,hi or lo,lo. So: this is always a single external reference
     // that we've passed twice, and we're not really dropping a reference here.
     // No refcount changes happen outside rows v and w. (!!! at least in this step?)
-    if hi == lo { XWIP0::XID(if inv { !lo } else { lo }) } //
+    if hi == lo { if vv { edec.push(lo); } XWIP0::XID(if inv { !lo } else { lo }) }
     else if let Some(ixrc) = rw.hm.get(&XHiLo{ hi, lo}) { XWIP0::XID(if inv {!ixrc.ix} else {ixrc.ix}) }
     else if inv { XWIP0::HL(!hi, !lo) } else { XWIP0::HL(hi, lo) }};
 
@@ -530,7 +539,7 @@ fn wtov(rw:&XVHLRow, rv:&mut XVHLRow)->Vec<(XHiLo, XWIP0, XWIP0)> {
   //   The old children (on row v) may see their refcounts drop to 0.
 
   let mut wmov0: Vec<(XHiLo,XWIP0,XWIP0)> = vec![];
-  let mut new_v = |whl,ii,io,oi,oo| { wmov0.push((whl, child(ii,oi), child(io,oo))) };
+  let mut new_v = |whl,ii,io,oi,oo,vv| { wmov0.push((whl, child(ii,oi,vv), child(io,oo,vv))) };
 
   for whl in rw.hm.keys() {
     let (hi, lo) = whl.as_tup();
@@ -538,11 +547,11 @@ fn wtov(rw:&XVHLRow, rv:&mut XVHLRow)->Vec<(XHiLo, XWIP0, XWIP0)> {
       if xid.is_inv() { vx.get(&xid.raw()).cloned().map(|(h,l)| (!h,!l)) } else { vx.get(&xid).cloned() }};
     match (vget(hi), vget(lo)) {
       (None,          None         ) => {},  // independent of row v, so nothing to do.
-      (None,          Some((oi,oo))) => { new_v(*whl, hi, hi, oi, oo); vdec(lo) },
-      (Some((ii,io)), None         ) => { new_v(*whl, ii, io, lo, lo); vdec(hi) },
-      (Some((ii,io)), Some((oi,oo))) => { new_v(*whl, ii, io, oi, oo); vdec(hi); vdec(lo) }}}
+      (None,          Some((oi,oo))) => { new_v(*whl, hi, hi, oi, oo, false); vdec(lo) },
+      (Some((ii,io)), None         ) => { new_v(*whl, ii, io, lo, lo, false); vdec(hi) },
+      (Some((ii,io)), Some((oi,oo))) => { new_v(*whl, ii, io, oi, oo, true); vdec(hi); vdec(lo) }}}
 
-  wmov0 }
+  (wmov0, edec) }
 
 // -- debugger ------------------------------------------------------------
 
@@ -787,7 +796,13 @@ impl SubSolver for SwapSolver {
     // everything's ready now, so just do it!
     self.dx = XID::from_nid(ctx);
     self.rv = v;
-    self.sub().to_nid()}
+    let r  = self.sub().to_nid();
+
+    println!("-----> regrouping in top-down order");
+    let mut ord = self.dst.vids.clone(); ord.sort();
+    self.dst.regroup(ord.iter().cloned().map(|v| { let mut h = HashSet::new(); h.insert(v); h }).collect());
+    println!("-----> sorted vids: {:?}", self.dst.vids);
+    r }
 
   fn get_all(&self, ctx: NID, nvars: usize)->HashSet<Reg> {
 
