@@ -338,11 +338,12 @@ impl XVHLScaffold {
     let mut eref: Vec<XID> = vec![]; // external nodes to incref
     let mut resolve = |xw0|->XWIP1 {
       match xw0 {
+        // the child() function would have marked it as a XID if it was already in row w.
         XWIP0::XID(x) => { eref.push(x); XWIP1::XID(x) },
         XWIP0::HL(hi0,lo0) => {
-          // these are the new children on the w level. it may turn out that these already
-          // existed on w, in the set of nodes that did not refer to v. So either we incref
-          // the existing node, or we create a new node:
+          // these are the new children on the w level, so we are creating a new node.
+          // but: it's possible that multiple new nodes point to the same place.
+          // this pass ensures that all duplicates resolve to the same place.
           // TODO: this isn't really an IxRc since the xid is virtual
           let (hi,lo,inv) = if lo0.is_inv() { (!hi0, !lo0, true) } else { (hi0,lo0,false) };
           let x = match wnew.entry((hi, lo)) {
@@ -360,10 +361,9 @@ impl XVHLScaffold {
     for (whl, wip_hi, wip_lo) in wmov0 {
       // construct new child nodes on the w level, or add new references to external nodes:
       let (hi, lo) = (resolve(wip_hi), resolve(wip_lo));
-      // the lo branch should never be inverted:
-      // the lo-lo path doesn't change in a swap, and lo branches are always raw
-      // in the scaffold. (This means we only have to deal with inverted xids in)
-      // the newly-created hi branches.
+      // the lo branch should never be inverted, since the lo-lo path doesn't change in a swap,
+      // and lo branches are always raw in the scaffold.
+      // This means we only have to deal with inverted xids the newly-created hi branches.
       if let XWIP1::NEW(x) = lo { assert!(x >= 0, "unexpected !lo branch");}
       // delete the old node from row w. the newly created nodes don't depend on v, and
       // the node to delete does depend on v, so there's never a conflict here.
@@ -400,13 +400,13 @@ impl XVHLScaffold {
     // we now have a xid for each newly constructed (XWIP) child node on row w,
     // so go ahead and add them. we will also map the temp ix to the actual ix.
     let mut wipxid = vec![XID_O; wnix as usize];
+    debug_assert_eq!(wnix as usize, wnew.len(), "wnew.len != wnix");
     for ((hi,lo), ixrc0) in wnew.iter() {
-      let mut ixrc = *ixrc0;
-      let inv = ixrc0.ix.x < 0;
-      let wipix = if inv { !ixrc0.ix.x } else { ixrc0.ix.x };
-      ixrc.ix = xids[wipix as usize];  // map the temp xid -> true xid
-      wipxid[wipix as usize] = ixrc.ix; // remember for w2x, below.
-      assert!(!ixrc.ix.is_inv());
+      let mut ixrc = *ixrc0; // clone so we maintain the refcount
+      let inv = ixrc0.ix.x < 0; assert!(!inv);
+      let wipix = ixrc0.ix.x as usize;
+      ixrc.ix = xids[wipix];  // map the temp xid -> true xid
+      wipxid[wipix] = ixrc.ix; // remember for w2x, below.
       assert!(rw.hm.get(&(XHiLo{hi:*hi, lo:*lo})).is_none());
       rw.hm.insert(XHiLo{hi:*hi, lo:*lo}, ixrc);
       // and now update the master store:
