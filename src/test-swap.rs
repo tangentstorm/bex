@@ -183,3 +183,24 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   // = 1x!w?
   // = 0xw?!
   check_sub("wyx|wy|wx|xw", "w!wy?", 'y', "w0x?", "0xw?!")}
+
+// -- wtov ---------------------------------------------------------------------
+
+#[test] fn check_wtov_simple() {
+  let v = XID{ x: 1 };
+  let w = XID{ x: 2 };
+  let io = XHiLo{ hi: XID_I, lo: XID_O };
+  let mut rv = XVHLRow::new(); rv.hm.insert(io, IxRc{ ix:v, rc: 1 });
+  let mut rw = XVHLRow::new(); rw.hm.insert(io, IxRc{ ix:w, rc: 1 });
+  let res = wtov(&rv, &mut rw);
+  assert_eq!(0, res.len());}
+
+#[test] fn check_swap_merge() {
+  // the point here is that utuu! becomes uutu! after the swap
+  // so refcount of u should drop by 1.
+  // TODO: assert that the refcount of u actually drops by 1.
+  let mut xsd = XSDebug::new("tuvw");
+  let top:XID = xsd.xid("utv? uu!v? w?");
+  let v = xsd.cv[&'v'];
+  xsd.xs.swap(v);
+  assert_eq!(xsd.fmt(top), "utu!w? v? ")}
