@@ -182,7 +182,7 @@ impl fmt::Debug for NID { // for test suite output
 
 
 // scaffolding for moving ASTBase over to use NIDS
-const NOVAR:VID = (1<<27) as VID; // 134_217_728
+const NOVAR:VID = (1<<26) as VID; // 134_217_728
 const TOP:VID = (T>>32) as VID; // 536_870_912, // 1<<29, same as nid::T
 pub fn no_var(x:NID)->bool { var(x)==NOVAR }
 /// return a nid that is not tied to a variable
@@ -265,3 +265,8 @@ impl NID {
       1 => p!(&[0 ,1 ,4 ,5 ,2 ,3 ,6 ,7 ,8 ,9 ,12,13,10,11,14,15,16,17,20,21,18,19,22,23,24,25,28,29,26,27,30,31]),
       0 => p!(&[0 ,2 ,1 ,3 ,4 ,6 ,5 ,7 ,8 ,10,9 ,11,12,14,13,15,16,18,17,19,20,22,21,23,24,26,25,27,28,30,29,31]),
       _ => panic!("lifted input bit must be in {0,1,2,3}")}}}
+
+#[test] fn test_fun() {
+  assert!(!NID::var(1).is_fun(), "var(1) should not be fun.");
+  assert!(!NID::vir(1).is_fun(), "vir(1) should not be fun.");
+  assert!(!NID::from_vid_idx(vid::NOV, 0).is_fun(), "idx var should not be fun");}
