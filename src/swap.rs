@@ -123,6 +123,7 @@ impl XVHLScaffold {
 
     println!("vids:{:?}", vids);
 
+    let mut rc: HashMap<XID, usize> = HashMap::new();
     let mut seen : HashMap<XVHL,usize> = HashMap::new();
     // validate the rows:
     for (i, &x) in self.vhls.iter().enumerate() {
@@ -154,10 +155,20 @@ impl XVHLScaffold {
         if let Some(ixrc) = self.rows[&x.v].hm.get(&XHiLo{ hi:x.hi, lo:x.lo }) {
           let ix = ixrc.ix.raw().x as usize;
           assert_eq!(ix, i, "hashmap stored wrong index ({:?}) for vhl[{}]: {:?} ", ixrc.ix, i, x)}
-        else { panic!("no hashmap reference to vhl[{}]: {:?}", i, x) }}
+        else { panic!("no hashmap reference to vhl[{}]: {:?}", i, x) }
 
-        // TODO: check reference counts
-        }
+        // update ref counts
+        *rc.entry(x.hi.raw()).or_insert(0)+=1;
+        *rc.entry(x.lo.raw()).or_insert(0)+=1;}}
+
+      // check internal refcounts vs the ones we just calculated
+      for (_v, row) in self.rows.iter() {
+        for (_hl, ixrc) in row.hm.iter() {
+          // println!("testing refcount {:?} for v:{:?} hl:{:?}", ixrc, v, hl);
+          let expect = *rc.get(&ixrc.ix).unwrap_or(&0);
+          assert!(ixrc.rc >= expect, "refcount was too low for xid: {:?} (expected {}, got {}",
+            ixrc.ix, expect, ixrc.rc);}}
+
       println!("@/validate")}
 
 
@@ -190,14 +201,13 @@ impl XVHLScaffold {
   //   else { panic!("can't pop {} because it's not on top ({:?})", v, self.vids) }}
 
   /// add a reference to the given XVHL, inserting it into the row if necessary.
-  /// returns the external nid, and a flag indicating whether the pair was freshly added.
-  /// (if it was fresh, the scaffold needs to update the refcounts for each leg)
+  /// returns the xid representing this xvhl triple.
   fn add_ref(&mut self, hl0:XVHL, rc:usize)->XID {
     let inv = hl0.lo.is_inv();
     let vhl = if inv { !hl0 } else { hl0 };
     if vhl == XVHL_O { return if inv { XID_I } else { XID_O }}
-    assert_ne!(vhl.hi, vhl.lo, "hi and lo should be different"); // to trigger traceback and find the culprit
-    // allocate a xid just in case
+    debug_assert_ne!(vhl.hi, vhl.lo, "hi and lo should be different"); // to trigger traceback
+    // allocate a xid just in case. if this isn't used, it'll just be used next time.
     let (alloc, alloc_new) = self.alloc_one();
     let row = self.rows.entry(vhl.v).or_insert_with(|| XVHLRow::new());
     let hl = vhl.hilo();
@@ -243,7 +253,7 @@ impl XVHLScaffold {
   /// down to the given row, by building rows of the corresponding
   /// binary tree. xids in the result will either be constants,
   /// branch on the limit var, or branch on some variable below it.
-  fn tbl(&self, top:XID, limit:Option<VID>)->Vec<XID> {
+  fn tbl(&mut self, top:XID, limit:Option<VID>)->Vec<XID> {
     let mut xs = vec![top];
     println!("tbl/xs: {:?}", xs);
     for (i,&x) in xs.iter().enumerate() { println!("  [{}]: x:{} = {:?}", i, x.x, self.get(x).unwrap())}
@@ -264,6 +274,7 @@ impl XVHLScaffold {
       println!("tbl/xs v:{:?}", v);
       for (i,&x) in xs.iter().enumerate() { println!("  [{}]: x:{} = {:?}", i, x.x, self.get(x).unwrap())}
       i-=1}
+    for &x in xs.iter() { self.add_ref_ix(x, 1); } // increment ref counts
     xs}
 
   /// Given a truth table, construct the corresponding bdd
@@ -277,8 +288,7 @@ impl XVHLScaffold {
         if lo == hi { self.dec_ref_ix(hi); lo } // 2 refs -> 1
         else {
           self.dec_ref_ix(hi); self.dec_ref_ix(lo);
-          let t = self.add_ref(XVHL{ v, hi, lo }, 1);
-          t } }).collect();
+          self.add_ref(XVHL{ v, hi, lo }, 1)} }).collect();
       println!("untbl/xs: {:?}", xs);
       if xs.len() == 1 { break }
       v = self.vid_above(v).expect("not enough vars in scaffold to untbl!"); }
@@ -354,6 +364,7 @@ impl XVHLScaffold {
               e.get().ix.x }
             Entry::Vacant(e) => {
               let x = wnix as i64; wnix += 1;
+              eref.push(hi); eref.push(lo);
               e.insert(IxRc{ ix:XID{x}, rc:1 });
               x }};
           XWIP1::NEW(if inv { !x } else { x }) }}};
@@ -405,6 +416,7 @@ impl XVHLScaffold {
     debug_assert_eq!(wnix as usize, wnew.len(), "wnew.len != wnix");
     for ((hi,lo), ixrc0) in wnew.iter() {
       let mut ixrc = *ixrc0; // clone so we maintain the refcount
+      debug_assert!(ixrc.rc > 0);
       let inv = ixrc0.ix.x < 0; assert!(!inv);
       let wipix = ixrc0.ix.x as usize;
       ixrc.ix = xids[wipix];  // map the temp xid -> true xid
@@ -722,7 +734,11 @@ impl SwapSolver {
     //    and q are quite small: < 2^n items where n = number of vars in
     //    the replacement. I expect n<16, since if n is too much higher than
     //    that, I expect this whole algorithm to break down anyway.
-    if p.len() < q.len() { p = p.iter().cycle().take(q.len()).cloned().collect() }
+
+    if p.len() < q.len() {
+      let old_p_len = p.len();
+      p = p.iter().cycle().take(q.len()).cloned().collect();
+      for i in old_p_len..p.len() { self.dst.add_ref_ix(p[i], 1); }}
     println!("p: {:?}", p);
     for (i, &x) in p.iter().enumerate() { println!("p[{}]: {:?}", i, self.dst.get(x).unwrap()) }
     println!("---------------");
@@ -730,7 +746,11 @@ impl SwapSolver {
     // 4. let r = the partial truth table for result at row rv.
     //    We're removing rv from p (and dst itself) here.
     let r:Vec<XID> = p.iter().zip(q.iter()).map(|(&pi,&qi)|
-      if self.dst.branch_var(pi) == self.rv { self.dst.follow(pi, qi) } else { pi }).collect();
+      if self.dst.branch_var(pi) == self.rv {
+        let xid = self.dst.follow(pi, qi);
+        self.dst.dec_ref_ix(pi);
+        self.dst.add_ref_ix(xid, 1); xid }
+      else { pi }).collect();
 
     // clear all rows above v in the scaffold, and then delete v
     println!("clearing vids={:?} down to rv={:?}", self.dst.vids, self.rv);
