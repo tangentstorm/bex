@@ -192,7 +192,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   let io = XHiLo{ hi: XID_I, lo: XID_O };
   let mut rv = XVHLRow::new(); rv.hm.insert(io, IxRc{ ix:v, rc: 1 });
   let mut rw = XVHLRow::new(); rw.hm.insert(io, IxRc{ ix:w, rc: 1 });
-  let (res, _edec) = wtov(&rv, &mut rw);
+  let (res, _edec) = wtov(&mut rw, &mut rv);
   assert_eq!(0, res.len());}
 
 #[test] fn check_swap_merge() {

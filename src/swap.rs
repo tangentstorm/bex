@@ -112,8 +112,13 @@ impl XVHLScaffold {
     println!("@validate: {}", msg);
     println!("${:?}", self.vids);
     println!("%{:?}", self.rows.keys().collect::<Vec<&VID>>());
-    for &x in self.vhls.iter() {
-      println!("^{},{:?},{:?}", x.v, x.hi, x.lo)}
+    for (i, &x) in self.vhls.iter().enumerate() {
+      let rc = if x.v == NOV { 0 }
+      else {
+        let ixrc = self.rows[&x.v].hm.get(&x.hilo()).unwrap();
+        assert_eq!(ixrc.ix.x, i as i64);
+        ixrc.rc};
+      println!("^{:03}: {} {:?} {:?}   (rc:{})", i, x.v, x.hi, x.lo, rc)}
 
     // vids must be unique:
     let mut vids:HashMap<VID, i64> = self.vids.iter().cloned().enumerate().map(|(i,v)|(v,i as i64)).collect();
@@ -342,7 +347,7 @@ impl XVHLScaffold {
 
     // collect the list of nodes on row w that reference row v, and thus have to be moved
     // to row v. also decrement those refcounts as we find them.
-    let (wmov0,edec):(Vec<(XHiLo,XWIP0,XWIP0)>, Vec<XID>) = wtov(&rw, &mut rv);
+    let (wmov0,edec):(Vec<(XHiLo,XWIP0,XWIP0)>, Vec<XID>) = wtov(&mut rw, &mut rv);
 
     // convert the XWIP0::HL entries to XWIP1::NEW
     let mut wnix:i64 = 0; // next index for new node
@@ -501,8 +506,8 @@ enum XWIP1 { XID(XID), NEW(i64) }
 /// given the rows from swap(), find all the nodes from row w that need
 /// to move to row v. (that is, rows that have a reference to row v).
 /// rv is mutable here because we will decrease the refcount as we find
-/// each reference.
-fn wtov(rw:&XVHLRow, rv:&mut XVHLRow)->(Vec<(XHiLo, XWIP0, XWIP0)>, Vec<XID>) {
+/// each reference, and rw is mutable because we may *increase* the refcount.
+fn wtov(rw:&mut XVHLRow, rv:&mut XVHLRow)->(Vec<(XHiLo, XWIP0, XWIP0)>, Vec<XID>) {
   // build a map of xid->hilo for row v, so we know every xid that branches on v,
   // and can quickly retrieve its high and lo branches.
   let mut vx:HashMap<XID,(XID,XID)> = HashMap::new();
@@ -522,6 +527,9 @@ fn wtov(rw:&XVHLRow, rv:&mut XVHLRow)->(Vec<(XHiLo, XWIP0, XWIP0)>, Vec<XID>) {
   // but never drop to 0. if they did, then swapping the rows back would have to create new nodes elsewhere.
 
   let mut edec:Vec<XID> = vec![];
+  let mut wmov0: Vec<(XHiLo,XWIP0,XWIP0)> = vec![];
+  let mut wref:Vec<XHiLo> = vec![];
+
   // vv here indicates that both sides referenced v originally, so there is a chance for refcount changes.
   let mut child = |h:XID, l:XID,vv:bool|->XWIP0 { // reference a node on/below row w, or create a node on row w
     let (hi, lo, inv) = if l.is_inv() {(!h, !l, true)} else {(h, l, false)};
@@ -529,7 +537,9 @@ fn wtov(rw:&XVHLRow, rv:&mut XVHLRow)->(Vec<(XHiLo, XWIP0, XWIP0)>, Vec<XID>) {
     // that we've passed twice, and we're not really dropping a reference here.
     // No refcount changes happen outside rows v and w. (!!! at least in this step?)
     if hi == lo { if vv { edec.push(lo); } XWIP0::XID(if inv { !lo } else { lo }) }
-    else if let Some(ixrc) = rw.hm.get(&XHiLo{ hi, lo}) { XWIP0::XID(if inv {!ixrc.ix} else {ixrc.ix}) }
+    else if let Some(ixrc) = rw.hm.get(&XHiLo{ hi, lo}) {
+      wref.push(XHiLo{hi,lo}); // rw can't be mutable here so remember to modify it later
+      XWIP0::XID(if inv {!ixrc.ix} else {ixrc.ix}) }
     else if inv { XWIP0::HL(!hi, !lo) } else { XWIP0::HL(hi, lo) }};
 
   let mut vdec = |xid:XID| {
@@ -550,7 +560,6 @@ fn wtov(rw:&XVHLRow, rv:&mut XVHLRow)->(Vec<(XHiLo, XWIP0, XWIP0)>, Vec<XID>) {
   //      These may be new nodes, or may already exist in group I.
   //   The old children (on row v) may see their refcounts drop to 0.
 
-  let mut wmov0: Vec<(XHiLo,XWIP0,XWIP0)> = vec![];
   let mut new_v = |whl,ii,io,oi,oo,vv| { wmov0.push((whl, child(ii,oi,vv), child(io,oo,vv))) };
 
   for whl in rw.hm.keys() {
@@ -563,6 +572,7 @@ fn wtov(rw:&XVHLRow, rv:&mut XVHLRow)->(Vec<(XHiLo, XWIP0, XWIP0)>, Vec<XID>) {
       (Some((ii,io)), None         ) => { new_v(*whl, ii, io, lo, lo, false); vdec(hi) },
       (Some((ii,io)), Some((oi,oo))) => { new_v(*whl, ii, io, oi, oo, true); vdec(hi); vdec(lo) }}}
 
+  for hl in wref.iter() { rw.hm.get_mut(hl).unwrap().rc += 1 }
   (wmov0, edec) }
 
 // -- debugger ------------------------------------------------------------
