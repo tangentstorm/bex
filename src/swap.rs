@@ -797,6 +797,16 @@ impl SwapSolver {
     // 6. garbage collect (TODO?) and return result
     self.dx }} // sub, SwapSolver
 
+
+fn fun_tbl(f:NID)->Vec<XID> {
+  assert!(f.is_fun(), "can't convert non-fun nid to table");
+  let ar = f.arity().unwrap();
+  let ft = f.tbl().unwrap();
+  let mut tbl = vec![XID_O;(1<<ar) as usize];
+  let end = (1<<ar)-1;
+  for i in 0..=end { if ft & (1<<i) != 0 { tbl[end-i as usize] = XID_I; }}
+  tbl }
+
 impl SubSolver for SwapSolver {
 
   fn init(&mut self, v: VID)->NID {
@@ -811,16 +821,13 @@ impl SubSolver for SwapSolver {
       format!("{:?}",v), format!("{:?}", ops), format!("{:?}", rpn));
 
     let f = rpn.pop().unwrap(); // guaranteed by norm() to be a fun-nid
-    let ar = f.arity().unwrap();
-    let ft = f.tbl().unwrap();
 
     // so now, src.vids is just the raw input variables (probably virtual ones).
     self.src = XVHLScaffold::new();
     for nid in rpn.iter() { assert!(nid.is_var()); self.src.push(nid.vid()); }
 
     // untbl the function to give us the full BDD of our substitution.
-    let mut tbl = vec![XID_O;(1<<ar) as usize];
-    for i in 0..(1<<ar) { if ft & (1<<i) != 0 { tbl[i as usize] = XID_I; }}
+    let tbl = fun_tbl(f);
     self.sx = self.src.untbl(tbl, None);
 
     // everything's ready now, so just do it!
@@ -828,10 +835,10 @@ impl SubSolver for SwapSolver {
     self.rv = v;
     let r  = self.sub().to_nid();
 
-    println!("-----> regrouping in top-down order");
-    let mut ord = self.dst.vids.clone(); ord.sort();
-    self.dst.regroup(ord.iter().cloned().map(|v| { let mut h = HashSet::new(); h.insert(v); h }).collect());
-    println!("-----> sorted vids: {:?}", self.dst.vids);
+    // println!("-----> regrouping in top-down order");
+    // let mut ord = self.dst.vids.clone(); ord.sort();
+    // self.dst.regroup(ord.iter().rev().cloned().map(|v| { let mut h = HashSet::new(); h.insert(v); h }).collect());
+    // println!("-----> sorted vids: {:?}", self.dst.vids);
     r }
 
   fn get_all(&self, ctx: NID, nvars: usize)->HashSet<Reg> {
