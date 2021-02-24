@@ -301,7 +301,12 @@ macro_rules! find_factors {
   use {anf::ANFBase, int::{X4,X8}};
   find_factors!(ANFBase, X4, X8, 210, vec![(14,15)]); }
 
-/// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
+/// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
+#[test] pub fn test_tiny_swap() {
+  use {swap::SwapSolver, int::{X4,X8}};
+  find_factors!(SwapSolver, X4, X8, 210, vec![(14,15)]); }
+
+  /// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
 #[test] pub fn test_multi_bdd() {
   use {bdd::BDDBase, int::{X4,X8}};
   find_factors!(BDDBase, X4, X8, 30, vec![(2,15), (3,10), (5,6)]); }
