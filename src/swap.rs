@@ -3,6 +3,7 @@
 /// It adjusts the input variable ordering by swapping adjacent inputs until the
 /// one to be replaced next is at the top of the BDD. The actual replacement work
 /// at each step then only involves the top three rows.
+use base::GraphViz;
 use hashbrown::{HashMap, hash_map::Entry, HashSet};
 use {vid::VID, vid::NOV};
 use {solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops, std::path::Path, base::Base};
@@ -487,6 +488,38 @@ impl XVHLScaffold {
           // now drag the misplaced row down
           while rc > lc { rc -= 1; self.swap(self.vids[rc]) }}}}}}
 
+
+// -- graphviz ----------------------------------------------------------
+
+impl GraphViz for XVHLScaffold {
+  fn write_dot(&self, _:NID, wr: &mut dyn std::fmt::Write) {
+    // TODO: show only the given nid, instead of the whole scaffold
+    // assert_eq!(o, NID::o(), "can't visualize individual nids yet. pass O for now");
+    macro_rules! w { ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap(); }}
+    w!("digraph XVHL {{");
+    w!("subgraph head {{ h1[shape=plaintext; label=\"XVHL\"] }}");
+    w!("  {{rank=same XO XI}}");
+    w!("  XO[label=⊥; shape=square];");
+    w!("  XI[label=⊤; shape=square];");
+    w!("node[shape=circle];");
+    for ev in self.vids.iter().rev() {
+      let row = &self.rows[ev];
+      if !row.hm.is_empty() {
+        write!(wr, "{{rank=same").unwrap();
+        for ixrc in row.hm.values() { write!(wr, " \"{:?}\"", ixrc.ix);}
+        w!("}}") }
+      for (hl,ixrc) in row.hm.iter() {
+        let x = ixrc.ix;
+        w!("  \"{:?}\"[label=\"{}\"];", x, ev);  // draw the node itself
+        let arrow = |n:XID| if n.is_const() || !n.is_inv() { "normal" } else { "odot" };
+        let sink = |n:XID| if n.is_const() { n } else { n.raw() };
+        w!("edge[style=solid, arrowhead={}];", arrow(hl.hi));
+        w!("  \"{:?}\"->\"{:?}\";", x, sink(hl.hi));
+        w!("edge[style=dashed, arrowhead={}];", arrow(hl.lo));
+        w!("  \"{:?}\"->\"{:?}\";", x, sink(hl.lo)); }}
+    w!("}}"); }}
+
+
 // ---- swap worker -----------------------------------------------------
 
 // helpers to track which new nodes are to be created.
@@ -885,7 +918,7 @@ impl SubSolver for SwapSolver {
 
   fn status(&self) -> String { "".to_string() } // TODO
   fn dump(&self, _path: &Path, _note: &str, _step: usize, _old: NID, _vid: VID, _ops: &Ops, _new: NID) {
-    // TODO: SubSolver::dump()
+    self.dst.save_dot(_new, format!("xvhl-{:04}.dot", _step).as_str());
   }
 }
 
