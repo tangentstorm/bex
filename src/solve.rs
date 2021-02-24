@@ -110,9 +110,10 @@ impl<'a, S:SubSolver> Progress<S> for ProgressReport<'a> {
     if step.trailing_zeros() >= 5 { println!("step, millis, change, newtop"); }
     if self.save_dot && (step.trailing_zeros() >= 5) || (step==446)
     { // on really special occasions, output a diagram
-      println!("TODO: re-enable save_dot")
-      // dest.save_dot(new, format!("{}-{:04}.dot", self.prefix, step).as_str());
-    } }
+      let note = &dest.status();
+      let path = Path::new("."); // todo
+      let ops = &Ops::RPN(vec![]); // todo
+      dest.dump(path, note, step, oldtop.n, newtop.n.vid(), ops, newtop.n); }}
 
   fn on_done(&self, _src:&RawASTBase, _dest: &mut S, _newtop:DstNid) {
     println!("total time: {} ms", self.millis) }}
