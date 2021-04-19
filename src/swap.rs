@@ -348,21 +348,14 @@ impl XVHLScaffold {
     let mut worker = SwapWorker::new(rv,rw);
     worker.find_movers0();
     worker.find_movers1();
-    worker.mark_garbage();
 
     // If we are deleting from v and adding to w, we can re-use the xids.
     // otherwise, allocate some new xids.
-    let xids: Vec<XID> = {
-      let have = worker.vdel.len();
-      let need = worker.wnew.len(); assert_eq!(need, worker.wnix as usize);
-      if need <= have {
-        let tmp = worker.vdel.split_off(need);
-        let res = worker.vdel; worker.vdel = tmp;
-        res }
-      else {
-        let mut res = worker.vdel; worker.vdel = vec![];
-        res.extend(self.alloc(need-have));
-        res }};
+    let xids = {
+      let (vdel, mut xids, needed) = worker.recycle();
+      if needed > 0 { xids.extend(self.alloc(needed)) };
+      self.reclaim_nodes(vdel);
+      xids };
 
     // [commit wnew]
     // we now have a xid for each newly constructed (XWIP) child node on row w,
@@ -393,8 +386,6 @@ impl XVHLScaffold {
       debug_assert_ne!(hi, lo, "hi=lo when committing wtov");
       worker.rv.hm.insert(XHiLo{hi, lo}, *ixrc);
       self.vhls[ixrc.ix.x as usize] = XVHL{ v, hi, lo }; }
-
-    self.reclaim_nodes(worker.vdel);
 
     // [ commit edec/eref changes ]
     if !(worker.edec.is_empty() && worker.eref.is_empty()) {
@@ -497,9 +488,6 @@ struct SwapWorker {
   /// external nodes to incref
   eref: Vec<XID>,
 
-  /// nodes to remove from row v
-  vdel: Vec<XID>,
-
   /// work in progress for nodes moving from row w to row v.
   wmov0: Vec<(XHiLo,XWIP0,XWIP0)>,
   /// wip for new children on row v.
@@ -513,7 +501,7 @@ struct SwapWorker {
 }
 impl SwapWorker {
   fn new(rv:XVHLRow, rw:XVHLRow )->Self {
-    SwapWorker{ rv, rw, edec:vec![], eref:vec![], vdel: vec![],
+    SwapWorker{ rv, rw, edec:vec![], eref:vec![],
       wmov0:vec![], wtov:vec![], wnew:HashMap::new(), wnix:0 } }
 
   /// collect the list of nodes on row w that reference row v, and thus have to be moved
@@ -561,17 +549,34 @@ impl SwapWorker {
       // but we can make a list of the work to be done:
       self.wtov.push((ixrc, hi, lo)); }}
 
-  /// mark garbage on row v. these won't conflict with .wtov because we will never
+  /// remove garbage from row v. these won't conflict with .wtov because we will never
   /// add a *completely* new node on row v - only move existing nodes from w, and
   /// these will never match existing nodes on v because at least one leg always
   /// points at w (and this wasn't possible before the lift). But we may need to delete
   /// nodes because the rc dropped to 0 (when the node was only referenced by row w).
-  fn mark_garbage(&mut self) {
-    let mut vdel = std::mem::replace(&mut self.vdel, vec![]);
+  fn recycle(&mut self)->(Vec<XID>, Vec<XID>, usize) {
+
+    // vdel contains xids that the scaffold should delete.
+    let mut vdel: Vec<XID> = vec![];
     self.rv.hm.retain(|_, ixrc| {
       if ixrc.rc == 0 { vdel.push(ixrc.ix); false }
       else { true }});
-    self.vdel = vdel; }
+
+    let mut needed = 0; // in case there are more new nodes than old trash
+
+    // vmod reclaims xids from vdel that can be recycled
+    let vmod: Vec<XID> = {
+      let have = vdel.len();
+      let need = self.wnew.len(); assert_eq!(need, self.wnix as usize);
+      if need <= have {
+        let tmp = vdel.split_off(need);
+        let res = vdel; vdel = tmp;
+        res }
+      else {
+        let mut res = vdel; vdel = vec![];
+        needed = need-have;
+        res }};
+    (vdel,vmod,needed)}
 
 }
 
