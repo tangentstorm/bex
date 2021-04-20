@@ -104,13 +104,14 @@ pub struct XVHLScaffold {
   vhls: Vec<XVHL>,
   rows: HashMap<VID, XVHLRow> }
 
+
+
+
 impl XVHLScaffold {
   fn new()->Self { XVHLScaffold{ vids:vec![], vhls:vec![XVHL_O], rows: HashMap::new() } }
 
-  /// validate that this scaffold is well formed. (this is for debugging)
-  pub fn validate(&self, msg: &str) {
-
-    println!("@validate: {}", msg);
+  pub fn dump(&self, msg:&str) {
+    println!("@dump: {}", msg);
     println!("${:?}", self.vids);
     println!("%{:?}", self.rows.keys().collect::<Vec<&VID>>());
     for (i, &x) in self.vhls.iter().enumerate() {
@@ -120,48 +121,54 @@ impl XVHLScaffold {
         assert_eq!(ixrc.ix.x, i as i64);
         ixrc.rc};
       println!("^{:03}: {} {:?} {:?}   (rc:{})", i, x.v, x.hi, x.lo, rc)}
+    println!("@/dump");}
+
+  /// validate that this scaffold is well formed. (this is for debugging)
+  pub fn validate(&self, msg:&str) {
+    if let Err(e) = self.is_valid() {
+      self.dump(msg); panic!(e) }}
+
+  fn is_valid(&self)->std::result::Result<(), String> {
 
     // vids must be unique:
     let mut vids:HashMap<VID, i64> = self.vids.iter().cloned().enumerate().map(|(i,v)|(v,i as i64)).collect();
-    assert_eq!(vids.len(), self.vids.len(), "duplicate vid(s) in list: {:?}", self.vids);
-    assert_eq!(vids.len(), self.rows.len(), "vids and rows should have the same len()");
+    if !(vids.len()==self.vids.len()) { return Err(format!("duplicate vid(s) in list: {:?}", self.vids))}
+    if !(vids.len()==self.rows.len()) { return Err("vids and rows should have the same len()".to_string()) }
     vids.insert(NOV, -1);
-
-    println!("vids:{:?}", vids);
 
     let mut rc: HashMap<XID, usize> = HashMap::new();
     let mut seen : HashMap<XVHL,usize> = HashMap::new();
     // validate the rows:
     for (i, &x) in self.vhls.iter().enumerate() {
       // the vid should be in the scaffold, or cleared out to indicate a blank row.
-      assert!(vids.contains_key(&x.v), "invalid v for vhls[{}]: {}", i, x.v);
+      if !vids.contains_key(&x.v) { return Err(format!("invalid v for vhls[{}]: {}", i, x.v))}
       // the lo branch should not be inverted.
-      assert!(!x.lo.is_inv(), "found inverted lo branch in vhls[{}]: {:?}", i, x);
+      if x.lo.is_inv() {return Err(format!("found inverted lo branch in vhls[{}]: {:?}", i, x))}
 
       // with the exception of garbage / O :
       if x.v != NOV {
         // the lo branch should be different from the hi branch
-        assert_ne!(x.lo, x.hi, "unmerged branches in vhl[{}]: {:?}", i, x);
+        if x.lo==x.hi { return Err(format!("unmerged branches in vhl[{}]: {:?}", i, x)) }
 
         let hi = self.get(x.hi.raw()).expect("hi branch points nowhere");
         let lo = self.get(x.lo.raw()).expect("lo branch points nowhere");
 
-        if hi.v == NOV && x.hi.raw() != XID_O { panic!("hi branch to garbage-collected node")}
-        if lo.v == NOV && x.lo.raw() != XID_O { panic!("lo branch to garbage-collected node")}
+        if hi.v == NOV && x.hi.raw() != XID_O { return Err("hi branch to garbage-collected node".to_string())}
+        if lo.v == NOV && x.lo.raw() != XID_O { return Err("lo branch to garbage-collected node".to_string())}
 
         // the hi and lo branches should point "downward"
-        assert!(vids[&lo.v] < vids[&x.v], "upward lo branch @vhl[{}]: {:?}", i, x);
-        assert!(vids[&hi.v] < vids[&x.v], "upward hi branch @vhl[{}]: {:?}", i, x);
+        if !(vids[&lo.v] < vids[&x.v]) { return Err(format!("upward lo branch @vhl[{}]: {:?}", i, x))}
+        if !(vids[&hi.v] < vids[&x.v]) { return Err(format!("upward hi branch @vhl[{}]: {:?}", i, x))};
 
         // there should be no duplicate entries.
-        if let Some(j) = seen.get(&x) { panic!("vhl[{}] is a duplicate of vhl[{}]: {:?}", i, j, x) }
+        if let Some(j) = seen.get(&x) { return Err(format!("vhl[{}] is a duplicate of vhl[{}]: {:?}", i, j, x)) }
         else { seen.insert(x, i); }
 
         // there should be a hashmap entry pointing back to the item:
         if let Some(ixrc) = self.rows[&x.v].hm.get(&XHiLo{ hi:x.hi, lo:x.lo }) {
           let ix = ixrc.ix.raw().x as usize;
-          assert_eq!(ix, i, "hashmap stored wrong index ({:?}) for vhl[{}]: {:?} ", ixrc.ix, i, x)}
-        else { panic!("no hashmap reference to vhl[{}]: {:?}", i, x) }
+          if ix!=i {return Err(format!("hashmap stored wrong index ({:?}) for vhl[{}]: {:?} ", ixrc.ix, i, x))}}
+        else { return Err(format!("no hashmap reference to vhl[{}]: {:?}", i, x)) }
 
         // update ref counts
         *rc.entry(x.hi.raw()).or_insert(0)+=1;
@@ -172,10 +179,10 @@ impl XVHLScaffold {
         for (_hl, ixrc) in row.hm.iter() {
           // println!("testing refcount {:?} for v:{:?} hl:{:?}", ixrc, v, hl);
           let expect = *rc.get(&ixrc.ix).unwrap_or(&0);
-          assert!(ixrc.rc >= expect, "refcount was too low for xid: {:?} (expected {}, got {}",
-            ixrc.ix, expect, ixrc.rc);}}
-
-      println!("@/validate")}
+          if !(ixrc.rc >= expect) {
+            return Err(format!("refcount was too low for xid: {:?} (expected {}, got {}",
+              ixrc.ix, expect, ixrc.rc)) }}}
+      Ok(())}
 
 
   /// return the index (height) of the given variable within the scaffold (if it exists)
