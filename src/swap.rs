@@ -8,6 +8,7 @@ use hashbrown::{HashMap, hash_map::Entry, HashSet};
 use {vid::VID, vid::NOV};
 use {solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops, std::path::Path, base::Base};
 use std::fmt;
+use std::cell::RefCell;
 
 /// XID: An index-based unique identifier for nodes.
 ///
@@ -95,17 +96,19 @@ We need to map:
   because we want to frequently swap out whole rows of variables.
   we'll call this XVHLRow
 */
+#[derive(Clone)]
 struct XVHLRow { hm: HashMap<XHiLo, IxRc> }
 impl XVHLRow { fn new()->Self {XVHLRow{ hm: HashMap::new() }}}
 
 /// The scaffold itself contains the master list of records (vhls) and the per-row index
+#[derive(Clone)]
 pub struct XVHLScaffold {
   vids: Vec<VID>,
   vhls: Vec<XVHL>,
   rows: HashMap<VID, XVHLRow> }
 
-
-
+// snapshot used for debugging
+thread_local! { static SNAPSHOT : RefCell<XVHLScaffold> = RefCell::new(XVHLScaffold::new()) }
 
 impl XVHLScaffold {
   fn new()->Self { XVHLScaffold{ vids:vec![], vhls:vec![XVHL_O], rows: HashMap::new() } }
@@ -126,7 +129,12 @@ impl XVHLScaffold {
   /// validate that this scaffold is well formed. (this is for debugging)
   pub fn validate(&self, msg:&str) {
     if let Err(e) = self.is_valid() {
-      self.dump(msg); panic!(e) }}
+      println!("==== ERROR: VALIDATION FAILED. ====");
+      SNAPSHOT.with(|s| s.borrow().dump("{ last valid snapshot }"));
+      println!("===================================");
+      self.dump(msg);
+      panic!(e)}
+    else { SNAPSHOT.with(|s| *s.borrow_mut() = self.clone())}}
 
   fn is_valid(&self)->std::result::Result<(), String> {
 
