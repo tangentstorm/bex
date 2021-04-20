@@ -357,35 +357,9 @@ impl XVHLScaffold {
       self.reclaim_nodes(vdel);
       xids };
 
-    // [commit wnew]
-    // we now have a xid for each newly constructed (XWIP) child node on row w,
-    // so go ahead and add them. we will also map the temp ix to the actual ix.
-    let mut wipxid = vec![XID_O; worker.wnix as usize];
-    debug_assert_eq!(worker.wnix as usize, worker.wnew.len(), "wnew.len != wnix");
-    for ((hi,lo), ixrc0) in worker.wnew.iter() {
-      let mut ixrc = *ixrc0; // clone so we maintain the refcount
-      debug_assert!(ixrc.rc > 0);
-      let inv = ixrc0.ix.x < 0; assert!(!inv);
-      let wipix = ixrc0.ix.x as usize;
-      ixrc.ix = xids[wipix];  // map the temp xid -> true xid
-      wipxid[wipix] = ixrc.ix; // remember for w2x, below.
-      assert!(worker.rw.hm.get(&(XHiLo{hi:*hi, lo:*lo})).is_none());
-      worker.rw.hm.insert(XHiLo{hi:*hi, lo:*lo}, ixrc);
-      // and now update the master store:
-      debug_assert_ne!(hi, lo, "hi=lo when committing wnew");
-      self.vhls[ixrc.ix.x as usize] = XVHL{ v:w, hi:*hi, lo:*lo }; }
-
-    // [commit wtov]
-    // with those nodes created, we can finish moving the nodes from w to v.
-    let w2x = |wip:&XWIP1| {
-      match wip {
-        XWIP1::XID(x) => *x,
-        XWIP1::NEW(x) => { if *x<0 { !wipxid[!*x as usize]  } else { wipxid[*x as usize ]}}}};
-    for (ixrc, wip_hi, wip_lo) in worker.wtov.iter() {
-      let (hi, lo) = (w2x(wip_hi), w2x(wip_lo));
-      debug_assert_ne!(hi, lo, "hi=lo when committing wtov");
-      worker.rv.hm.insert(XHiLo{hi, lo}, *ixrc);
-      self.vhls[ixrc.ix.x as usize] = XVHL{ v, hi, lo }; }
+    let (mods, wipxid) = worker.wnew_mods(xids);
+    for (ix, hi, lo) in mods { self.vhls[ix] = XVHL{ v:w, hi, lo } }
+    for (ix, hi, lo) in worker.wtov_mods(wipxid) { self.vhls[ix] = XVHL{ v, hi, lo } }
 
     // [ commit edec/eref changes ]
     if !(worker.edec.is_empty() && worker.eref.is_empty()) {
@@ -397,6 +371,7 @@ impl XVHLScaffold {
     // will ever have its refcount drop all the way to 0.
     // (each decref is something like (w?(v?a:b):(v?a:c))->(v?a:w?b:c) so we're just
     // merging two references into one, never completely deleting one).
+    // !! that's not true. we can also decref because we deleted a node whose refcount was 0
 
     // finally, put the rows back where we found them:
     self.rows.insert(v, worker.rv);
@@ -494,15 +469,12 @@ struct SwapWorker {
   wtov: Vec<(IxRc,XWIP1,XWIP1)>,
 
   /// new parent nodes to create on row w
-  wnew: HashMap<(XID,XID), IxRc>,
+  wnew: HashMap<(XID,XID), IxRc> }
 
-  /// next index for new node
-  wnix: i64
-}
 impl SwapWorker {
   fn new(rv:XVHLRow, rw:XVHLRow )->Self {
     SwapWorker{ rv, rw, edec:vec![], eref:vec![],
-      wmov0:vec![], wtov:vec![], wnew:HashMap::new(), wnix:0 } }
+      wmov0:vec![], wtov:vec![], wnew:HashMap::new() } }
 
   /// collect the list of nodes on row w that reference row v, and thus have to be moved
   /// to row v. also decrement those refcounts as we find them.
@@ -514,6 +486,7 @@ impl SwapWorker {
   /// Converts the XWIP0::HL entries to XWIP1::NEW. clears out .wmov0,
   /// and populates .wtov, .wnew, and .eref
   fn find_movers1(&mut self) {
+    let mut wnix:i64 = 0;   /// next index for new node
     for (whl, wip_hi, wip_lo) in std::mem::replace(&mut self.wmov0, vec![]) {
       let (hi, lo) = {
         let mut resolve = |xw0:XWIP0|->XWIP1 {
@@ -531,7 +504,7 @@ impl SwapWorker {
                   e.get_mut().rc += 1;
                   e.get().ix.x }
                 Entry::Vacant(e) => {
-                  let x = self.wnix as i64; self.wnix += 1;
+                  let x = wnix; wnix += 1;
                   self.eref.push(hi); self.eref.push(lo);
                   e.insert(IxRc{ ix:XID{x}, rc:1 });
                   x }};
@@ -567,7 +540,7 @@ impl SwapWorker {
     // vmod reclaims xids from vdel that can be recycled
     let vmod: Vec<XID> = {
       let have = vdel.len();
-      let need = self.wnew.len(); assert_eq!(need, self.wnix as usize);
+      let need = self.wnew.len();
       if need <= have {
         let tmp = vdel.split_off(need);
         let res = vdel; vdel = tmp;
@@ -577,6 +550,42 @@ impl SwapWorker {
         needed = need-have;
         res }};
     (vdel,vmod,needed)}
+
+  /// add newly created child nodes on row w, and
+  /// return the list of changes to make to the master scaffold,
+  /// and a vector mapping the wip ix to the final xid
+  fn wnew_mods(&mut self, xids:Vec<XID>)->(Vec<(usize, XID, XID)>, Vec<XID>) {
+    let mut res = vec![];
+    let mut wipxid = vec![XID_O; self.wnew.len()];
+    for ((hi,lo), ixrc0) in self.wnew.iter() {
+      let mut ixrc = *ixrc0; // clone so we maintain the refcount
+      debug_assert!(ixrc.rc > 0);
+      let inv = ixrc0.ix.x < 0; assert!(!inv);
+      let wipix = ixrc0.ix.x as usize;
+      ixrc.ix = xids[wipix];  // map the temp xid -> true xid
+      wipxid[wipix] = ixrc.ix; // remember for w2x, below.
+      assert!(self.rw.hm.get(&(XHiLo{hi:*hi, lo:*lo})).is_none());
+      self.rw.hm.insert(XHiLo{hi:*hi, lo:*lo}, ixrc);
+      // and now update the master store:
+      debug_assert_ne!(hi, lo, "hi=lo when committing wnew");
+      res.push((ixrc.ix.x as usize, *hi, *lo)); }
+    (res, wipxid)}
+
+  /// move the dependent nodes from row w to row v, and
+  /// return the list of changes to make to the master scaffold.
+  /// wipxid argument is the mapping returned by wnew_mods
+  fn wtov_mods(&mut self, wipxid:Vec<XID>)->Vec<(usize, XID, XID)> {
+    let mut res = vec![];
+    let w2x = |wip:&XWIP1| {
+      match wip {
+        XWIP1::XID(x) => *x,
+        XWIP1::NEW(x) => { if *x<0 { !wipxid[!*x as usize]  } else { wipxid[*x as usize ]}}}};
+    for (ixrc, wip_hi, wip_lo) in self.wtov.iter() {
+      let (hi, lo) = (w2x(wip_hi), w2x(wip_lo));
+      debug_assert_ne!(hi, lo, "hi=lo when committing wtov");
+      self.rv.hm.insert(XHiLo{hi, lo}, *ixrc);
+      res.push((ixrc.ix.x as usize, hi, lo)); }
+    res}
 
 }
 
