@@ -115,8 +115,7 @@ impl<T:Base> Base for Simplify<T> {
       if a == nid::O { nid::O }
       else if a == nid::I { b }
       else if !a == b { nid::O }
-      else { println!("dispatching to original AND"); self.base.and(x, y) }}
-  }
+      else { self.base.and(x, y) }}}
 }
 
 
