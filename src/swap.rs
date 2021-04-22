@@ -116,7 +116,13 @@ impl XVHLScaffold {
   pub fn dump(&self, msg:&str) {
     println!("@dump: {}", msg);
     println!("${:?}", self.vids);
+    let max = {
+      let mut max0 = self.vhls.len();
+        for (i, &x) in self.vhls.iter().enumerate().rev() {
+            if x.v != NOV { max0 = i+1; break }}
+        max0};
     for (i, &x) in self.vhls.iter().enumerate() {
+      if i == max { break }
       let rc = if x.v == NOV { 0 }
       else {
         let ixrc = self.rows[&x.v].hm.get(&x.hilo()).unwrap();
