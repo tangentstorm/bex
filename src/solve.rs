@@ -327,3 +327,14 @@ macro_rules! find_factors {
   let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
                       (6, 35), (7, 30), (10,21), (14,15)];
   find_factors!(BDDBase, X8, X16, 210, expected); }
+
+/// same test using the swap solver
+/// `time cargo test --lib --features slowtests test_small_swap`
+/// timing on rincewind is 5m13.901s as of 4/23/2021, so the swap
+/// solver running on 1 core is more than 2x faster than old solver on 6!
+#[cfg(feature="slowtests")]
+#[test] pub fn test_small_swap() {
+  use {swap::SwapSolver, int::{X8,X16}};
+  let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
+                      (6, 35), (7, 30), (10,21), (14,15)];
+  find_factors!(SwapSolver, X8, X16, 210, expected); }

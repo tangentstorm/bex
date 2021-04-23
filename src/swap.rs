@@ -388,7 +388,7 @@ impl XVHLScaffold {
     // finally, put the rows back where we found them:
     self.rows.insert(v, worker.rv);
     self.rows.insert(w, worker.rw);
-    #[cfg(test)] { self.validate(format!("after swapping {:?} and {:?}.",v,w).as_str()); }}
+    #[cfg(test)] { self.validate(format!("after swapping v={:?} and w={:?}.",v,w).as_str()); }}
 
   /// Reclaim the records for a list of garbage collected nodes.
   // TODO: add to some kind of linked list so they're easier to find.
@@ -464,6 +464,20 @@ enum XWIP0 { XID(XID), HL(XID,XID) }
 /// xids or mapped to a new one
 #[derive(Debug, Clone, Copy)]
 enum XWIP1 { XID(XID), NEW(i64) }
+
+// 0: swap the rows. (lift rv above rw)
+//    v was independent before, so we leave it alone except for gc.
+//    (but we might wind up using it later, so we do the gc step last.)
+// 1: for each node n in row w:
+//    - if n.rc=0, delete from hashmap and yield    | Delete(n.nid)
+//    - if either leg points to row v:
+//        decref the old node(s) on v
+//        add new node(s) on w with rc=1            | Create()   { or incref if duplicates? }
+//          incref the hi/lo nodes.
+//        move n to row v, copying n.rc, and yield  | Update(n.nid, v,h,l)
+//    - else, leave n alone.
+// 2: for n in row v:
+//    if n.rc==0, Del(n.nid) and DecRef(n.hi, n.lo)
 
 
 struct SwapWorker {
@@ -597,11 +611,7 @@ impl SwapWorker {
       debug_assert_ne!(hi, lo, "hi=lo when committing wtov");
       self.rv.hm.insert(XHiLo{hi, lo}, *ixrc);
       res.push((ixrc.ix.x as usize, hi, lo)); }
-    res}
-
-}
-
-
+    res}}
 
 /// given the rows from swap(), find all the nodes from row w that need
 /// to move to row v. (that is, rows that have a reference to row v).
@@ -630,13 +640,18 @@ fn wtov(rw:&mut XVHLRow, rv:&mut XVHLRow)->(Vec<(XHiLo, XWIP0, XWIP0)>, Vec<XID>
   let mut wmov0: Vec<(XHiLo,XWIP0,XWIP0)> = vec![];
   let mut wref:Vec<XHiLo> = vec![];
 
-  // vv here indicates that both sides referenced v originally, so there is a chance for refcount changes.
   let mut child = |h:XID, l:XID,vv:bool|->XWIP0 { // reference a node on/below row w, or create a node on row w
     let (hi, lo, inv) = if l.is_inv() {(!h, !l, true)} else {(h, l, false)};
-    // hi == lo only when the match passes hi,hi or lo,lo. So: this is always a single external reference
-    // that we've passed twice, and we're not really dropping a reference here.
-    // No refcount changes happen outside rows v and w. (!!! at least in this step?)
-    if hi == lo { if vv { edec.push(lo); } XWIP0::XID(if inv { !lo } else { lo }) }
+    // hi == lo only when the match statement passes hi,hi or lo,lo.
+    // previously, this triggered a decref, but that was incorrect:
+    // we are only ever adding references at this step, and when hi==lo,
+    // we simply wind up adding 1 reference instead of 2. (The old nodes on row
+    // v might have other parents, so the external nodes can only *gain* references.)
+    // (Of course, it can't be the case that swapping twice creates references since
+    // this should be a no-op. The "extra" references created by the first swap are
+    // balanced we garbage collect extraneous row v nodes on the second swap and
+    // decref their children.)
+    if hi == lo { XWIP0::XID(if inv { !lo } else { lo }) }
     else if let Some(ixrc) = rw.hm.get(&XHiLo{ hi, lo}) {
       wref.push(XHiLo{hi,lo}); // rw can't be mutable here so remember to modify it later
       XWIP0::XID(if inv {!ixrc.ix} else {ixrc.ix}) }
@@ -645,7 +660,7 @@ fn wtov(rw:&mut XVHLRow, rv:&mut XVHLRow)->(Vec<(XHiLo, XWIP0, XWIP0)>, Vec<XID>
   let mut vdec = |xid:XID| {
     let (hi, lo)=vx.get(&xid.raw()).unwrap();
     let ixrc = rv.hm.get_mut(&XHiLo{hi:*hi, lo:*lo}).unwrap();
-    if ixrc.rc == 0 { println!("warning: rc was already 0"); }
+    if ixrc.rc == 0 { panic!("rc was already 0"); }
     else { ixrc.rc -= 1; }};
 
   // Partition nodes on rw into two groups:
