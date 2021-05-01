@@ -49,6 +49,3 @@ pub mod anf;
 
 /// swap solver
 pub mod swap;
-
-// older version of the swap solver. will probably go away
-mod oldswap;
