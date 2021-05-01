@@ -83,7 +83,7 @@ const XVHL_O:XVHL = XVHL{ v: NOV, hi:XID_O, lo:XID_O };
 
 /// index + refcount
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-struct IxRc { ix:XID, rc: usize }
+struct IxRc { ix:XID, irc: usize, erc: usize }
 
 /**
 We need to map:
@@ -127,7 +127,7 @@ impl XVHLScaffold {
       else {
         let ixrc = self.rows[&x.v].hm.get(&x.hilo()).unwrap();
         assert_eq!(ixrc.ix.x, i as i64);
-        ixrc.rc};
+        ixrc.irc};
       println!("^{:03}: {} {:?} {:?}   (rc:{})", i, x.v, x.hi, x.lo, rc)}
     println!("@/dump");}
 
@@ -191,9 +191,8 @@ impl XVHLScaffold {
       for (_v, row) in self.rows.iter() {
         for (_hl, ixrc) in row.hm.iter() {
           let expect = *rc.get(&ixrc.ix).unwrap_or(&0);
-          if !(ixrc.rc >= expect) {
-            return Err(format!("refcount was too low for xid: {:?} (expected {}, got {}",
-              ixrc.ix, expect, ixrc.rc)) }}}
+          if (ixrc.irc < expect) {
+            return Err(format!("refcount was too low for xid: {:?} (expected {}, got {}", ixrc.ix, expect, ixrc.irc)) }}}
       Ok(())}
 
 
@@ -227,7 +226,7 @@ impl XVHLScaffold {
 
   /// add a reference to the given XVHL, inserting it into the row if necessary.
   /// returns the xid representing this xvhl triple.
-  fn add_ref(&mut self, hl0:XVHL, rc:usize)->XID {
+  fn add_ref(&mut self, hl0:XVHL, irc:usize, erc:usize)->XID {
     let inv = hl0.lo.is_inv();
     let vhl = if inv { !hl0 } else { hl0 };
     if vhl == XVHL_O { return if inv { XID_I } else { XID_O }}
@@ -239,27 +238,28 @@ impl XVHLScaffold {
     let (res, is_new) = match row.hm.entry(hl) {
       Entry::Occupied (mut e) => {
         let xid = e.get().ix;
-        e.get_mut().rc += rc;
+        e.get_mut().irc += irc;
+        e.get_mut().erc += erc;
         (xid, false) }
       Entry::Vacant(e) => {
-        e.insert(IxRc{ ix:alloc, rc });
+        e.insert(IxRc{ ix:alloc, irc, erc });
         if alloc_new { self.vhls.push(vhl) } else { self.vhls[alloc.x as usize] = vhl };
         (alloc, true) }};
     if is_new {
-      let hi = self.get(vhl.hi).unwrap(); self.add_ref(hi,1);
-      let lo = self.get(vhl.lo).unwrap(); self.add_ref(lo,1); }
+      let hi = self.get(vhl.hi).unwrap(); self.add_ref(hi,1,0);
+      let lo = self.get(vhl.lo).unwrap(); self.add_ref(lo,1,0); }
     if inv { !res } else { res }}
 
   /// decrement refcount for ix. return new refcount.
-  fn dec_ref_ix(&mut self, ix:XID)->usize { self.add_ref_ix(ix, -1) }
+  fn dec_ref_ix(&mut self, ix:XID)->usize { self.add_ref_ix(ix,-1) }
 
   fn add_ref_ix(&mut self, ix:XID, drc:i64)->usize {
     if ix.is_const() { return 1 }
     let vhl = self.vhls[ix.raw().x as usize];
     if let Some(row) = self.rows.get_mut(&vhl.v) {
       if let Some(mut ixrc) = row.hm.get_mut(&vhl.hilo()) {
-        if drc < 0 && (drc + ixrc.rc as i64 ) < 0 { panic!("this would result in negative refcount")}
-        else { ixrc.rc = (ixrc.rc as i64 + drc) as usize;  ixrc.rc }}
+        if drc < 0 && (drc + ixrc.irc as i64 ) < 0 { panic!("this would result in negative refcount")}
+        else { ixrc.irc = (ixrc.irc as i64 + drc) as usize;  ixrc.irc }}
       else { println!("add_ref_ix warning: entry not found for {:?}", vhl); 0}}
     else { println!("add_ref_ix warning: row not found for {:?}", vhl.v); 0 }}
 
@@ -309,7 +309,7 @@ impl XVHLScaffold {
         if lo == hi { self.dec_ref_ix(hi); lo } // 2 refs -> 1
         else {
           self.dec_ref_ix(hi); self.dec_ref_ix(lo);
-          self.add_ref(XVHL{ v, hi, lo }, 1)} }).collect();
+          self.add_ref(XVHL{ v, hi, lo }, 1, 0)} }).collect();
       if xs.len() == 1 { break }
       v = self.vid_above(v).expect("not enough vars in scaffold to untbl!"); }
     xs[0]}
@@ -535,12 +535,12 @@ impl SwapWorker {
               let (hi,lo,inv) = if lo0.is_inv() { (!hi0, !lo0, true) } else { (hi0,lo0,false) };
               let x = match self.wnew.entry((hi, lo)) {
                 Entry::Occupied(mut e) => {
-                  e.get_mut().rc += 1;
+                  e.get_mut().irc += 1;
                   e.get().ix.x }
                 Entry::Vacant(e) => {
                   let x = wnix; wnix += 1;
                   self.eref.push(hi); self.eref.push(lo);
-                  e.insert(IxRc{ ix:XID{x}, rc:1 });
+                  e.insert(IxRc{ ix:XID{x}, irc:1, erc:0 });
                   x }};
               XWIP1::NEW(if inv { !x } else { x }) }}};
         (resolve(wip_hi), resolve(wip_lo))};
@@ -566,7 +566,7 @@ impl SwapWorker {
     // vdel contains xids that the scaffold should delete.
     let mut vdel: Vec<XID> = vec![];
     self.rv.hm.retain(|_, ixrc| {
-      if ixrc.rc == 0 { vdel.push(ixrc.ix); false }
+      if ixrc.irc == 0 { vdel.push(ixrc.ix); false }
       else { true }});
 
     let mut needed = 0; // in case there are more new nodes than old trash
@@ -593,7 +593,7 @@ impl SwapWorker {
     let mut wipxid = vec![XID_O; self.wnew.len()];
     for ((hi,lo), ixrc0) in self.wnew.iter() {
       let mut ixrc = *ixrc0; // clone so we maintain the refcount
-      debug_assert!(ixrc.rc > 0);
+      debug_assert!(ixrc.irc > 0);
       let inv = ixrc0.ix.x < 0; assert!(!inv);
       let wipix = ixrc0.ix.x as usize;
       ixrc.ix = xids[wipix];  // map the temp xid -> true xid
@@ -668,8 +668,8 @@ fn wtov(rw:&mut XVHLRow, rv:&mut XVHLRow)->(Vec<(XHiLo, XWIP0, XWIP0)>, Vec<XID>
   let mut vdec = |xid:XID| {
     let (hi, lo)=vx.get(&xid.raw()).unwrap();
     let ixrc = rv.hm.get_mut(&XHiLo{hi:*hi, lo:*lo}).unwrap();
-    if ixrc.rc == 0 { panic!("rc was already 0"); }
-    else { ixrc.rc -= 1; }};
+    if ixrc.irc == 0 { panic!("rc was already 0"); }
+    else { ixrc.irc -= 1; }};
 
   // Partition nodes on rw into two groups:
   // group I (independent):
@@ -695,7 +695,7 @@ fn wtov(rw:&mut XVHLRow, rv:&mut XVHLRow)->(Vec<(XHiLo, XWIP0, XWIP0)>, Vec<XID>
       (Some((ii,io)), None         ) => { new_v(*whl, ii, io, lo, lo, false); vdec(hi) },
       (Some((ii,io)), Some((oi,oo))) => { new_v(*whl, ii, io, oi, oo, true); vdec(hi); vdec(lo) }}}
 
-  for hl in wref.iter() { rw.hm.get_mut(hl).unwrap().rc += 1 }
+  for hl in wref.iter() { rw.hm.get_mut(hl).unwrap().irc += 1 }
   (wmov0, edec) }
 
 // -- debugger ------------------------------------------------------------
@@ -715,7 +715,7 @@ impl XSDebug {
     for (i, c) in vars.chars().enumerate() { this.var(i, c) }
     this }
   fn var(&mut self, i:usize, c:char) {
-    let v = VID::var(i as u32); self.xs.push(v); self.xs.add_ref(XVHL{v, hi:XID_I, lo:XID_O}, 1);
+    let v = VID::var(i as u32); self.xs.push(v); self.xs.add_ref(XVHL{v, hi:XID_I, lo:XID_O}, 0, 1);
     self.name_var(v, c); }
   fn vids(&self)->String { self.xs.vids.iter().map(|v| *self.vc.get(v).unwrap()).collect() }
   fn name_var(&mut self, v:VID, c:char) { self.vc.insert(v, c); self.cv.insert(c, v); }
@@ -726,7 +726,7 @@ impl XSDebug {
     for c in s.chars() {
       match c {
         'a'..='z' =>
-          if let Some(&v) = self.cv.get(&c) { self.ds.push(self.xs.add_ref(XVHL{v,hi:XID_I,lo:XID_O},1)) }
+          if let Some(&v) = self.cv.get(&c) { self.ds.push(self.xs.add_ref(XVHL{v,hi:XID_I,lo:XID_O}, 0, 1)) }
           else { panic!("unknown variable: {}", c)},
         '0' => self.ds.push(XID_O),
         '1' => self.ds.push(XID_I),
@@ -748,7 +748,7 @@ impl XSDebug {
     if let Some(xvhl) = self.xs.get(vx) {
       if !xvhl.is_var() { panic!("not a branch var: {} ({:?})", self.fmt(vx), xvhl) }
       assert_ne!(hi, lo, "hi and lo branches must be different");
-      let res = self.xs.add_ref(XVHL{v:xvhl.v, hi, lo}, 1); self.ds.push(res); res }
+      let res = self.xs.add_ref(XVHL{v:xvhl.v, hi, lo}, 0, 1); self.ds.push(res); res }
     else { panic!("limit not found for '#': {:?}", vx) }}
   fn fmt(&self, x:XID)->String {
     match x {
@@ -821,9 +821,6 @@ impl SwapSolver {
     let vhl = self.dst.get(self.dx).unwrap();
     let vvix = self.dst.vix(vhl.v);
     if vvix.is_none() { panic!("bad vhl:{:?} for self.dx:{:?} ", vhl, self.dx); }
-
-    // !! this is a kludge. the ref count should already be at least 1.
-    self.dst.add_ref(vhl, 1);
 
     // 1. permute vars.
     self.dst.validate("before permute");
@@ -913,7 +910,7 @@ impl SubSolver for SwapSolver {
   fn init(&mut self, v: VID)->NID {
     self.dst = XVHLScaffold::new(); self.dst.push(v);
     self.rv = v;
-    self.dx = self.dst.add_ref(XVHL{ v, hi:XID_I, lo:XID_O}, 1);
+    self.dx = self.dst.add_ref(XVHL{ v, hi:XID_I, lo:XID_O}, 0, 1);
     self.dx.to_nid() }
 
   fn subst(&mut self, ctx: NID, v: VID, ops: &Ops)->NID {
@@ -955,7 +952,7 @@ impl SubSolver for SwapSolver {
     for (i,rv) in self.dst.vids.iter().enumerate() {
       let bv = NID::from_vid(VID::var(i as u32));
       for (x, ixrc) in self.dst.rows[rv].hm.iter() {
-        if ixrc.rc > 0 {
+        if ixrc.irc > 0 {
           let nx = |x:XID|->NID { if x.is_inv() { !x2n[&!x] } else { x2n[&x] }};
           let (hi, lo) = (nx(x.hi), nx(x.lo));
           // !! row pairs are never inverted, so we shouldn't have to mess with inv() (... right??)
