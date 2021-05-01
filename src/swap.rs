@@ -363,15 +363,17 @@ impl XVHLScaffold {
 
     // If we are deleting from v and adding to w, we can re-use the xids.
     // otherwise, allocate some new xids.
-    let xids = {
+    let (xids, vdels) = {
       let (vdel, mut xids, needed) = worker.recycle();
       if needed > 0 { xids.extend(self.alloc(needed)) };
+      let vdels = vdel.len();
       self.reclaim_nodes(vdel);
-      xids };
+      (xids, vdels) };
 
-    let (mods, wipxid) = worker.wnew_mods(xids);
-    for (ix, hi, lo) in mods { self.vhls[ix] = XVHL{ v:w, hi, lo } }
-    for (ix, hi, lo) in worker.wtov_mods(wipxid) { self.vhls[ix] = XVHL{ v, hi, lo } }
+    let (wnew, wipxid) = worker.wnew_mods(xids); let wnews=wnew.len();
+    for (ix, hi, lo) in wnew { self.vhls[ix] = XVHL{ v:w, hi, lo } }
+    let wtov = worker.wtov_mods(wipxid); let wtovs=wtov.len();
+    for (ix, hi, lo) in wtov { self.vhls[ix] = XVHL{ v, hi, lo } }
 
     // [ commit edec/eref changes ]
     if !(worker.edec.is_empty() && worker.eref.is_empty()) {
@@ -388,6 +390,12 @@ impl XVHLScaffold {
     // finally, put the rows back where we found them:
     self.rows.insert(v, worker.rv);
     self.rows.insert(w, worker.rw);
+
+    let counts:Vec<usize> = self.vids.iter().map(|v| self.rows[v].hm.len()).collect();
+    println!("%swapped: v:{:?} w:{:?}",v,w);
+    println!("%stats: wnews:{} wtovs:{} vdels:{}", wnews, wtovs, vdels);
+    println!("%vids: {:?}", self.vids);
+    println!("%counts: {:?}", counts);
     #[cfg(test)] { self.validate(format!("after swapping v={:?} and w={:?}.",v,w).as_str()); }}
 
   /// Reclaim the records for a list of garbage collected nodes.
