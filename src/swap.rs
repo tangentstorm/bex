@@ -192,9 +192,9 @@ impl XVHLScaffold {
         for (_hl, ixrc) in row.hm.iter() {
           let expect = *rc.get(&ixrc.ix).unwrap_or(&0);
           if ixrc.irc < expect {
-            return Err(format!("refcount was too low for xid: {:?} (expected {}, got {}", ixrc.ix, expect, ixrc.irc)) }
-          // else if (ixrc.irc > expect) {
-          //   return Err(format!("refcount was too high for xid: {:?} (expected {}, got {}", ixrc.ix, expect, ixrc.irc)) }
+            return Err(format!("refcount was too low for xid: {:?} (expected {}, got {})", ixrc.ix, expect, ixrc.irc)) }
+          // else if ixrc.irc > expect {
+          //   return Err(format!("refcount was too high for xid: {:?} (expected {}, got {})", ixrc.ix, expect, ixrc.irc)) }
           }}
       Ok(())}
 
@@ -309,10 +309,8 @@ impl XVHLScaffold {
     loop {
       xs = xs.chunks(2).map(|lh:&[XID]| {
         let (lo, hi) = (lh[0], lh[1]);
-        if lo == hi { self.dec_ref_ix(hi, 1); lo } // 2 refs -> 1
-        else {
-          self.dec_ref_ix(hi, 1); self.dec_ref_ix(lo, 1);
-          self.add_ref(XVHL{ v, hi, lo }, 1, 0)} }).collect();
+        if lo == hi { lo }
+        else { self.add_ref(XVHL{ v, hi, lo }, 1, 0)} }).collect();
       if xs.len() == 1 { break }
       v = self.vid_above(v).expect("not enough vars in scaffold to untbl!"); }
     xs[0]}
@@ -881,27 +879,21 @@ impl SwapSolver {
     if p.len() < q.len() { p = p.iter().cycle().take(q.len()).cloned().collect(); }
 
     // 4. let r = the partial truth table for result at row rv.
-    //    We're removing rv from p (and dst itself) here.
     let r:Vec<XID> = p.iter().zip(q.iter()).map(|(&pi,&qi)|
-      if self.dst.branch_var(pi) == self.rv {
-        let xid = self.dst.follow(pi, qi);
-        self.dst.add_ref_ix(xid, 1); xid }
+      if self.dst.branch_var(pi) == self.rv { self.dst.follow(pi, qi) }
       else { pi }).collect();
 
-    // clear all rows above v in the scaffold, and then delete v
+    // 5. clear all rows above v in the scaffold, and then delete v
     self.dst.clear_top_rows(self.rv);
     self.dst.remove_empty_row(self.rv);
-
-    // -- should be valid again now.
     self.dst.validate("after removing top rows");
 
-    // 5. rebuild the rows above set d, and return new top node
+    // 6. rebuild the rows above set d, and return new top node
     let bv = self.dst.vids[vix]; // whatever the new branch var in that slot is
     self.dx = self.dst.untbl(r, Some(bv));
-
     self.dst.validate("after substitution");
 
-    // 6. garbage collect (TODO?) and return result
+    // 7. return result
     self.dx }} // sub, SwapSolver
 
 
