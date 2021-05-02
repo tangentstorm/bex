@@ -731,7 +731,7 @@ impl BDDBase {
       let mut cur = Cursor::new(nvars, n);
       cur.descend(self);
       debug_assert!(cur.node.is_const());
-      debug_assert!(self.in_solution(&cur), format!("{:?}", cur.scope));
+      debug_assert!(self.in_solution(&cur), "{:?}", cur.scope);
       Some(cur) }}
 
   pub fn next_solution(&self, cur:Cursor)->Option<Cursor> {

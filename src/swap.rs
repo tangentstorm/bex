@@ -138,7 +138,7 @@ impl XVHLScaffold {
       SNAPSHOT.with(|s| s.borrow().dump("{ last valid snapshot }"));
       println!("===================================");
       self.dump(msg);
-      panic!(e)}
+      panic!("{}", e)}
     else { SNAPSHOT.with(|s| *s.borrow_mut() = self.clone())}}
 
   fn is_valid(&self)->std::result::Result<(), String> {
@@ -191,7 +191,7 @@ impl XVHLScaffold {
       for (_v, row) in self.rows.iter() {
         for (_hl, ixrc) in row.hm.iter() {
           let expect = *rc.get(&ixrc.ix).unwrap_or(&0);
-          if (ixrc.irc < expect) {
+          if ixrc.irc < expect {
             return Err(format!("refcount was too low for xid: {:?} (expected {}, got {}", ixrc.ix, expect, ixrc.irc)) }
           // else if (ixrc.irc > expect) {
           //   return Err(format!("refcount was too high for xid: {:?} (expected {}, got {}", ixrc.ix, expect, ixrc.irc)) }
@@ -470,7 +470,7 @@ impl GraphViz for XVHLScaffold {
       let row = &self.rows[ev];
       if !row.hm.is_empty() {
         write!(wr, "{{rank=same").unwrap();
-        for ixrc in row.hm.values() { write!(wr, " \"{:?}\"", ixrc.ix);}
+        for ixrc in row.hm.values() { write!(wr, " \"{:?}\"", ixrc.ix).unwrap() }
         w!("}}") }
       for (hl,ixrc) in row.hm.iter() {
         let x = ixrc.ix;
@@ -539,17 +539,14 @@ impl SwapWorker {
     SwapWorker{ rv, rw, edec:vec![], eref:vec![],
       wmov0:vec![], wtov:vec![], wnew:HashMap::new() } }
 
-  /// collect the list of nodes on row w that reference row v, and thus have to be moved
-  /// to row v. also decrement those refcounts as we find them.
-  fn find_movers0(&mut self) {
-      let mov_edec = wtov(&mut self.rw, &mut self.rv);
-      self.wmov0 = mov_edec.0; self.edec = mov_edec.1; }
+  /// collect the list of nodes on row w that reference row v, and thus have to be moved to row v.
+  fn find_movers0(&mut self) { self.wmov0 = wtov(&mut self.rw, &mut self.rv) }
 
   /// Construct new child nodes on the w level, or add new references to external nodes.
   /// Converts the XWIP0::HL entries to XWIP1::NEW. clears out .wmov0,
   /// and populates .wtov, .wnew, and .eref
   fn find_movers1(&mut self) {
-    let mut wnix:i64 = 0;   /// next index for new node
+    let mut wnix:i64 = 0;   // next index for new node
     for (whl, wip_hi, wip_lo) in std::mem::replace(&mut self.wmov0, vec![]) {
       let (hi, lo) = {
         let mut resolve = |xw0:XWIP0|->XWIP1 {
@@ -609,7 +606,7 @@ impl SwapWorker {
         let res = vdel; vdel = tmp;
         res }
       else {
-        let mut res = vdel; vdel = vec![];
+        let res = vdel; vdel = vec![];
         needed = need-have;
         res }};
     (vdel,vmod,needed)}
@@ -654,7 +651,7 @@ impl SwapWorker {
 /// to move to row v. (that is, rows that have a reference to row v).
 /// rv is mutable here because we will decrease the refcount as we find
 /// each reference, and rw is mutable because we may *increase* the refcount.
-fn wtov(rw:&mut XVHLRow, rv:&mut XVHLRow)->(Vec<(XHiLo, XWIP0, XWIP0)>, Vec<XID>) {
+fn wtov(rw:&mut XVHLRow, rv:&mut XVHLRow)->Vec<(XHiLo, XWIP0, XWIP0)> {
   // build a map of xid->hilo for row v, so we know every xid that branches on v,
   // and can quickly retrieve its high and lo branches.
   let mut vx:HashMap<XID,(XID,XID)> = HashMap::new();
@@ -673,11 +670,10 @@ fn wtov(rw:&mut XVHLRow, rv:&mut XVHLRow)->(Vec<(XHiLo, XWIP0, XWIP0)>, Vec<XID>
   // reference counts elsewhere in the graph can change (!!! really? they don't change in this step.),
   // but never drop to 0. if they did, then swapping the rows back would have to create new nodes elsewhere.
 
-  let mut edec:Vec<XID> = vec![];
   let mut wmov0: Vec<(XHiLo,XWIP0,XWIP0)> = vec![];
   let mut wref:Vec<XHiLo> = vec![];
 
-  let mut child = |h:XID, l:XID,vv:bool|->XWIP0 { // reference a node on/below row w, or create a node on row w
+  let mut child = |h:XID, l:XID|->XWIP0 { // reference a node on/below row w, or create a node on row w
     let (hi, lo, inv) = if l.is_inv() {(!h, !l, true)} else {(h, l, false)};
     // hi == lo only when the match statement passes hi,hi or lo,lo.
     // previously, this triggered a decref, but that was incorrect:
@@ -712,7 +708,7 @@ fn wtov(rw:&mut XVHLRow, rv:&mut XVHLRow)->(Vec<(XHiLo, XWIP0, XWIP0)>, Vec<XID>
   //      These may be new nodes, or may already exist in group I.
   //   The old children (on row v) may see their refcounts drop to 0.
 
-  let mut new_v = |whl,ii,io,oi,oo,vv| { wmov0.push((whl, child(ii,oi,vv), child(io,oo,vv))) };
+  let mut new_v = |whl,ii,io,oi,oo| { wmov0.push((whl, child(ii,oi), child(io,oo))) };
 
   for whl in rw.hm.keys() {
     let (hi, lo) = whl.as_tup();
@@ -720,12 +716,12 @@ fn wtov(rw:&mut XVHLRow, rv:&mut XVHLRow)->(Vec<(XHiLo, XWIP0, XWIP0)>, Vec<XID>
       if xid.is_inv() { vx.get(&xid.raw()).cloned().map(|(h,l)| (!h,!l)) } else { vx.get(&xid).cloned() }};
     match (vget(hi), vget(lo)) {
       (None,          None         ) => {},  // independent of row v, so nothing to do.
-      (None,          Some((oi,oo))) => { new_v(*whl, hi, hi, oi, oo, false); vdec(lo) },
-      (Some((ii,io)), None         ) => { new_v(*whl, ii, io, lo, lo, false); vdec(hi) },
-      (Some((ii,io)), Some((oi,oo))) => { new_v(*whl, ii, io, oi, oo, true); vdec(hi); vdec(lo) }}}
+      (None,          Some((oi,oo))) => { new_v(*whl, hi, hi, oi, oo); vdec(lo) },
+      (Some((ii,io)), None         ) => { new_v(*whl, ii, io, lo, lo); vdec(hi) },
+      (Some((ii,io)), Some((oi,oo))) => { new_v(*whl, ii, io, oi, oo); vdec(hi); vdec(lo) }}}
 
   for hl in wref.iter() { rw.hm.get_mut(hl).unwrap().irc += 1 }
-  (wmov0, edec) }
+  wmov0 }
 
 // -- debugger ------------------------------------------------------------
 

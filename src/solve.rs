@@ -16,7 +16,7 @@
 
 use ::{apl, ops};
 use ast::{Op,RawASTBase};
-use base::{Base, GraphViz};
+use base::{Base};
 use {nid, nid::NID};
 use {vid::VID};
 use ops::Ops;
@@ -238,15 +238,15 @@ pub fn solve<S:SubSolver>(dst:&mut S, src0:&RawASTBase, sn:NID)->DstNid {
 macro_rules! find_factors {
   ($TDEST:ident, $T0:ident, $T1:ident, $k:expr, $expect:expr) => {{
     use std::env;
-    use $crate::{Base, GraphViz, nid, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}, bdd};
+    use $crate::{GraphViz, nid, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}, bdd};
     bdd::COUNT_XMEMO_TEST.with(|c| *c.borrow_mut()=0 ); bdd::COUNT_XMEMO_TEST.with(|c| *c.borrow_mut()=0 ); // TODO: other bases
     GBASE.with(|gb| gb.replace(ASTBase::empty()));   // reset on each test
     let (y, x) = ($T0::def("y"), $T0::def("x")); let lt = x.lt(&y);
     let xy:$T1 = x.times(&y); let k = $T1::new($k); let eq = xy.eq(&k);
-    let mut show_ast = false; let mut show_res = false;
+    let mut show_ast = false; // let mut show_res = false;
     for arg in env::args() { match arg.as_str() {
       "-a" => { show_ast = true }
-      "-r" => { show_res = true }
+      "-r" => { /*show_res = true*/ }
       _ => {} }}
     if show_ast {
       GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
