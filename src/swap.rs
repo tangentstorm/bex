@@ -192,7 +192,10 @@ impl XVHLScaffold {
         for (_hl, ixrc) in row.hm.iter() {
           let expect = *rc.get(&ixrc.ix).unwrap_or(&0);
           if (ixrc.irc < expect) {
-            return Err(format!("refcount was too low for xid: {:?} (expected {}, got {}", ixrc.ix, expect, ixrc.irc)) }}}
+            return Err(format!("refcount was too low for xid: {:?} (expected {}, got {}", ixrc.ix, expect, ixrc.irc)) }
+          // else if (ixrc.irc > expect) {
+          //   return Err(format!("refcount was too high for xid: {:?} (expected {}, got {}", ixrc.ix, expect, ixrc.irc)) }
+          }}
       Ok(())}
 
 
@@ -250,8 +253,8 @@ impl XVHLScaffold {
       let lo = self.get(vhl.lo).unwrap(); self.add_ref(lo,1,0); }
     if inv { !res } else { res }}
 
-  /// decrement refcount for ix. return new refcount.
-  fn dec_ref_ix(&mut self, ix:XID)->usize { self.add_ref_ix(ix,-1) }
+  /// decrement refcount for ix by n. return new refcount.
+  fn dec_ref_ix(&mut self, ix:XID, n:u64)->usize { self.add_ref_ix(ix,-(n as i64)) }
 
   fn add_ref_ix(&mut self, ix:XID, drc:i64)->usize {
     if ix.is_const() { return 1 }
@@ -306,9 +309,9 @@ impl XVHLScaffold {
     loop {
       xs = xs.chunks(2).map(|lh:&[XID]| {
         let (lo, hi) = (lh[0], lh[1]);
-        if lo == hi { self.dec_ref_ix(hi); lo } // 2 refs -> 1
+        if lo == hi { self.dec_ref_ix(hi, 1); lo } // 2 refs -> 1
         else {
-          self.dec_ref_ix(hi); self.dec_ref_ix(lo);
+          self.dec_ref_ix(hi, 1); self.dec_ref_ix(lo, 1);
           self.add_ref(XVHL{ v, hi, lo }, 1, 0)} }).collect();
       if xs.len() == 1 { break }
       v = self.vid_above(v).expect("not enough vars in scaffold to untbl!"); }
@@ -401,6 +404,32 @@ impl XVHLScaffold {
   /// Reclaim the records for a list of garbage collected nodes.
   // TODO: add to some kind of linked list so they're easier to find.
   fn reclaim_nodes(&mut self, xids:Vec<XID>) { for xid in xids { self.vhls[xid.raw().ix()] = XVHL_O }}
+
+  /// Remove all nodes from the top rows of the scaffold, down to and including row r.
+  /// (the rows themselves remain in place).
+  fn clear_top_rows(&mut self, rv:VID) {
+    let mut refs: HashMap<XID, usize> = HashMap::new();
+    let mut ix = self.vids.len()-1;
+    loop {
+      // we're working a row at a time from the top down.
+      let v = self.vids[ix];
+      // for each node on the row, make a note to decref its two
+      // children, and then  zero out the node in the master VHL list.
+      for (x, ixrc) in self.rows[&v].hm.iter() {
+        *refs.entry(x.hi.raw()).or_insert(0)+=1;
+        *refs.entry(x.lo.raw()).or_insert(0)+=1;
+        self.vhls[ixrc.ix.raw().x as usize] = XVHL_O }
+      self.rows.insert(v, XVHLRow::new());
+      if v == rv { break } else { ix -= 1 }}
+    // now decrement the refcounts:
+    for (&ix, &c)  in refs.iter() { self.dec_ref_ix(ix, c as u64); }}
+
+  /// v: the vid to remove
+  fn remove_empty_row(&mut self, v:VID) {
+    let ix = self.vix(v).expect("can't remove a row that doesn't exist.");
+    assert!(self.rows[&v].hm.is_empty(), "can't remove a non-empty row!");
+    self.vids.remove(ix);
+    self.rows.remove(&v);}
 
   /// arrange row order to match the given groups.
   /// the groups are given in bottom-up order, and should
@@ -841,6 +870,8 @@ impl SwapSolver {
 
     // 3. let p = (partial) truth table for dst at the row branching on rv.
     //    (each item is either a const or branches on a var equal to or below rv)
+    //    It's a table in the sense that it's a fully expanded row in a binary tree,
+    //    rather than a compressed bdd.
     let mut p: Vec<XID> = self.dst.tbl(self.dx, Some(self.rv));
 
     // !! tbl() branches from the top var in dx, not the top var in the scaffold.
@@ -851,37 +882,19 @@ impl SwapSolver {
     //    the replacement. I expect n<16, since if n is too much higher than
     //    that, I expect this whole algorithm to break down anyway.
 
-    if p.len() < q.len() {
-      let old_p_len = p.len();
-      p = p.iter().cycle().take(q.len()).cloned().collect();
-      for i in old_p_len..p.len() { self.dst.add_ref_ix(p[i], 1); }}
+    if p.len() < q.len() { p = p.iter().cycle().take(q.len()).cloned().collect(); }
 
     // 4. let r = the partial truth table for result at row rv.
     //    We're removing rv from p (and dst itself) here.
     let r:Vec<XID> = p.iter().zip(q.iter()).map(|(&pi,&qi)|
       if self.dst.branch_var(pi) == self.rv {
         let xid = self.dst.follow(pi, qi);
-        self.dst.dec_ref_ix(pi);
         self.dst.add_ref_ix(xid, 1); xid }
       else { pi }).collect();
 
     // clear all rows above v in the scaffold, and then delete v
-    let mut ix = self.dst.vids.len()-1;
-    loop {
-      let v = self.dst.vids[ix];
-      // Mark VHLS as garbage (to pass the self-check)
-      for ixrc in self.dst.rows[&v].hm.values() {
-        assert_eq!(v, self.dst.vhls[ixrc.ix.raw().x as usize].v,
-                   "about to collect garbage that isn't mine to collect");
-        self.dst.vhls[ixrc.ix.raw().x as usize] = XVHL_O }
-      if v == self.rv {
-        self.dst.vids.remove(ix);
-        self.dst.rows.remove(&v);
-        break }
-      else {
-        self.dst.rows.insert(v, XVHLRow::new());
-        ix -= 1 }}
-    assert_eq!(ix,vix);
+    self.dst.clear_top_rows(self.rv);
+    self.dst.remove_empty_row(self.rv);
 
     // -- should be valid again now.
     self.dst.validate("after removing top rows");
