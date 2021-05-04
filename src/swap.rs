@@ -526,12 +526,35 @@ struct SwapWorker {
   /// wip for new children on row v.
   wtov: Vec<(IxRc,XWIP1,XWIP1)>,
 
+  wnix:i64,
+
   /// new parent nodes to create on row w
   wnew: HashMap<(XID,XID), IxRc> }
 
 impl SwapWorker {
   fn new(rv:XVHLRow, rw:XVHLRow )->Self {
-    SwapWorker{ rv, rw, edec:vec![], eref:vec![], wtov:vec![], wnew:HashMap::new() } }
+    SwapWorker{ rv, rw, edec:vec![], eref:vec![], wtov:vec![], wnix:0, wnew:HashMap::new() } }
+
+  fn resolve(&mut self, xw0:XWIP0)->XWIP1 {
+    match xw0 {
+      // the child() function would have marked it as a XID if it were already in row w.
+      XWIP0::XID(x) => { self.eref.push(x); XWIP1::XID(x) },
+      XWIP0::HL(hi0,lo0) => {
+        // these are the new children on the w level, so we are creating a new node.
+        // but: it's possible that multiple new nodes point to the same place.
+        // this pass ensures that all duplicates resolve to the same place.
+        // TODO: this isn't really an IxRc since the xid is virtual
+        let (hi,lo,inv) = if lo0.is_inv() { (!hi0, !lo0, true) } else { (hi0,lo0,false) };
+        let x = match self.wnew.entry((hi, lo)) {
+          Entry::Occupied(mut e) => {
+            e.get_mut().irc += 1;
+            e.get().ix.x }
+          Entry::Vacant(e) => {
+            let x = self.wnix; self.wnix += 1;
+            self.eref.push(hi); self.eref.push(lo);
+            e.insert(IxRc{ ix:XID{x}, irc:1, erc:0 });
+            x }};
+        XWIP1::NEW(if inv { !x } else { x }) }}}
 
   /// Construct new child nodes on the w level, or add new references to external nodes.
   /// Converts the XWIP0::HL entries to XWIP1::NEW.
@@ -539,31 +562,9 @@ impl SwapWorker {
   fn find_movers(&mut self) {
     // collect the list of nodes on row w that reference row v, and thus have to be moved to row v.
     let mut wmov0 =  wtov(&mut self.rw, &mut self.rv);
-    let mut wnix:i64 = 0;   // next index for new node
     for (whl, wip_hi, wip_lo) in std::mem::replace(&mut wmov0, vec![]) {
-      let (hi, lo) = {
-        let mut resolve = |xw0:XWIP0|->XWIP1 {
-          match xw0 {
-            // the child() function would have marked it as a XID if it were already in row w.
-            XWIP0::XID(x) => { self.eref.push(x); XWIP1::XID(x) },
-            XWIP0::HL(hi0,lo0) => {
-              // these are the new children on the w level, so we are creating a new node.
-              // but: it's possible that multiple new nodes point to the same place.
-              // this pass ensures that all duplicates resolve to the same place.
-              // TODO: this isn't really an IxRc since the xid is virtual
-              let (hi,lo,inv) = if lo0.is_inv() { (!hi0, !lo0, true) } else { (hi0,lo0,false) };
-              let x = match self.wnew.entry((hi, lo)) {
-                Entry::Occupied(mut e) => {
-                  e.get_mut().irc += 1;
-                  e.get().ix.x }
-                Entry::Vacant(e) => {
-                  let x = wnix; wnix += 1;
-                  self.eref.push(hi); self.eref.push(lo);
-                  e.insert(IxRc{ ix:XID{x}, irc:1, erc:0 });
-                  x }};
-              XWIP1::NEW(if inv { !x } else { x }) }}};
-        (resolve(wip_hi), resolve(wip_lo))};
-
+      let hi = self.resolve(wip_hi);
+      let lo = self.resolve(wip_lo);
       // the lo branch should never be inverted, since the lo-lo path doesn't change in a swap,
       // and lo branches are always raw in the scaffold.
       // This means we only have to deal with inverted xids the newly-created hi branches.
