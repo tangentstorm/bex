@@ -359,8 +359,7 @@ impl XVHLScaffold {
     // row w may contain nodes that refer to v, which now need to be moved to row v.
     let rw = self.rows.remove(&w).unwrap();
     let mut worker = SwapWorker::new(rv,rw);
-    worker.find_movers0();
-    worker.find_movers1();
+    worker.find_movers();
 
     // If we are deleting from v and adding to w, we can re-use the xids.
     // otherwise, allocate some new xids.
@@ -524,8 +523,6 @@ struct SwapWorker {
   /// external nodes to incref
   eref: Vec<XID>,
 
-  /// work in progress for nodes moving from row w to row v.
-  wmov0: Vec<(XHiLo,XWIP0,XWIP0)>,
   /// wip for new children on row v.
   wtov: Vec<(IxRc,XWIP1,XWIP1)>,
 
@@ -534,18 +531,16 @@ struct SwapWorker {
 
 impl SwapWorker {
   fn new(rv:XVHLRow, rw:XVHLRow )->Self {
-    SwapWorker{ rv, rw, edec:vec![], eref:vec![],
-      wmov0:vec![], wtov:vec![], wnew:HashMap::new() } }
-
-  /// collect the list of nodes on row w that reference row v, and thus have to be moved to row v.
-  fn find_movers0(&mut self) { self.wmov0 = wtov(&mut self.rw, &mut self.rv) }
+    SwapWorker{ rv, rw, edec:vec![], eref:vec![], wtov:vec![], wnew:HashMap::new() } }
 
   /// Construct new child nodes on the w level, or add new references to external nodes.
-  /// Converts the XWIP0::HL entries to XWIP1::NEW. clears out .wmov0,
-  /// and populates .wtov, .wnew, and .eref
-  fn find_movers1(&mut self) {
+  /// Converts the XWIP0::HL entries to XWIP1::NEW.
+  /// populates .wtov, .wnew, and .eref
+  fn find_movers(&mut self) {
+    // collect the list of nodes on row w that reference row v, and thus have to be moved to row v.
+    let mut wmov0 =  wtov(&mut self.rw, &mut self.rv);
     let mut wnix:i64 = 0;   // next index for new node
-    for (whl, wip_hi, wip_lo) in std::mem::replace(&mut self.wmov0, vec![]) {
+    for (whl, wip_hi, wip_lo) in std::mem::replace(&mut wmov0, vec![]) {
       let (hi, lo) = {
         let mut resolve = |xw0:XWIP0|->XWIP1 {
           match xw0 {
