@@ -561,8 +561,7 @@ impl SwapWorker {
   /// populates .wtov, .wnew, and .eref
   fn find_movers(&mut self) {
     // collect the list of nodes on row w that reference row v, and thus have to be moved to row v.
-    let mut wmov0 =  wtov(&mut self.rw, &mut self.rv);
-    for (whl, wip_hi, wip_lo) in std::mem::replace(&mut wmov0, vec![]) {
+    for (whl, wip_hi, wip_lo) in self.gather_wtov() {
       let hi = self.resolve(wip_hi);
       let lo = self.resolve(wip_lo);
       // the lo branch should never be inverted, since the lo-lo path doesn't change in a swap,
@@ -639,35 +638,15 @@ impl SwapWorker {
       debug_assert_ne!(hi, lo, "hi=lo when committing wtov");
       self.rv.hm.insert(XHiLo{hi, lo}, *ixrc);
       res.push((ixrc.ix.x as usize, hi, lo)); }
-    res}}
+    res}
 
-/// given the rows from swap(), find all the nodes from row w that need
-/// to move to row v. (that is, rows that have a reference to row v).
-/// rv is mutable here because we will decrease the refcount as we find
-/// each reference, and rw is mutable because we may *increase* the refcount.
-fn wtov(rw:&mut XVHLRow, rv:&mut XVHLRow)->Vec<(XHiLo, XWIP0, XWIP0)> {
-  // build a map of xid->hilo for row v, so we know every xid that branches on v,
-  // and can quickly retrieve its high and lo branches.
-  let mut vx:HashMap<XID,(XID,XID)> = HashMap::new();
-  for (vhl, ixrc) in rv.hm.iter() { vx.insert(ixrc.ix, vhl.as_tup()); }
-  // moving a node from w->v modifies the old node in place, so no new xid is used.
-  // (we know it's not already on row v because before the lift, row v could not refer to w)
-  // at least one of the node's children will be replaced by a new node on row w. proof:
-  //     general pattern of 3rd level rewrite is   abcd ->  acbd
-  //     we can consolidate one side of the swap: abac -> aabc (so we get v?a:w?b:c)
-  //     but we can't consolidate both:  abab -> abba, because abab can't appear in a bdd.
-  //     no other pattern would result in consolidating both sides. (qed)
-  // therefore: worst case for growth is every node in w moves to v and creates 2 new children.
-  // a block of 2*w.len ids for this algorithm to assign.
-  // so: in the future, if we want to create new nodes with unique ids in a distributed way,
-  // we should allocate 2*w.len ids for this function to assign to the new nodes.
-  // reference counts elsewhere in the graph can change (!!! really? they don't change in this step.),
-  // but never drop to 0. if they did, then swapping the rows back would have to create new nodes elsewhere.
+  fn vdec(&mut self, vx:&HashMap<XID,(XID,XID)>, xid:XID) {
+    let (hi, lo)=vx.get(&xid.raw()).unwrap();
+    let ixrc = self.rv.hm.get_mut(&XHiLo{hi:*hi, lo:*lo}).unwrap();
+    if ixrc.irc == 0 { panic!("rc was already 0"); }
+    else { ixrc.irc -= 1; }}
 
-  let mut wmov0: Vec<(XHiLo,XWIP0,XWIP0)> = vec![];
-  let mut wref:Vec<XHiLo> = vec![];
-
-  let mut child = |h:XID, l:XID|->XWIP0 { // reference a node on/below row w, or create a node on row w
+  fn child(&self, wref:&mut Vec<XHiLo>, h:XID, l:XID)->XWIP0 { // reference a node on/below row w, or create a node on row w
     let (hi, lo, inv) = if l.is_inv() {(!h, !l, true)} else {(h, l, false)};
     // hi == lo only when the match statement passes hi,hi or lo,lo.
     // previously, this triggered a decref, but that was incorrect:
@@ -679,43 +658,64 @@ fn wtov(rw:&mut XVHLRow, rv:&mut XVHLRow)->Vec<(XHiLo, XWIP0, XWIP0)> {
     // balanced we garbage collect extraneous row v nodes on the second swap and
     // decref their children.)
     if hi == lo { XWIP0::XID(if inv { !lo } else { lo }) }
-    else if let Some(ixrc) = rw.hm.get(&XHiLo{ hi, lo}) {
+    else if let Some(ixrc) = self.rw.hm.get(&XHiLo{ hi, lo}) {
       wref.push(XHiLo{hi,lo}); // rw can't be mutable here so remember to modify it later
+      // TODO: it should be okay to modify rw directly
       XWIP0::XID(if inv {!ixrc.ix} else {ixrc.ix}) }
-    else if inv { XWIP0::HL(!hi, !lo) } else { XWIP0::HL(hi, lo) }};
+    else if inv { XWIP0::HL(!hi, !lo) } else { XWIP0::HL(hi, lo) }}
 
-  let mut vdec = |xid:XID| {
-    let (hi, lo)=vx.get(&xid.raw()).unwrap();
-    let ixrc = rv.hm.get_mut(&XHiLo{hi:*hi, lo:*lo}).unwrap();
-    if ixrc.irc == 0 { panic!("rc was already 0"); }
-    else { ixrc.irc -= 1; }};
+  /// given the rows from swap(), find all the nodes from row w that need
+  /// to move to row v. (that is, rows that have a reference to row v).
+  /// rv is mutable here because we will decrease the refcount as we find
+  /// each reference, and rw is mutable because we may *increase* the refcount.
+  fn gather_wtov(&mut self)->Vec<(XHiLo, XWIP0, XWIP0)> {
+    // build a map of xid->hilo for row v, so we know every xid that branches on v,
+    // and can quickly retrieve its high and lo branches.
+    let mut vx:HashMap<XID,(XID,XID)> = HashMap::new();
+    for (vhl, ixrc) in self.rv.hm.iter() { vx.insert(ixrc.ix, vhl.as_tup()); }
+    // moving a node from w->v modifies the old node in place, so no new xid is used.
+    // (we know it's not already on row v because before the lift, row v could not refer to w)
+    // at least one of the node's children will be replaced by a new node on row w. proof:
+    //     general pattern of 3rd level rewrite is   abcd ->  acbd
+    //     we can consolidate one side of the swap: abac -> aabc (so we get v?a:w?b:c)
+    //     but we can't consolidate both:  abab -> abba, because abab can't appear in a bdd.
+    //     no other pattern would result in consolidating both sides. (qed)
+    // therefore: worst case for growth is every node in w moves to v and creates 2 new children.
+    // a block of 2*w.len ids for this algorithm to assign.
+    // so: in the future, if we want to create new nodes with unique ids in a distributed way,
+    // we should allocate 2*w.len ids for this function to assign to the new nodes.
+    // reference counts elsewhere in the graph can change (!!! really? they don't change in this step.),
+    // but never drop to 0. if they did, then swapping the rows back would have to create new nodes elsewhere.
 
-  // Partition nodes on rw into two groups:
-  // group I (independent):
-  //   These are nodes that do not reference row v.
-  //   These remain on rw, unchanged.
-  // group D (dependent):
-  //   These are nodes with at least one child on row v.
-  //   These must be rewritten in place to branch on v (and moved to rv).
-  //   "In place" means that their XIDs must be preserved.
-  //   The moved nodes will have children on row w:
-  //      These may be new nodes, or may already exist in group I.
-  //   The old children (on row v) may see their refcounts drop to 0.
+    let mut wmov0: Vec<(XHiLo,XWIP0,XWIP0)> = vec![];
+    let mut wref: Vec<XHiLo> = vec![];
 
-  let mut new_v = |whl,ii,io,oi,oo| { wmov0.push((whl, child(ii,oi), child(io,oo))) };
+    // Partition nodes on rw into two groups:
+    // group I (independent):
+    //   These are nodes that do not reference row v.
+    //   These remain on rw, unchanged.
+    // group D (dependent):
+    //   These are nodes with at least one child on row v.
+    //   These must be rewritten in place to branch on v (and moved to rv).
+    //   "In place" means that their XIDs must be preserved.
+    //   The moved nodes will have children on row w:
+    //      These may be new nodes, or may already exist in group I.
+    //   The old children (on row v) may see their refcounts drop to 0.
+    for whl in self.rw.hm.clone().keys() {
+      let (hi, lo) = whl.as_tup();
+      let vget = |xid:XID|->Option<(XID,XID)> {
+        if xid.is_inv() { vx.get(&xid.raw()).cloned().map(|(h,l)| (!h,!l)) } else { vx.get(&xid).cloned() }};
+      match (vget(hi), vget(lo)) {
+        (None,          None         ) => {},  // independent of row v, so nothing to do.
+        (None,          Some((oi,oo))) => { self.new_v(&mut wref, &mut wmov0, *whl, hi, hi, oi, oo); self.vdec(&vx, lo) },
+        (Some((ii,io)), None         ) => { self.new_v(&mut wref, &mut wmov0, *whl, ii, io, lo, lo); self.vdec(&vx, hi) },
+        (Some((ii,io)), Some((oi,oo))) => { self.new_v(&mut wref, &mut wmov0, *whl, ii, io, oi, oo); self.vdec(&vx, hi); self.vdec(&vx, lo) }}}
 
-  for whl in rw.hm.keys() {
-    let (hi, lo) = whl.as_tup();
-    let vget = |xid:XID|->Option<(XID,XID)> {
-      if xid.is_inv() { vx.get(&xid.raw()).cloned().map(|(h,l)| (!h,!l)) } else { vx.get(&xid).cloned() }};
-    match (vget(hi), vget(lo)) {
-      (None,          None         ) => {},  // independent of row v, so nothing to do.
-      (None,          Some((oi,oo))) => { new_v(*whl, hi, hi, oi, oo); vdec(lo) },
-      (Some((ii,io)), None         ) => { new_v(*whl, ii, io, lo, lo); vdec(hi) },
-      (Some((ii,io)), Some((oi,oo))) => { new_v(*whl, ii, io, oi, oo); vdec(hi); vdec(lo) }}}
+    for hl in wref.iter() { self.rw.hm.get_mut(hl).unwrap().irc += 1 }
+    wmov0 }
 
-  for hl in wref.iter() { rw.hm.get_mut(hl).unwrap().irc += 1 }
-  wmov0 }
+  fn new_v(&mut self, wref:&mut Vec<XHiLo>, wmov0:&mut Vec<(XHiLo,XWIP0,XWIP0)>, whl:XHiLo, ii:XID, io:XID, oi:XID, oo:XID) {
+    wmov0.push((whl, self.child(wref, ii,oi), self.child(wref, io,oo))) }}
 
 // -- debugger ------------------------------------------------------------
 
