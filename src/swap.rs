@@ -351,23 +351,16 @@ impl XVHLScaffold {
     //  row vi:  v __    v __      =>  w   =>   w __    w __
     //           :   \    :  \                  :   \    :   \
     //           oo   oi  io  ii                oo   io  oi   ii
-    // we are lifting row v up 1. row v nodes cannot possibly refer to variable w,
-    //  so we will not remove anything from this row.
-    //  But we will add a new entry whenever nodes in row w refer to v
-    let rv = self.rows.remove(&v).unwrap_or_else(|| panic!("row {:?} not found",v));
-
-    // row w may contain nodes that refer to v, which now need to be moved to row v.
+    let rv = self.rows.remove(&v).unwrap();
     let rw = self.rows.remove(&w).unwrap();
     let mut worker = SwapWorker::new(rv,rw);
     worker.find_movers();
 
-    // If we are deleting from v and adding to w, we can re-use the xids.
-    // otherwise, allocate some new xids.
+    // If we are deleting from v and adding to w, we can re-use the xids. otherwise, allocate some new xids.
     let (xids, vdels) = {
       let (vdel, mut xids, needed) = worker.recycle();
       if needed > 0 { xids.extend(self.alloc(needed)) };
-      let vdels = vdel.len();
-      self.reclaim_nodes(vdel);
+      let vdels = vdel.len(); self.reclaim_nodes(vdel);
       (xids, vdels) };
 
     let (wnew, wipxid) = worker.wnew_mods(xids); let wnews=wnew.len();
@@ -381,11 +374,6 @@ impl XVHLScaffold {
       for &xid in worker.eref.iter() { *sum.entry(xid).or_insert(0) += 1; }
       for &xid in worker.edec.iter() { *sum.entry(xid).or_insert(0) -= 1; }
       for (xid, drc) in sum.iter() { self.add_ref_ix(*xid, *drc); }}
-    // it should be usize rather than i64 because nothing outside of these two rows
-    // will ever have its refcount drop all the way to 0.
-    // (each decref is something like (w?(v?a:b):(v?a:c))->(v?a:w?b:c) so we're just
-    // merging two references into one, never completely deleting one).
-    // !! that's not true. we can also decref because we deleted a node whose refcount was 0
 
     // finally, put the rows back where we found them:
     self.rows.insert(v, worker.rv);
