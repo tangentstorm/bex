@@ -1,6 +1,6 @@
 ///! test suite generated from doc/scaffold.ipynb
 
-use std::iter::FromIterator;
+#[cfg(test)] use std::iter::FromIterator;
 
 /// test for diagram #0: independent nodes
 #[allow(unused_variables)]
@@ -25,7 +25,7 @@ use std::iter::FromIterator;
     let vv = VID::vir(1); xs.push(vv);
     let vw = VID::vir(2); xs.push(vw);
     let vz = VID::vir(4); xs.push(vz);
-   
+
     // constructors for default nodes
     assert_eq!(1, xs.vhls.len(), "expecting only XVHL_O at this point");
     let mut node = |v,hi,lo|->XID { xs.add_ref(XVHL{v, hi, lo}, 0, 0) };
@@ -118,7 +118,7 @@ use std::iter::FromIterator;
     let vv = VID::vir(1); xs.push(vv);
     let vw = VID::vir(2); xs.push(vw);
     let vz = VID::vir(4); xs.push(vz);
-   
+
     // constructors for default nodes
     assert_eq!(1, xs.vhls.len(), "expecting only XVHL_O at this point");
     let mut node = |v,hi,lo|->XID { xs.add_ref(XVHL{v, hi, lo}, 0, 0) };
@@ -201,7 +201,7 @@ use std::iter::FromIterator;
     let vv = VID::vir(1); xs.push(vv);
     let vw = VID::vir(2); xs.push(vw);
     let vz = VID::vir(4); xs.push(vz);
-   
+
     // constructors for default nodes
     assert_eq!(1, xs.vhls.len(), "expecting only XVHL_O at this point");
     let mut node = |v,hi,lo|->XID { xs.add_ref(XVHL{v, hi, lo}, 0, 0) };
@@ -297,7 +297,7 @@ use std::iter::FromIterator;
     let vv = VID::vir(1); xs.push(vv);
     let vw = VID::vir(2); xs.push(vw);
     let vz = VID::vir(4); xs.push(vz);
-   
+
     // constructors for default nodes
     assert_eq!(1, xs.vhls.len(), "expecting only XVHL_O at this point");
     let mut node = |v,hi,lo|->XID { xs.add_ref(XVHL{v, hi, lo}, 0, 0) };
@@ -404,7 +404,7 @@ use std::iter::FromIterator;
     let vv = VID::vir(1); xs.push(vv);
     let vw = VID::vir(2); xs.push(vw);
     let vz = VID::vir(4); xs.push(vz);
-   
+
     // constructors for default nodes
     assert_eq!(1, xs.vhls.len(), "expecting only XVHL_O at this point");
     let mut node = |v,hi,lo|->XID { xs.add_ref(XVHL{v, hi, lo}, 0, 0) };
