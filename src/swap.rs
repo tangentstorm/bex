@@ -82,7 +82,7 @@ impl std::ops::Not for XVHL { type Output = XVHL; fn not(self)->XVHL { XVHL { v:
 const XVHL_O:XVHL = XVHL{ v: NOV, hi:XID_O, lo:XID_O };
 
 /// index + refcount
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 struct IxRc { ix:XID, irc: usize, erc: usize }
 
 /**
@@ -198,6 +198,16 @@ impl XVHLScaffold {
           }}
       Ok(())}
 
+  fn get_ixrc(&self, x:XID)->Option<&IxRc> {
+    let XVHL{ v, hi, lo } = self.vhls[x.raw().ix()];
+    self.rows[&v].hm.get(&XHiLo{ hi, lo }) }
+  fn del_node(&mut self, x:XID) {
+    let XVHL{ v, hi, lo } = self.vhls[x.raw().ix()];
+    self.vhls[x.raw().ix()] = XVHL_O;
+    self.rows.get_mut(&v).unwrap().hm.remove(&XHiLo{ hi, lo }); }
+  fn get_refcount(&self, x:XID)->Option<usize> { self.get_ixrc(x).map(|ixrc| ixrc.irc) }
+  fn ixrcs_on_row(&self, v:VID)->HashSet<&IxRc> { self.rows[&v].hm.values().collect() }
+  fn xids_on_row(&self, v:VID)->HashSet<XID> { self.rows[&v].hm.values().map(|ixrc| ixrc.ix).collect() }
 
   /// return the index (height) of the given variable within the scaffold (if it exists)
   fn vix(&self, v:VID)->Option<usize> { self.vids.iter().position(|&x| x == v) }
@@ -967,3 +977,4 @@ impl SubSolver for SwapSolver {
 }
 
 include!("test-swap.rs");
+include!("test-swap-scaffold.rs");
