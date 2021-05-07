@@ -39,7 +39,7 @@ use std::cell::RefCell;
 /// that can persist on disk, so a simple flat index into an array of XVHLs is fine for me.
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
-struct XID { x: i64 }
+pub struct XID { x: i64 }
 impl fmt::Debug for XID {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     if *self == XID_O { write!(f, "XO")}
@@ -72,7 +72,7 @@ impl std::ops::Not for XHiLo { type Output = XHiLo; fn not(self)->XHiLo { XHiLo 
 impl XHiLo { fn as_tup(&self)->(XID,XID) { (self.hi, self.lo) }}
 
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-struct XVHL { pub v: VID, pub hi: XID, pub lo: XID }
+pub struct XVHL { pub v: VID, pub hi: XID, pub lo: XID }
 impl XVHL {
   fn hilo(&self)->XHiLo { XHiLo { hi:self.hi, lo:self.lo } }
   fn is_var(&self)->bool { self.v.is_var() && self.hi == XID_I && self.lo == XID_O }}
@@ -83,7 +83,7 @@ const XVHL_O:XVHL = XVHL{ v: NOV, hi:XID_O, lo:XID_O };
 
 /// index + refcount
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-struct IxRc { ix:XID, irc: usize, erc: usize }
+pub struct IxRc { ix:XID, irc: usize, erc: usize }
 
 /**
 We need to map:
@@ -198,16 +198,16 @@ impl XVHLScaffold {
           }}
       Ok(())}
 
-  fn get_ixrc(&self, x:XID)->Option<&IxRc> {
+  pub fn get_ixrc(&self, x:XID)->Option<&IxRc> {
     let XVHL{ v, hi, lo } = self.vhls[x.raw().ix()];
     self.rows[&v].hm.get(&XHiLo{ hi, lo }) }
-  fn del_node(&mut self, x:XID) {
+  pub fn del_node(&mut self, x:XID) {
     let XVHL{ v, hi, lo } = self.vhls[x.raw().ix()];
     self.vhls[x.raw().ix()] = XVHL_O;
     self.rows.get_mut(&v).unwrap().hm.remove(&XHiLo{ hi, lo }); }
-  fn get_refcount(&self, x:XID)->Option<usize> { self.get_ixrc(x).map(|ixrc| ixrc.irc) }
-  fn ixrcs_on_row(&self, v:VID)->HashSet<&IxRc> { self.rows[&v].hm.values().collect() }
-  fn xids_on_row(&self, v:VID)->HashSet<XID> { self.rows[&v].hm.values().map(|ixrc| ixrc.ix).collect() }
+  pub fn get_refcount(&self, x:XID)->Option<usize> { self.get_ixrc(x).map(|ixrc| ixrc.irc) }
+  pub fn ixrcs_on_row(&self, v:VID)->HashSet<&IxRc> { self.rows[&v].hm.values().collect() }
+  pub fn xids_on_row(&self, v:VID)->HashSet<XID> { self.rows[&v].hm.values().map(|ixrc| ixrc.ix).collect() }
 
   /// return the index (height) of the given variable within the scaffold (if it exists)
   fn vix(&self, v:VID)->Option<usize> { self.vids.iter().position(|&x| x == v) }
@@ -378,12 +378,8 @@ impl XVHLScaffold {
     let wtov = worker.wtov_mods(wipxid); let wtovs=wtov.len();
     for (ix, hi, lo) in wtov { self.vhls[ix] = XVHL{ v, hi, lo } }
 
-    // [ commit edec/eref changes ]
-    if !(worker.edec.is_empty() && worker.eref.is_empty()) {
-      let mut sum:HashMap<XID, i64> = HashMap::new();
-      for &xid in worker.eref.iter() { *sum.entry(xid).or_insert(0) += 1; }
-      for &xid in worker.edec.iter() { *sum.entry(xid).or_insert(0) -= 1; }
-      for (xid, drc) in sum.iter() { self.add_ref_ix(*xid, *drc); }}
+    // [ commit refcount changes ]
+    for (xid, dc) in worker.refs.iter() { self.add_ref_ix(*xid, *dc); }
 
     // finally, put the rows back where we found them:
     self.rows.insert(v, worker.rv);
@@ -515,11 +511,8 @@ enum XWIP1 { XID(XID), NEW(i64) }
 struct SwapWorker {
   // the rows to swap:
   rv:XVHLRow, rw:XVHLRow,
-
-  /// external nodes whose refcounts need to be decremented after the swap.
-  edec: Vec<XID>,
-  /// external nodes to incref
-  eref: Vec<XID>,
+  // external reference counts to change
+  refs: HashMap<XID, i64>,
 
   /// wip for new children on row v.
   wtov: Vec<(IxRc,XWIP1,XWIP1)>,
@@ -531,32 +524,37 @@ struct SwapWorker {
 
 impl SwapWorker {
   fn new(rv:XVHLRow, rw:XVHLRow )->Self {
-    SwapWorker{ rv, rw, edec:vec![], eref:vec![], wtov:vec![], wnix:0, wnew:HashMap::new() } }
+    SwapWorker{ rv, rw, refs:HashMap::new(), wtov:vec![], wnix:0, wnew:HashMap::new() } }
+
+  fn xref(&mut self, x:XID, dc:i64)->XID {
+    *self.refs.entry(x.raw()).or_insert(0)+=dc; x }
+
+  fn new_xid(&mut self)->XID { let xid = XID {x:self.wnix}; self.wnix+=1; xid }
 
   fn resolve(&mut self, xw0:XWIP0)->XWIP1 {
     match xw0 {
       // the child() function would have marked it as a XID if it were already in row w.
-      XWIP0::XID(x) => { self.eref.push(x); XWIP1::XID(x) },
+      XWIP0::XID(x) => { XWIP1::XID(self.xref(x,1)) },
       XWIP0::HL(hi0,lo0) => {
         // these are the new children on the w level, so we are creating a new node.
         // but: it's possible that multiple new nodes point to the same place.
         // this pass ensures that all duplicates resolve to the same place.
         // TODO: this isn't really an IxRc since the xid is virtual
         let (hi,lo,inv) = if lo0.is_inv() { (!hi0, !lo0, true) } else { (hi0,lo0,false) };
-        let x = match self.wnew.entry((hi, lo)) {
-          Entry::Occupied(mut e) => {
-            e.get_mut().irc += 1;
-            e.get().ix.x }
-          Entry::Vacant(e) => {
-            let x = self.wnix; self.wnix += 1;
-            self.eref.push(hi); self.eref.push(lo);
-            e.insert(IxRc{ ix:XID{x}, irc:1, erc:0 });
-            x }};
-        XWIP1::NEW(if inv { !x } else { x }) }}}
+        let ir = {
+          // remove_entry rather than entry so self isn't borrowed when calling xref()
+          if let Some((_k,mut ixrc)) = self.wnew.remove_entry(&(hi,lo)) {
+            // Entry::Occupied - we were already going to create this node.
+            ixrc.irc += 1; ixrc }
+          else { // Entry::Vacant, so build a new node:
+            self.xref(hi, 1); self.xref(lo,1);
+            IxRc { ix: self.new_xid(), irc: 1, erc: 0 }}};
+        self.wnew.insert((hi,lo), ir);
+        XWIP1::NEW(if inv { !ir.ix.x } else { ir.ix.x }) }}}
 
   /// Construct new child nodes on the w level, or add new references to external nodes.
   /// Converts the XWIP0::HL entries to XWIP1::NEW.
-  /// populates .wtov, .wnew, and .eref
+  /// populates .wtov and .wnew
   fn find_movers(&mut self) {
     // collect the list of nodes on row w that reference row v, and thus have to be moved to row v.
     for (whl, wip_hi, wip_lo) in self.gather_wtov() {
