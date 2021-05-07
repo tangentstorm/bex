@@ -508,12 +508,21 @@ enum XWIP1 { XID(XID), NEW(i64) }
 //    if n.rc==0, Del(n.nid) and DecRef(n.hi, n.lo)
 
 
-struct SwapWorker {
-  // the rows to swap:
-  rv:XVHLRow, rw:XVHLRow,
-  // external reference counts to change
-  refs: HashMap<XID, i64>,
+// TODO: rename rows to U and D for up/down
+#[derive(PartialEq)]
+enum ROW { W, V }
 
+struct SwapWorker {
+  /// row v is the row that moves upward.
+  rv:XVHLRow,
+  /// row w is the row that moves downward.
+  rw:XVHLRow,
+  /// external reference counts to change
+  refs: HashMap<XID, i64>,
+  /// track any nodes we've deleted (so we can recycle them)
+  dels: Vec<XID>,
+  // reverse map for row v (so we can see if a branch from w points to row v)
+  rv_map:HashMap<XID,XHiLo>,
   /// wip for new children on row v.
   wtov: Vec<(IxRc,XWIP1,XWIP1)>,
 
@@ -524,11 +533,32 @@ struct SwapWorker {
 
 impl SwapWorker {
   fn new(rv:XVHLRow, rw:XVHLRow )->Self {
-    SwapWorker{ rv, rw, refs:HashMap::new(), wtov:vec![], wnix:0, wnew:HashMap::new() } }
+    let rv_map = rv.hm.iter().map(|(hl,ixrc)|(ixrc.ix,*hl)).collect();
+    let this = Self{ rv, rw, rv_map, refs:HashMap::new(), dels:vec![], wtov:vec![], wnix:0, wnew:HashMap::new() };
+    // this.gc(ROW::W);
+    this }
 
+  /// garbage collect nodes on one of the rows:
+  fn gc(&mut self, which:ROW) {
+    let mut dels = vec![];
+    let mut refs: HashMap::<XID, i64> = HashMap::new();
+    let row = match which { ROW::V => &mut self.rv, ROW::W => &mut self.rw };
+    row.hm.retain(|hl, ixrc| {
+      if ixrc.irc == 0 {
+        *refs.entry(hl.hi.raw()).or_insert(0)-=1;
+        *refs.entry(hl.lo.raw()).or_insert(0)-=1;
+        dels.push(ixrc.ix);
+        false }
+      else { true }});
+    self.dels.extend(dels);
+    for (x, dc) in refs { self.xref(x, dc); }}
+
+  /// record a refcount change to an external node
   fn xref(&mut self, x:XID, dc:i64)->XID {
+    if let Some(key) = self.rv_map.get(&x) { self.rv.hm.get_mut(key).unwrap().irc-=1 }
     *self.refs.entry(x.raw()).or_insert(0)+=dc; x }
 
+  /// generate a new (wip) xid to use internally
   fn new_xid(&mut self)->XID { let xid = XID {x:self.wnix}; self.wnix+=1; xid }
 
   fn resolve(&mut self, xw0:XWIP0)->XWIP1 {
@@ -552,6 +582,7 @@ impl SwapWorker {
         self.wnew.insert((hi,lo), ir);
         XWIP1::NEW(if inv { !ir.ix.x } else { ir.ix.x }) }}}
 
+  /// Step 0 in the swap() algorithm:
   /// Construct new child nodes on the w level, or add new references to external nodes.
   /// Converts the XWIP0::HL entries to XWIP1::NEW.
   /// populates .wtov and .wnew
@@ -578,27 +609,26 @@ impl SwapWorker {
   /// nodes because the rc dropped to 0 (when the node was only referenced by row w).
   fn recycle(&mut self)->(Vec<XID>, Vec<XID>, usize) {
 
-    // vdel contains xids that the scaffold should delete.
-    let mut vdel: Vec<XID> = vec![];
-    self.rv.hm.retain(|_, ixrc| {
-      if ixrc.irc == 0 { vdel.push(ixrc.ix); false }
-      else { true }});
+    self.gc(ROW::V);
+
+    // dels contains xids that the scaffold should delete.
+    let mut dels = self.dels.clone();
 
     let mut needed = 0; // in case there are more new nodes than old trash
 
     // vmod reclaims xids from vdel that can be recycled
     let vmod: Vec<XID> = {
-      let have = vdel.len();
+      let have = dels.len();
       let need = self.wnew.len();
       if need <= have {
-        let tmp = vdel.split_off(need);
-        let res = vdel; vdel = tmp;
+        let tmp = dels.split_off(need);
+        let res = dels; dels = tmp;
         res }
       else {
-        let res = vdel; vdel = vec![];
+        let res = dels; dels = vec![];
         needed = need-have;
         res }};
-    (vdel,vmod,needed)}
+    (dels,vmod,needed)}
 
   /// add newly created child nodes on row w, and
   /// return the list of changes to make to the master scaffold,
