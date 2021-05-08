@@ -229,7 +229,7 @@ def draw_scaffold(g,n, label, seq, ru=(), rd=(), ites=(), **kw):
 
 def draw_ite_scaffold(label, before, after):
     d = graphviz.Digraph()
-    d.attr(label=label)
+    d.attr(label=f"diagram {len(RUST_TESTS)-1}. {label}")
     with d.subgraph(name="cluster_before") as g:
         draw_scaffold(g,'b', 'before', 'zdua', **before)
     with d.subgraph(name="cluster_after") as g:
