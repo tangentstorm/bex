@@ -40,10 +40,10 @@ def write_tests():
     let vn9 = VID::var(9); xs.push(vn9);
 
     // variables used in the swap tests. These look "upside down" here
-    // because we're pushing them onto a stack. Remember: v starts below w.
-    let vt = VID::vir(0); xs.push(vt);
-    let vv = VID::vir(1); xs.push(vv);
-    let vw = VID::vir(2); xs.push(vw);
+    // because we're pushing them onto a stack. Remember: vu starts below vd.
+    let va = VID::vir(0); xs.push(va);
+    let vu = VID::vir(1); xs.push(vu);
+    let vd = VID::vir(2); xs.push(vd);
     let vz = VID::vir(4); xs.push(vz);
 
     // constructors for default nodes
@@ -58,12 +58,12 @@ def write_tests():
     let (n4,n5,n6) = (node(vn4,XO,!XO), node(vn5,XO,!XO), node(vn6,XO,!XO));
     let (n7,n8,n9) = (node(vn7,XO,!XO), node(vn8,XO,!XO), node(vn9,XO,!XO));
 
-    // now some fake nodes for the t/z rows to point at when the edges are not defined:
+    // now some fake nodes for the a/z rows to point at when the edges are not defined:
     let (x0,x1,x2,x3) = (node(vx0,XO,!XO), node(vx1,XO,!XO), node(vx2,XO,!XO), node(vx3,XO,!XO));
 
-    // and the default t and z rows themselves:
+    // and the default a and z rows themselves:
     let (z0,z1,z2,z3) = (node(vz,x0,!x0), node(vz,x1,!x1), node(vz,x2,!x2), node(vz,x3,!x3));
-    let (t0,t1,t2,t3) = (node(vt,x0,!x0), node(vt,x1,!x1), node(vt,x2,!x2), node(vt,x3,!x3));
+    let (a0,a1,a2,a3) = (node(va,x0,!x0), node(va,x1,!x1), node(va,x2,!x2), node(va,x3,!x3));
 
     // setup code generated from the diagram:
 """,
@@ -78,7 +78,7 @@ def write_tests():
     xs.validate("setup from diagram");
 
     // now perform the swap:
-    xs.swap(vv);
+    xs.swap(vu);
 
     // checks generated from the diagram:
 """,
@@ -92,23 +92,23 @@ def xid(x:U[int,str])->str:
     """convert the graph label to a XID var used in the test suite (defined in src/test-swap.rs)"""
     return f"n{abs(x)}" if type(x) == int else "un" if x=="*" else x
 
-def make_vmap(rv,rw):
+def make_vmap(ru,rd):
     """return a dict mapping ids in the notation to their rust variable names"""
-    r = {x:'v'+x[0] for x in "z0 z1 z2 z3 t0 t1 t2 t3".split()}
-    r.update({x:'vv' for x in rv})
-    r.update({x:'vw' for x in rw})
+    r = {x:'v'+x[0] for x in "z0 z1 z2 z3 a0 a1 a2 a3".split()}
+    r.update({x:'vu' for x in ru})
+    r.update({x:'vd' for x in rd})
     return r
 
-def make_xvhls(rv,rw,ites):
+def make_xvhls(ru,rd,ites):
     """converts the notation to (x:XID, v:VID, hi:XID, lo:XID) tuples (in rust syntax)"""
-    rv = [abs(x) for x in rv]
-    rw = [abs(x) for x in rw]
-    vmap = make_vmap(rv,rw)
+    ru = [abs(x) for x in ru]
+    rd = [abs(x) for x in rd]
+    vmap = make_vmap(ru,rd)
     # !! the nodes have to be built in order from the bottom up,
     #    so that we don't delete a node after pointing an edge to it.
     # !! I think it reads better from top to bottom though (that's how I wrote them)
     #    so for now, you have to just manually write the ite triples from top to bottom in the spec.
-    seen = {'t0','t1','t2','t3','un'}    # this is so we can at least warn if you use the wrong order.
+    seen = {'a0','a1','a2','a3','un'}    # this is so we can at least warn if you use the wrong order.
     for i, t, e in reversed(ites):
         v, x, hi, lo = vmap[i], xid(i), xid(t), xid(e)
         if hi in seen and lo in seen:
@@ -116,25 +116,25 @@ def make_xvhls(rv,rw,ites):
             yield x,v,hi,lo
         else: raise ValueError(f'ites must be specified from top to bottom for now! (bad: {repr((i,t,e))})')
 
-def rust_scaffold_setup(rv,rw,ites):
+def rust_scaffold_setup(ru,rd,ites):
     """used to translate the "before" diagram into code to set up the scaffold"""
-    for x, v, hi, lo in make_xvhls(rv,rw,ites):
+    for x, v, hi, lo in make_xvhls(ru,rd,ites):
         yield f'  let (old_xid, old_vhl) = ({x}, xs.get({x}).unwrap()); xs.del_node({x});'
         if hi == 'un': hi = 'old_vhl.hi'
         if lo == 'un': lo = 'old_vhl.lo'
         yield f'  let {x} = xs.add_ref(XVHL{{ v:{v}, hi:{hi}, lo:{lo} }}, 0, 0);'
         yield f'  assert_eq!({x}.raw(), old_xid.raw(), "scaffold failed to reuse empty slot for {x}.");'
 
-def rust_scaffold_check(rv,rw,ites):
+def rust_scaffold_check(ru,rd,ites):
     """used to translate the "after" diagram into a set of rust assertions to make after calling swap()"""
     refs = Counter()
-    # check that the nodes on rows r and w match the diagram exactly:
-    for v, row in [('v',rv), ('w',rw)]:
+    # check that the nodes on rows u and d match the diagram exactly:
+    for v, row in [('u',ru), ('d',rd)]:
         actual = f"xs.xids_on_row(v{v})"
         expect = f"HashSet::from_iter(vec![{', '.join(xid(x) for x in row)}])"
         yield f'  assert_eq!({actual}, {expect}, "row {v} didn\'t match expected values!");'
     # do our own refcount based on the diagram, and check that the vhl entry matches:
-    for x, v, hi, lo in make_xvhls(rv,rw,ites):
+    for x, v, hi, lo in make_xvhls(ru,rd,ites):
         refs[hi]+=1
         refs[lo]+=1
         yield f' {{ let x=xs.get({x}).unwrap();'
@@ -173,28 +173,28 @@ def add_row(g, n, row, active, nodes, **kw):
     with g.subgraph(name=n+row) as c:
         c.attr(rank='same', pencolor=FADE)
         pcolor = FADE
-        if row in 'wv':
+        if row in 'ud':
             pcolor = 'black'
-            bcolor = '#cc9999' if row == 'v' else '#9999cc'
+            bcolor = '#cc9999' if row == 'u' else '#9999cc'
             c.attr(style='filled', color=bcolor, fontcolor='black', pencolor=pcolor)
         c.attr('node', **kw)
         nodes = [(x,x) if isinstance(x,str) else x for x in nodes]
         for i,(x,lbl) in enumerate(nodes):
-            fcolor = 'orange' if row =='v' else 'dodgerblue' if row=='w' else 'white'
-            ncolor = 'black' if row in 'wv' else FADE if x in active else INVIS
-            tcolor = ncolor if row in 'tz' else TEXT
+            fcolor = 'orange' if row =='u' else 'dodgerblue' if row=='d' else 'white'
+            ncolor = 'black' if row in 'ud' else FADE if x in active else INVIS
+            tcolor = ncolor if row in 'az' else TEXT
             c.node(n+x, label=lbl, group=row, style='filled',
                    color=ncolor, fillcolor=fcolor, fontcolor=tcolor)
         # force them to flow left-to right
-        if row in 'zt' or (row=='v' and n=='a') or (row=='w' and n=='b'):
+        if row in 'az' or (row=='u' and n=='a') or (row=='d' and n=='b'):
             for x,y in pairs([n+row]+[n+x[0] for x in nodes]):
                 c.edge(x,y,style='invis')
-        prime = "'" if n=='a' and row in 'wv' else ""
+        prime = "'" if n=='a' and row in 'ud' else ""
         c.node(n+row, label=row+prime, width="1", shape='none', fontcolor=pcolor, group='clusters')
 
 
 def edge_color(v):
-    return FADE if v[0] in 'zt' else 'black'
+    return FADE if v[0] in 'az' else 'black'
 
 def add_ite(g,n, v, hi, lo):
     if hi!="*": g.edge(n+v, n+hi, style='solid', color=edge_color(v))
@@ -209,7 +209,7 @@ def node_label(x:U[str,int])->(str,str):
     else: return f'n{x}', f'#{x}'
 
 
-def draw_scaffold(g,n, label, seq, rv=(), rw=(), ites=(), **kw):
+def draw_scaffold(g,n, label, seq, ru=(), rd=(), ites=(), **kw):
 
     g.attr(rankdir='TB', labeljust='l', newrank='true', remincross='false',
            pencolor="#666666", label=label, ranksep="0.25")
@@ -218,9 +218,9 @@ def draw_scaffold(g,n, label, seq, rv=(), rw=(), ites=(), **kw):
 
     active = {node_label(x)[0] for vhl in ites for x in vhl}
     add_row(g, n, 'z', active, ['z0', 'z1', 'z2', 'z3'], color=FADE, fontcolor=FADE)
-    add_row(g, n, 'w', active, [node_label(abs(x)) for x in rw])
-    add_row(g, n, 'v', active, [node_label(abs(x)) for x in rv])
-    add_row(g, n, 't', active, ['t0', 't1', 't2', 't3'], color=FADE, fontcolor=FADE)
+    add_row(g, n, 'd', active, [node_label(abs(x)) for x in rd])
+    add_row(g, n, 'u', active, [node_label(abs(x)) for x in ru])
+    add_row(g, n, 'a', active, ['a0', 'a1', 'a2', 'a3'], color=FADE, fontcolor=FADE)
     row_order(g,n, seq)
 
     for ite in ites:
@@ -231,10 +231,10 @@ def draw_ite_scaffold(label, before, after):
     d = graphviz.Digraph()
     d.attr(label=label)
     with d.subgraph(name="cluster_before") as g:
-        draw_scaffold(g,'b', 'before', 'zwvt', **before)
+        draw_scaffold(g,'b', 'before', 'zdua', **before)
     with d.subgraph(name="cluster_after") as g:
         g.attr(label='after', pencolor='blue')
-        draw_scaffold(g,'a', 'after', 'zvwt', **after)
+        draw_scaffold(g,'a', 'after', 'zuda', **after)
     # print(d.source)
     return d
 
@@ -242,5 +242,5 @@ def draw_ite_scaffold(label, before, after):
 
 # constants for the top and bottom rows
 z0, z1, z2, z3="z0 z1 z2 z3".split()
-t0, t1, t2, t3="t0 t1 t2 t3".split()
+a0, a1, a2, a3="a0 a1 a2 a3".split()
 un="*" # "undefined" (when we don't care where an edge goes)
