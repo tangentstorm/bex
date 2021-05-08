@@ -348,55 +348,55 @@ impl XVHLScaffold {
       i-=1 }
     res }
 
-  /// swap v up by one level
-  fn swap(&mut self, v:VID) {
-    #[cfg(test)] { self.validate(&format!("swap({}) in {:?}.", v, self.vids)); }
-    let vi = self.vix(v).expect("requested vid was not in the scaffold.");
-    if vi+1 == self.vids.len() { println!("warning: attempt to lift top vid {}", v); return }
-    let w = self.vids[vi+1]; // start: v is 1 level below w
-    self.vids.swap(vi+1, vi);
+  /// swap vu up by one level
+  fn swap(&mut self, vu:VID) {
+    #[cfg(test)] { self.validate(&format!("swap({}) in {:?}.", vu, self.vids)); }
+    let uix = self.vix(vu).expect("requested vid was not in the scaffold.");
+    if uix+1 == self.vids.len() { println!("warning: attempt to lift top vid {}", vu); return }
+    let vd = self.vids[uix+1]; // start: u is 1 level below d
+    self.vids.swap(uix+1, uix);
 
-    //  row wi:  w ____                v        v ____
-    //            :     \                        :     \
-    //  row vi:  v __    v __      =>  w   =>   w __    w __
+    //  row d:   d ____                u        u ____
+    //           :     \                        :     \
+    //  row u:   u __    u __      =>  d   =>   d __    d __
     //           :   \    :  \                  :   \    :   \
     //           oo   oi  io  ii                oo   io  oi   ii
-    let rv = self.rows.remove(&v).unwrap();
-    let rw = self.rows.remove(&w).unwrap();
-    let mut worker = SwapWorker::new(rv,rw);
+    let ru = self.rows.remove(&vu).unwrap();
+    let rd = self.rows.remove(&vd).unwrap();
+    let mut worker = SwapWorker::new(ru,rd);
     worker.find_movers();
 
-    // If we are deleting from v and adding to w, we can re-use the xids. otherwise, allocate some new xids.
-    let (xids, vdels) = {
-      let (vdel, mut xids, needed) = worker.recycle();
+    // If we are deleting from row u and adding to row d, we can re-use the xids. otherwise, allocate some new xids.
+    let (xids, udels) = {
+      let (udel, mut xids, needed) = worker.recycle();
       if needed > 0 { xids.extend(self.alloc(needed)) };
-      let vdels = vdel.len(); self.reclaim_nodes(vdel);
-      (xids, vdels) };
+      let udels = udel.len(); self.reclaim_nodes(udel);
+      (xids, udels) };
 
-    let (wnew, wipxid) = worker.wnew_mods(xids); let wnews=wnew.len();
-    for (ix, hi, lo) in wnew { self.vhls[ix] = XVHL{ v:w, hi, lo } }
-    let wtov = worker.wtov_mods(wipxid); let wtovs=wtov.len();
-    for (ix, hi, lo) in wtov { self.vhls[ix] = XVHL{ v, hi, lo } }
+    let (dnew, wipxid) = worker.dnew_mods(xids); let dnews=dnew.len();
+    for (ix, hi, lo) in dnew { self.vhls[ix] = XVHL{ v: vd, hi, lo } }
+    let unew = worker.unew_mods(wipxid); let unews=unew.len();
+    for (ix, hi, lo) in unew { self.vhls[ix] = XVHL{ v: vu, hi, lo } }
 
     // [ commit refcount changes ]
     for (xid, dc) in worker.refs.iter() { self.add_ref_ix(*xid, *dc); }
 
     // finally, put the rows back where we found them:
-    self.rows.insert(v, worker.rv);
-    self.rows.insert(w, worker.rw);
+    self.rows.insert(vu, worker.ru);
+    self.rows.insert(vd, worker.rd);
 
     let counts:Vec<usize> = self.vids.iter().map(|v| self.rows[v].hm.len()).collect();
-    println!("%swapped: v:{:?} w:{:?}",v,w);
-    println!("%stats: wnews:{} wtovs:{} vdels:{}", wnews, wtovs, vdels);
+    println!("%swapped: vu:{:?} vd:{:?}", vu, vd);
+    println!("%stats: dnews:{} unews:{} udels:{}", dnews, unews, udels);
     println!("%vids: {:?}", self.vids);
     println!("%counts: {:?}", counts);
-    #[cfg(test)] { self.validate(format!("after swapping v={:?} and w={:?}.",v,w).as_str()); }}
+    #[cfg(test)] { self.validate(format!("after swapping vu:{:?} and vd:{:?}.",vu,vd).as_str()); }}
 
   /// Reclaim the records for a list of garbage collected nodes.
   // TODO: add to some kind of linked list so they're easier to find.
   fn reclaim_nodes(&mut self, xids:Vec<XID>) { for xid in xids { self.vhls[xid.raw().ix()] = XVHL_O }}
 
-  /// Remove all nodes from the top rows of the scaffold, down to and including row r.
+  /// Remove all nodes from the top rows of the scaffold, down to and including row v.
   /// (the rows themselves remain in place).
   fn clear_top_rows(&mut self, rv:VID) {
     let mut refs: HashMap<XID, usize> = HashMap::new();
@@ -493,56 +493,55 @@ enum XWIP0 { XID(XID), HL(XID,XID) }
 #[derive(Debug, Clone, Copy)]
 enum XWIP1 { XID(XID), NEW(i64) }
 
-// 0: swap the rows. (lift rv above rw)
-//    v was independent before, so we leave it alone except for gc.
+// 0: swap the rows. (lift row u above row d)
+//    u was independent before, so we leave it alone except for gc.
 //    (but we might wind up using it later, so we do the gc step last.)
-// 1: for each node n in row w:
+// 1: for each node n in row d:
 //    - if n.rc=0, delete from hashmap and yield    | Delete(n.nid)
-//    - if either leg points to row v:
-//        decref the old node(s) on v
+//    - if either leg points to row u:
+//        decref the old node(s) on row u
 //        add new node(s) on w with rc=1            | Create()   { or incref if duplicates? }
 //          incref the hi/lo nodes.
-//        move n to row v, copying n.rc, and yield  | Update(n.nid, v,h,l)
+//        move n to row u, copying n.rc, and yield  | Update(n.nid, v,h,l)
 //    - else, leave n alone.
-// 2: for n in row v:
+// 2: for n in row u:
 //    if n.rc==0, Del(n.nid) and DecRef(n.hi, n.lo)
 
 
 // TODO: rename rows to U and D for up/down
 #[derive(PartialEq)]
-enum ROW { W, V }
+enum ROW { U, D }
 
 struct SwapWorker {
-  /// row v is the row that moves upward.
-  rv:XVHLRow,
-  /// row w is the row that moves downward.
-  rw:XVHLRow,
+  /// row u is the row that moves upward.
+  ru:XVHLRow,
+  /// row d is the row that moves downward.
+  rd:XVHLRow,
   /// external reference counts to change
   refs: HashMap<XID, i64>,
   /// track any nodes we've deleted (so we can recycle them)
   dels: Vec<XID>,
-  // reverse map for row v (so we can see if a branch from w points to row v)
-  rv_map:HashMap<XID,XHiLo>,
-  /// wip for new children on row v.
-  wtov: Vec<(IxRc,XWIP1,XWIP1)>,
-
-  wnix:i64,
-
-  /// new parent nodes to create on row w
-  wnew: HashMap<(XID,XID), IxRc> }
+  // reverse map for row u (so we can see if a branch from d points to row u)
+  ru_map:HashMap<XID,XHiLo>,
+  /// wip for new children on row u.
+  unew: Vec<(IxRc,XWIP1,XWIP1)>,
+  // next (fake/tmp) xid to assign
+  next:i64,
+  /// new parent nodes to create on row d
+  dnew: HashMap<(XID,XID), IxRc> }
 
 impl SwapWorker {
-  fn new(rv:XVHLRow, rw:XVHLRow )->Self {
-    let rv_map = rv.hm.iter().map(|(hl,ixrc)|(ixrc.ix,*hl)).collect();
-    let this = Self{ rv, rw, rv_map, refs:HashMap::new(), dels:vec![], wtov:vec![], wnix:0, wnew:HashMap::new() };
-    // this.gc(ROW::W);
+  fn new(ru:XVHLRow, rd:XVHLRow )->Self {
+    let ru_map = ru.hm.iter().map(|(hl,ixrc)|(ixrc.ix,*hl)).collect();
+    let this = Self{ ru, rd, ru_map, refs:HashMap::new(), dels:vec![], unew:vec![], next:0, dnew:HashMap::new() };
+    // this.gc(ROW::D);
     this }
 
   /// garbage collect nodes on one of the rows:
   fn gc(&mut self, which:ROW) {
     let mut dels = vec![];
     let mut refs: HashMap::<XID, i64> = HashMap::new();
-    let row = match which { ROW::V => &mut self.rv, ROW::W => &mut self.rw };
+    let row = match which { ROW::U => &mut self.ru, ROW::D => &mut self.rd };
     row.hm.retain(|hl, ixrc| {
       if ixrc.irc == 0 {
         *refs.entry(hl.hi.raw()).or_insert(0)-=1;
@@ -555,15 +554,15 @@ impl SwapWorker {
 
   /// record a refcount change to an external node
   fn xref(&mut self, x:XID, dc:i64)->XID {
-    if let Some(key) = self.rv_map.get(&x) { self.rv.hm.get_mut(key).unwrap().irc-=1 }
+    if let Some(key) = self.ru_map.get(&x) { self.ru.hm.get_mut(key).unwrap().irc-=1 }
     *self.refs.entry(x.raw()).or_insert(0)+=dc; x }
 
   /// generate a new (wip) xid to use internally
-  fn new_xid(&mut self)->XID { let xid = XID {x:self.wnix}; self.wnix+=1; xid }
+  fn new_xid(&mut self)->XID { let xid = XID {x:self.next}; self.next+=1; xid }
 
   fn resolve(&mut self, xw0:XWIP0)->XWIP1 {
     match xw0 {
-      // the child() function would have marked it as a XID if it were already in row w.
+      // the child() function would have marked it as a XID if it were already in row d.
       XWIP0::XID(x) => { XWIP1::XID(self.xref(x,1)) },
       XWIP0::HL(hi0,lo0) => {
         // these are the new children on the w level, so we are creating a new node.
@@ -573,21 +572,21 @@ impl SwapWorker {
         let (hi,lo,inv) = if lo0.is_inv() { (!hi0, !lo0, true) } else { (hi0,lo0,false) };
         let ir = {
           // remove_entry rather than entry so self isn't borrowed when calling xref()
-          if let Some((_k,mut ixrc)) = self.wnew.remove_entry(&(hi,lo)) {
+          if let Some((_k,mut ixrc)) = self.dnew.remove_entry(&(hi,lo)) {
             // Entry::Occupied - we were already going to create this node.
             ixrc.irc += 1; ixrc }
           else { // Entry::Vacant, so build a new node:
             self.xref(hi, 1); self.xref(lo,1);
             IxRc { ix: self.new_xid(), irc: 1, erc: 0 }}};
-        self.wnew.insert((hi,lo), ir);
+        self.dnew.insert((hi,lo), ir);
         XWIP1::NEW(if inv { !ir.ix.x } else { ir.ix.x }) }}}
 
   /// Step 0 in the swap() algorithm:
-  /// Construct new child nodes on the w level, or add new references to external nodes.
+  /// Construct new child nodes on row d, or add new references to external nodes.
   /// Converts the XWIP0::HL entries to XWIP1::NEW.
-  /// populates .wtov and .wnew
+  /// populates .unew and .dnew
   fn find_movers(&mut self) {
-    // collect the list of nodes on row w that reference row v, and thus have to be moved to row v.
+    // collect the list of nodes on row d that reference row u, and thus have to be moved to row u.
     for (whl, wip_hi, wip_lo) in self.gather_wtov() {
       let hi = self.resolve(wip_hi);
       let lo = self.resolve(wip_lo);
@@ -595,31 +594,31 @@ impl SwapWorker {
       // and lo branches are always raw in the scaffold.
       // This means we only have to deal with inverted xids the newly-created hi branches.
       if let XWIP1::NEW(x) = lo { assert!(x >= 0, "unexpected !lo branch");}
-      // delete the old node from row w. the newly created nodes don't depend on v, and
-      // the node to delete does depend on v, so there's never a conflict here.
-      let ixrc = self.rw.hm.remove(&whl).expect("I saw a whl that wasn't there!");
-      // we can't add directly to row v until we resolve the XWIP1::NEW entries,
+      // delete the old node from row d. the newly created nodes don't depend on vid u, and
+      // the node to delete does depend on vid u, so there's never a conflict here.
+      let ixrc = self.rd.hm.remove(&whl).expect("I saw a whl that wasn't there!");
+      // we can't add directly to row u until we resolve the XWIP1::NEW entries,
       // but we can make a list of the work to be done:
-      self.wtov.push((ixrc, hi, lo)); }}
+      self.unew.push((ixrc, hi, lo)); }}
 
-  /// remove garbage from row v. these won't conflict with .wtov because we will never
-  /// add a *completely* new node on row v - only move existing nodes from w, and
-  /// these will never match existing nodes on v because at least one leg always
-  /// points at w (and this wasn't possible before the lift). But we may need to delete
-  /// nodes because the rc dropped to 0 (when the node was only referenced by row w).
+  /// remove garbage from row u. these won't conflict with .unew because we will never
+  /// add a *completely* new node on row u - only move existing nodes from row d, and
+  /// these will never match existing nodes on row u because at least one leg always
+  /// points at var d (and this wasn't possible before the lift). But we may need to delete
+  /// nodes because the rc dropped to 0 (when the node was only referenced by row d).
   fn recycle(&mut self)->(Vec<XID>, Vec<XID>, usize) {
 
-    self.gc(ROW::V);
+    self.gc(ROW::U);
 
     // dels contains xids that the scaffold should delete.
     let mut dels = self.dels.clone();
 
     let mut needed = 0; // in case there are more new nodes than old trash
 
-    // vmod reclaims xids from vdel that can be recycled
-    let vmod: Vec<XID> = {
+    // mods reclaims xids from dels that can be recycled
+    let mods: Vec<XID> = {
       let have = dels.len();
-      let need = self.wnew.len();
+      let need = self.dnew.len();
       if need <= have {
         let tmp = dels.split_off(need);
         let res = dels; dels = tmp;
@@ -628,117 +627,118 @@ impl SwapWorker {
         let res = dels; dels = vec![];
         needed = need-have;
         res }};
-    (dels,vmod,needed)}
+    (dels,mods,needed)}
 
-  /// add newly created child nodes on row w, and
+  /// add newly created child nodes on row d, and
   /// return the list of changes to make to the master scaffold,
   /// and a vector mapping the wip ix to the final xid
-  fn wnew_mods(&mut self, xids:Vec<XID>)->(Vec<(usize, XID, XID)>, Vec<XID>) {
+  fn dnew_mods(&mut self, xids:Vec<XID>)->(Vec<(usize, XID, XID)>, Vec<XID>) {
     let mut res = vec![];
-    let mut wipxid = vec![XID_O; self.wnew.len()];
-    for ((hi,lo), ixrc0) in self.wnew.iter() {
+    let mut wipxid = vec![XID_O; self.dnew.len()];
+    for ((hi,lo), ixrc0) in self.dnew.iter() {
       let mut ixrc = *ixrc0; // clone so we maintain the refcount
       debug_assert!(ixrc.irc > 0);
       let inv = ixrc0.ix.x < 0; assert!(!inv);
       let wipix = ixrc0.ix.x as usize;
       ixrc.ix = xids[wipix];  // map the temp xid -> true xid
       wipxid[wipix] = ixrc.ix; // remember for w2x, below.
-      assert!(self.rw.hm.get(&(XHiLo{hi:*hi, lo:*lo})).is_none());
-      self.rw.hm.insert(XHiLo{hi:*hi, lo:*lo}, ixrc);
+      assert!(self.rd.hm.get(&(XHiLo{hi:*hi, lo:*lo})).is_none());
+      self.rd.hm.insert(XHiLo{hi:*hi, lo:*lo}, ixrc);
       // and now update the master store:
       debug_assert_ne!(hi, lo, "hi=lo when committing wnew");
       res.push((ixrc.ix.x as usize, *hi, *lo)); }
     (res, wipxid)}
 
-  /// move the dependent nodes from row w to row v, and
+  /// move the dependent nodes from row d to row u, and
   /// return the list of changes to make to the master scaffold.
-  /// wipxid argument is the mapping returned by wnew_mods
-  fn wtov_mods(&mut self, wipxid:Vec<XID>)->Vec<(usize, XID, XID)> {
+  /// wipxid argument is the mapping returned by dnew_mods
+  fn unew_mods(&mut self, wipxid:Vec<XID>)->Vec<(usize, XID, XID)> {
     let mut res = vec![];
     let w2x = |wip:&XWIP1| {
       match wip {
         XWIP1::XID(x) => *x,
         XWIP1::NEW(x) => { if *x<0 { !wipxid[!*x as usize]  } else { wipxid[*x as usize ]}}}};
-    for (ixrc, wip_hi, wip_lo) in self.wtov.iter() {
+    for (ixrc, wip_hi, wip_lo) in self.unew.iter() {
       let (hi, lo) = (w2x(wip_hi), w2x(wip_lo));
       debug_assert_ne!(hi, lo, "hi=lo when committing wtov");
-      self.rv.hm.insert(XHiLo{hi, lo}, *ixrc);
+      self.ru.hm.insert(XHiLo{hi, lo}, *ixrc);
       res.push((ixrc.ix.x as usize, hi, lo)); }
     res}
 
-  fn vdec(&mut self, vx:&HashMap<XID,(XID,XID)>, xid:XID) {
+  /// decrement the refcount on row u
+  fn udec(&mut self, vx:&HashMap<XID,(XID,XID)>, xid:XID) {
     let (hi, lo)=vx.get(&xid.raw()).unwrap();
-    let ixrc = self.rv.hm.get_mut(&XHiLo{hi:*hi, lo:*lo}).unwrap();
+    let ixrc = self.ru.hm.get_mut(&XHiLo{hi:*hi, lo:*lo}).unwrap();
     if ixrc.irc == 0 { panic!("rc was already 0"); }
     else { ixrc.irc -= 1; }}
 
-  fn child(&self, wref:&mut Vec<XHiLo>, h:XID, l:XID)->XWIP0 { // reference a node on/below row w, or create a node on row w
+  fn child(&self, dref:&mut Vec<XHiLo>, h:XID, l:XID)->XWIP0 { // reference a node on/below row d, or create a node on row d
     let (hi, lo, inv) = if l.is_inv() {(!h, !l, true)} else {(h, l, false)};
     // hi == lo only when the match statement passes hi,hi or lo,lo.
     // previously, this triggered a decref, but that was incorrect:
     // we are only ever adding references at this step, and when hi==lo,
-    // we simply wind up adding 1 reference instead of 2. (The old nodes on row
-    // v might have other parents, so the external nodes can only *gain* references.)
+    // we simply wind up adding 1 reference instead of 2. (The old nodes on row u
+    // might have other parents, so the external nodes can only *gain* references.)
     // (Of course, it can't be the case that swapping twice creates references since
     // this should be a no-op. The "extra" references created by the first swap are
-    // balanced we garbage collect extraneous row v nodes on the second swap and
+    // balanced we garbage collect extraneous row u nodes on the second swap and
     // decref their children.)
     if hi == lo { XWIP0::XID(if inv { !lo } else { lo }) }
-    else if let Some(ixrc) = self.rw.hm.get(&XHiLo{ hi, lo}) {
-      wref.push(XHiLo{hi,lo}); // rw can't be mutable here so remember to modify it later
-      // TODO: it should be okay to modify rw directly
+    else if let Some(ixrc) = self.rd.hm.get(&XHiLo{ hi, lo}) {
+      dref.push(XHiLo{hi,lo}); // rd can't be mutable here so remember to modify it later
+      // TODO: it should be okay to modify rd directly
       XWIP0::XID(if inv {!ixrc.ix} else {ixrc.ix}) }
     else if inv { XWIP0::HL(!hi, !lo) } else { XWIP0::HL(hi, lo) }}
 
-  /// given the rows from swap(), find all the nodes from row w that need
-  /// to move to row v. (that is, rows that have a reference to row v).
+  /// given the rows from swap(), find all the nodes from row d that need
+  /// to move to row u. (that is, rows that have a reference to row u).
   /// rv is mutable here because we will decrease the refcount as we find
   /// each reference, and rw is mutable because we may *increase* the refcount.
   fn gather_wtov(&mut self)->Vec<(XHiLo, XWIP0, XWIP0)> {
-    // build a map of xid->hilo for row v, so we know every xid that branches on v,
+    // build a map of xid->hilo for row u, so we know every xid that branches on vid u,
     // and can quickly retrieve its high and lo branches.
-    let mut vx:HashMap<XID,(XID,XID)> = HashMap::new();
-    for (vhl, ixrc) in self.rv.hm.iter() { vx.insert(ixrc.ix, vhl.as_tup()); }
-    // moving a node from w->v modifies the old node in place, so no new xid is used.
-    // (we know it's not already on row v because before the lift, row v could not refer to w)
-    // at least one of the node's children will be replaced by a new node on row w. proof:
+    let mut ux:HashMap<XID,(XID,XID)> = HashMap::new();
+    for (vhl, ixrc) in self.ru.hm.iter() { ux.insert(ixrc.ix, vhl.as_tup()); }
+    // moving a node from row d-> row u modifies the old node in place, so no new xid is used.
+    // (we know it's not already on row u because before the lift, row u could not refer to row d)
+    // at least one of the node's children will be replaced by a new node on row d. proof:
     //     general pattern of 3rd level rewrite is   abcd ->  acbd
     //     we can consolidate one side of the swap: abac -> aabc (so we get v?a:w?b:c)
     //     but we can't consolidate both:  abab -> abba, because abab can't appear in a bdd.
     //     no other pattern would result in consolidating both sides. (qed)
-    // therefore: worst case for growth is every node in w moves to v and creates 2 new children.
-    // a block of 2*w.len ids for this algorithm to assign.
+    // therefore: worst case for growth is every node in row d moves to row u and creates 2 new children.
+    // a block of 2*(row d).len ids for this algorithm to assign.
     // so: in the future, if we want to create new nodes with unique ids in a distributed way,
-    // we should allocate 2*w.len ids for this function to assign to the new nodes.
+    // we should allocate 2*(row d).len ids for this function to assign to the new nodes.
     // reference counts elsewhere in the graph can change (!!! really? they don't change in this step.),
     // but never drop to 0. if they did, then swapping the rows back would have to create new nodes elsewhere.
 
-    let mut wmov0: Vec<(XHiLo,XWIP0,XWIP0)> = vec![];
-    let mut wref: Vec<XHiLo> = vec![];
+    let mut dmov0: Vec<(XHiLo,XWIP0,XWIP0)> = vec![];
+    let mut dref: Vec<XHiLo> = vec![];
 
     // Partition nodes on rw into two groups:
     // group I (independent):
-    //   These are nodes that do not reference row v.
-    //   These remain on rw, unchanged.
+    //   These are nodes that do not reference row u.
+    //   These remain on row d, unchanged.
     // group D (dependent):
-    //   These are nodes with at least one child on row v.
-    //   These must be rewritten in place to branch on v (and moved to rv).
+    //   These are nodes with at least one child on row u.
+    //   These must be rewritten in place to branch on vid u (and thus moved to row u).
     //   "In place" means that their XIDs must be preserved.
-    //   The moved nodes will have children on row w:
+    //   The moved nodes will have children on row d:
     //      These may be new nodes, or may already exist in group I.
-    //   The old children (on row v) may see their refcounts drop to 0.
-    for whl in self.rw.hm.clone().keys() {
+    //   The old children (on row u) may see their refcounts drop to 0.
+    for whl in self.rd.hm.clone().keys() {
       let (hi, lo) = whl.as_tup();
       let vget = |xid:XID|->Option<(XID,XID)> {
-        if xid.is_inv() { vx.get(&xid.raw()).cloned().map(|(h,l)| (!h,!l)) } else { vx.get(&xid).cloned() }};
+        if xid.is_inv() { ux.get(&xid.raw()).cloned().map(|(h,l)| (!h,!l)) } else { ux.get(&xid).cloned() }};
       match (vget(hi), vget(lo)) {
-        (None,          None         ) => {},  // independent of row v, so nothing to do.
-        (None,          Some((oi,oo))) => { self.new_v(&mut wref, &mut wmov0, *whl, hi, hi, oi, oo); self.vdec(&vx, lo) },
-        (Some((ii,io)), None         ) => { self.new_v(&mut wref, &mut wmov0, *whl, ii, io, lo, lo); self.vdec(&vx, hi) },
-        (Some((ii,io)), Some((oi,oo))) => { self.new_v(&mut wref, &mut wmov0, *whl, ii, io, oi, oo); self.vdec(&vx, hi); self.vdec(&vx, lo) }}}
+        (None,          None         ) => {},  // independent of row u, so nothing to do.
+        (None,          Some((oi,oo))) => { self.new_v(&mut dref, &mut dmov0, *whl, hi, hi, oi, oo); self.udec(&ux, lo) },
+        (Some((ii,io)), None         ) => { self.new_v(&mut dref, &mut dmov0, *whl, ii, io, lo, lo); self.udec(&ux, hi) },
+        (Some((ii,io)), Some((oi,oo))) => { self.new_v(&mut dref, &mut dmov0, *whl, ii, io, oi, oo); self.udec(&ux, hi); self.udec(&ux, lo) }}}
 
-    for hl in wref.iter() { self.rw.hm.get_mut(hl).unwrap().irc += 1 }
-    wmov0 }
+    for hl in dref.iter() { self.rd.hm.get_mut(hl).unwrap().irc += 1 }
+    dmov0 }
 
   fn new_v(&mut self, wref:&mut Vec<XHiLo>, wmov0:&mut Vec<(XHiLo,XWIP0,XWIP0)>, whl:XHiLo, ii:XID, io:XID, oi:XID, oo:XID) {
     wmov0.push((whl, self.child(wref, ii,oi), self.child(wref, io,oo))) }}
