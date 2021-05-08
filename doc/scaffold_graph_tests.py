@@ -54,16 +54,16 @@ def write_tests():
 
     // leave some space for the numbered nodes in the diagrams by creating fake nodes:
     // (can't use XID_O because add_ref would overwrite the empty slot)
-    let (n1,n2,n3) = (node(vn1,XO,!XO), node(vn2,XO,!XO), node(vn3,XO,!XO));
-    let (n4,n5,n6) = (node(vn4,XO,!XO), node(vn5,XO,!XO), node(vn6,XO,!XO));
-    let (n7,n8,n9) = (node(vn7,XO,!XO), node(vn8,XO,!XO), node(vn9,XO,!XO));
+    let (n1,n2,n3) = (node(vn1,!XO,XO), node(vn2,!XO,XO), node(vn3,!XO,XO));
+    let (n4,n5,n6) = (node(vn4,!XO,XO), node(vn5,!XO,XO), node(vn6,!XO,XO));
+    let (n7,n8,n9) = (node(vn7,!XO,XO), node(vn8,!XO,XO), node(vn9,!XO,XO));
 
     // now some fake nodes for the a/z rows to point at when the edges are not defined:
-    let (x0,x1,x2,x3) = (node(vx0,XO,!XO), node(vx1,XO,!XO), node(vx2,XO,!XO), node(vx3,XO,!XO));
+    let (x0,x1,x2,x3) = (node(vx0,!XO,XO), node(vx1,!XO,XO), node(vx2,!XO,XO), node(vx3,!XO,XO));
 
     // and the default a and z rows themselves:
-    let (z0,z1,z2,z3) = (node(vz,x0,!x0), node(vz,x1,!x1), node(vz,x2,!x2), node(vz,x3,!x3));
-    let (a0,a1,a2,a3) = (node(va,x0,!x0), node(va,x1,!x1), node(va,x2,!x2), node(va,x3,!x3));
+    let (z0,z1,z2,z3) = (node(vz,!x0,x0), node(vz,!x1,x1), node(vz,!x2,x2), node(vz,!x3,x3));
+    let (a0,a1,a2,a3) = (node(va,!x0,x0), node(va,!x1,x1), node(va,!x2,x2), node(va,!x3,x3));
 
     // setup code generated from the diagram:
 """,
