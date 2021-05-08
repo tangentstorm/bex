@@ -84,6 +84,8 @@ const XVHL_O:XVHL = XVHL{ v: NOV, hi:XID_O, lo:XID_O };
 /// index + refcount
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct IxRc { ix:XID, irc: usize, erc: usize }
+impl IxRc {
+  fn rc(&self)->usize { self.irc + self.erc }}
 
 /**
 We need to map:
@@ -533,8 +535,8 @@ struct SwapWorker {
 impl SwapWorker {
   fn new(ru:XVHLRow, rd:XVHLRow )->Self {
     let ru_map = ru.hm.iter().map(|(hl,ixrc)|(ixrc.ix,*hl)).collect();
-    let this = Self{ ru, rd, ru_map, refs:HashMap::new(), dels:vec![], unew:vec![], next:0, dnew:HashMap::new() };
-    // this.gc(ROW::D);
+    let mut this = Self{ ru, rd, ru_map, refs:HashMap::new(), dels:vec![], unew:vec![], next:0, dnew:HashMap::new() };
+    this.gc(ROW::D);
     this }
 
   /// garbage collect nodes on one of the rows:
@@ -543,7 +545,7 @@ impl SwapWorker {
     let mut refs: HashMap::<XID, i64> = HashMap::new();
     let row = match which { ROW::U => &mut self.ru, ROW::D => &mut self.rd };
     row.hm.retain(|hl, ixrc| {
-      if ixrc.irc == 0 {
+      if ixrc.rc() == 0 {
         *refs.entry(hl.hi.raw()).or_insert(0)-=1;
         *refs.entry(hl.lo.raw()).or_insert(0)-=1;
         dels.push(ixrc.ix);
