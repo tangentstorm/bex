@@ -663,7 +663,8 @@ impl SwapWorker {
       res.push((ixrc.ix.ix(), hi, lo)); }
     res}
 
-  fn child(&self, dref:&mut Vec<XHiLo>, h:XID, l:XID)->XWIP0 { // reference a node on/below row d, or create a node on row d
+  /// reference a node on/below row d, or create a node on row d
+  fn new_ref(&mut self, h:XID, l:XID)->XWIP0 {
     let (hi, lo, inv) = if l.is_inv() {(!h, !l, true)} else {(h, l, false)};
     // hi == lo only when the match statement passes hi,hi or lo,lo.
     // previously, this triggered a decref, but that was incorrect:
@@ -674,10 +675,9 @@ impl SwapWorker {
     // this should be a no-op. The "extra" references created by the first swap are
     // balanced we garbage collect extraneous row u nodes on the second swap and
     // decref their children.)
-    if hi == lo { XWIP0::XID(if inv { !lo } else { lo }) }
-    else if let Some(ixrc) = self.rd.hm.get(&XHiLo{ hi, lo}) {
-      dref.push(XHiLo{hi,lo}); // rd can't be mutable here so remember to modify it later
-      // TODO: it should be okay to modify rd directly
+    if hi == lo { return XWIP0::XID(if inv { !lo } else { lo }); }
+    if let Some(&ixrc) = self.rd.hm.get(&XHiLo{ hi, lo}) {
+      self.rd.hm.get_mut(&XHiLo{hi,lo}).unwrap().irc += 1;
       XWIP0::XID(if inv {!ixrc.ix} else {ixrc.ix}) }
     else if inv { XWIP0::HL(!hi, !lo) } else { XWIP0::HL(hi, lo) }}
 
@@ -700,40 +700,22 @@ impl SwapWorker {
     // reference counts elsewhere in the graph can change (!!! really? they don't change in this step.),
     // but never drop to 0. if they did, then swapping the rows back would have to create new nodes elsewhere.
     let mut umovs: Vec<(XHiLo,XWIP0,XWIP0)> = vec![];
-    let mut dref: Vec<XHiLo> = vec![];
-
-    // Partition nodes on row d into two groups:
-    // group I (independent):
-    //   These are nodes that do not reference row u.
-    //   These remain on row d, unchanged.
-    // group D (dependent):
-    //   These are nodes with at least one child on row u.
-    //   These must be rewritten in place to branch on vid u (and thus moved to row u).
-    //   "In place" means that their XIDs must be preserved.
-    //   The moved nodes will have children on row d:
-    //      These may be new nodes, or may already exist in group I.
-    //   The old children (on row u) may see their refcounts drop to 0.
     for dhl in self.rd.hm.clone().keys() {
-      let (hi, lo) = dhl.as_tup();
       // fetch the hi,lo branches, but only when they point to row u
-      let uget = |xid:XID|->Option<(XID,XID)> {
+      let uget = |xid:XID|->Option<XHiLo> {
         self.ru_map.get(&xid.raw()).cloned().map(|hl|
-          if xid.is_inv() { (!hl.hi,!hl.lo) } else { (hl.hi, hl.lo) })};
+          if xid.is_inv() { !hl } else { hl })};
+      let (hi, lo) = dhl.as_tup();
       let (uhi, ulo) = (uget(hi), uget(lo));
-
       // if neither points to row u, this node is independent, and there's nothing to do
       if let (None, None) = (uhi, ulo) {}
-      else {  // otherwise we're making a new node, so we need to rebuild.
-        let (ii, io) = if let Some((ii, io)) = uhi {(ii, io)} else {(hi, hi)};
-        let (oi, oo) = if let Some((oi, oo)) = ulo {(oi, oo)} else {(lo, lo)};
+      else {  // otherwise we move the node to row u and build at least 1 new child on row d
+        let (ii, io) = if let Some(x) = uhi {(x.hi, x.lo)} else {(hi, hi)};
+        let (oi, oo) = if let Some(x) = ulo {(x.hi, x.lo)} else {(lo, lo)};
         // remove both refs for now, even though we may add one right back:
         self.xref(hi, -1); self.xref(lo, -1);
-        self.new_u(&mut dref, &mut umovs, *dhl, ii, io, oi, oo);}}
-    for hl in dref.iter() { self.rd.hm.get_mut(hl).unwrap().irc += 1 }
-    umovs }
-
-  fn new_u(&mut self, dref:&mut Vec<XHiLo>, umovs:&mut Vec<(XHiLo,XWIP0,XWIP0)>, dhl:XHiLo, ii:XID, io:XID, oi:XID, oo:XID) {
-    umovs.push((dhl, self.child(dref, ii,oi), self.child(dref, io,oo))) }}
+        umovs.push((*dhl, self.new_ref(ii,oi), self.new_ref(io,oo))); }}
+    umovs }}
 
 // -- debugger ------------------------------------------------------------
 
