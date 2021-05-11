@@ -49,3 +49,6 @@ pub mod anf;
 
 /// swap solver
 pub mod swap;
+
+/// multicore support
+pub mod swarm;
