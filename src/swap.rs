@@ -7,8 +7,9 @@ use base::GraphViz;
 use hashbrown::{HashMap, hash_map::Entry, HashSet};
 use {vid::VID, vid::NOV};
 use {solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops, std::path::Path, base::Base};
-use std::fmt;
+use std::{fmt, hash::Hash};
 use std::cell::RefCell;
+use swarm::{Swarm,Worker,QID,SwarmCmd,WID};
 
 /// XID: An index-based unique identifier for nodes.
 ///
@@ -99,22 +100,26 @@ We need to map:
   because we want to frequently swap out whole rows of variables.
   we'll call this XVHLRow
 */
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct XVHLRow { hm: HashMap<XHiLo, IxRc> }
-impl XVHLRow { fn new()->Self {XVHLRow{ hm: HashMap::new() }}}
+impl XVHLRow {
+  fn new()->Self {XVHLRow{ hm: HashMap::new() }}
+  /// build a reverse index, mapping of xids to hilo pairs
+  fn xid_map(&self)->HashMap<XID,XHiLo> { self.hm.iter().map(|(hl,ixrc)|(ixrc.ix,*hl)).collect() }}
 
 /// The scaffold itself contains the master list of records (vhls) and the per-row index
 #[derive(Clone)]
 pub struct XVHLScaffold {
   vids: Vec<VID>,
   vhls: Vec<XVHL>,
-  rows: HashMap<VID, XVHLRow> }
+  rows: HashMap<VID, XVHLRow>,
+  locked: HashSet<VID> }
 
 // snapshot used for debugging
 thread_local! { static SNAPSHOT : RefCell<XVHLScaffold> = RefCell::new(XVHLScaffold::new()) }
 
 impl XVHLScaffold {
-  fn new()->Self { XVHLScaffold{ vids:vec![], vhls:vec![XVHL_O], rows: HashMap::new() } }
+  fn new()->Self { XVHLScaffold{ vids:vec![], vhls:vec![XVHL_O], rows: HashMap::new(), locked:HashSet::new() } }
 
   pub fn dump(&self, msg:&str) {
     println!("@dump: {}", msg);
@@ -124,8 +129,8 @@ impl XVHLScaffold {
       for (i, &x) in self.vhls.iter().enumerate().rev() {
         if x.v != NOV { max0 = i+1; break }}
       max0};
-    for (i, &x) in self.vhls.iter().enumerate() {
-      if i == max { break }
+    for (i, &x) in self.vhls.iter().enumerate().rev() {
+      if i >= max { continue } // hide empty rows at the end
       let rc = if x.v == NOV { 0 }
       else {
         let ixrc = self.rows[&x.v].hm.get(&x.hilo()).unwrap();
@@ -352,7 +357,10 @@ impl XVHLScaffold {
       i-=1 }
     res }
 
-  /// swap vu up by one level
+  /// swap vu's row up by one level in the scaffold.
+  /// This is a much simpler form of the logic used by regroup().
+  /// If you are doing more than one swap, you should call regroup() instead,
+  /// because it will take advantage of multiple cores to perform all the swaps in parallel.
   fn swap(&mut self, vu:VID) {
     #[cfg(test)] { self.validate(&format!("swap({}) in {:?}.", vu, self.vids)); }
     let uix = self.vix(vu).expect("requested vid was not in the scaffold.");
@@ -367,8 +375,8 @@ impl XVHLScaffold {
     //           oo   oi  io  ii                oo   io  oi   ii
     let ru = self.rows.remove(&vu).unwrap();
     let rd = self.rows.remove(&vd).unwrap();
-    let mut worker = SwapWorker::new(ru,rd);
-    worker.find_movers();
+    let mut worker = SwapWorker::default();
+    worker.set_ru(vu, ru).set_rd(vd, rd).find_movers();
 
     // If we are deleting from row u and adding to row d, we can re-use the xids. otherwise, allocate some new xids.
     let (xids, udels) = {
@@ -428,29 +436,162 @@ impl XVHLScaffold {
     let ix = self.vix(v).expect("can't remove a row that doesn't exist.");
     assert!(self.rows[&v].hm.is_empty(), "can't remove a non-empty row!");
     self.vids.remove(ix);
-    self.rows.remove(&v);}
+    self.rows.remove(&v);}}
+
+
+// functions for performing the distributed regroup()
+impl XVHLScaffold {
+
+  fn plan_regroup(&self, groups:Vec<HashSet<VID>>)->HashMap<VID,usize> {
+    // TODO: check for complete partition
+    // vids are arranged from bottom to top
+    let mut cur = self.vids.len()-1; // downward moving cursor
+    let mut vid =0;                     // vid cursor scans ahead to grab the vid
+    let mut top = self.vids.len();   // top index not yet claimed by the groups
+    let mut plan = HashMap::new();
+    // let mut skip = groups.len();
+    println!("self.vids: {:?}", self.vids);
+    println!("self.rows.keys: {:?}", self.rows.keys());
+    println!("groups: {:?}", groups); // , groups.clone().iter().rev().collect::<Vec<_>>()
+    // groups[0] goes on the bottom, so we want to work backwards:
+    for g in groups.iter().rev() {
+      println!("top:{} cur:{} vid:{}", top, cur, vid);
+      // don't claim slots for vids that aren't in the scaffold
+      for v in g { if !self.rows.contains_key(v) { top+= 1 }}
+      top -= g.len();
+      println!("while cur >= top:");
+      while cur >= top {
+        println!("    top:{} cur:{} vid:{}", top, cur, vid);
+        // fast forward over items that are already well placed, or that we already plan to move
+        while cur >= top && (g.contains(&self.vids[cur]) || plan.contains_key(&self.vids[cur])) {
+          if cur == 0 { return plan } else { cur-=1 }}
+        // lc either points at a misplaced item or the group is in place.
+        println!("    if cur:{} >= top:{}", cur, top);
+        if cur >= top { // then it's a misplaced item, so...
+          // scan ahead until we find a group  member we haven't seen yet to replace it.
+          vid = cur-1; while !g.contains(&self.vids[vid]) && !plan.contains_key(&self.vids[vid]) {
+            if vid == 0 { return plan } else { vid-=1 }}
+          // add dragging this row into place to our todo list
+          assert!(vid<cur, "vid should be below cur");
+          println!("planning to lift vid {:?} from row {} to row cur:{}", self.vids[vid], vid, cur);
+          plan.insert(self.vids[vid], cur);
+          cur -= 1; }}}
+    plan }
+
+  fn take_row(&mut self, v:&VID)->Option<XVHLRow> {
+    if self.locked.contains(v) { None }
+    else { self.locked.insert(*v); self.rows.remove(v) }}
+
+  fn next_regroup_task(&mut self, plan:&HashMap<VID,usize>)->(VID, Vec<Q>) {
+    let mut res = vec![];
+    // find a variable to move that isn't moving yet:
+    for &vu in plan.keys() {
+      // we lock all the moving variables so they never cross each other
+      if let Some(ru) = self.take_row(&vu) {
+        res.push(Q::Init{vu, ru});
+        println!("vids: {:?}", self.vids);
+        println!("moving vid {:?} up from row {}", vu, self.vix(vu).unwrap());
+        println!("vid above: {:?}", self.vid_above(vu));
+        let vd = self.vid_above(vu).unwrap();
+        // schedule swap immediately if we can. (otherwise regroup() sets an alarm)
+        if let Some(rd) = self.take_row(&vd) { res.push(Q::Step{vd, rd}) }
+        return (vu, res) }}
+      (VID::nov(), res) }
 
   /// arrange row order to match the given groups.
-  /// the groups are given in bottom-up order, and should
+  /// the groups are given in bottom-up order (so groups[0] is on bottom), and should
   /// completely partition the scaffold vids.
-  // TODO: executes these swaps in parallel
   fn regroup(&mut self, groups:Vec<HashSet<VID>>) {
-    // TODO: check for complete partition
-    let mut lc = 0; // left cursor
-    let mut rc;     // right cursor
-    let mut ni = 0; // number of items in groups we've seen
-    for g in groups {
-      ni += g.len();
-      while lc < ni {
-        // if we're looking at something in right place, skip it
-        while lc < ni && g.contains(&self.vids[lc as usize]) { lc+=1 }
-        if lc < ni {
-          // scan ahead for next group member
-          rc = lc+1;
-          while !g.contains(&self.vids[rc]) { rc+=1 }
-          // now drag the misplaced row down
-          while rc > lc { rc -= 1; self.swap(self.vids[rc]) }}}}}}
+    self.validate("before regroup()");
+    // (var, ix) pairs, where plan is to lift var to row ix
+    let mut plan = self.plan_regroup(groups);
+    if plan.len() == 0 { return }
+    let mut swarm: Swarm<Q,R,SwapWorker> = Swarm::new(plan.len());
+    let mut alarm: HashMap<VID,WID> = HashMap::new();
+    let _:Option<()> = swarm.run(|wid,qid,r|->SwarmCmd<Q,()> {
+      match qid {
+        QID::INIT => { // assign next task to the worker
+          let (vu, mut work) =  self.next_regroup_task(&plan);
+          match work.len() {
+            1 => { alarm.insert(vu, wid); SwarmCmd::Send(work.pop().unwrap()) },
+            2 => SwarmCmd::Batch(work.into_iter().map(move |q| (wid, q)).collect()),
+            // TODO: assign extra workers to swaps with more nodes?
+            _ => SwarmCmd::Pass }}, // we have more threads than variables to swap.
+        QID::STEP(_) => {
+          if let None = r { return SwarmCmd::Pass } // TODO: this wasn't supposed to happen, but then Batch[Init]
+          match r.unwrap() {
 
+            // recycle or allocate xids:
+            R::Alloc{udel, mut xids, needed}  => {
+              if needed > 0 { xids.extend(self.alloc(needed)) };
+              self.reclaim_nodes(udel);
+              SwarmCmd::Send(Q::Xids(xids)) },
+
+            // complete one swap in the move:
+            R::PutRD{vu, vd, rd, dnew, umov, refs} => {
+              // replace and unlock the downward-moving row:
+              assert_eq!(vd, self.vid_above(vu).unwrap(), "!?!");
+              self.rows.insert(vd, rd);
+              assert!(self.locked.contains(&vd), "what?");
+              self.locked.remove(&vd);
+
+              // apply modifications to the vhls table
+              // TODO: probably we we should just have self.ixv : HashMap<ix,VID>  instead of vhls,
+              // and then a self.nids : std::collections::BinaryHeap for reclaimed indices.
+              for (ix, hi, lo) in dnew { self.vhls[ix] = XVHL{ v: vd, hi, lo } }
+              for (ix, hi, lo) in umov { self.vhls[ix] = XVHL{ v: vu, hi, lo } }
+              for (xid, dc) in refs.iter() { self.add_ref_ix(*xid, *dc); }
+
+              let mut work:Vec<(WID, Q)> = vec![];
+
+              // swap the two entries in .vids
+              let old_uix = self.vix(vu).unwrap();
+              let new_uix = old_uix + 1;
+              self.vids.swap(old_uix, new_uix);
+
+              // tell anyone waiting on rd that they can resume work
+              debug_assert!(!alarm.contains_key(&vd), "alarm should never be placed on an downward-moving row.");
+              if let Some(w2) = alarm.remove(&vu) {
+                // wake the sleeping worker right behind us:
+                let rd = self.take_row(&vd).unwrap();
+                work.push((w2, Q::Step{vd, rd})); }
+
+              // are we there yet? :)
+              if new_uix == plan[&vu] { work.push((wid, Q::Stop)); }
+              else { // start or schedule the next swap
+                let vd = self.vid_above(vu).unwrap();
+                if let Some(rd) = self.take_row(&vd) { work.push((wid, Q::Step{vd, rd})); }
+                else { alarm.insert(vd, wid); }}
+
+              SwarmCmd::Batch(work) },
+
+            // finish the move for this vid
+            R::PutRU{vu, ru} => {
+              debug_assert!(plan.contains_key(&vu), "got back vu:{:?} that wasn't in the plan", vu);
+              debug_assert!(self.locked.contains(&vu), "vu:{} wasn't locked!", vu);
+              plan.remove(&vu); self.locked.remove(&vu);
+              self.rows.insert(vu, ru);
+              if plan.is_empty() { SwarmCmd::Return(()) }
+              else { SwarmCmd::Kill(wid) }}}},
+
+        QID::DONE => { SwarmCmd::Pass }}});
+
+        self.validate("after regroup()"); }}
+
+// -- message types for swarm -------------------------------------------
+
+#[derive(Debug)]
+enum Q {
+  Init{ vu:VID, ru: XVHLRow },
+  Step{ vd:VID, rd: XVHLRow },
+  Stop,
+  Xids( Vec<XID> )}
+
+#[derive(Debug)]
+enum R {
+  Alloc{ udel:Vec<XID>, xids:Vec<XID>, needed:usize },
+  PutRD{ vu:VID, vd:VID, rd: XVHLRow, dnew:Vec<(usize,XID,XID)>, umov:Vec<(usize,XID,XID)>, refs:HashMap<XID, i64> },
+  PutRU{ vu:VID, ru: XVHLRow }}
 
 // -- graphviz ----------------------------------------------------------
 
@@ -516,11 +657,14 @@ enum XWIP1 { XID(XID), NEW(i64) }
 //    if n.rc==0, Del(n.nid) and DecRef(n.hi, n.lo)
 
 
-// TODO: rename rows to U and D for up/down
 #[derive(PartialEq)]
 enum ROW { U, D }
 
 struct SwapWorker {
+  /// the upward-moving variable (only used for tracing)
+  vu:VID,
+  /// the downward-moving variable (only used for tracing)
+  vd:VID,
   /// row u is the row that moves upward.
   ru:XVHLRow,
   /// row d is the row that moves downward.
@@ -540,15 +684,51 @@ struct SwapWorker {
   /// new parent nodes to create on row d
   dnew: HashMap<(XID,XID), IxRc> }
 
+impl Default for SwapWorker {
+  fn default()->SwapWorker {
+    SwapWorker{ next:0,
+      vu:VID::nov(), ru:XVHLRow::new(), ru_map:HashMap::new(),
+      vd:VID::nov(), rd:XVHLRow::new(), rd_map:HashMap::new(),
+      refs:HashMap::new(), dels:vec![], umov:vec![], dnew:HashMap::new() }}}
+
+impl Worker<Q,R> for SwapWorker {
+  fn work_step(&mut self, _qid:&QID, q:Q)->Option<R> {
+    match q {
+      Q::Init{vu, ru} => {
+        self.set_ru(vu, ru);
+        None },
+      Q::Step{vd, rd} => {
+        self.reset_state().set_rd(vd, rd).find_movers();
+        let (udel, xids, needed) = self.recycle();
+        Some(R::Alloc{udel, xids, needed})},
+      Q::Xids(xids) => {
+        let (dnew, wipxid) = self.dnew_mods(xids);
+        let umov = self.umov_mods(wipxid);
+        // now return the newly swapped row:
+        let rd = std::mem::replace(&mut self.rd, XVHLRow::new());
+        let refs = std::mem::replace(&mut self.refs, HashMap::new());
+        Some(R::PutRD{ vu:self.vu, vd:self.vd, rd, dnew, umov, refs })},
+      Q::Stop => {
+        let ru = std::mem::replace(&mut self.ru, XVHLRow::new());
+        Some(R::PutRU{ vu:self.vu, ru }) }}}}
+
 impl SwapWorker {
-  fn new(ru:XVHLRow, rd:XVHLRow )->Self {
-    let ru_map = ru.hm.iter().map(|(hl,ixrc)|(ixrc.ix,*hl)).collect();
-    let rd_map = rd.hm.iter().map(|(hl,ixrc)|(ixrc.ix,*hl)).collect();
-    let mut this = Self{ ru, rd, ru_map, rd_map,
-      refs:HashMap::new(), dels:vec![], umov:vec![], next:0, dnew:HashMap::new() };
-    this.gc(ROW::D);
-    this.gc(ROW::U);
-    this }
+
+  fn reset_state(&mut self)->&mut Self {
+    self.refs = HashMap::new();
+    self.dels = vec![];
+    self.umov = vec![];
+    self.dnew = HashMap::new();
+    self.next = 0;
+    self }
+
+  /// set .rd and rebuild .rd_map. garbage collects row D!
+  fn set_rd(&mut self, vd:VID, rd:XVHLRow)->&mut Self {
+    self.vd = vd; self.rd_map = rd.xid_map(); self.rd = rd; self.gc(ROW::D); self }
+
+  /// set .ru and rebuild .ru_map. does NOT garbage collect.
+  fn set_ru(&mut self, vu:VID, ru:XVHLRow)->&mut Self {
+    self.vu = vu; self.ru_map = ru.xid_map(); self.ru = ru; self }
 
   /// garbage collect nodes on one of the rows:
   fn gc(&mut self, which:ROW) {
