@@ -132,6 +132,7 @@ impl XVHLScaffold {
     for (i, &x) in self.vhls.iter().enumerate().rev() {
       if i >= max { continue } // hide empty rows at the end
       let rc = if x.v == NOV { 0 }
+      else if self.locked.contains(&x.v) { 0 } // can't get rc for locked rows
       else {
         let ixrc = self.rows[&x.v].hm.get(&x.hilo()).unwrap();
         assert_eq!(ixrc.ix.x, i as i64);
@@ -154,7 +155,7 @@ impl XVHLScaffold {
     // vids must be unique:
     let mut vids:HashMap<VID, i64> = self.vids.iter().cloned().enumerate().map(|(i,v)|(v,i as i64)).collect();
     if !(vids.len()==self.vids.len()) { return Err(format!("duplicate vid(s) in list: {:?}", self.vids))}
-    if !(vids.len()==self.rows.len()) { return Err("vids and rows should have the same len()".to_string()) }
+    if !(vids.len()==self.rows.len()+self.locked.len()) { return Err("vids and rows should have the same len()".to_string()) }
     vids.insert(NOV, -1);
 
     let mut rc: HashMap<XID, usize> = HashMap::new();
@@ -174,8 +175,8 @@ impl XVHLScaffold {
         let hi = self.get(x.hi.raw()).expect("hi branch points nowhere");
         let lo = self.get(x.lo.raw()).expect("lo branch points nowhere");
 
-        if hi.v == NOV && x.hi.raw() != XID_O { return Err("hi branch to garbage-collected node".to_string())}
-        if lo.v == NOV && x.lo.raw() != XID_O { return Err("lo branch to garbage-collected node".to_string())}
+        if hi.v == NOV && x.hi.raw() != XID_O { return Err(format!("hi branch to garbage-collected node on row {}",i))}
+        if lo.v == NOV && x.lo.raw() != XID_O { return Err(format!("lo branch to garbage-collected node on row {}",i))}
 
         // the hi and lo branches should point "downward"
         if !(vids[&lo.v] < vids[&x.v]) { return Err(format!("upward lo branch @vhl[{}]: {:?}", i, x))}
@@ -185,11 +186,12 @@ impl XVHLScaffold {
         if let Some(j) = seen.get(&x) { return Err(format!("vhl[{}] is a duplicate of vhl[{}]: {:?}", i, j, x)) }
         else { seen.insert(x, i); }
 
-        // there should be a hashmap entry pointing back to the item:
-        if let Some(ixrc) = self.rows[&x.v].hm.get(&XHiLo{ hi:x.hi, lo:x.lo }) {
-          let ix = ixrc.ix.raw().x as usize;
-          if ix!=i {return Err(format!("hashmap stored wrong index ({:?}) for vhl[{}]: {:?} ", ixrc.ix, i, x))}}
-        else { return Err(format!("no hashmap reference to vhl[{}]: {:?}", i, x)) }
+        // there should be a hashmap entry pointing back to the item (but we can only check for unlocked rows):
+        if !self.locked.contains(&x.v) {
+          if let Some(ixrc) = self.rows[&x.v].hm.get(&XHiLo{ hi:x.hi, lo:x.lo }) {
+            let ix = ixrc.ix.raw().x as usize;
+            if ix!=i {return Err(format!("hashmap stored wrong index ({:?}) for vhl[{}]: {:?} ", ixrc.ix, i, x))}}
+          else { return Err(format!("no hashmap reference to vhl[{}]: {:?}", i, x)) }}
 
         // update ref counts
         *rc.entry(x.hi.raw()).or_insert(0)+=1;
@@ -445,40 +447,35 @@ impl XVHLScaffold {
 // functions for performing the distributed regroup()
 impl XVHLScaffold {
 
-  fn plan_regroup(&self, groups:Vec<HashSet<VID>>)->HashMap<VID,usize> {
+  fn plan_regroup(&self, groups:&Vec<HashSet<VID>>)->HashMap<VID,usize> {
     // TODO: check for complete partition
     // vids are arranged from bottom to top
     let mut cur = self.vids.len()-1; // downward moving cursor
-    let mut vid =0;                     // vid cursor scans ahead to grab the vid
+    let mut vid;                     // vid cursor scans ahead to grab the vid
     let mut top = self.vids.len();   // top index not yet claimed by the groups
     let mut plan = HashMap::new();
-    // let mut skip = groups.len();
+
     println!("self.vids: {:?}", self.vids);
-    println!("self.rows.keys: {:?}", self.rows.keys());
     println!("groups: {:?}", groups); // , groups.clone().iter().rev().collect::<Vec<_>>()
     // groups[0] goes on the bottom, so we want to work backwards:
-    for g in groups.iter().rev() {
-      println!("top:{} cur:{} vid:{}", top, cur, vid);
+    'groups: for g in groups.iter().rev() {
       // don't claim slots for vids that aren't in the scaffold
       for v in g { if !self.rows.contains_key(v) { top+= 1 }}
       top -= g.len();
-      println!("while cur >= top:");
       while cur >= top {
-        println!("    top:{} cur:{} vid:{}", top, cur, vid);
         // fast forward over items that are already well placed, or that we already plan to move
         while cur >= top && (g.contains(&self.vids[cur]) || plan.contains_key(&self.vids[cur])) {
-          if cur == 0 { return plan } else { cur-=1 }}
+          if cur == 0 { break 'groups } else { cur-=1 }}
         // lc either points at a misplaced item or the group is in place.
-        println!("    if cur:{} >= top:{}", cur, top);
         if cur >= top { // then it's a misplaced item, so...
           // scan ahead until we find a group  member we haven't seen yet to replace it.
           vid = cur-1; while !g.contains(&self.vids[vid]) && !plan.contains_key(&self.vids[vid]) {
-            if vid == 0 { return plan } else { vid-=1 }}
+            if vid == 0 { break 'groups } else { vid-=1 }}
           // add dragging this row into place to our todo list
           assert!(vid<cur, "vid should be below cur");
-          println!("planning to lift vid {:?} from row {} to row cur:{}", self.vids[vid], vid, cur);
           plan.insert(self.vids[vid], cur);
           cur -= 1; }}}
+    println!("plan: {:?}", plan);
     plan }
 
   fn take_row(&mut self, v:&VID)->Option<XVHLRow> {
@@ -492,9 +489,6 @@ impl XVHLScaffold {
       // we lock all the moving variables so they never cross each other
       if let Some(ru) = self.take_row(&vu) {
         res.push(Q::Init{vu, ru});
-        println!("vids: {:?}", self.vids);
-        println!("moving vid {:?} up from row {}", vu, self.vix(vu).unwrap());
-        println!("vid above: {:?}", self.vid_above(vu));
         let vd = self.vid_above(vu).unwrap();
         // schedule swap immediately if we can. (otherwise regroup() sets an alarm)
         if let Some(rd) = self.take_row(&vd) { res.push(Q::Step{vd, rd}) }
@@ -507,7 +501,7 @@ impl XVHLScaffold {
   fn regroup(&mut self, groups:Vec<HashSet<VID>>) {
     self.validate("before regroup()");
     // (var, ix) pairs, where plan is to lift var to row ix
-    let plan = self.plan_regroup(groups);
+    let plan = self.plan_regroup(&groups);
     if plan.len() == 0 { return }
     let mut swarm: Swarm<Q,R,SwapWorker> = Swarm::new(plan.len());
     let mut alarm: HashMap<VID,WID> = HashMap::new();
@@ -532,51 +526,7 @@ impl XVHLScaffold {
 
             // complete one swap in the move:
             R::PutRD{vu, vd, rd, dnew, umov, refs} => {
-              // replace and unlock the downward-moving row:
-              debug_assert_eq!(vd, self.vid_above(vu).unwrap(), "row d isn't the row that was above row u!?!");
-              self.rows.insert(vd, rd);
-              debug_assert!(self.locked.contains(&vd), "vd:{} wasn't locked!??", vd);
-              self.locked.remove(&vd);
-
-              // vids within the same group will never swap with each other, but vids from different groups may.
-              // if vu just moved into vd's planned spot, it means vd's move was already complete, and we just displaced it.
-              // However, its worker is already dead (so we need a new one), and the row above is locked until we finish
-              // the next move for vu (so we set an alarm rather than spawning a new thread)
-              if plan.contains_key(&vd) && plan[&vd] == self.vix(vu).unwrap() {
-                alarm.insert(vd, WID::NEW); }
-
-              // apply modifications to the vhls table
-              // TODO: probably we we should just have self.ixv : HashMap<ix,VID>  instead of vhls,
-              // and then a self.nids : std::collections::BinaryHeap for reclaimed indices.
-              for (ix, hi, lo) in dnew { self.vhls[ix] = XVHL{ v: vd, hi, lo } }
-              for (ix, hi, lo) in umov { self.vhls[ix] = XVHL{ v: vu, hi, lo } }
-              for (xid, dc) in refs.iter() {
-                let v = self.vhls[xid.ix()].v;
-                if self.locked.contains(&v) { panic!("TODO: changing refcount for node on locked row!") }
-                self.add_ref_ix(*xid, *dc); }
-
-              let mut work:Vec<(WID, Q)> = vec![];
-
-              // swap the two entries in .vids
-              let old_uix = self.vix(vu).unwrap();
-              let new_uix = old_uix + 1;
-              self.vids.swap(old_uix, new_uix);
-
-              // tell anyone waiting on rd that they can resume work
-              debug_assert!(!alarm.contains_key(&vd), "alarm should never be placed on a downward-moving row.");
-              if let Some(w2) = alarm.remove(&vu) {
-                // wake the sleeping worker right behind us:
-                let rd = self.take_row(&vd).unwrap();
-                work.push((w2, Q::Step{vd, rd})); }
-
-              // are we there yet? :)
-              if new_uix == plan[&vu] { work.push((wid, Q::Stop)); }
-              else { // start or schedule the next swap
-                let vd = self.vid_above(vu).unwrap();
-                if let Some(rd) = self.take_row(&vd) { work.push((wid, Q::Step{vd, rd})); }
-                else { alarm.insert(vd, wid); }}
-
-              SwarmCmd::Batch(work) },
+              self.swarm_put_rd(&plan, &mut alarm, wid, vu, vd, rd, dnew, umov, refs) },
 
             // finish the move for this vid
             R::PutRU{vu, ru} => {
@@ -584,14 +534,78 @@ impl XVHLScaffold {
               debug_assert!(self.locked.contains(&vu), "vu:{} wasn't locked!", vu);
               self.locked.remove(&vu);
               self.rows.insert(vu, ru);
-              if self.locked.is_empty() { SwarmCmd::Return(()) }
+              if self.locked.is_empty() {
+                debug_assert!(alarm.is_empty(), "last worker died but we still have alarms: {:?}", alarm);
+                println!("WORK IS DONE");
+                SwarmCmd::Return(()) }
               else { SwarmCmd::Kill(wid) }}}},
 
         QID::DONE => { SwarmCmd::Pass }}});
 
-        self.validate("after regroup()"); }}
+        let plan2 = self.plan_regroup(&groups);
+        debug_assert!(plan2.is_empty(), "regroup failed to make these moves: {:?}", plan2);
+        debug_assert!(self.locked.is_empty());
+        self.validate("after regroup()"); }
+
+  /// called whenever a worker returns a downward-moving row to the scaffold
+  fn swarm_put_rd(&mut self, plan:&HashMap<VID,usize>, alarm:&mut HashMap<VID,WID>,
+    wid:WID, vu:VID, vd:VID, rd:XVHLRow, dnew:Vec<Mod>, umov:Vec<Mod>, refs:HashMap<XID,i64>
+  )->SwarmCmd<Q,()> {
+    // replace and unlock the downward-moving row:
+    debug_assert_eq!(vd, self.vid_above(vu).unwrap(), "row d isn't the row that was above row u!?!");
+    self.rows.insert(vd, rd);
+    debug_assert!(self.locked.contains(&vd), "vd:{} wasn't locked!??", vd);
+    self.locked.remove(&vd);
+
+    // vids within the same group will never swap with each other, but vids from different groups may.
+    // if vu just moved into vd's planned spot, it means vd's move was already complete, and we just displaced it.
+    // However, its worker is already dead (so we need a new one), and the row above is locked until we finish
+    // the next move for vu (so we set an alarm rather than spawning a new thread)
+    if plan.contains_key(&vd) && plan[&vd] == self.vix(vu).unwrap() {
+      alarm.insert(vd, WID::NEW); }
+
+    // apply modifications to the vhls table
+    // TODO: probably we we should just have self.ixv : HashMap<ix,VID>  instead of vhls,
+    // and then a self.nids : std::collections::BinaryHeap for reclaimed indices.
+    println!("dnew: {:?}", dnew);
+    for (ix, hi, lo) in dnew { self.vhls[ix] = XVHL{ v: vd, hi, lo } }
+    println!("umov: {:?}", umov);
+    for (ix, hi, lo) in umov { self.vhls[ix] = XVHL{ v: vu, hi, lo } }
+    for (xid, dc) in refs.iter() {
+      let v = self.vhls[xid.ix()].v;
+      if self.locked.contains(&v) { panic!("TODO: changing refcount for node on locked row!") }
+      self.add_ref_ix(*xid, *dc); }
+
+    // swap the two entries in .vids
+    let old_uix = self.vix(vu).unwrap();
+    let new_uix = old_uix + 1;
+    self.vids.swap(old_uix, new_uix);
+
+    println!("swapped vd:{:?} with vu:{:?}", vd, vu);
+    self.validate(format!("after swapping vd:{:?} with vu:{:?}", vd, vu).as_str());
+
+    let mut work:Vec<(WID, Q)> = vec![];
+
+    // tell anyone waiting on rd that they can resume work
+    debug_assert!(!alarm.contains_key(&vd), "alarm should never be placed on a downward-moving row.");
+    if let Some(w2) = alarm.remove(&vu) {
+      // wake the sleeping worker right behind us:
+      let rd = self.take_row(&vd).unwrap();
+      work.push((w2, Q::Step{vd, rd})); }
+
+    // are we there yet? :)
+    if new_uix == plan[&vu] { work.push((wid, Q::Stop)); }
+    else { // start or schedule the next swap
+      let vd = self.vid_above(vu).unwrap();
+      if let Some(rd) = self.take_row(&vd) { work.push((wid, Q::Step{vd, rd})); }
+      else { alarm.insert(vd, wid); }}
+
+    SwarmCmd::Batch(work) }}
+
 
 // -- message types for swarm -------------------------------------------
+
+type Mod = (usize,XID,XID);
 
 #[derive(Debug)]
 enum Q {
@@ -603,7 +617,7 @@ enum Q {
 #[derive(Debug)]
 enum R {
   Alloc{ udel:Vec<XID>, xids:Vec<XID>, needed:usize },
-  PutRD{ vu:VID, vd:VID, rd: XVHLRow, dnew:Vec<(usize,XID,XID)>, umov:Vec<(usize,XID,XID)>, refs:HashMap<XID, i64> },
+  PutRD{ vu:VID, vd:VID, rd: XVHLRow, dnew:Vec<Mod>, umov:Vec<Mod>, refs:HashMap<XID, i64> },
   PutRU{ vu:VID, ru: XVHLRow }}
 
 // -- graphviz ----------------------------------------------------------
@@ -711,10 +725,14 @@ impl Worker<Q,R> for SwapWorker {
         self.set_ru(vu, ru);
         None },
       Q::Step{vd, rd} => {
+        println!("step(vd:{:?})", vd);
+        self.ru_map = self.ru.xid_map();
         self.reset_state().set_rd(vd, rd).find_movers();
         let (udel, xids, needed) = self.recycle();
+        println!("udel: {:?}, needed:{}", udel, needed);
         Some(R::Alloc{udel, xids, needed})},
       Q::Xids(xids) => {
+        println!("xids({:?})", xids);
         let (dnew, wipxid) = self.dnew_mods(xids);
         let umov = self.umov_mods(wipxid);
         // now return the newly swapped row:
@@ -755,6 +773,7 @@ impl SwapWorker {
         dels.push(ixrc.ix);
         false }
       else { true }});
+    match which { ROW::U => self.ru_map = self.ru.xid_map(), ROW::D => self.rd_map = self.rd.xid_map() }
     self.dels.extend(dels);
     for (x, dc) in refs { self.xref(x, dc); }}
 
@@ -904,7 +923,8 @@ impl SwapWorker {
     for (ixrc, wip_hi, wip_lo) in self.umov.iter() {
       let (hi, lo) = (w2x(wip_hi), w2x(wip_lo));
       let key = XHiLo{hi, lo};
-      self.ru.hm.insert(key, *ixrc); // refcount chages are done so no need for ru_map
+      self.ru.hm.insert(key, *ixrc);
+      self.ru_map.insert(ixrc.ix, key); // probably redundant. we rebuild on
       res.push((ixrc.ix.ix(), hi, lo)); }
     res}
 
@@ -1045,9 +1065,11 @@ impl SwapSolver {
 
     let rvix = self.dst.vix(self.rv);
     if rvix.is_none() { return self.dx } // rv isn't in the scaffold, so do nothing.
+    if self.dx == XID_O { panic!("dx is XID_O. this should never happen.")}
     let vhl = self.dst.get(self.dx).unwrap();
+    if vhl.v == VID::nov() { panic!("node dx:{:?} appears to have been garbage collected!?!", self.dx)}
     let vvix = self.dst.vix(vhl.v);
-    if vvix.is_none() { panic!("bad vhl:{:?} for self.dx:{:?} ", vhl, self.dx); }
+    if vvix.is_none() { panic!("got vhl:{:?} for self.dx:{:?} but {:?} is not in dst!?", vhl, self.dx, vhl.v); }
 
     // 1. permute vars.
     self.dst.validate("before permute");
