@@ -27,7 +27,7 @@ pub trait Worker<Q,R>:Send+Sync+Default where R:Debug {
     macro_rules! work_phase {
         [$qid:expr, $x:expr] => {
           let (qid, r) = ($qid, $x);
-          println!("{:?} qid:{:?} -> r:{:?}", wid, &qid, &r);
+          // println!("{:?} qid:{:?} -> r:{:?}", wid, &qid, &r);
           if tx.send(RMsg{ wid, qid, r }).is_err() { self.on_work_send_err($qid) }}}
     // and now the actual worker lifecycle:
     work_phase![QID::INIT, self.work_init(wid)];
@@ -111,9 +111,9 @@ impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug, R:'static+Send+Debug, W:Def
   pub fn run<F,V>(&mut self, mut on_msg:F)->Option<V> where V:Debug, F:FnMut(WID, &QID, Option<R>)->SwarmCmd<Q,V> {
     loop {
       let RMsg { wid, qid, r } = self.rx.recv().expect("failed to read RMsg from queue!");
-      println!("RMSG:: wid:{:?}, qid:{:?}, r:{:?}", wid, qid, r );
       let cmd = on_msg(wid, &qid, r);
-      println!("-> cmd: {:?}", cmd);
+      // println!("RMSG:: wid:{:?}, qid:{:?}, r:{:?}", wid, qid, r );
+      // println!("-> cmd: {:?}", cmd);
       match cmd {
         SwarmCmd::Pass => {},
         SwarmCmd::Halt => return None,
