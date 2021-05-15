@@ -349,10 +349,13 @@ impl XVHLScaffold {
       if vhl.v == NOV {
         res.push(XID{x:j as i64});
         i-= 1;  if i == 0 { break; }}}
-    // create new xids if there weren't enough reclaimed
+    // create new xids if there weren't enough reclaimed ones.
+    // note that we give these nodes a fake variable distinct from NOV,
+    // so that we don't allocate the same slot when running regroup()
+    // across multiple threads
     while i > 0 {
       let x = self.vhls.len() as i64;
-      self.vhls.push(XVHL_O);
+      self.vhls.push(XVHL{ v:VID::var(u32::MAX), hi:XID_I, lo: XID_O});
       res.push(XID{x});
       i-=1 }
     res }
@@ -504,7 +507,7 @@ impl XVHLScaffold {
   fn regroup(&mut self, groups:Vec<HashSet<VID>>) {
     self.validate("before regroup()");
     // (var, ix) pairs, where plan is to lift var to row ix
-    let mut plan = self.plan_regroup(groups);
+    let plan = self.plan_regroup(groups);
     if plan.len() == 0 { return }
     let mut swarm: Swarm<Q,R,SwapWorker> = Swarm::new(plan.len());
     let mut alarm: HashMap<VID,WID> = HashMap::new();
@@ -523,24 +526,34 @@ impl XVHLScaffold {
 
             // recycle or allocate xids:
             R::Alloc{udel, mut xids, needed}  => {
-              if needed > 0 { xids.extend(self.alloc(needed)) };
-              self.reclaim_nodes(udel);
+              if needed > 0 { xids.extend(self.alloc(needed)); debug_assert!(udel.is_empty()) }
+              else { self.reclaim_nodes(udel); }
               SwarmCmd::Send(Q::Xids(xids)) },
 
             // complete one swap in the move:
             R::PutRD{vu, vd, rd, dnew, umov, refs} => {
               // replace and unlock the downward-moving row:
-              assert_eq!(vd, self.vid_above(vu).unwrap(), "!?!");
+              debug_assert_eq!(vd, self.vid_above(vu).unwrap(), "row d isn't the row that was above row u!?!");
               self.rows.insert(vd, rd);
-              assert!(self.locked.contains(&vd), "what?");
+              debug_assert!(self.locked.contains(&vd), "vd:{} wasn't locked!??", vd);
               self.locked.remove(&vd);
+
+              // vids within the same group will never swap with each other, but vids from different groups may.
+              // if vu just moved into vd's planned spot, it means vd's move was already complete, and we just displaced it.
+              // However, its worker is already dead (so we need a new one), and the row above is locked until we finish
+              // the next move for vu (so we set an alarm rather than spawning a new thread)
+              if plan.contains_key(&vd) && plan[&vd] == self.vix(vu).unwrap() {
+                alarm.insert(vd, WID::NEW); }
 
               // apply modifications to the vhls table
               // TODO: probably we we should just have self.ixv : HashMap<ix,VID>  instead of vhls,
               // and then a self.nids : std::collections::BinaryHeap for reclaimed indices.
               for (ix, hi, lo) in dnew { self.vhls[ix] = XVHL{ v: vd, hi, lo } }
               for (ix, hi, lo) in umov { self.vhls[ix] = XVHL{ v: vu, hi, lo } }
-              for (xid, dc) in refs.iter() { self.add_ref_ix(*xid, *dc); }
+              for (xid, dc) in refs.iter() {
+                let v = self.vhls[xid.ix()].v;
+                if self.locked.contains(&v) { panic!("TODO: changing refcount for node on locked row!") }
+                self.add_ref_ix(*xid, *dc); }
 
               let mut work:Vec<(WID, Q)> = vec![];
 
@@ -550,7 +563,7 @@ impl XVHLScaffold {
               self.vids.swap(old_uix, new_uix);
 
               // tell anyone waiting on rd that they can resume work
-              debug_assert!(!alarm.contains_key(&vd), "alarm should never be placed on an downward-moving row.");
+              debug_assert!(!alarm.contains_key(&vd), "alarm should never be placed on a downward-moving row.");
               if let Some(w2) = alarm.remove(&vu) {
                 // wake the sleeping worker right behind us:
                 let rd = self.take_row(&vd).unwrap();
@@ -569,9 +582,9 @@ impl XVHLScaffold {
             R::PutRU{vu, ru} => {
               debug_assert!(plan.contains_key(&vu), "got back vu:{:?} that wasn't in the plan", vu);
               debug_assert!(self.locked.contains(&vu), "vu:{} wasn't locked!", vu);
-              plan.remove(&vu); self.locked.remove(&vu);
+              self.locked.remove(&vu);
               self.rows.insert(vu, ru);
-              if plan.is_empty() { SwarmCmd::Return(()) }
+              if self.locked.is_empty() { SwarmCmd::Return(()) }
               else { SwarmCmd::Kill(wid) }}}},
 
         QID::DONE => { SwarmCmd::Pass }}});
