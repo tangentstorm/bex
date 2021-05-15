@@ -11,7 +11,8 @@ pub struct QMsg<Q> { qid:QID, q: Q }
 pub struct RMsg<R> { wid: WID, qid:QID, r:Option<R> }
 
 /// worker id
-pub type WID = usize; // worker id
+#[derive(Debug,PartialEq,Eq,Hash,Clone,Copy)]
+pub enum WID { NEW, N(usize) }
 
 pub trait Worker<Q,R>:Send+Sync+Default where R:Debug {
 
@@ -26,7 +27,7 @@ pub trait Worker<Q,R>:Send+Sync+Default where R:Debug {
     macro_rules! work_phase {
         [$qid:expr, $x:expr] => {
           let (qid, r) = ($qid, $x);
-          println!("W[{}] qid:{:?} -> r:{:?}", wid, &qid, &r);
+          println!("{:?} qid:{:?} -> r:{:?}", wid, &qid, &r);
           if tx.send(RMsg{ wid, qid, r }).is_err() { self.on_work_send_err($qid) }}}
     // and now the actual worker lifecycle:
     work_phase![QID::INIT, self.work_init(wid)];
@@ -62,6 +63,8 @@ pub enum SwarmCmd<Q:Debug,V:Debug> {
 pub struct Swarm<Q,R,W> where W:Default+Worker<Q,R>, Q:Debug, R:Debug {
   /// next QID
   nq: usize,
+  //// sender that newly spawned workers can clone to talk to me.
+  me: Sender<RMsg<R>>,
   /// receives result (and other intermediate) messages from the workers.
   rx: Receiver<RMsg<R>>,
   // /// worker queue. workers queue up to handle the queries.
@@ -79,14 +82,18 @@ impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug, R:'static+Send+Debug, W:Def
   pub fn new(num_workers:usize)->Self {
     let (me, rx) = channel();
     let n = if num_workers==0 { num_cpus::get() } else { num_workers };
-    // let mut wq = VecDeque::new();
-    let whs = (0..n).map(|wid| {
-      let me2 = me.clone();
-      let (wtx, wrx) = channel();
-      thread::spawn(move || { W::new(wid).work_loop(wid, &wrx, &me2) });
-      // wq.push_back(wid);
-      (wid, wtx)}).collect();
-    Self { nq: 0, rx, whs, /*wq,*/ qq:VecDeque::new(), _w:PhantomData }}
+    let mut this = Self { nq: 0, me, rx, whs:HashMap::new(), /*wq,*/ qq:VecDeque::new(), _w:PhantomData };
+    for _ in 0..n { this.spawn(); }
+    this }
+
+  fn spawn(&mut self)->WID {
+    let w = self.whs.len();
+    let wid = WID::N(w);
+    let me2 = self.me.clone();
+    let (wtx, wrx) = channel();
+    thread::spawn(move || { W::new(wid).work_loop(wid, &wrx, &me2) });
+    self.whs.insert(wid, wtx);
+    wid }
 
   /// add a query to the work to be done, with callbacks
   pub fn add(&mut self, q:Q)->&Self {
@@ -95,11 +102,16 @@ impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug, R:'static+Send+Debug, W:Def
     self.nq+=1;
     self}
 
+  pub fn get_worker(&mut self, wid:WID)->&Sender<Option<QMsg<Q>>> {
+    match wid {
+      WID::NEW => { let w = self.spawn(); self.get_worker(w) },
+      WID::N(_) => self.whs.get(&wid).expect(format!("requested non-exestant worker {:?}", wid).as_str()) }}
+
   /// pass in the swarm dispatch loop
   pub fn run<F,V>(&mut self, mut on_msg:F)->Option<V> where V:Debug, F:FnMut(WID, &QID, Option<R>)->SwarmCmd<Q,V> {
     loop {
       let RMsg { wid, qid, r } = self.rx.recv().expect("failed to read RMsg from queue!");
-      println!("RMSG:: wid:{}, qid:{:?}, r:{:?}", wid, qid, r );
+      println!("RMSG:: wid:{:?}, qid:{:?}, r:{:?}", wid, qid, r );
       let cmd = on_msg(wid, &qid, r);
       println!("-> cmd: {:?}", cmd);
       match cmd {
@@ -111,12 +123,12 @@ impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug, R:'static+Send+Debug, W:Def
           else { panic!("worker was already gone") }
           if self.whs.is_empty() { return None }},
         SwarmCmd::Send(q) => {
-          if self.whs[&wid].send(Some(QMsg{ qid, q })).is_err() {
-            panic!("couldn't send message to worker {}", wid) }},
+          if self.get_worker(wid).send(Some(QMsg{ qid, q })).is_err() {
+            panic!("couldn't send message to worker {:?}", wid) }},
         SwarmCmd::Batch(wqs) => {
-          for (w, q) in wqs {
+          for (wid, q) in wqs {
             let qid = QID::STEP(self.nq); self.nq+=1;
-            if self.whs[&w].send(Some(QMsg{ qid, q })).is_err() {
-              panic!("couldn't send message to worker {}", w) }}},
+            if self.get_worker(wid).send(Some(QMsg{ qid, q })).is_err() {
+              panic!("couldn't send message to worker {:?}", wid) }}},
         SwarmCmd::Panic(msg) => panic!("{}", msg),
         SwarmCmd::Return(v) => return Some(v) }}}}
