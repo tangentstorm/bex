@@ -23,7 +23,8 @@ use self::VidEnum::*;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VID { v:VidEnum }
-pub const NOV:VID = VID { v:NoV };
+pub const NOV:VID = VID::nov();
+pub const TOP:VID = VID::top();
 
 fn cmp_depth_idx(x:u32, y:&u32)->VidOrdering {
   match x.cmp(y) {
@@ -55,10 +56,10 @@ pub fn topmost_of3(x:VID, y:VID, z:VID)->VID { topmost(x, topmost(y, z)) }
 
 
 impl VID {
-  pub fn top()->VID { VID { v:T }}
-  pub fn nov()->VID { VID { v:NoV }}
-  pub fn var(i:u32)->VID { VID { v: Var(i) }}
-  pub fn vir(i:u32)->VID { VID { v: Vir(i) }}
+  pub const fn top()->VID { VID { v:T }}
+  pub const fn nov()->VID { VID { v:NoV }}
+  pub const fn var(i:u32)->VID { VID { v: Var(i) }}
+  pub const fn vir(i:u32)->VID { VID { v: Vir(i) }}
   pub fn is_top(&self)->bool { VID{ v:T } == *self }
   pub fn is_nov(&self)->bool { if let VID{ v:NoV } = self { true } else { false } }
   pub fn is_var(&self)->bool { if let VID{ v:Var(_) } = self { true } else { false } }
