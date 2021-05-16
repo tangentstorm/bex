@@ -13,6 +13,7 @@
 
 // -- XVHLScaffold ------------------------------------------------------------
 
+#[cfg(test)]
 fn check_swap(old:&str, new:&str) {
   let mut xsd = XSDebug::new("abcdvw");
   let (v, x) = (xsd.vid('v'), xsd.xid(old));
@@ -80,6 +81,7 @@ fn check_swap(old:&str, new:&str) {
 ///    c lists the character names for all variables
 ///    d lists the initial order of those variables in dst
 ///    s lists the initial order of those variables in src
+#[cfg(test)]
 fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
 
   let mut dst = XSDebug::new("");
@@ -167,7 +169,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   // = x (x!x1?) z?
   // = x x z?
   // = x
-  check_sub("xyz|xyz|zx|xz", "xyz?", 'y', "z!zx?", "x")}
+  check_sub("xyz|xyz|zx|zx", "xyz?", 'y', "z!zx?", "x")}
 
 /// test for subbing in one new variable
 #[test] fn test_one_new() {
@@ -211,6 +213,23 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   assert_eq!(fun_tbl(ops::AND), vec![o,o,o,i])}
 
 
-// -- SwapSolver refcount / graph tests -------------------------------------------------
-// These macro definitions are used by the tests in test-swap-scaffold.rs
-// The actual tests are generated from the ipython/jupyter notebook in doc/scaffold.ipynb
+// -- SwapSolver regroup tests ------------------------------------------------
+
+#[cfg(test)] macro_rules! s {
+  { } => { HashSet::new() };
+  {$( $x:expr ),+ } => {{ let mut tmp = HashSet::new(); $( tmp.insert($x); )* tmp }};}
+#[cfg(test)] macro_rules! d {
+  { } => { HashMap::new() };
+  {$( $k:ident : $v:expr ),+ }=> {{ let mut tmp = HashMap::new(); $( tmp.insert($k,$v); )* tmp }};}
+#[test] fn test_plan_regroup() {
+  let x0:VID = VID::var(0);
+  let x1:VID = VID::var(1);
+  let x2:VID = VID::var(2);
+  let x3:VID = VID::var(3);
+  let x4:VID = VID::var(4);
+  let groups = vec![s![x0], s![x1], s![x2]];
+  assert_eq!(d!{ }, plan_regroup(&vec![x0,x1,x2], &groups));
+  assert_eq!(d!{ x2:2 }, plan_regroup(&vec![x2,x0,x1], &groups));
+  assert_eq!(d!{ x4:4, x3:3 }, plan_regroup(&vec![x3,x2,x4,x0,x1], &vec![s![x2,x0,x1],s![],s![x4,x3]]));
+  assert_eq!(d!{ x4:3, x3:4 }, plan_regroup(&vec![x4,x2,x3,x0,x1], &vec![s![x2,x0,x1],s![],s![x4,x3]]));
+}

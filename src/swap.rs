@@ -444,37 +444,44 @@ impl XVHLScaffold {
     self.rows.remove(&v);}}
 
 
+
+fn plan_regroup(vids:&Vec<VID>, groups:&Vec<HashSet<VID>>)->HashMap<VID,usize> {
+  // vids are arranged from bottom to top
+  let mut plan = HashMap::new();
+
+  // TODO: check for complete partition (set(vids)==set(U/groups)
+  let mut sum = 0; for x in groups.iter() { sum+= x.len() }
+  debug_assert_eq!(vids.len(), sum, "vids and groups had different total size");
+
+  // map each variable to its group number:
+  let mut dest:HashMap<VID,usize> = HashMap::new();
+  for (i, g) in groups.iter().enumerate() {
+    for &v in g { dest.insert(v, i); }}
+
+  // start position of each group:
+  let mut start:Vec<usize> = groups.iter().scan(0, |a,x| {
+    *a+=x.len(); Some(*a)}).collect();
+  start.insert(0, 0);
+  start.pop();
+  // println!("starts: {:?}", start);
+
+  // downward-moving cursor for each group (starts at last position)
+  let mut curs:Vec<usize> = groups.iter().scan(0, |a,x|{
+    *a+=x.len(); Some(*a)}).collect();
+
+  for (i,v) in vids.iter().enumerate().rev() {
+    let g = dest[v]; // which group does it go to?
+    // println!("i: {} v: {} g:{}" , i, v, g);
+    if g > 0 && i<start[g] { curs[g]-=1; plan.insert(*v, curs[g]); }}
+  plan}
+
 // functions for performing the distributed regroup()
 impl XVHLScaffold {
 
   fn plan_regroup(&self, groups:&Vec<HashSet<VID>>)->HashMap<VID,usize> {
-    // TODO: check for complete partition
-    // vids are arranged from bottom to top
-    let mut cur = self.vids.len()-1; // downward moving cursor
-    let mut vid;                     // vid cursor scans ahead to grab the vid
-    let mut top = self.vids.len();   // top index not yet claimed by the groups
-    let mut plan = HashMap::new();
-
     println!("self.vids: {:?}", self.vids);
     println!("groups: {:?}", groups); // , groups.clone().iter().rev().collect::<Vec<_>>()
-    // groups[0] goes on the bottom, so we want to work backwards:
-    'groups: for g in groups.iter().rev() {
-      // don't claim slots for vids that aren't in the scaffold
-      for v in g { if !self.rows.contains_key(v) { top+= 1 }}
-      top -= g.len();
-      while cur >= top {
-        // fast forward over items that are already well placed, or that we already plan to move
-        while cur >= top && (g.contains(&self.vids[cur]) || plan.contains_key(&self.vids[cur])) {
-          if cur == 0 { break 'groups } else { cur-=1 }}
-        // lc either points at a misplaced item or the group is in place.
-        if cur >= top { // then it's a misplaced item, so...
-          // scan ahead until we find a group  member we haven't seen yet to replace it.
-          vid = cur-1; while !g.contains(&self.vids[vid]) && !plan.contains_key(&self.vids[vid]) {
-            if vid == 0 { break 'groups } else { vid-=1 }}
-          // add dragging this row into place to our todo list
-          assert!(vid<cur, "vid should be below cur");
-          plan.insert(self.vids[vid], cur);
-          cur -= 1; }}}
+    let plan = plan_regroup(&self.vids, groups);
     println!("plan: {:?}", plan);
     plan }
 
