@@ -113,13 +113,16 @@ pub struct XVHLScaffold {
   vids: Vec<VID>,
   vhls: Vec<XVHL>,
   rows: HashMap<VID, XVHLRow>,
-  locked: HashSet<VID> }
+  /// tracks rows that are locked during the distributed regroup() operation
+  locked: HashSet<VID>,
+  /// tracks refcount changes that are pending for locked rows ("deferred refcount delta")
+  drcd: HashMap<VID,HashMap<XID, i64>> }
 
 // snapshot used for debugging
 thread_local! { static SNAPSHOT : RefCell<XVHLScaffold> = RefCell::new(XVHLScaffold::new()) }
 
 impl XVHLScaffold {
-  fn new()->Self { XVHLScaffold{ vids:vec![], vhls:vec![XVHL_O], rows: HashMap::new(), locked:HashSet::new() } }
+  fn new()->Self { XVHLScaffold{ vids:vec![], vhls:vec![XVHL_O], rows: HashMap::new(), locked:HashSet::new(), drcd:HashMap::new() } }
 
   pub fn dump(&self, msg:&str) {
     println!("@dump: {}", msg);
@@ -197,10 +200,17 @@ impl XVHLScaffold {
         *rc.entry(x.hi.raw()).or_insert(0)+=1;
         *rc.entry(x.lo.raw()).or_insert(0)+=1;}}
 
+      // if we are running this in the middle of a regroup(), we may have deferred refcounts.
+      let mut drcd : HashMap::<XID,i64> = HashMap::new();
+      for (_, hm) in &self.drcd {
+        for (xid, drc) in hm {
+          *drcd.entry(*xid).or_insert(0) += drc; }}
+
       // check internal refcounts vs the ones we just calculated
       for (_v, row) in self.rows.iter() {
         for (_hl, ixrc) in row.hm.iter() {
-          let expect = *rc.get(&ixrc.ix).unwrap_or(&0);
+          let drc = *drcd.get(&ixrc.ix).unwrap_or(&0);
+          let expect = (*rc.get(&ixrc.ix).unwrap_or(&0) as i64 - drc) as usize;
           if ixrc.irc < expect {
             return Err(format!("refcount was too low for xid: {:?} (expected {}, got {})", ixrc.ix, expect, ixrc.irc)) }
           // else if ixrc.irc > expect {
@@ -508,6 +518,7 @@ impl XVHLScaffold {
   /// the groups are given in bottom-up order (so groups[0] is on bottom), and should
   /// completely partition the scaffold vids.
   fn regroup(&mut self, groups:Vec<HashSet<VID>>) {
+    self.drcd = HashMap::new();
     self.validate("before regroup()");
     // (var, ix) pairs, where plan is to lift var to row ix
     let plan = self.plan_regroup(&groups);
@@ -541,6 +552,7 @@ impl XVHLScaffold {
               debug_assert!(self.locked.contains(&vu), "vu:{} wasn't locked!", vu);
               self.locked.remove(&vu);
               self.rows.insert(vu, ru);
+              self.apply_drcd(&vu);
               if self.locked.is_empty() {
                 debug_assert!(alarm.is_empty(), "last worker died but we still have alarms: {:?}", alarm);
                 println!("WORK IS DONE");
@@ -553,6 +565,22 @@ impl XVHLScaffold {
         debug_assert!(plan2.is_empty(), "regroup failed to make these moves: {:?}", plan2);
         debug_assert!(self.locked.is_empty());
         self.validate("after regroup()"); }
+
+
+  // like add_ref_ix but defers if row is locked.
+  fn add_ref_ix_or_defer(&mut self, xid:XID, drc:i64) {
+    if drc != 0 {
+      let v = self.vhls[xid.ix()].v;
+      if self.locked.contains(&v) {
+        println!(">>>>>>> row {} was locked so deferring xid:{:?} drc:{} ({:?})", v, xid.raw(), drc, self.vhls[xid.ix()]);
+        *self.drcd.entry(v).or_default().entry(xid.raw()).or_default()+=drc; }
+      else { self.add_ref_ix(xid, drc); }}}
+
+  /// apply deferred refcount delta (call whenever a row gets unlocked)
+  fn apply_drcd(&mut self, v:&VID) {
+    if let Some(drcd) = self.drcd.remove(&v) {
+      // if xvhl.v changed again (due to umov), we may need to defer again (since new row may be locked)
+      for (&xid, &drc) in drcd.iter() { self.add_ref_ix_or_defer(xid, drc)} }}
 
   /// called whenever a worker returns a downward-moving row to the scaffold
   fn swarm_put_rd(&mut self, plan:&HashMap<VID,usize>, alarm:&mut HashMap<VID,WID>,
@@ -574,13 +602,14 @@ impl XVHLScaffold {
     // apply modifications to the vhls table
     // TODO: probably we we should just have self.ixv : HashMap<ix,VID>  instead of vhls,
     // and then a self.nids : std::collections::BinaryHeap for reclaimed indices.
-   // println!("vu:{} vd:{} dnew: {:?} umov:{:?}", vu, vd, dnew, umov);
+     println!("vu:{} vd:{} dnew: {:?} umov:{:?} dels:{:?}", vu, vd, dnew, umov, dels);
     for (ix, hi, lo) in dnew { self.vhls[ix] = XVHL{ v: vd, hi, lo } }
     for (ix, hi, lo) in umov { self.vhls[ix] = XVHL{ v: vu, hi, lo } }
-    for (xid, dc) in refs.iter() {
-      let v = self.vhls[xid.ix()].v;
-      if self.locked.contains(&v) { panic!("TODO: changing refcount for node on locked row!") }
-      self.add_ref_ix(*xid, *dc); }
+    println!("ref changes: {:?}", refs);
+    for (xid, drc) in refs.iter() { self.add_ref_ix_or_defer(*xid, *drc) }
+
+    println!("just re-added row {}", vd);
+    self.apply_drcd(&vd);
     self.reclaim_nodes(dels);
 
     // swap the two entries in .vids
