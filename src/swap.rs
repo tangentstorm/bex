@@ -5,7 +5,7 @@
 /// at each step then only involves the top three rows.
 use base::GraphViz;
 use hashbrown::{HashMap, hash_map::Entry, HashSet};
-use {vid::VID, vid::NOV};
+use vid::{VID, NOV, TOP};
 use {solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops, std::path::Path, base::Base};
 use std::{fmt, hash::Hash};
 use std::cell::RefCell;
@@ -82,6 +82,9 @@ impl std::ops::Not for XVHL { type Output = XVHL; fn not(self)->XVHL { XVHL { v:
 /// Dummy value to stick into vhls[0]
 const XVHL_O:XVHL = XVHL{ v: NOV, hi:XID_O, lo:XID_O };
 
+/// Dummy value to use when allocating a new node
+const XVHL_NEW:XVHL = XVHL{ v: VID::top(), hi:XID_O, lo:XID_O };
+
 /// index + refcount
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct IxRc { ix:XID, irc: usize, erc: usize }
@@ -134,7 +137,7 @@ impl XVHLScaffold {
       max0};
     for (i, &x) in self.vhls.iter().enumerate().rev() {
       if i >= max { continue } // hide empty rows at the end
-      let rc = if x.v == NOV { 0 }
+      let rc = if x.v == NOV || x.v == VID::top() { 0 }
       else if self.locked.contains(&x.v) { 0 } // can't get rc for locked rows
       else {
         let ixrc = self.rows[&x.v].hm.get(&x.hilo()).unwrap();
@@ -165,13 +168,14 @@ impl XVHLScaffold {
     let mut seen : HashMap<XVHL,usize> = HashMap::new();
     // validate the rows:
     for (i, &x) in self.vhls.iter().enumerate() {
-      // the vid should be in the scaffold, or cleared out to indicate a blank row.
-      if !vids.contains_key(&x.v) { return Err(format!("invalid v for vhls[{}]: {}", i, x.v))}
-      // the lo branch should not be inverted.
-      if x.lo.is_inv() {return Err(format!("found inverted lo branch in vhls[{}]: {:?}", i, x))}
+      // NOV indicates gc'd row, TOP is for allocated with alloc() or alloc_one()
+      if x.v != NOV && x.v != TOP {
 
-      // with the exception of garbage / O :
-      if x.v != NOV {
+        // the vid should be in the scaffold, or cleared out to indicate a blank row.
+        if !vids.contains_key(&x.v) { return Err(format!("invalid v for vhls[{}]: {}", i, x.v))}
+        // the lo branch should not be inverted.
+        if x.lo.is_inv() {return Err(format!("found inverted lo branch in vhls[{}]: {:?}", i, x))}
+
         // the lo branch should be different from the hi branch
         if x.lo==x.hi { return Err(format!("unmerged branches in vhl[{}]: {:?}", i, x)) }
 
@@ -210,9 +214,11 @@ impl XVHLScaffold {
       for (_v, row) in self.rows.iter() {
         for (_hl, ixrc) in row.hm.iter() {
           let drc = *drcd.get(&ixrc.ix).unwrap_or(&0);
-          let expect = (*rc.get(&ixrc.ix).unwrap_or(&0) as i64 - drc) as usize;
+          let xrc = *rc.get(&ixrc.ix).unwrap_or(&0) as i64;
+          let expect = (xrc - drc) as usize;
           if ixrc.irc < expect {
-            return Err(format!("refcount was too low for xid: {:?} (expected {}, got {})", ixrc.ix, expect, ixrc.irc)) }
+            return Err(format!("refcount was too low for xid: {:?} (expected {}-{}={}, got {})",
+               ixrc.ix, xrc, drc, expect, ixrc.irc)) }
           // else if ixrc.irc > expect {
           //   return Err(format!("refcount was too high for xid: {:?} (expected {}, got {})", ixrc.ix, expect, ixrc.irc)) }
           }}
@@ -238,9 +244,9 @@ impl XVHLScaffold {
     if let Some(x) = self.vix(v) { self.vids.get(x+1).cloned() }
     else { panic!("vid_above(v:{}): v not in the scaffold.", v) }}
 
-  // fn vid_below(&self, v:VID)->Option<VID> {
-  //   if let Some(x) = self.vix(v) { if x>0 { self.vids.get(x-1).cloned()} else { None }}
-  //   else { panic!("vid_below(v:{}): v not in the scaffold.", v) }}
+  fn vid_below(&self, v:VID)->Option<VID> {
+     if let Some(x) = self.vix(v) { if x>0 { self.vids.get(x-1).cloned()} else { None }}
+     else { panic!("vid_below(v:{}): v not in the scaffold.", v) }}
 
   /// add a new vid to the top of the stack. return its position.
   fn push(&mut self, v:VID)->usize {
@@ -264,24 +270,20 @@ impl XVHLScaffold {
     let vhl = if inv { !hl0 } else { hl0 };
     if vhl == XVHL_O { return if inv { XID_I } else { XID_O }}
     debug_assert_ne!(vhl.hi, vhl.lo, "hi and lo should be different"); // to trigger traceback
-    // allocate a xid just in case. if this isn't used, it'll just be used next time.
-    let (alloc, alloc_new) = self.alloc_one();
-    let row = self.rows.entry(vhl.v).or_insert_with(|| XVHLRow::new());
     let hl = vhl.hilo();
-    let (res, is_new) = match row.hm.entry(hl) {
-      Entry::Occupied (mut e) => {
-        let xid = e.get().ix;
-        e.get_mut().irc += irc;
-        e.get_mut().erc += erc;
-        (xid, false) }
-      Entry::Vacant(e) => {
-        e.insert(IxRc{ ix:alloc, irc, erc });
-        if alloc_new { self.vhls.push(vhl) } else { self.vhls[alloc.x as usize] = vhl };
-        (alloc, true) }};
-    if is_new {
-      let hi = self.get(vhl.hi).unwrap(); self.add_ref(hi,1,0);
-      let lo = self.get(vhl.lo).unwrap(); self.add_ref(lo,1,0); }
-    if inv { !res } else { res }}
+    let row = self.rows.entry(vhl.v).or_insert_with(|| XVHLRow::new());
+    let ixrc =
+      if let Some(mut x) = row.hm.remove(&hl) { x.irc += irc; x.erc += erc; x }
+      else { // entry was vacant:
+        let alloc = self.alloc_one();
+        self.vhls[alloc.x as usize] = vhl;
+        let hi = self.get(vhl.hi).unwrap(); self.add_ref(hi,1,0);
+        let lo = self.get(vhl.lo).unwrap(); self.add_ref(lo,1,0);
+        IxRc{ ix:alloc, irc, erc }};
+      // !! is there a way to just use row here, and still have &mut self for the new entry code?
+      self.rows.get_mut(&vhl.v).unwrap().hm.insert(hl, ixrc);
+      let res = ixrc.ix;
+      if inv { !res } else { res }}
 
   /// decrement refcount for ix by n. return new refcount.
   fn dec_ref_ix(&mut self, ix:XID, n:u64)->usize { self.add_ref_ix(ix,-(n as i64)) }
@@ -346,20 +348,21 @@ impl XVHLScaffold {
       v = self.vid_above(v).expect("not enough vars in scaffold to untbl!"); }
     xs[0]}
 
-  /// allocate a single xid. returs (xid, isnew)
+  /// allocate a single xid
   // TODO: cache the empty slots so this doesn't take O(n) time.
-  fn alloc_one(&self)->(XID, bool) {
-    for (j,vhl) in self.vhls.iter().enumerate().skip(1) {
-      if vhl.v == NOV { return (XID{x:j as i64 }, false)}}
-    (XID{x:self.vhls.len() as i64}, true)}
+  fn alloc_one(&mut self)->XID {
+    for (j,vhl) in self.vhls.iter_mut().enumerate().skip(1) {
+      if vhl.v == NOV { *vhl = XVHL_NEW; return XID{x:j as i64 }}}
+    self.vhls.push(XVHL_NEW); XID{x:self.vhls.len() as i64-1}}
 
   /// allocate free xids
   fn alloc(&mut self, count:usize)->Vec<XID> {
     let mut i = count; let mut res = vec![];
     if count == 0 { return res }
     // reclaim garbage collected xids.
-    for (j,vhl) in self.vhls.iter().enumerate().skip(1) {
+    for (j,vhl) in self.vhls.iter_mut().enumerate().skip(1) {
       if vhl.v == NOV {
+        *vhl = XVHL_NEW;
         res.push(XID{x:j as i64});
         i-= 1;  if i == 0 { break; }}}
     // create new xids if there weren't enough reclaimed ones.
@@ -368,7 +371,7 @@ impl XVHLScaffold {
     // across multiple threads
     while i > 0 {
       let x = self.vhls.len() as i64;
-      self.vhls.push(XVHL{ v:VID::var(u32::MAX), hi:XID_I, lo: XID_O});
+      self.vhls.push(XVHL_NEW);
       res.push(XID{x});
       i-=1 }
     res }
@@ -461,6 +464,9 @@ fn plan_regroup(vids:&Vec<VID>, groups:&Vec<HashSet<VID>>)->HashMap<VID,usize> {
   // vids are arranged from bottom to top
   let mut plan = HashMap::new();
 
+  // if only one group, there's nothing to do:
+  if groups.len() == 1 && groups[0].len() == vids.len() { return plan }
+
   // TODO: check for complete partition (set(vids)==set(U/groups)
   let mut sum = 0; for x in groups.iter() { sum+= x.len() }
   debug_assert_eq!(vids.len(), sum, "vids and groups had different total size");
@@ -481,10 +487,20 @@ fn plan_regroup(vids:&Vec<VID>, groups:&Vec<HashSet<VID>>)->HashMap<VID,usize> {
   let mut curs:Vec<usize> = groups.iter().scan(0, |a,x|{
     *a+=x.len(); Some(*a)}).collect();
 
+  let mut saw_misplaced = false;
   for (i,v) in vids.iter().enumerate().rev() {
     let g = dest[v]; // which group does it go to?
-    // println!("i: {} v: {} g:{}" , i, v, g);
-    if g > 0 && i<start[g] { curs[g]-=1; plan.insert(*v, curs[g]); }}
+    // we never schedule a move for group 0. others just move past them.
+    if g == 0 { if i>=start[1] { saw_misplaced = true }}
+    // once we see a misplaced item, we have to track everything below it, so that
+    // items that start in place *stay* in place as the swaps happen.
+    else {
+      curs[g]-=1;
+      if saw_misplaced || i<start[g] {
+        plan.insert(*v, curs[g]);
+        saw_misplaced=true }}
+    println!("i: {} v: {} g:{}, saw_misplaced: {}, curs:{:?}, plan:{:?}" , i, v, g, saw_misplaced, curs, plan);
+  }
   plan}
 
 // functions for performing the distributed regroup()
@@ -503,21 +519,33 @@ impl XVHLScaffold {
 
   fn next_regroup_task(&mut self, plan:&HashMap<VID,usize>)->(VID, Vec<Q>) {
     let mut res = vec![];
-    // find a variable to move that isn't moving yet:
-    for &vu in plan.keys() {
+    // find a variable to move that isn't locked yet:
+    for (&vu,&dst) in plan {
+      if self.locked.contains(&vu) { continue }
+      if self.vix(vu).unwrap() == dst { continue }
+      println!("###### plan contains {}", vu);
       // we lock all the moving variables so they never cross each other
       if let Some(ru) = self.take_row(&vu) {
         res.push(Q::Init{vu, ru});
         let vd = self.vid_above(vu).unwrap();
         // schedule swap immediately if we can. (otherwise regroup() sets an alarm)
-        if let Some(rd) = self.take_row(&vd) { res.push(Q::Step{vd, rd}) }
-        return (vu, res) }}
+        if plan.contains_key(&vd) {
+          println!("\x1b[33mWARNING: DEFERRING task for {} because row above ({}) is in the plan.\x1b[0m",vu, vd); }
+        else if let Some(rd) = self.take_row(&vd) { res.push(Q::Step{vd, rd}) }
+        else { panic!("WHYY?") }
+        return (vu, res) }
+      else { // we couldn't take row u. it's probably being swapped
+        let other = &self.vid_below(vu).unwrap();
+        assert!(plan.contains_key(other), "couldn't take_row {} but vid_below is {}", vu, other);
+        panic!("HELP")
+      }}
       (VID::nov(), res) }
 
   /// arrange row order to match the given groups.
   /// the groups are given in bottom-up order (so groups[0] is on bottom), and should
   /// completely partition the scaffold vids.
   fn regroup(&mut self, groups:Vec<HashSet<VID>>) {
+    println!("------------------>>>> self.locked: {:?}", self.locked);
     self.drcd = HashMap::new();
     self.validate("before regroup()");
     // (var, ix) pairs, where plan is to lift var to row ix
@@ -530,7 +558,7 @@ impl XVHLScaffold {
         QID::INIT => { // assign next task to the worker
           let (vu, mut work) =  self.next_regroup_task(&plan);
           match work.len() {
-            1 => { alarm.insert(vu, wid); SwarmCmd::Send(work.pop().unwrap()) },
+            1 => { alarm.insert(self.vid_above(vu).unwrap(), wid); SwarmCmd::Send(work.pop().unwrap()) },
             2 => SwarmCmd::Batch(work.into_iter().map(move |q| (wid, q)).collect()),
             // TODO: assign extra workers to swaps with more nodes?
             _ => SwarmCmd::Pass }}, // we have more threads than variables to swap.
@@ -553,6 +581,8 @@ impl XVHLScaffold {
               self.locked.remove(&vu);
               self.rows.insert(vu, ru);
               self.apply_drcd(&vu);
+              println!("\x1b[32m;>>>>>> DONE WITH ROW: {}, {:?}\x1b[0m;", vu, self.vids);
+
               if self.locked.is_empty() {
                 debug_assert!(alarm.is_empty(), "last worker died but we still have alarms: {:?}", alarm);
                 println!("WORK IS DONE");
@@ -933,6 +963,7 @@ impl SwapWorker {
   fn dnew_mods(&mut self, alloc:Vec<XID>)->(Vec<(usize, XID, XID)>, Vec<XID>) {
     self.mods.extend(alloc);
     let xids = std::mem::replace(&mut self.mods, vec![]);
+    assert_eq!(xids.len(), self.dnew.len());
     let mut res = vec![];
     let mut wipxid = vec![XID_O; self.dnew.len()];
     for ((hi,lo), ixrc0) in self.dnew.iter() {

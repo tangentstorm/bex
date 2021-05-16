@@ -169,7 +169,8 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   // = x (x!x1?) z?
   // = x x z?
   // = x
-  check_sub("xyz|xyz|zx|zx", "xyz?", 'y', "z!zx?", "x")}
+  // !! if the final order breaks on this test due to a regroup() change, it's okay: z isn't used.
+  check_sub("xyz|xyz|zx|xz", "xyz?", 'y', "z!zx?", "x")}
 
 /// test for subbing in one new variable
 #[test] fn test_one_new() {
@@ -227,9 +228,23 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   let x2:VID = VID::var(2);
   let x3:VID = VID::var(3);
   let x4:VID = VID::var(4);
-  let groups = vec![s![x0], s![x1], s![x2]];
-  assert_eq!(d!{ }, plan_regroup(&vec![x0,x1,x2], &groups));
-  assert_eq!(d!{ x2:2 }, plan_regroup(&vec![x2,x0,x1], &groups));
+
+  // here these are all in place already, so we can remove them from the plan.
+  assert_eq!(d!{ }, plan_regroup(&vec![x0,x1,x2], &vec![s![x0], s![x1], s![x2]]));
+
+  // here x2 stays in place, so we don't have to include it in the plan.
+  assert_eq!(d!{ x1:1 }, plan_regroup(&vec![x1,x0,x2], &vec![s![x0], s![x1], s![x2]]));
+
+  // here we find 4 before 3 moving right to left (top down in the scaffold)
   assert_eq!(d!{ x4:4, x3:3 }, plan_regroup(&vec![x3,x2,x4,x0,x1], &vec![s![x2,x0,x1],s![],s![x4,x3]]));
+
+  // but here we find them in the opposite order, and we want to preserve that order. (one less swap to do)
   assert_eq!(d!{ x4:3, x3:4 }, plan_regroup(&vec![x4,x2,x3,x0,x1], &vec![s![x2,x0,x1],s![],s![x4,x3]]));
+
+  // here x4 starts out in the right area, but dragging x3 up past x0 will push x4 down. so x4 must be in
+  // the plan so that the plan can ensure it *stays* in the right place.
+  assert_eq!(d!{ x4:4, x3:3 }, plan_regroup(&vec![x3,x1,x2,x4,x0], &vec![s![x2,x0,x1],s![],s![x4,x3]]));
+println!("----------");
+  // but here, x4 is at the end, and nothing will ever swap with it, so we can drop it from the plan.
+  assert_eq!(d!{ x3:3 }, plan_regroup(&vec![x3,x1,x2,x0,x4], &vec![s![x2,x0,x1],s![],s![x4,x3]]));
 }
