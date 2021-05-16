@@ -346,6 +346,7 @@ impl XVHLScaffold {
   /// allocate free xids
   fn alloc(&mut self, count:usize)->Vec<XID> {
     let mut i = count; let mut res = vec![];
+    if count == 0 { return res }
     // reclaim garbage collected xids.
     for (j,vhl) in self.vhls.iter().enumerate().skip(1) {
       if vhl.v == NOV {
@@ -383,17 +384,18 @@ impl XVHLScaffold {
     let mut worker = SwapWorker::default();
     worker.set_ru(vu, ru).set_rd(vd, rd).find_movers();
 
-    // If we are deleting from row u and adding to row d, we can re-use the xids. otherwise, allocate some new xids.
-    let (xids, udels) = {
-      let (udel, mut xids, needed) = worker.recycle();
-      if needed > 0 { xids.extend(self.alloc(needed)) };
-      let udels = udel.len(); self.reclaim_nodes(udel);
-      (xids, udels) };
+    let needed = worker.recycle();
+    let xids = self.alloc(needed);
 
+    // commit changes to nodes:
     let (dnew, wipxid) = worker.dnew_mods(xids); let dnews=dnew.len();
     for (ix, hi, lo) in dnew { self.vhls[ix] = XVHL{ v: vd, hi, lo } }
     let unew = worker.umov_mods(wipxid); let unews=unew.len();
     for (ix, hi, lo) in unew { self.vhls[ix] = XVHL{ v: vu, hi, lo } }
+
+    // remove nodes:
+    let dels = worker.dels.len();
+    self.reclaim_nodes(worker.dels);
 
     // [ commit refcount changes ]
     for (xid, dc) in worker.refs.iter() { self.add_ref_ix(*xid, *dc); }
@@ -404,7 +406,7 @@ impl XVHLScaffold {
 
     let counts:Vec<usize> = self.vids.iter().map(|v| self.rows[v].hm.len()).collect();
     println!("%swapped: vu:{:?} vd:{:?}", vu, vd);
-    println!("%stats: dnews:{} unews:{} udels:{}", dnews, unews, udels);
+    println!("%stats: dnews:{} unews:{} dels:{}", dnews, unews, dels);
     println!("%vids: {:?}", self.vids);
     println!("%counts: {:?}", counts);
     #[cfg(test)] { self.validate(format!("after swapping vu:{:?} and vd:{:?}.",vu,vd).as_str()); }}
@@ -526,14 +528,12 @@ impl XVHLScaffold {
           match r.unwrap() {
 
             // recycle or allocate xids:
-            R::Alloc{udel, mut xids, needed}  => {
-              if needed > 0 { xids.extend(self.alloc(needed)); debug_assert!(udel.is_empty()) }
-              else { self.reclaim_nodes(udel); }
-              SwarmCmd::Send(Q::Xids(xids)) },
+            R::Alloc{needed}  => {
+              SwarmCmd::Send(Q::Xids(self.alloc(needed))) },
 
             // complete one swap in the move:
-            R::PutRD{vu, vd, rd, dnew, umov, refs} => {
-              self.swarm_put_rd(&plan, &mut alarm, wid, vu, vd, rd, dnew, umov, refs) },
+            R::PutRD{vu, vd, rd, dnew, umov, dels, refs} => {
+              self.swarm_put_rd(&plan, &mut alarm, wid, vu, vd, rd, dnew, umov, dels, refs) },
 
             // finish the move for this vid
             R::PutRU{vu, ru} => {
@@ -556,7 +556,7 @@ impl XVHLScaffold {
 
   /// called whenever a worker returns a downward-moving row to the scaffold
   fn swarm_put_rd(&mut self, plan:&HashMap<VID,usize>, alarm:&mut HashMap<VID,WID>,
-    wid:WID, vu:VID, vd:VID, rd:XVHLRow, dnew:Vec<Mod>, umov:Vec<Mod>, refs:HashMap<XID,i64>
+    wid:WID, vu:VID, vd:VID, rd:XVHLRow, dnew:Vec<Mod>, umov:Vec<Mod>, dels:Vec<XID>, refs:HashMap<XID,i64>
   )->SwarmCmd<Q,()> {
     // replace and unlock the downward-moving row:
     debug_assert_eq!(vd, self.vid_above(vu).unwrap(), "row d isn't the row that was above row u!?!");
@@ -574,14 +574,14 @@ impl XVHLScaffold {
     // apply modifications to the vhls table
     // TODO: probably we we should just have self.ixv : HashMap<ix,VID>  instead of vhls,
     // and then a self.nids : std::collections::BinaryHeap for reclaimed indices.
-    println!("dnew: {:?}", dnew);
+   // println!("vu:{} vd:{} dnew: {:?} umov:{:?}", vu, vd, dnew, umov);
     for (ix, hi, lo) in dnew { self.vhls[ix] = XVHL{ v: vd, hi, lo } }
-    println!("umov: {:?}", umov);
     for (ix, hi, lo) in umov { self.vhls[ix] = XVHL{ v: vu, hi, lo } }
     for (xid, dc) in refs.iter() {
       let v = self.vhls[xid.ix()].v;
       if self.locked.contains(&v) { panic!("TODO: changing refcount for node on locked row!") }
       self.add_ref_ix(*xid, *dc); }
+    self.reclaim_nodes(dels);
 
     // swap the two entries in .vids
     let old_uix = self.vix(vu).unwrap();
@@ -623,8 +623,8 @@ enum Q {
 
 #[derive(Debug)]
 enum R {
-  Alloc{ udel:Vec<XID>, xids:Vec<XID>, needed:usize },
-  PutRD{ vu:VID, vd:VID, rd: XVHLRow, dnew:Vec<Mod>, umov:Vec<Mod>, refs:HashMap<XID, i64> },
+  Alloc{ needed:usize },
+  PutRD{ vu:VID, vd:VID, rd: XVHLRow, dnew:Vec<Mod>, umov:Vec<Mod>, dels:Vec<XID>, refs:HashMap<XID, i64> },
   PutRU{ vu:VID, ru: XVHLRow }}
 
 // -- graphviz ----------------------------------------------------------
@@ -705,8 +705,10 @@ struct SwapWorker {
   rd:XVHLRow,
   /// external reference counts to change
   refs: HashMap<XID, i64>,
-  /// track any nodes we've deleted (so we can recycle them)
+  /// track any nodes we've deleted (so scaffold can recycle them)
   dels: Vec<XID>,
+  /// xids we've recycled ourselves
+  mods: Vec<XID>,
   // reverse map for row u (so we can see if a branch from d points to row u)
   ru_map:HashMap<XID,XHiLo>,
   // reverse map for row d (to detect when we need a new ref from a umov to an existing node on row d)
@@ -723,7 +725,7 @@ impl Default for SwapWorker {
     SwapWorker{ next:0,
       vu:VID::nov(), ru:XVHLRow::new(), ru_map:HashMap::new(),
       vd:VID::nov(), rd:XVHLRow::new(), rd_map:HashMap::new(),
-      refs:HashMap::new(), dels:vec![], umov:vec![], dnew:HashMap::new() }}}
+      refs:HashMap::new(), dels:vec![], mods:vec![], umov:vec![], dnew:HashMap::new() }}}
 
 impl Worker<Q,R> for SwapWorker {
   fn work_step(&mut self, _qid:&QID, q:Q)->Option<R> {
@@ -732,20 +734,18 @@ impl Worker<Q,R> for SwapWorker {
         self.set_ru(vu, ru);
         None },
       Q::Step{vd, rd} => {
-        println!("step(vd:{:?})", vd);
         self.ru_map = self.ru.xid_map();
         self.reset_state().set_rd(vd, rd).find_movers();
-        let (udel, xids, needed) = self.recycle();
-        println!("udel: {:?}, needed:{}", udel, needed);
-        Some(R::Alloc{udel, xids, needed})},
+        Some(R::Alloc{needed: self.recycle()})},
       Q::Xids(xids) => {
-        println!("xids({:?})", xids);
+        println!("vu:{} vd:{} xids: {:?}", self.vu, self.vd, xids);
         let (dnew, wipxid) = self.dnew_mods(xids);
         let umov = self.umov_mods(wipxid);
         // now return the newly swapped row:
         let rd = std::mem::replace(&mut self.rd, XVHLRow::new());
         let refs = std::mem::replace(&mut self.refs, HashMap::new());
-        Some(R::PutRD{ vu:self.vu, vd:self.vd, rd, dnew, umov, refs })},
+        let dels = std::mem::replace(&mut self.dels, vec![]);
+        Some(R::PutRD{ vu:self.vu, vd:self.vd, rd, dnew, umov, dels, refs })},
       Q::Stop => {
         let ru = std::mem::replace(&mut self.ru, XVHLRow::new());
         Some(R::PutRU{ vu:self.vu, ru }) }}}}
@@ -874,7 +874,7 @@ impl SwapWorker {
   /// these will never match existing nodes on row u because at least one leg always
   /// points at var d (and this wasn't possible before the lift). But we may need to delete
   /// nodes because the rc dropped to 0 (when the node was only referenced by row d).
-  fn recycle(&mut self)->(Vec<XID>, Vec<XID>, usize) {
+  fn recycle(&mut self)->usize {
     self.gc(ROW::U);
     self.gc(ROW::D);
 
@@ -884,7 +884,7 @@ impl SwapWorker {
     let mut needed = 0; // in case there are more new nodes than old trash
 
     // mods reclaims xids from dels that can be recycled
-    let mods: Vec<XID> = {
+    self.mods = {
       let have = dels.len();
       let need = self.dnew.len();
       if need <= have {
@@ -895,12 +895,15 @@ impl SwapWorker {
         let res = dels; dels = vec![];
         needed = need-have;
         res }};
-    (dels,mods,needed)}
+    self.dels = dels;
+    needed }
 
   /// add newly created child nodes on row d, and
   /// return the list of changes to make to the master scaffold,
   /// and a vector mapping the wip ix to the final xid
-  fn dnew_mods(&mut self, xids:Vec<XID>)->(Vec<(usize, XID, XID)>, Vec<XID>) {
+  fn dnew_mods(&mut self, alloc:Vec<XID>)->(Vec<(usize, XID, XID)>, Vec<XID>) {
+    self.mods.extend(alloc);
+    let xids = std::mem::replace(&mut self.mods, vec![]);
     let mut res = vec![];
     let mut wipxid = vec![XID_O; self.dnew.len()];
     for ((hi,lo), ixrc0) in self.dnew.iter() {
