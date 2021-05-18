@@ -49,7 +49,7 @@ impl fmt::Debug for XID {
 const XID_O:XID = XID { x: 0 };
 const XID_I:XID = XID { x: !0 };
 impl XID {
-  fn ix(&self)->usize { self.x as usize }
+  fn ix(&self)->usize { self.raw().x as usize }
   fn raw(&self)->XID { if self.x >= 0 { *self } else { !*self }}
   fn is_inv(&self)->bool { self.x<0 }
   fn is_const(&self)->bool { *self == XID_O || *self == XID_I }
@@ -137,13 +137,13 @@ impl XVHLScaffold {
       max0};
     for (i, &x) in self.vhls.iter().enumerate().rev() {
       if i >= max { continue } // hide empty rows at the end
-      let rc = if x.v == NOV || x.v == VID::top() { 0 }
-      else if self.locked.contains(&x.v) { 0 } // can't get rc for locked rows
+      let rcs = if x.v == NOV || x.v == TOP { "-".to_string() }
+      else if self.locked.contains(&x.v) { "[locked]".to_string() } // can't get rc for locked rows
       else {
         let ixrc = self.rows[&x.v].hm.get(&x.hilo()).unwrap();
         assert_eq!(ixrc.ix.x, i as i64);
-        ixrc.irc};
-      println!("^{:03}: {} {:?} {:?}   (rc:{})", i, x.v, x.hi, x.lo, rc)}
+        format!("(i:{} e:{})",ixrc.irc, ixrc.erc) };
+      println!("^{:03}: {} {:?} {:?} {}", i, x.v, x.hi, x.lo, rcs)}
     println!("@/dump");}
 
   /// validate that this scaffold is well formed. (this is for debugging)
@@ -202,26 +202,27 @@ impl XVHLScaffold {
 
         // update ref counts
         *rc.entry(x.hi.raw()).or_insert(0)+=1;
-        *rc.entry(x.lo.raw()).or_insert(0)+=1;}}
+        *rc.entry(x.lo.raw()).or_insert(0)+=1; }}
 
       // if we are running this in the middle of a regroup(), we may have deferred refcounts.
       let mut drcd : HashMap::<XID,i64> = HashMap::new();
       for (_, hm) in &self.drcd {
         for (xid, drc) in hm {
-          *drcd.entry(*xid).or_insert(0) += drc; }}
+          *drcd.entry(xid.raw()).or_insert(0) += drc; }}
 
       // check internal refcounts vs the ones we just calculated
       for (_v, row) in self.rows.iter() {
         for (_hl, ixrc) in row.hm.iter() {
-          let drc = *drcd.get(&ixrc.ix).unwrap_or(&0);
-          let xrc = *rc.get(&ixrc.ix).unwrap_or(&0) as i64;
-          let expect = (xrc - drc) as usize;
+          let xrc = *rc.get(&ixrc.ix.raw()).unwrap_or(&0) as i64;
+          let drc = *drcd.get(&ixrc.ix.raw()).unwrap_or(&0);
+          let expect = (xrc + drc) as usize;
           if ixrc.irc < expect {
-            return Err(format!("refcount was too low for xid: {:?} (expected {}-{}={}, got {})",
+            return Err(format!("refcount was too low for xid: {:?} (expected {}+{}={}, got {})",
                ixrc.ix, xrc, drc, expect, ixrc.irc)) }
-          // else if ixrc.irc > expect {
-          //   return Err(format!("refcount was too high for xid: {:?} (expected {}, got {})", ixrc.ix, expect, ixrc.irc)) }
-          }}
+          else if ixrc.irc > expect {
+            return Err(format!("refcount was too high for xid: {:?} (expected {}+{}={}, got {})",
+               ixrc.ix, xrc, drc, expect, ixrc.irc)) }
+              }}
       Ok(())}
 
   pub fn get_ixrc(&self, x:XID)->Option<&IxRc> {
@@ -229,6 +230,8 @@ impl XVHLScaffold {
     self.rows[&v].hm.get(&XHiLo{ hi, lo }) }
   pub fn del_node(&mut self, x:XID) {
     let XVHL{ v, hi, lo } = self.vhls[x.raw().ix()];
+    self.add_ref_ix_or_defer(hi, -1);
+    self.add_ref_ix_or_defer(lo, -1);
     self.vhls[x.raw().ix()] = XVHL_O;
     self.rows.get_mut(&v).unwrap().hm.remove(&XHiLo{ hi, lo }); }
   pub fn get_refcount(&self, x:XID)->Option<usize> { self.get_ixrc(x).map(|ixrc| ixrc.irc) }
@@ -285,18 +288,20 @@ impl XVHLScaffold {
       let res = ixrc.ix;
       if inv { !res } else { res }}
 
-  /// decrement refcount for ix by n. return new refcount.
-  fn dec_ref_ix(&mut self, ix:XID, n:u64)->usize { self.add_ref_ix(ix,-(n as i64)) }
+  fn add_iref_ix(&mut self, ix:XID, dirc:i64) { self.add_refs_ix(ix, dirc, 0) }
+  fn add_eref_ix(&mut self, ix:XID, derc:i64) { self.add_refs_ix(ix, 0, derc) }
 
-  fn add_ref_ix(&mut self, ix:XID, drc:i64)->usize {
-    if ix.is_const() { return 1 }
+  fn add_refs_ix(&mut self, ix:XID, dirc:i64, derc:i64) {
+    if ix.is_const() { return }
     let vhl = self.vhls[ix.raw().x as usize];
     if let Some(row) = self.rows.get_mut(&vhl.v) {
       if let Some(mut ixrc) = row.hm.get_mut(&vhl.hilo()) {
-        if drc < 0 && (drc + ixrc.irc as i64 ) < 0 { panic!("this would result in negative refcount")}
-        else { ixrc.irc = (ixrc.irc as i64 + drc) as usize;  ixrc.irc }}
+        if dirc < 0 && (dirc + ixrc.irc as i64 ) < 0 { panic!("dirc would result in negative refcount")}
+        else { ixrc.irc = (ixrc.irc as i64 + dirc) as usize; }
+        if derc < 0 && (derc + ixrc.erc as i64 ) < 0 { panic!("derc would result in negative refcount")}
+        else { ixrc.erc = (ixrc.erc as i64 + derc) as usize; }}
       else { panic!("add_ref_ix warning: entry not found for {:?}", vhl) }}
-    else if ix.raw() == XID_O { 0 } // ignore refs to XID_O/XID_I for now
+    else if ix.raw() == XID_O { return } // ignore refs to XID_O/XID_I for now
     else { panic!("add_ref_ix warning: row not found for {:?}", vhl.v); }}
 
   /// fetch the XVHL for the given xid (if we know it)
@@ -331,7 +336,7 @@ impl XVHLScaffold {
         if vhl.v == v { xs.push(vhl.lo); xs.push(vhl.hi); }
         else { xs.push(x); xs.push(x); }}
       i-=1}
-    for &x in xs.iter() { self.add_ref_ix(x, 1); } // increment ref counts
+    for &x in xs.iter() { self.add_iref_ix(x, 1); } // increment ref counts
     xs}
 
   /// Given a truth table, construct the corresponding bdd
@@ -343,7 +348,7 @@ impl XVHLScaffold {
       xs = xs.chunks(2).map(|lh:&[XID]| {
         let (lo, hi) = (lh[0], lh[1]);
         if lo == hi { lo }
-        else { self.add_ref(XVHL{ v, hi, lo }, 1, 0)} }).collect();
+        else { self.add_ref(XVHL{ v, hi, lo }, 0, 0)} }).collect();
       if xs.len() == 1 { break }
       v = self.vid_above(v).expect("not enough vars in scaffold to untbl!"); }
     xs[0]}
@@ -396,9 +401,16 @@ impl XVHLScaffold {
     let rd = self.rows.remove(&vd).unwrap();
     let mut worker = SwapWorker::default();
     worker.set_ru(vu, ru).set_rd(vd, rd).find_movers();
-
     let needed = worker.recycle();
     let xids = self.alloc(needed);
+
+    // self.locked.insert(vu); self.locked.insert(vd);
+    // self.dump("before reclaim_nodes");
+    // self.locked.remove(&vu); self.locked.remove(&vd);
+
+    // remove nodes (do these first in case the refcount changes touch umov)
+    let dels = worker.dels.len();
+    self.reclaim_swapped_nodes(std::mem::replace(&mut worker.dels, vec![]));
 
     // commit changes to nodes:
     let (dnew, wipxid) = worker.dnew_mods(xids); let dnews=dnew.len();
@@ -406,12 +418,8 @@ impl XVHLScaffold {
     let unew = worker.umov_mods(wipxid); let unews=unew.len();
     for (ix, hi, lo) in unew { self.vhls[ix] = XVHL{ v: vu, hi, lo } }
 
-    // remove nodes:
-    let dels = worker.dels.len();
-    self.reclaim_nodes(worker.dels);
-
     // [ commit refcount changes ]
-    for (xid, dc) in worker.refs.iter() { self.add_ref_ix(*xid, *dc); }
+    for (xid, dc) in worker.refs.iter() { self.add_iref_ix(*xid, *dc); }
 
     // finally, put the rows back where we found them:
     self.rows.insert(vu, worker.ru);
@@ -425,31 +433,21 @@ impl XVHLScaffold {
     #[cfg(test)] { self.validate(format!("after swapping vu:{:?} and vd:{:?}.",vu,vd).as_str()); }}
 
   /// Reclaim the records for a list of garbage collected nodes.
+  /// note: this should ONLY be called from swap() or regroup() because
+  /// it doesn't change refcounts (since those functions handle the refcounting)
   // TODO: add to some kind of linked list so they're easier to find.
-  fn reclaim_nodes(&mut self, xids:Vec<XID>) { for xid in xids { self.vhls[xid.raw().ix()] = XVHL_O }}
+  fn reclaim_swapped_nodes(&mut self, xids:Vec<XID>) { for xid in xids { self.vhls[xid.raw().ix()] = XVHL_O }}
 
   /// Remove all nodes from the top rows of the scaffold, down to and including row v.
   /// (the rows themselves remain in place).
   fn clear_top_rows(&mut self, rv:VID) {
-    let mut refs: HashMap<XID, usize> = HashMap::new();
     let mut ix = self.vids.len()-1;
-    let mut gone = HashSet::new();
     loop {
       // we're working a row at a time from the top down.
       let v = self.vids[ix];
-      // for each node on the row, make a note to decref its two
-      // children, and then  zero out the node in the master VHL list.
-      for (x, ixrc) in self.rows[&v].hm.iter() {
-        *refs.entry(x.hi.raw()).or_insert(0)+=1;
-        *refs.entry(x.lo.raw()).or_insert(0)+=1;
-        let xid = ixrc.ix.raw();
-        gone.insert(ixrc.ix.raw());
-        self.vhls[xid.ix()] = XVHL_O }
+      for xid in self.xids_on_row(v) { self.del_node(xid); }
       self.rows.insert(v, XVHLRow::new());
-      if v == rv { break } else { ix -= 1 }}
-    // now decrement the refcounts:
-    for (&xid, &c)  in refs.iter() {
-      if !gone.contains(&xid) { self.dec_ref_ix(xid, c as u64); }}}
+      if v == rv { break } else { ix -= 1 } }}
 
   /// v: the vid to remove
   fn remove_empty_row(&mut self, v:VID) {
@@ -545,7 +543,6 @@ impl XVHLScaffold {
   /// the groups are given in bottom-up order (so groups[0] is on bottom), and should
   /// completely partition the scaffold vids.
   fn regroup(&mut self, groups:Vec<HashSet<VID>>) {
-    println!("------------------>>>> self.locked: {:?}", self.locked);
     self.drcd = HashMap::new();
     self.validate("before regroup()");
     // (var, ix) pairs, where plan is to lift var to row ix
@@ -581,7 +578,7 @@ impl XVHLScaffold {
               self.locked.remove(&vu);
               self.rows.insert(vu, ru);
               self.apply_drcd(&vu);
-              println!("\x1b[32m;>>>>>> DONE WITH ROW: {}, {:?}\x1b[0m;", vu, self.vids);
+              println!("\x1b[32m>>>>>> DONE WITH ROW: {}, {:?}\x1b[0m", vu, self.vids);
 
               if self.locked.is_empty() {
                 debug_assert!(alarm.is_empty(), "last worker died but we still have alarms: {:?}", alarm);
@@ -604,7 +601,7 @@ impl XVHLScaffold {
       if self.locked.contains(&v) {
         println!(">>>>>>> row {} was locked so deferring xid:{:?} drc:{} ({:?})", v, xid.raw(), drc, self.vhls[xid.ix()]);
         *self.drcd.entry(v).or_default().entry(xid.raw()).or_default()+=drc; }
-      else { self.add_ref_ix(xid, drc); }}}
+      else { self.add_iref_ix(xid, drc); }}}
 
   /// apply deferred refcount delta (call whenever a row gets unlocked)
   fn apply_drcd(&mut self, v:&VID) {
@@ -640,7 +637,7 @@ impl XVHLScaffold {
 
     println!("just re-added row {}", vd);
     self.apply_drcd(&vd);
-    self.reclaim_nodes(dels);
+    self.reclaim_swapped_nodes(dels);
 
     // swap the two entries in .vids
     let old_uix = self.vix(vu).unwrap();
@@ -1141,6 +1138,8 @@ impl SwapSolver {
     let vvix = self.dst.vix(vhl.v);
     if vvix.is_none() { panic!("got vhl:{:?} for self.dx:{:?} but {:?} is not in dst!?", vhl, self.dx, vhl.v); }
 
+    self.dst.add_eref_ix(self.dx, 1); // add external ref so it doesn't get collected
+
     // 1. permute vars.
     self.dst.validate("before permute");
     let vix = self.arrange_vids();
@@ -1190,6 +1189,7 @@ impl SwapSolver {
     self.dst.validate("after substitution");
 
     // 7. return result
+    // self.dst.add_eref_ix(self.dx, -1); (except it's already 0 because of the beheading)
     self.dx }} // sub, SwapSolver
 
 
