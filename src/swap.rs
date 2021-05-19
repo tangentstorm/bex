@@ -130,6 +130,7 @@ impl XVHLScaffold {
   pub fn dump(&self, msg:&str) {
     println!("@dump: {}", msg);
     println!("${:?}", self.vids);
+    println!("locks: {:?}", self.locked);
     let max = {
       let mut max0 = self.vhls.len();
       for (i, &x) in self.vhls.iter().enumerate().rev() {
@@ -152,6 +153,7 @@ impl XVHLScaffold {
       println!("==== ERROR: VALIDATION FAILED. ====");
       SNAPSHOT.with(|s| s.borrow().dump("{ last valid snapshot }"));
       println!("===================================");
+      println!("error: {}",e);
       self.dump(msg);
       panic!("{}", e)}
     else { SNAPSHOT.with(|s| *s.borrow_mut() = self.clone())}}
@@ -182,8 +184,9 @@ impl XVHLScaffold {
         let hi = self.get(x.hi.raw()).expect("hi branch points nowhere");
         let lo = self.get(x.lo.raw()).expect("lo branch points nowhere");
 
-        if hi.v == NOV && x.hi.raw() != XID_O { return Err(format!("hi branch to garbage-collected node on row {}",i))}
-        if lo.v == NOV && x.lo.raw() != XID_O { return Err(format!("lo branch to garbage-collected node on row {}",i))}
+        if !self.locked.contains(&x.v) {
+          if hi.v == NOV && x.hi.raw() != XID_O { return Err(format!("hi branch to garbage-collected node {:?} @vhl[{}]",x.hi, i))}
+          if lo.v == NOV && x.lo.raw() != XID_O { return Err(format!("lo branch to garbage-collected node {:?} @vhl[{}]",x.lo, i))}}
 
         // the hi and lo branches should point "downward"
         if !(vids[&lo.v] < vids[&x.v]) { return Err(format!("upward lo branch @vhl[{}]: {:?}", i, x))}
@@ -567,6 +570,9 @@ impl XVHLScaffold {
           if let None = r { return SwarmCmd::Pass } // TODO: this wasn't supposed to happen, but then Batch[Init]
           match r.unwrap() {
 
+            R::DRcD{vu} => {
+              SwarmCmd::Send(Q::DRcD(self.drcd.remove(&vu).unwrap_or_else(|| HashMap::new()))) },
+
             // recycle or allocate xids:
             R::Alloc{needed}  => {
               SwarmCmd::Send(Q::Xids(self.alloc(needed))) },
@@ -620,8 +626,6 @@ impl XVHLScaffold {
     // replace and unlock the downward-moving row:
     debug_assert_eq!(vd, self.vid_above(vu).unwrap(), "row d isn't the row that was above row u!?!");
     self.rows.insert(vd, rd);
-    debug_assert!(self.locked.contains(&vd), "vd:{} wasn't locked!??", vd);
-    self.locked.remove(&vd);
 
     // vids within the same group will never swap with each other, but vids from different groups may.
     // if vu just moved into vd's planned spot, it means vd's move was already complete, and we just displaced it.
@@ -633,22 +637,30 @@ impl XVHLScaffold {
     // apply modifications to the vhls table
     // TODO: probably we we should just have self.ixv : HashMap<ix,VID>  instead of vhls,
     // and then a self.nids : std::collections::BinaryHeap for reclaimed indices.
-     println!("vu:{} vd:{} dnew: {:?} umov:{:?} dels:{:?}", vu, vd, dnew, umov, dels);
-    for (ix, hi, lo) in dnew { self.vhls[ix] = XVHL{ v: vd, hi, lo } }
-    for (ix, hi, lo) in umov { self.vhls[ix] = XVHL{ v: vu, hi, lo } }
+    println!("vu:{} vd:{} dnew: {:?} umov:{:?} dels:{:?}", vu, vd, dnew, umov, dels);
+    self.reclaim_swapped_nodes(dels);
+    for (ix, hi, lo) in dnew {
+      debug_assert!(hi.is_const() || self.vhls[hi.ix()] != XVHL_O, "garbage hi link in dnew: {:?}->{:?}", ix, hi);
+      debug_assert!(lo.is_const() || self.vhls[lo.ix()] != XVHL_O, "garbage lo link in dnew: {:?}->{:?}", ix, lo);
+      self.vhls[ix] = XVHL{ v: vd, hi, lo } }
+    for (ix, hi, lo) in umov {
+      debug_assert!(hi.is_const() || self.vhls[hi.ix()] != XVHL_O, "garbage hi link in umov: {:?}->{:?}", ix, hi);
+      debug_assert!(lo.is_const() || self.vhls[lo.ix()] != XVHL_O, "garbage lo link in umov: {:?}->{:?}", ix, lo);
+      self.vhls[ix] = XVHL{ v: vu, hi, lo } }
     println!("ref changes: {:?}", refs);
     for (xid, drc) in refs.iter() { self.add_ref_ix_or_defer(*xid, *drc) }
 
+    debug_assert!(self.locked.contains(&vd), "vd:{} wasn't locked!??", vd);
+    self.locked.remove(&vd);
+
     println!("just re-added row {}", vd);
     self.apply_drcd(&vd);
-    self.reclaim_swapped_nodes(dels);
 
     // swap the two entries in .vids
     let old_uix = self.vix(vu).unwrap();
     let new_uix = old_uix + 1;
     self.vids.swap(old_uix, new_uix);
 
-    println!("swapped vd:{:?} with vu:{:?}", vd, vu);
     //self.validate(format!("after swapping vd:{:?} with vu:{:?}", vd, vu).as_str());
 
     let mut work:Vec<(WID, Q)> = vec![];
@@ -679,10 +691,12 @@ enum Q {
   Init{ vu:VID, ru: XVHLRow },
   Step{ vd:VID, rd: XVHLRow },
   Stop,
+  DRcD( HashMap<XID,i64> ),
   Xids( Vec<XID> )}
 
 #[derive(Debug)]
 enum R {
+  DRcD{ vu:VID },
   Alloc{ needed:usize },
   PutRD{ vu:VID, vd:VID, rd: XVHLRow, dnew:Vec<Mod>, umov:Vec<Mod>, dels:Vec<XID>, refs:HashMap<XID, i64> },
   PutRU{ vu:VID, ru: XVHLRow }}
@@ -751,7 +765,7 @@ enum XWIP1 { XID(XID), NEW(i64) }
 //    if n.rc==0, Del(n.nid) and DecRef(n.hi, n.lo)
 
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum ROW { U, D }
 
 struct SwapWorker {
@@ -796,6 +810,11 @@ impl Worker<Q,R> for SwapWorker {
       Q::Step{vd, rd} => {
         self.ru_map = self.ru.xid_map();
         self.reset_state().set_rd(vd, rd).find_movers();
+        Some(R::DRcD{ vu:self.vu }) }
+      Q::DRcD(rcds) => {
+        for (xid, drc) in rcds {
+          let hl = self.ru_map[&xid];
+          self.ru.hm.get_mut(&hl).unwrap().add(drc); }
         Some(R::Alloc{needed: self.recycle()})},
       Q::Xids(xids) => {
         println!("vu:{} vd:{} xids: {:?}", self.vu, self.vd, xids);
@@ -813,20 +832,22 @@ impl Worker<Q,R> for SwapWorker {
 impl SwapWorker {
 
   fn reset_state(&mut self)->&mut Self {
-    self.refs = HashMap::new();
-    self.dels = vec![];
+    // self.refs = HashMap::new();
+    // self.dels = vec![]; - don't replace this because we call gc(row::U) in set_ru (before we call this).
     self.umov = vec![];
     self.dnew = HashMap::new();
     self.next = 0;
     self }
 
-  /// set .rd and rebuild .rd_map. garbage collects row D!
+  /// set .rd and rebuild .rd_map. We garbage collect row d immediately so that we don't
+  /// add things to umov that don't need to be there. (otherwise, we'd delete them in the
+  /// recycle step but then add them back even though they're not referenced.)
   fn set_rd(&mut self, vd:VID, rd:XVHLRow)->&mut Self {
     self.vd = vd; self.rd_map = rd.xid_map(); self.rd = rd; self.gc(ROW::D); self }
 
-  /// set .ru and rebuild .ru_map. does NOT garbage collect.
+  /// set .ru and rebuild .ru_map. We don't garbage collect row U because ... why?
   fn set_ru(&mut self, vu:VID, ru:XVHLRow)->&mut Self {
-    self.vu = vu; self.ru_map = ru.xid_map(); self.ru = ru; self }
+    self.vu = vu; self.ru_map = ru.xid_map(); self.ru = ru; self.gc(ROW::U); self }
 
   /// garbage collect nodes on one of the rows:
   fn gc(&mut self, which:ROW) {
@@ -935,8 +956,9 @@ impl SwapWorker {
   /// points at var d (and this wasn't possible before the lift). But we may need to delete
   /// nodes because the rc dropped to 0 (when the node was only referenced by row d).
   fn recycle(&mut self)->usize {
-    self.gc(ROW::U);
+    // garbage collect row d FIRST in case it contains the only references to a node on row u
     self.gc(ROW::D);
+    self.gc(ROW::U);
 
     // remove any ref changes to nodes we've deleted
     for xid in &self.dels { self.refs.remove(&xid.raw()); }
