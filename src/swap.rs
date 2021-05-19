@@ -4,7 +4,7 @@
 /// one to be replaced next is at the top of the BDD. The actual replacement work
 /// at each step then only involves the top three rows.
 use base::GraphViz;
-use hashbrown::{HashMap, hash_map::Entry, HashSet};
+use hashbrown::{HashMap, HashSet};
 use vid::{VID, NOV, TOP};
 use {solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops, std::path::Path, base::Base};
 use std::{fmt, hash::Hash};
@@ -215,12 +215,13 @@ impl XVHLScaffold {
         for (_hl, ixrc) in row.hm.iter() {
           let xrc = *rc.get(&ixrc.ix.raw()).unwrap_or(&0) as i64;
           let drc = *drcd.get(&ixrc.ix.raw()).unwrap_or(&0);
-          let expect = (xrc + drc) as usize;
+          // *subtract* drc from expected count because those changes haven't happened yet.
+          let expect = (xrc - drc) as usize;
           if ixrc.irc < expect {
-            return Err(format!("refcount was too low for xid: {:?} (expected {}+{}={}, got {})",
+            return Err(format!("refcount was too low for xid: {:?} (expected {}-{}={}, got {})",
                ixrc.ix, xrc, drc, expect, ixrc.irc)) }
           else if ixrc.irc > expect {
-            return Err(format!("refcount was too high for xid: {:?} (expected {}+{}={}, got {})",
+            return Err(format!("refcount was too high for xid: {:?} (expected {}-{}={}, got {})",
                ixrc.ix, xrc, drc, expect, ixrc.irc)) }
               }}
       Ok(())}
@@ -240,6 +241,9 @@ impl XVHLScaffold {
 
   /// return the index (height) of the given variable within the scaffold (if it exists)
   fn vix(&self, v:VID)->Option<usize> { self.vids.iter().position(|&x| x == v) }
+
+  /// Some(top vid), or None if empty
+  fn top_vid(&self)->Option<VID> { let len = self.vids.len(); if len>0 { Some(self.vids[len-1]) } else { None }}
 
   /// return the vid immediately above v in the scaffold, or None
   /// if v is top vid. Panics if v is not in the scaffold.
@@ -645,7 +649,7 @@ impl XVHLScaffold {
     self.vids.swap(old_uix, new_uix);
 
     println!("swapped vd:{:?} with vu:{:?}", vd, vu);
-    self.validate(format!("after swapping vd:{:?} with vu:{:?}", vd, vu).as_str());
+    //self.validate(format!("after swapping vd:{:?} with vu:{:?}", vd, vu).as_str());
 
     let mut work:Vec<(WID, Q)> = vec![];
 
@@ -1138,7 +1142,9 @@ impl SwapSolver {
     let vvix = self.dst.vix(vhl.v);
     if vvix.is_none() { panic!("got vhl:{:?} for self.dx:{:?} but {:?} is not in dst!?", vhl, self.dx, vhl.v); }
 
-    self.dst.add_eref_ix(self.dx, 1); // add external ref so it doesn't get collected
+    // add external refs so our root nodes don't get collected
+    self.dst.add_eref_ix(self.dx, 1);
+    self.src.add_eref_ix(self.sx, 1);
 
     // 1. permute vars.
     self.dst.validate("before permute");
@@ -1249,7 +1255,7 @@ impl SubSolver for SwapSolver {
     for (i,rv) in self.dst.vids.iter().enumerate() {
       let bv = NID::from_vid(VID::var(i as u32));
       for (x, ixrc) in self.dst.rows[rv].hm.iter() {
-        if ixrc.irc > 0 {
+        if ixrc.rc() > 0 || *rv == self.dst.top_vid().unwrap() {
           let nx = |x:XID|->NID { if x.is_inv() { !x2n[&!x] } else { x2n[&x] }};
           let (hi, lo) = (nx(x.hi), nx(x.lo));
           // !! row pairs are never inverted, so we shouldn't have to mess with inv() (... right??)
