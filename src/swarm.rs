@@ -27,13 +27,14 @@ pub trait Worker<Q,R>:Send+Sync+Default where R:Debug {
     macro_rules! work_phase {
         [$qid:expr, $x:expr] => {
           let (qid, r) = ($qid, $x);
-          // println!("{:?} qid:{:?} -> r:{:?}", wid, &qid, &r);
+          // println!("\x1b[32mSENDING WORK_PHASE msg: qid:{:?} for wid: {:?} -> r:{:?}\x1b[0m", &qid, wid, &r);
           if tx.send(RMsg{ wid, qid, r }).is_err() { self.on_work_send_err($qid) }}}
     // and now the actual worker lifecycle:
     work_phase![QID::INIT, self.work_init(wid)];
     let mut stream = rx.iter();
     while let Some(Some(QMsg{qid, q})) = stream.next() {
-      work_phase![qid.clone(), self.work_step(&qid, q)]; }
+      if let QID::STEP(_) = qid { work_phase![qid.clone(), self.work_step(&qid, q)]; }
+      else { panic!("Worker {:?} got unexpected qid instead of STEP: {:?}", wid, qid)}}
     work_phase![QID::DONE, self.work_done()]; }
 
   /// What to do if a message send fails. By default, just print to stdout.
@@ -71,6 +72,8 @@ pub struct Swarm<Q,R,W> where W:Default+Worker<Q,R>, Q:Debug, R:Debug {
   // wq: VecDeque<usize>,
   /// handles for sending messages to the workers
   whs: HashMap<WID, Sender<Option<QMsg<Q>>>>,
+  /// next unique id for new worker
+  nw: usize,
   /// phantom reference to the Worker class. In practice, the workers are owned
   /// by their threads, so we don't actually touch them directly.
   _w: PhantomData<W>,
@@ -82,13 +85,12 @@ impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug, R:'static+Send+Debug, W:Def
   pub fn new(num_workers:usize)->Self {
     let (me, rx) = channel();
     let n = if num_workers==0 { num_cpus::get() } else { num_workers };
-    let mut this = Self { nq: 0, me, rx, whs:HashMap::new(), /*wq,*/ qq:VecDeque::new(), _w:PhantomData };
+    let mut this = Self { nq: 0, me, rx, whs:HashMap::new(), nw:0, /*wq,*/ qq:VecDeque::new(), _w:PhantomData };
     for _ in 0..n { this.spawn(); }
     this }
 
   fn spawn(&mut self)->WID {
-    let w = self.whs.len();
-    let wid = WID::N(w);
+    let wid = WID::N(self.nw); self.nw+=1;
     let me2 = self.me.clone();
     let (wtx, wrx) = channel();
     thread::spawn(move || { W::new(wid).work_loop(wid, &wrx, &me2) });
@@ -111,8 +113,8 @@ impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug, R:'static+Send+Debug, W:Def
   pub fn run<F,V>(&mut self, mut on_msg:F)->Option<V> where V:Debug, F:FnMut(WID, &QID, Option<R>)->SwarmCmd<Q,V> {
     loop {
       let RMsg { wid, qid, r } = self.rx.recv().expect("failed to read RMsg from queue!");
+      // println!("Received RMSG:: wid:{:?}, qid:{:?}, r:{:?}", wid, qid, &r );
       let cmd = on_msg(wid, &qid, r);
-      // println!("RMSG:: wid:{:?}, qid:{:?}, r:{:?}", wid, qid, r );
       // println!("-> cmd: {:?}", cmd);
       match cmd {
         SwarmCmd::Pass => {},
@@ -123,6 +125,7 @@ impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug, R:'static+Send+Debug, W:Def
           else { panic!("worker was already gone") }
           if self.whs.is_empty() { return None }},
         SwarmCmd::Send(q) => {
+          let qid = QID::STEP(self.nq); self.nq+=1;
           if self.get_worker(wid).send(Some(QMsg{ qid, q })).is_err() {
             panic!("couldn't send message to worker {:?}", wid) }},
         SwarmCmd::Batch(wqs) => {
