@@ -78,14 +78,16 @@ pub struct Swarm<Q,R,W> where W:Default+Worker<Q,R>, Q:Debug, R:Debug {
   /// by their threads, so we don't actually touch them directly.
   _w: PhantomData<W>,
   /// query queue. query will be given to next available worker
-  qq: VecDeque<(QID, Q)>}
+  qq: VecDeque<(QID, Q)>,
+  /// handles to the actual threads
+  threads: Vec<thread::JoinHandle<()>> }
 
 impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug, R:'static+Send+Debug, W:Default+Worker<Q, R> {
 
   pub fn new(num_workers:usize)->Self {
     let (me, rx) = channel();
     let n = if num_workers==0 { num_cpus::get() } else { num_workers };
-    let mut this = Self { nq: 0, me, rx, whs:HashMap::new(), nw:0, /*wq,*/ qq:VecDeque::new(), _w:PhantomData };
+    let mut this = Self { nq: 0, me, rx, whs:HashMap::new(), nw:0, qq:VecDeque::new(), _w:PhantomData, threads:vec![]};
     for _ in 0..n { this.spawn(); }
     this }
 
@@ -93,7 +95,7 @@ impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug, R:'static+Send+Debug, W:Def
     let wid = WID::N(self.nw); self.nw+=1;
     let me2 = self.me.clone();
     let (wtx, wrx) = channel();
-    thread::spawn(move || { W::new(wid).work_loop(wid, &wrx, &me2) });
+    self.threads.push(thread::spawn(move || { W::new(wid).work_loop(wid, &wrx, &me2) }));
     self.whs.insert(wid, wtx);
     wid }
 
@@ -109,8 +111,21 @@ impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug, R:'static+Send+Debug, W:Def
       WID::NEW => { let w = self.spawn(); self.get_worker(w) },
       WID::N(_) => self.whs.get(&wid).expect(format!("requested non-exestant worker {:?}", wid).as_str()) }}
 
+
+  pub fn kill(&mut self, w:WID) {
+    if let Some(h) = self.whs.remove(&w) {
+      if h.send(None).is_err() { panic!("couldn't kill worker") }}
+    else { panic!("worker was already gone") }}
+
+
+  pub fn send(&mut self, wid:WID, q:Q) {
+    let qid = QID::STEP(self.nq); self.nq+=1;
+    if self.get_worker(wid).send(Some(QMsg{ qid, q })).is_err() {
+      panic!("couldn't send message to worker {:?}", wid) }}
+
   /// pass in the swarm dispatch loop
   pub fn run<F,V>(&mut self, mut on_msg:F)->Option<V> where V:Debug, F:FnMut(WID, &QID, Option<R>)->SwarmCmd<Q,V> {
+    let mut res = None;
     loop {
       let RMsg { wid, qid, r } = self.rx.recv().expect("failed to read RMsg from queue!");
       // println!("Received RMSG:: wid:{:?}, qid:{:?}, r:{:?}", wid, qid, &r );
@@ -118,20 +133,12 @@ impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug, R:'static+Send+Debug, W:Def
       // println!("-> cmd: {:?}", cmd);
       match cmd {
         SwarmCmd::Pass => {},
-        SwarmCmd::Halt => return None,
-        SwarmCmd::Kill(w) => {
-          if let Some(h) = self.whs.remove(&w) {
-            if h.send(None).is_err() { panic!("couldn't kill worker") }}
-          else { panic!("worker was already gone") }
-          if self.whs.is_empty() { return None }},
-        SwarmCmd::Send(q) => {
-          let qid = QID::STEP(self.nq); self.nq+=1;
-          if self.get_worker(wid).send(Some(QMsg{ qid, q })).is_err() {
-            panic!("couldn't send message to worker {:?}", wid) }},
-        SwarmCmd::Batch(wqs) => {
-          for (wid, q) in wqs {
-            let qid = QID::STEP(self.nq); self.nq+=1;
-            if self.get_worker(wid).send(Some(QMsg{ qid, q })).is_err() {
-              panic!("couldn't send message to worker {:?}", wid) }}},
+        SwarmCmd::Halt => break,
+        SwarmCmd::Kill(w) => { self.kill(w); if self.whs.is_empty() { break }},
+        SwarmCmd::Send(q) => self.send(wid, q),
+        SwarmCmd::Batch(wqs) => for (wid, q) in wqs { self.send(wid, q) },
         SwarmCmd::Panic(msg) => panic!("{}", msg),
-        SwarmCmd::Return(v) => return Some(v) }}}}
+        SwarmCmd::Return(v) => { res = Some(v); break } }}
+      while let Some(&w) = self.whs.keys().take(1).next() { self.kill(w); }
+      while !self.threads.is_empty() { self.threads.pop().unwrap().join().unwrap() }
+      res}}
