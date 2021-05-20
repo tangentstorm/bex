@@ -12,7 +12,7 @@ pub struct RMsg<R> { wid: WID, qid:QID, r:Option<R> }
 
 /// worker id
 #[derive(Debug,PartialEq,Eq,Hash,Clone,Copy)]
-pub enum WID { NEW, N(usize) }
+pub struct WID { n:usize }
 
 pub trait Worker<Q,R>:Send+Sync+Default where R:Debug {
 
@@ -92,7 +92,7 @@ impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug, R:'static+Send+Debug, W:Def
     this }
 
   fn spawn(&mut self)->WID {
-    let wid = WID::N(self.nw); self.nw+=1;
+    let wid = WID{ n: self.nw }; self.nw+=1;
     let me2 = self.me.clone();
     let (wtx, wrx) = channel();
     self.threads.push(thread::spawn(move || { W::new(wid).work_loop(wid, &wrx, &me2) }));
@@ -107,10 +107,7 @@ impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug, R:'static+Send+Debug, W:Def
     self}
 
   pub fn get_worker(&mut self, wid:WID)->&Sender<Option<QMsg<Q>>> {
-    match wid {
-      WID::NEW => { let w = self.spawn(); self.get_worker(w) },
-      WID::N(_) => self.whs.get(&wid).expect(format!("requested non-exestant worker {:?}", wid).as_str()) }}
-
+    self.whs.get(&wid).expect(format!("requested non-exestant worker {:?}", wid).as_str()) }
 
   pub fn kill(&mut self, w:WID) {
     if let Some(h) = self.whs.remove(&w) {
