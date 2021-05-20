@@ -116,6 +116,8 @@ pub struct XVHLScaffold {
   vids: Vec<VID>,
   vhls: Vec<XVHL>,
   rows: HashMap<VID, XVHLRow>,
+  /// tracks whether all workers have completed their work
+  complete: HashMap<VID,WID>,
   /// tracks rows that are locked during the distributed regroup() operation
   locked: HashSet<VID>,
   /// tracks refcount changes that are pending for locked rows ("deferred refcount delta")
@@ -125,7 +127,8 @@ pub struct XVHLScaffold {
 thread_local! { static SNAPSHOT : RefCell<XVHLScaffold> = RefCell::new(XVHLScaffold::new()) }
 
 impl XVHLScaffold {
-  fn new()->Self { XVHLScaffold{ vids:vec![], vhls:vec![XVHL_O], rows: HashMap::new(), locked:HashSet::new(), drcd:HashMap::new() } }
+  fn new()->Self { XVHLScaffold{
+    vids:vec![], vhls:vec![XVHL_O], rows: HashMap::new(), locked:HashSet::new(), drcd:HashMap::new(), complete:HashMap::new() } }
 
   pub fn dump(&self, msg:&str) {
     println!("@dump: {}", msg);
@@ -474,7 +477,7 @@ fn plan_regroup(vids:&Vec<VID>, groups:&Vec<HashSet<VID>>)->HashMap<VID,usize> {
 
   // TODO: check for complete partition (set(vids)==set(U/groups)
   let mut sum = 0; for x in groups.iter() { sum+= x.len() }
-  debug_assert_eq!(vids.len(), sum, "vids and groups had different total size");
+  assert_eq!(vids.len(), sum, "vids and groups had different total size");
 
   // map each variable to its group number:
   let mut dest:HashMap<VID,usize> = HashMap::new();
@@ -525,31 +528,33 @@ impl XVHLScaffold {
   fn next_regroup_task(&mut self, plan:&HashMap<VID,usize>)->(VID, Vec<Q>) {
     let mut res = vec![];
     // find a variable to move that isn't locked yet:
-    for (&vu,&dst) in plan {
-      if self.locked.contains(&vu) { continue }
-      if self.vix(vu).unwrap() == dst { continue }
-      println!("###### plan contains {}", vu);
-      // we lock all the moving variables so they never cross each other
-      if let Some(ru) = self.take_row(&vu) {
-        res.push(Q::Init{vu, ru});
-        let vd = self.vid_above(vu).unwrap();
-        // schedule swap immediately if we can. (otherwise regroup() sets an alarm)
-        if plan.contains_key(&vd) {
-          println!("\x1b[33mWARNING: DEFERRING task for {} because row above ({}) is in the plan.\x1b[0m",vu, vd); }
-        else if let Some(rd) = self.take_row(&vd) { res.push(Q::Step{vd, rd}) }
-        else { panic!("WHYY?") }
-        return (vu, res) }
-      else { // we couldn't take row u. it's probably being swapped
-        let other = &self.vid_below(vu).unwrap();
-        assert!(plan.contains_key(other), "couldn't take_row {} but vid_below is {}", vu, other);
-        panic!("HELP")
-      }}
-      (VID::nov(), res) }
+    for &vu in self.vids.iter().rev() {
+      if self.locked.contains(&vu) { println!("############## skipping {} because it's locked", vu); continue }
+      if let Some(&dst) = plan.get(&vu) {
+        if self.vix(vu).unwrap() == dst { println!("############## skipping {} because it's already in place", vu); continue }
+        println!("###### plan contains {}", vu);
+        // we lock all the moving variables so they never cross each other
+        if let Some(ru) = self.take_row(&vu) {
+          res.push(Q::Init{vu, ru});
+          let vd = self.vid_above(vu).unwrap();
+          // schedule swap immediately if we can. (otherwise regroup() sets an alarm)
+          if plan.contains_key(&vd) {
+            println!("\x1b[33mWARNING: DEFERRING task for {} because row above ({}) is in the plan.\x1b[0m",vu, vd); }
+          else if let Some(rd) = self.take_row(&vd) { res.push(Q::Step{vd, rd}) }
+          else { panic!("WHYY?") }
+          return (vu, res) }
+        else { // we couldn't take row u. it's probably being swapped
+          let other = &self.vid_below(vu).unwrap();
+          assert!(plan.contains_key(other), "couldn't take_row {} but vid_below is {}", vu, other);
+          panic!("COULDN't TAKE ROW U ({}), BUT DON'T KNOW WHY", vu) }}}
+      panic!("SPAWNED A THREAD WITH NOTHING TO DO")}
 
   /// arrange row order to match the given groups.
   /// the groups are given in bottom-up order (so groups[0] is on bottom), and should
   /// completely partition the scaffold vids.
   fn regroup(&mut self, groups:Vec<HashSet<VID>>) {
+    assert!(self.locked.is_empty());
+    self.complete = HashMap::new();
     self.drcd = HashMap::new();
     self.validate("before regroup()");
     // (var, ix) pairs, where plan is to lift var to row ix
@@ -561,11 +566,13 @@ impl XVHLScaffold {
       match qid {
         QID::INIT => { // assign next task to the worker
           let (vu, mut work) =  self.next_regroup_task(&plan);
-          match work.len() {
+          if vu == NOV { SwarmCmd::Pass }
+          else { match work.len() {
             1 => { alarm.insert(self.vid_above(vu).unwrap(), wid); SwarmCmd::Send(work.pop().unwrap()) },
             2 => SwarmCmd::Batch(work.into_iter().map(move |q| (wid, q)).collect()),
             // TODO: assign extra workers to swaps with more nodes?
-            _ => SwarmCmd::Pass }}, // we have more threads than variables to swap.
+            // this also happens when we spawn a new thread to work on a formerly completed vid that got displaced
+            _ => SwarmCmd::Pass }}}, // we have more threads than variables to swap.
         QID::STEP(_) => {
           if let None = r { return SwarmCmd::Pass } // TODO: this wasn't supposed to happen, but then Batch[Init]
           match r.unwrap() {
@@ -589,12 +596,13 @@ impl XVHLScaffold {
               self.rows.insert(vu, ru);
               self.apply_drcd(&vu);
               println!("\x1b[32m>>>>>> DONE WITH ROW: {}, {:?}\x1b[0m", vu, self.vids);
+              self.complete.insert(vu, wid);
 
-              if self.locked.is_empty() {
+              if self.complete.len() == plan.len() {
                 debug_assert!(alarm.is_empty(), "last worker died but we still have alarms: {:?}", alarm);
-                println!("WORK IS DONE");
+                println!("ALL WORKERS COMPLETE");
                 SwarmCmd::Return(()) }
-              else { SwarmCmd::Kill(wid) }}}},
+              else { SwarmCmd::Pass }}}},
 
         QID::DONE => { SwarmCmd::Pass }}});
 
@@ -627,13 +635,6 @@ impl XVHLScaffold {
     debug_assert_eq!(vd, self.vid_above(vu).unwrap(), "row d isn't the row that was above row u!?!");
     self.rows.insert(vd, rd);
 
-    // vids within the same group will never swap with each other, but vids from different groups may.
-    // if vu just moved into vd's planned spot, it means vd's move was already complete, and we just displaced it.
-    // However, its worker is already dead (so we need a new one), and the row above is locked until we finish
-    // the next move for vu (so we set an alarm rather than spawning a new thread)
-    if plan.contains_key(&vd) && plan[&vd] == self.vix(vu).unwrap() {
-      alarm.insert(vd, WID::NEW); }
-
     // apply modifications to the vhls table
     // TODO: probably we we should just have self.ixv : HashMap<ix,VID>  instead of vhls,
     // and then a self.nids : std::collections::BinaryHeap for reclaimed indices.
@@ -648,6 +649,7 @@ impl XVHLScaffold {
       debug_assert!(lo.is_const() || self.vhls[lo.ix()] != XVHL_O, "garbage lo link in umov: {:?}->{:?}", ix, lo);
       self.vhls[ix] = XVHL{ v: vu, hi, lo } }
     println!("ref changes: {:?}", refs);
+    for (xid, drc) in refs.iter() { println!("drc: {} for xid:{:?} ({:?})", *drc, *xid, self.vhls[xid.ix()] ); }
     for (xid, drc) in refs.iter() { self.add_ref_ix_or_defer(*xid, *drc) }
 
     debug_assert!(self.locked.contains(&vd), "vd:{} wasn't locked!??", vd);
@@ -661,6 +663,7 @@ impl XVHLScaffold {
     let new_uix = old_uix + 1;
     self.vids.swap(old_uix, new_uix);
 
+    println!("\x1b[36mswapped vu:{} -> vd:{} => {:?}\x1b[0m", vu, vd, self.vids);
     //self.validate(format!("after swapping vd:{:?} with vu:{:?}", vd, vu).as_str());
 
     let mut work:Vec<(WID, Q)> = vec![];
@@ -668,9 +671,21 @@ impl XVHLScaffold {
     // tell anyone waiting on rd that they can resume work
     debug_assert!(!alarm.contains_key(&vd), "alarm should never be placed on a downward-moving row.");
     if let Some(w2) = alarm.remove(&vu) {
+      println!("\x1b[35mTRIGGERED ALARM ON vu:{}, sending vd:{}\x1b[0m", vu, vd);
       // wake the sleeping worker right behind us:
       let rd = self.take_row(&vd).unwrap();
       work.push((w2, Q::Step{vd, rd})); }
+
+    // vids within the same group will never swap with each other, but vids from different groups may.
+    // if vu just moved into vd's planned spot, it means vd's move was already complete, and we just displaced it.
+    // However, its worker is already dead (so we need a new one), and the row above is locked until we finish
+    // the next move for vu (so we set an alarm rather than spawning a new thread)
+    else if plan.contains_key(&vd) && self.complete.contains_key(&vd) {
+      println!("RE-SPAWNING WORKER FOR DISPLACED VID: {}", vd);
+      let w = self.complete.remove(&vd).unwrap();
+      work.push((w, Q::Init{ vu:vd, ru: self.take_row(&vd).unwrap() }));
+      // the alarm goes on the upward-moving row
+      alarm.insert(vu, w); }
 
     // are we there yet? :)
     if new_uix == plan[&vu] { work.push((wid, Q::Stop)); }
@@ -1138,9 +1153,12 @@ impl SwapSolver {
     self.dst.regroup(vec![d, v, n]);
     // the order of n has to match in both. we'll use the
     // existing order of n from dst because it's probably bigger.
+    println!("s: {:?}", &s);
+
     let vix = self.dst.vix(self.rv).unwrap();
     let mut sg = vec![s.clone()];
     for ni in (vix+1)..self.dst.vids.len() { sg.push(set(vec![self.dst.vids[ni]])) }
+    println!("regrouping src. vids: {:?} groups: {:?}", self.src.vids, sg);
     self.src.regroup(sg); // final order: [s,n]
 
     // now whatever order the s group wound up in, we can insert
