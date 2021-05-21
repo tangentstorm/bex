@@ -6,7 +6,6 @@
 extern crate bincode;
 #[macro_use] extern crate serde_derive;
 extern crate serde;
-extern crate fnv;
 extern crate hashbrown;
 extern crate simplelog;
 
