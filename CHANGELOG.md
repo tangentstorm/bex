@@ -2,7 +2,47 @@
 
 A rust library for working with boolean expressions.
 
-## 0.1.4 (2020-06-13
+## 0.1.5 (2020-05-20)
+
+- Added `SwapSolver`, a new substitution solver that (like any `SubSolver`)
+  works by iteratively replacing virtual variables (representing AST nodes)
+  with their definitions inside a BDD. What's new here is that `SwapSolver`
+  continuously re-orders the variables (rows) in the BDD at each step so
+  that the substitution is as efficient as possible.
+
+- Added `XVHLScaffold`, a data structure for decision-diagram-like graphs,
+  that allows accessing each row individually. This structure should be
+  considered extremely experimental, and may change in the future (as it
+  does not currently use `NID` for node references).
+
+- Added `swarm` module that contains a small framework for distributing work
+  across threads. It is used by the `SwapSolver` to swap BDD rows in parallel,
+  and follows the same design as `BddSwarm`, which will likely be ported over
+  to this framework in the future.
+
+- Added `ops` module for representing boolean expressions in something like
+  reverse Polish notation. The `Ops::RPN` constructor will likely replace
+  `ast::Op` as the representation of nodes in `ast::ASTBase` in a future
+  version, since `Ops::RPN` can represent arbitrary boolean functions
+  with any number of inputs.
+
+## 0.1.4 (2020-06-13)
+
+This version introduces the ANFBase for working with
+algebraic normal form using a BDD-like graph structure.
+This version also introduces Cursors, which provide the
+ability to iterate through BDD solutions and ANF terms.
+
+It also includes a major refactoring effort: the BDD, AST,
+and ANF bases now all use the same NID/VID types for node
+and variable identifiers.
+
+Finally, BDD and ANF graphs are now arranged so that
+variables with the smallest identifiers now appear at
+the bottom (so that subgraphs are more likely to be
+shared across functions with different numbers of inputs,
+and also so that the size of a node's truth table is
+immediately apparent from its topmost variable.)
 
 **vid::VID**
 - `VID` is now an explicit custom type rather than a simple usize.
