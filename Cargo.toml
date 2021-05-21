@@ -26,6 +26,9 @@ path = "examples/solve/bdd-solve.rs"
 wip = []
 slowtests = []
 
+[workspace]
+members = ["py"]
+
 [dependencies]
 serde = "1.0"
 serde_derive = "1.0"
