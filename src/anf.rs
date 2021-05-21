@@ -14,7 +14,7 @@
 //! ```
 //! In addition, identical suffixes after factoring always refer to the same node.
 use std::collections::HashSet;
-use base::{Base, SubSolver};
+use base::{Base};
 use {nid, nid::{NID,I,O}};
 use vid::{VID,VidOrdering};
 use cur::{Cursor, CursorPlan};
@@ -159,6 +159,9 @@ impl Base for ANFBase {
 
   fn save(&self, _path:&str)->::std::io::Result<()> { todo!("anf::save") }
 
+  fn solution_set(&self, n: NID, nvars: usize)->hashbrown::HashSet<Reg> {
+    self.solutions_trunc(n, nvars).collect() }
+
 } // impl Base for ANFBase
 
 // internal ANFBase implementation
@@ -249,14 +252,12 @@ impl ANFBase {
   pub fn solutions(&mut self, n:NID)->ANFSolIterator {
     self.solutions_trunc(n, self.num_vars())}
 
-  pub fn solutions_trunc(&mut self, n:NID, nvars:usize)->ANFSolIterator {
+  pub fn solutions_trunc(&self, n:NID, nvars:usize)->ANFSolIterator {
     assert!(nvars <= self.num_vars(), "nvars arg to solutions_trunc must be <= self.nvars");
     ANFSolIterator::from_anf_base(self, n, nvars)}
 } // impl ANFBase
 
 
-impl SubSolver for ANFBase {}
-
 impl HiLoBase for ANFBase {
   fn get_hilo(&self, nid:NID)->Option<HiLo> {
     let ANF { v:_, hi, lo } = self.fetch(nid);

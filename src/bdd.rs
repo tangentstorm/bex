@@ -11,7 +11,7 @@ extern crate num_cpus;
 
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use bincode;
-use base::{Base, SubSolver};
+use base::{Base};
 use io;
 use reg::Reg;
 use {vhl, vhl::{HiLo, HiLoPart, HiLoBase, VHLParts, Walkable}};
@@ -560,7 +560,11 @@ impl Base for BDDBase {
     self.walk(n, &mut |n,_,t,_| w!("  \"{}\"->\"{}\";", n, t));
     w!("edge[style=dashed];");
     self.walk(n, &mut |n,_,_,e| w!("  \"{}\"->\"{}\";", n, e));
-    w!("}}"); }}
+    w!("}}"); }
+
+  fn solution_set(&self, n: NID, nvars: usize)->hashbrown::HashSet<Reg> {
+    self.solutions_trunc(n, nvars).collect() }}
+
 
 // generic Base test suite
 test_base_consts!(BDDBase);
@@ -727,7 +731,7 @@ impl BDDBase {
       let mut cur = Cursor::new(nvars, n);
       cur.descend(self);
       debug_assert!(cur.node.is_const());
-      debug_assert!(self.in_solution(&cur), format!("{:?}", cur.scope));
+      debug_assert!(self.in_solution(&cur), "{:?}", cur.scope);
       Some(cur) }}
 
   pub fn next_solution(&self, cur:Cursor)->Option<Cursor> {
@@ -825,10 +829,6 @@ impl<'a> Iterator for BDDSolIterator<'a> {
       self.next = self.bdd.next_solution(cur);
       Some(result)}
     else { None }}}
-
-
-impl SubSolver for BDDBase { }
-
 
 
 #[test] fn test_simple_nodes() {

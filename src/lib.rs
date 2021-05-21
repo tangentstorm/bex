@@ -24,6 +24,8 @@ pub mod reg;
 pub mod vhl;
 /// Structures for storing work in progress.
 pub mod wip;
+/// RPN-like serialization structure for expressions.
+pub mod ops;
 
 // Cursors (register + stack and scope) for navigating vhl-graphs (Bdd, Anf, etc)
 pub mod cur;
@@ -44,3 +46,9 @@ pub mod io;
 
 /// (Experimental) support for algebraic normal form (XOR of AND).
 pub mod anf;
+
+/// swap solver
+pub mod swap;
+
+/// multicore support
+pub mod swarm;

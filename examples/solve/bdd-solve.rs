@@ -1317,10 +1317,12 @@ fn factors()->Vec<(u64,u64)> {
     (785341095,782958878), (785147363,783152070) ] }
 
 extern crate bex;
+extern crate hashbrown;
+use bex::{swap::SwapSolver, find_factors, int::{X32, X64}};
+use bex::reg::Reg;
+use hashbrown::HashSet;
 
 /// The real challenge: factor the 64-bit product of the first 15 primes.
 #[cfg(not(test))]
 pub fn main() {
-  use bex::{bdd, find_factors, int::{X32, X64}};
-  type BDD = bdd::BDDBase;
-  find_factors!(BDD, X32, X64, K as usize, factors()); }
+  find_factors!(SwapSolver, X32, X64, K as usize, factors()); }

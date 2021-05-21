@@ -4,7 +4,7 @@ use std::mem::size_of;
 use vid::VID;
 
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Reg { nvars: usize, data: Vec<usize> }
 
 const USIZE:usize = size_of::<usize>() * 8;
@@ -79,6 +79,13 @@ impl Reg {
       res += tmp & 1;
       tmp >>= 1;}
     res }
+
+  // permute the bits according to the given permutation vector.
+  // b=pv[i] means to grab bit b from x and move to position i in the result.
+  pub fn permute_bits(&self, pv:&[usize])->Self {
+    let mut res = self.clone();
+    for (i,b) in pv.iter().enumerate() { res.put(i, self.get(*b)); }
+    res}
 
 
   /// ripple add with carry within the region specified by start and end

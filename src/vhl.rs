@@ -45,7 +45,6 @@ impl std::ops::Not for VHL {
 #[derive(PartialEq,Debug,Copy,Clone)]
 pub enum HiLoPart { HiPart, LoPart }
 
-
 /// a deconstructed VHL (for WIP)
 #[derive(PartialEq,Debug,Copy,Clone)]
 pub struct VHLParts{

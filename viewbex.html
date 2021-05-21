@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<!--
+  visual debugger for output of validate() function in swap.rs
+  usage:
+     cargo test --lib | grep -e '^[@$^]' > viewbex.txt
+     npm install -g light-server
+     light-server -s .
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>viewbex</title>
+  <script src="https://d3js.org/d3.v6.min.js"></script>
+  <script src="https://unpkg.com/vue@next"></script>
+  <style>
+    svg { background: #eee }
+    line, circle { fill: white; stroke: #999; stroke-width: 2px; }
+    line.bad { stroke: red }
+    line.lo { stroke-dasharray: 5;}
+    text { font-family: calibri, sans; }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <pre style="float:left">{{text}}</pre>
+  <div class="graph" v-for="g in bdds">
+    <bdd :title="g.title" :vids="g.vids" :vhls="g.vhls" :vix="g.vix"/>
+  </div>
+</div>
+
+<script>
+
+let app, vm
+fetch("viewbex.txt").then(r=>r.text())
+.then(text=>{ // convert txt to [txt, [bdd]]
+  // parse the lines for each validate() run:
+  let bdds = text.replace('\r','').split('@/validate').map(x=>x.trim().split('\n')).map(run=>{
+    let title = run.shift().replace('@validate: ','');
+    if (!run.length) return [];
+    // first line is the vids:
+    let vids = ['NoV'].concat(run.shift().slice(2,-1).split(', '));
+    let vix = Object.fromEntries(vids.map((x,i)=>[x,i]))
+    if (run[run.length-1].startsWith('@/validate')){ run.pop() } // todo: color code the failing one(s)?
+    console.log(run)
+    let vhls = run.map(x=>{ let [v,h,l] = x.slice(1).split(','); return [v,h,l] })
+    return {title, vids, vhls, vix} })
+  return {text, bdds} })
+.then(data=>{
+  window.data = data // for debugging
+  app = Vue.createApp({ data() { return data } })
+  app.component('bdd', {
+    props: { vids:Array, vhls:Array, height:{type:Number, default:300}, vix:Object, title:String},
+    template: `<svg :height="height" width="2048">
+        <text x="10" y="10">{{title}}</text>
+        <g class="labels">
+          <text v-for="(v,i) in vids" x="20" :y="rowY(i)">{{v==='NoV' ? '' : v}}</text>
+        </g>
+        <g class="edges">
+          <line v-for="e in edges" :x1="e.x1" :y1="e.y1" :x2="e.x2" :y2="e.y2" :class="edgeClass(e)"/>
+        </g>
+        <g class="nodes">
+          <g v-for="(row,i) in rows" :class="nodeClass(n)">
+            <circle v-for="(node, j) in row" :cy="rowY(i)-5" :cx="rowX(j)" r="10"></circle>
+            <text v-for="(node, j) in row" :y="rowY(i)" :x="rowX(j)">{{node[0]}}</text>
+          </g>
+        </g>
+      </svg>`,
+    methods: {
+      raw(xid) { return xid.startsWith("X")? 0 : +xid.replace(/[#!]/g,"") },
+      rowX(i) { return 60 + i * 30 },
+      rowY(i) { return this.height - (20 + i * 40) },
+      edgeClass(e) { return e.which + ' ' + (e.y2 < e.y1 ? "bad" : "good") },
+      nodeClass(n) { return '' }
+    },
+    computed: {
+      rows() {
+        let res = this.vids.map(x=>[])
+        this.vhls.forEach(([v,h,l], i) => { res[this.vix[v]].push([i,h,l]) });
+        return res },
+      edges() {
+        let vx = this.vids.map(x=>0) // per-var count
+        let pos = this.vhls.map((n,i)=>({x: this.rowX(vx[this.vix[n[0]]]++), y:this.rowY(this.vix[n[0]]) }))
+        let res = []
+        this.vhls.forEach(([v,h,l], i)=>{
+          if (v === "NoV") return;
+          let from = pos[i], hi = pos[this.raw(h)], lo = pos[this.raw(l)]
+          res.push({x1:from.x, y1:from.y,  x2:hi.x+5, y2:hi.y, which:'hi' })
+          res.push({x1:from.x, y1:from.y,  x2:lo.x-5, y2:lo.y, which:'lo' }) })
+        return res }},
+    mounted() {
+      console.log("this.$el:")
+      console.log(this.$el.outerHTML);
+      console.log(this.vids);
+    }
+  })
+  vm = app.mount("#app") })
+
+</script>
+
+</body>
+</html>
