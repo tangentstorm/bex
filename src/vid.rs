@@ -112,3 +112,16 @@ impl VID {
     NoV => panic!("can't turn NoV into a number"),
     Var(x) => x as usize,
     Vir(x) => x as usize }}}
+
+/// this is only so I can order ops. VID should otherwise always be
+/// compared with is_above / iS_below or cmp_depth, for clarity.
+impl Ord for VID {
+  fn cmp(&self, other: &Self)-> Ordering {
+    match self.cmp_depth(other) {
+      VidOrdering::Above => Ordering::Less,
+      VidOrdering::Level => Ordering::Equal,
+      VidOrdering::Below => Ordering::Greater}}}
+
+impl PartialOrd for VID {
+  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+      Some(self.cmp(other))}}

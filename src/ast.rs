@@ -1,7 +1,5 @@
 // a concrete implemetation:
 use std::collections::{HashMap,HashSet};
-use std::cmp::Ordering;
-use vid::VidOrdering;
 
 use io;
 use base::*;
@@ -13,23 +11,6 @@ use {vid, vid::VID};
 pub type SID = usize; // canned substition
 type SUB = HashMap<VID,NID>;
 
-
-/// this is only so I can order ops. VID should otherwise always be
-/// compared with is_above / iS_below or cmp_depth, for clarity.
-impl Ord for VID {
-  fn cmp(&self, other: &Self)-> Ordering {
-    match self.cmp_depth(other) {
-      VidOrdering::Above => Ordering::Less,
-      VidOrdering::Level => Ordering::Equal,
-      VidOrdering::Below => Ordering::Greater
-    }
-  }
-}
-impl PartialOrd for VID {
-  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-      Some(self.cmp(other))
-  }
-}
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Op {
