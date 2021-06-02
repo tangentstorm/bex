@@ -5,12 +5,7 @@ use io;
 use base::*;
 use {nid, nid::NID};
 use {vid, vid::VID};
-
 
-
-pub type SID = usize; // canned substition
-type SUB = HashMap<VID,NID>;
-
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Op {
@@ -25,20 +20,15 @@ pub struct RawASTBase {
   nvars: usize,
   tags: HashMap<String, NID>,       // support for naming/tagging bits.
   hash: HashMap<Op, NID>,           // expression cache (simple+complex)
-  subs: Vec<SUB>,                   // list of substitution dicts
-  subc: Vec<HashMap<NID,NID>>       // cache of substiution results
 }
 
 type VarMaskFn = fn(&RawASTBase,vid::VID)->u64;
 
+/// An ASTBase that does not use extra simplification rules.
 impl RawASTBase {
 
-
   fn new(bits:Vec<Op>, tags:HashMap<String, NID>, nvars:usize)->RawASTBase {
-    RawASTBase{bits, nvars, tags,
-            hash: HashMap::new(),
-            subs: vec![],
-            subc: vec![]}}
+    RawASTBase{bits, nvars, tags, hash: HashMap::new() }}
 
   pub fn empty()->RawASTBase { RawASTBase::new(vec![], HashMap::new(), 0) }
   pub fn len(&self)->usize { self.bits.len() }
@@ -60,35 +50,6 @@ impl RawASTBase {
   pub fn load(path:&str)->::std::io::Result<RawASTBase> {
     let s = io::get(path)?;
     Ok(bincode::deserialize(&s).unwrap()) }
-
-
-/*  fn sid(&mut self, kv:SUB)->SID {
-    let res = self.subs.len();
-    self.subs.push(kv); self.subc.push(HashMap::new());
-    res } */
-
-  pub fn sub(&mut self, x:NID, s:SID)->NID {
-    macro_rules! op {
-      [not $x:ident] => {{ let x1 = self.sub($x, s); !x1 }};
-      [$f:ident $x:ident $y:ident] => {{
-        let x1 = self.sub($x, s);
-        let y1 = self.sub($y, s);
-        self.$f(x1,y1) }}}
-    match self.subc[s].get(&x) {
-      Some(&n) => n,
-      None => {
-        let n = match self.op(x) {
-          Op::O | Op::I => x,
-          Op::Var(v) => {
-            match self.subs[s].get(&v) {
-              Some(&y) => y,
-              None => x }},
-          Op::Not(a) => op![not a],
-          Op::And(a,b) => op![and a b],
-          Op::Xor(a,b) => op![xor a b],
-          other => { panic!("huh?! sub({:?},{})", other, s) }};
-        self.subc[s].insert(x, n);
-        n }}}
 
 
   fn when(&mut self, v:vid::VID, val:NID, nid:NID)->NID {
