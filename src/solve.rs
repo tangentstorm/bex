@@ -15,7 +15,7 @@
 /// capturing of stdout so that you can see debug lines from the solver)
 
 use ::{apl, ops};
-use ast::{Op,RawASTBase};
+use ast::{RawASTBase};
 use base::{Base};
 use {nid, nid::NID};
 use {vid::VID};
@@ -34,7 +34,7 @@ pub trait SubSolver {
   /// tell the implementation to perform a substitution step.
   /// context NIDs are passed in and out so the implementation
   /// itself doesn't have to remember it.
-  fn subst(&mut self, ctx:NID, _vid:VID, _ops:&Ops)->NID;
+  fn subst(&mut self, ctx:NID, vid:VID, ops:&Ops)->NID;
   /// fetch a solution, (if one exists)
   fn get_one(&self, ctx:NID, nvars:usize)->Option<Reg> {
     println!("Warning: default SubSolver::get_one() calls get_all(). Override this!");
@@ -91,7 +91,7 @@ impl<'a, S:SubSolver> Progress<S> for ProgressReport<'a> {
     println!("{:4}, {:8} ms, {:45?} → {:45?}, {:45?}",
              step, millis, oldtop.n,
              if new.vid().is_vir() {
-               format!("{:?}", src.get_op(nid::ixn(new.vid().vir_ix() as u32))) }
+               format!("{:?}", src.get_ops(nid::ixn(new.vid().vir_ix() as u32))) }
              else { format!("{:?}", new)},
              newtop.n);
     // dest.show_named(newtop.n, format!("step-{}", step).as_str());
@@ -150,14 +150,9 @@ pub fn convert_nid(sn:SrcNid)->DstNid {
 fn refine_one(dst: &mut dyn SubSolver, v:VID, src:&RawASTBase, d:DstNid)->DstNid {
   // println!("refine_one({:?})", d)
   let ctx = d.n;
-  let op = src.get_op(nid::ixn(v.vir_ix() as u32));
-  let cn = |x0:NID|->NID { convert_nid(SrcNid{n:x0}).n };
-  // println!("op: {:?}", op);
-  let def:Ops = match op {
-    Op::And(x,y) => ops::rpn(&[cn(x), cn(y), ops::AND]),
-    Op::Xor(x,y) => ops::rpn(&[cn(x), cn(y), ops::XOR]),
-    Op::Or(x,y)  => ops::rpn(&[cn(x), cn(y), ops::VEL]),
-    _ => { panic!("don't know how to translate {:?}", op)}};
+  let ops = src.get_ops(nid::ixn(v.vir_ix() as u32));
+  let cn = |x0:&NID|->NID { if x0.is_fun() { *x0 } else { convert_nid(SrcNid{n:*x0}).n }};
+  let def:Ops = Ops::RPN( ops.to_rpn().map(cn).collect() );
   DstNid{n: dst.subst(ctx, v, &def) }}
 
 

@@ -5,10 +5,11 @@ use io;
 use base::*;
 use {nid, nid::NID};
 use {vid, vid::VID};
+use {ops, ops::Ops};
 
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord, Serialize, Deserialize)]
-pub enum Op {
+enum Op {
   O, I, Var(VID), Not(NID), And(NID,NID), Or(NID,NID), Xor(NID,NID),
   // Eql(NID,NID), LT(NID,NID),
   Ch(NID, NID, NID), Mj(NID, NID, NID) }
@@ -27,10 +28,7 @@ type VarMaskFn = fn(&RawASTBase,vid::VID)->u64;
 /// An ASTBase that does not use extra simplification rules.
 impl RawASTBase {
 
-  fn new(bits:Vec<Op>, tags:HashMap<String, NID>, nvars:usize)->RawASTBase {
-    RawASTBase{bits, nvars, tags, hash: HashMap::new() }}
-
-  pub fn empty()->RawASTBase { RawASTBase::new(vec![], HashMap::new(), 0) }
+  pub fn empty()->RawASTBase { RawASTBase{ bits:vec![], nvars:0, tags:HashMap::new(), hash:HashMap::new() }}
   pub fn len(&self)->usize { self.bits.len() }
   pub fn is_empty(&self)->bool { self.bits.is_empty() }
 
@@ -193,7 +191,7 @@ impl RawASTBase {
       .collect();
     let mut newtags = HashMap::new();
     for (key, &val) in &self.tags { newtags.insert(key.clone(), nn(val)); }
-    RawASTBase::new(newbits, newtags, self.nvars) }
+    RawASTBase{ bits:newbits, tags:newtags, nvars: self.nvars, hash:HashMap::new() }}
 
   /// Construct a new RawASTBase with only the nodes necessary to define the given nodes.
   /// The relative order of the bits is preserved.
@@ -217,7 +215,12 @@ impl RawASTBase {
     else if nid::no_var(n) { self.bits[nid::idx(n)] }
     else { panic!("don't know how to op({:?})", n) }}
 
-  pub fn get_op(&self, nid:NID)->Op { self.op(nid) }
+  pub fn get_ops(&self, nid:NID)->Ops {
+    match self.op(nid) {
+      Op::And(x,y) => ops::rpn(&[x, y, ops::AND]),
+      Op::Xor(x,y) => ops::rpn(&[x, y, ops::XOR]),
+      Op::Or(x,y)  => ops::rpn(&[x, y, ops::VEL]),
+      other => panic!("don't know how to convert old op: {:?}", other) }}
 
 } // impl RawASTBase
 
@@ -285,7 +288,6 @@ impl Base for RawASTBase {
 
   #[cfg(todo)]
   fn ch(&mut self, x:NID, y:NID, z:NID)->NID { nid::O }
-
 
   fn sub(&mut self, _v:vid::VID, _n:NID, _ctx:NID)->NID { todo!("ast::sub") }
 
