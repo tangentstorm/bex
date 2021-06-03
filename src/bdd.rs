@@ -465,26 +465,26 @@ impl BDDBase {
     let mut c = 0; self.walk(n, &mut |_,_,_,_| c+=1); c }
 
   /// helper for truth table builder
-  fn tt_aux(&mut self, res:&mut Vec<u8>, v:VID, n:NID, i:usize) {
-    let o = v.var_ix();
-    if o == self.num_vars() { match self.when_lo(v, n) {
+  fn tt_aux(&mut self, res:&mut Vec<u8>, n:NID, i:usize, level:u32) {
+    if level == 0 { match n {
       O => {} // res[i] = 0; but this is already the case.
       I => { res[i] = 1; }
       x => panic!("expected a leaf nid, got {}", x) }}
     else {
-      let lo = self.when_lo(v,n); self.tt_aux(res, VID::var(1+o as u32), lo, i*2);
-      let hi = self.when_hi(v,n); self.tt_aux(res, VID::var(1+o as u32), hi, i*2+1); }}
+      let v = VID::var(level-1);
+      let lo = self.when_lo(v,n); self.tt_aux(res, lo, i*2, level-1);
+      let hi = self.when_hi(v,n); self.tt_aux(res, hi, i*2+1, level-1); }}
 
   /// Truth table. Could have been Vec<bool> but this is mostly for testing
   /// and the literals are much smaller when you type '1' and '0' instead of
   /// 'true' and 'false'.
-  pub fn tt(&mut self, n0:NID)->Vec<u8> {
+  pub fn tt(&mut self, n0:NID, num_vars:u32)->Vec<u8> {
     // !! once the high vars are at the top, we can compare to nid.vid().u() and count down instead of up
     if !n0.vid().is_var() { todo!("tt only works for actual variables. got {:?}", n0); }
-    if self.num_vars() > 16 {
-      panic!("refusing to generate a truth table of 2^{} bytes", self.num_vars()) }
-    let mut res = vec![0;(1 << self.num_vars()) as usize];
-    self.tt_aux(&mut res, VID::var(0), n0, 0);
+    if num_vars > 16 { panic!("refusing to generate a truth table of 2^{} bytes", num_vars) }
+    if num_vars == 0 { panic!("num_vars should be > 0")}
+    let mut res = vec![0;(1 << num_vars) as usize];
+    self.tt_aux(&mut res, n0, 0, num_vars);
     res }
 
 } // end impl BDDBase
@@ -631,29 +631,29 @@ test_base_when!(BDDBase);
   //use simplelog::*;  TermLogger::init(LevelFilter::Trace, Config::default()).unwrap();
   let mut base = BDDBase::new(3);
   let (x0,x1,x2) = (NID::var(0), NID::var(1), NID::var(2));
-  assert_eq!(vec![0,0,0,0,1,1,1,1], base.tt(x0));
-  assert_eq!(vec![0,0,1,1,0,0,1,1], base.tt(x1));
-  assert_eq!(vec![0,1,0,1,0,1,0,1], base.tt(x2));
-  let x = base.xor(x0, x1);
-  assert_eq!(vec![0,0,1,1,1,1,0,0], base.tt(x));
-  let a = base.and(x1, x2);
-  assert_eq!(vec![0,0,0,1,0,0,0,1], base.tt(a));
+  assert_eq!(vec![0,0,0,0,1,1,1,1], base.tt(x2, 3));
+  assert_eq!(vec![0,0,1,1,0,0,1,1], base.tt(x1, 3));
+  assert_eq!(vec![0,1,0,1,0,1,0,1], base.tt(x0, 3));
+  let x = base.xor(x2, x1);
+  assert_eq!(vec![0,0,1,1,1,1,0,0], base.tt(x, 3));
+  let a = base.and(x1, x0);
+  assert_eq!(vec![0,0,0,1,0,0,0,1], base.tt(a, 3));
   let i = base.ite(x, a, !a);
-  assert_eq!(vec![1,1,0,1,0,0,1,0], base.tt(i))}
+  assert_eq!(vec![1,1,0,1,0,0,1,0], base.tt(i, 3))}
 
 
 /// slightly harder test case that requires ite() to recurse
 #[test] fn test_swarm_another() {
   use simplelog::*;  TermLogger::init(LevelFilter::Trace, Config::default()).unwrap();
   let mut base = BDDBase::new(4);
-  let (a,b) = (NID::var(0), NID::var(1));
+  let (a,b) = (NID::var(3), NID::var(2));
   let anb = base.and(a,!b);
-  assert_eq!(vec![0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0], base.tt(anb));
+  assert_eq!(vec![0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0], base.tt(anb, 4));
 
   let anb_nb = base.xor(anb,!b);
-  assert_eq!(vec![1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0], base.tt(anb_nb));
+  assert_eq!(vec![1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0], base.tt(anb_nb, 4));
   let anb2 = base.xor(!b, anb_nb);
-  assert_eq!(vec![0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0], base.tt(anb2));
+  assert_eq!(vec![0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0], base.tt(anb2, 4));
   assert_eq!(anb, anb2)}
 
 
