@@ -46,21 +46,16 @@ impl RawASTBase {
 
 
   fn when(&mut self, v:vid::VID, val:NID, nid:NID)->NID {
-    // print!(":{}",nid);
-    macro_rules! op {
-      [not $x:ident] => {{ let x1 = self.when(v, val, $x); !x1 }};
-      [$f:ident $x:ident $y:ident] => {{
-        let x1 = self.when(v, val, $x);
-        let y1 = self.when(v, val, $y);
-        self.$f(x1,y1) }}}
     // if var is outside the base, it can't affect the expression
     if v.vid_ix() >= self.num_vars() { nid }
     else if nid.is_vid() && nid.vid() == v { val }
     else if nid.is_lit() { nid }
-    else { match self.old_op(nid) {
-      Op::And(x, y) => op![and x y],
-      Op::Xor(x, y) => op![xor x y],
-      other => { println!("unhandled match: {:?}", other); nid }}}}
+    else {
+      let ops = self.get_ops(nid).clone();
+      let rpn:Vec<NID> = ops.to_rpn().map(|&nid|{
+        if nid.is_fun() { nid }
+        else { self.when(v, val, nid) }}).collect();
+      self.nid(ops::rpn(&rpn)) }}
 
 
 
