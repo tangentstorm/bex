@@ -20,8 +20,6 @@ pub trait Base {
   fn and(&mut self, x:NID, y:NID)->NID;
   fn xor(&mut self, x:NID, y:NID)->NID;
   fn or(&mut self, x:NID, y:NID)->NID;
-  #[cfg(todo)] fn mj(&mut self, x:NID, y:NID, z:NID)->NID;
-  #[cfg(todo)] fn ch(&mut self, x:NID, y:NID, z:NID)->NID;
 
   fn def(&mut self, s:String, i:VID)->NID;
   fn tag(&mut self, n:NID, s:String)->NID;

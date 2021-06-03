@@ -529,9 +529,6 @@ impl Base for BDDBase {
   fn xor(&mut self, x:NID, y:NID)->NID { self.ite(x, !y, y) }
   fn  or(&mut self, x:NID, y:NID)->NID { self.ite(x, I, y) }
 
-  #[cfg(todo)] fn mj(&mut self, x:NID, y:NID, z:NID)->NID { self.xor(x, self.xor(y, z)) }  // TODO: normalize order. make this the default impl.
-  #[cfg(todo)] fn ch(&mut self, x:NID, y:NID, z:NID)->NID { self.ite(x, y, z) }
-
   /// replace var v with n in ctx
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID {
     if ctx.might_depend_on(v) {
