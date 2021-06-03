@@ -78,8 +78,11 @@ pub const I:NID = new(T|INV);
 /// Does the NID represent a *real* variable?
 #[inline(always)] pub fn is_rvar(x:NID)->bool { (x.n & RVAR) != 0 }
 
+/// Does the NID represent a VID?
+#[inline(always)] pub fn is_vid(x:NID)->bool { (x.n & VAR) != 0 }
+
 /// Is n a literal (variable or constant)?
-#[inline] pub fn is_lit(x:NID)->bool { is_var(x) | is_const(x) }
+#[inline] pub fn is_lit(x:NID)->bool { is_vid(x) | is_const(x) }
 
 /// Is the NID inverted? That is, does it represent `not(some other nid)`?
 #[inline(always)] pub fn is_inv(x:NID)->bool { (x.n & INV) != 0 }
@@ -227,6 +230,7 @@ impl NID {
   pub fn vid(&self)->vid::VID { old_to_vid(var(*self)) }
   pub fn is_const(&self)->bool { is_const(*self) }
   pub fn is_var(&self)->bool { is_var(*self) }
+  pub fn is_vid(&self)->bool { is_vid(*self)}
   pub fn is_lit(&self)->bool { is_lit(*self) }
   pub fn is_inv(&self)->bool { is_inv(*self) }
   pub fn idx(&self)->usize { idx(*self) }
