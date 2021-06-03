@@ -67,14 +67,9 @@ impl RawASTBase {
     if !seen.contains(&nid::raw(n)) {
       seen.insert(nid::raw(n));
       f(n);
-      let mut s = |x| self.step(x, f, seen);
-      match self.old_op(n) {
-        Op::And(x,y)  => { s(x); s(y); }
-        Op::Xor(x,y)  => { s(x); s(y); }
-        Op::Or(x,y)   => { s(x); s(y); }
-        Op::Ch(x,y,z) => { s(x); s(y); s(z); }
-        Op::Mj(x,y,z) => { s(x); s(y); s(z); }
-        other => panic!("unexpected op: {:?}", other) }}}
+      for op in self.get_ops(n).to_rpn() {
+        if !op.is_fun() {
+          self.step(*op, f, seen) }}}}
 
   pub fn show(&self, n:NID) { self.show_named(n, "+ast+") }
 
@@ -139,13 +134,8 @@ impl RawASTBase {
     if !seen[nid::idx(keep)] {
       seen[nid::idx(keep)] = true;
       let mut f = |x:&NID| { self.markdeps(*x, seen) };
-      match &self.old_op(keep) {
-        Op::And(x,y)  => { f(x); f(y); }
-        Op::Xor(x,y)  => { f(x); f(y); }
-        Op::Or(x,y)   => { f(x); f(y); }
-        Op::Ch(x,y,z) => { f(x); f(y); f(z); }
-        Op::Mj(x,y,z) => { f(x); f(y); f(z); }
-       other => panic!("bad op in markdeps: {:?}", other) } } }
+      for op in self.bits[nid::idx(keep)].to_rpn() { if !op.is_fun() { f(op) }}}}
+
 
   /// Construct a copy of the base, with the nodes reordered according to
   /// permutation vector pv. That is, pv is a vector of unique node indices
@@ -164,14 +154,8 @@ impl RawASTBase {
         let r = nid::ixn(new[nid::idx(x) as usize].expect("bad index in AST::permute") as u32);
         if nid::is_inv(x) { !r } else { r }}};
     let newbits = pv.iter().map(|&old| {
-      match self.old_op(nid::ixn(old as u32)) {
-        Op::And(x,y)  => ops::and(nn(x), nn(y)),
-        Op::Xor(x,y)  => ops::xor(nn(x), nn(y)),
-        Op::Or(x,y)   => ops::vel(nn(x), nn(y)),
-        // Op::Ch(x,y,z) => Op::Ch(nn(x), nn(y), nn(z)),
-        // Op::Mj(x,y,z) => Op::Mj(nn(x), nn(y), nn(z)),
-       other => panic!("permute op: {:?}", other) }})
-      .collect();
+      let new:Vec<NID> = self.bits[old].to_rpn().map(|&x| { if x.is_fun() { x } else { nn(x) }}).collect();
+      ops::rpn(&new) }).collect();
     let mut newtags = HashMap::new();
     for (key, &val) in &self.tags { newtags.insert(key.clone(), nn(val)); }
     RawASTBase{ bits:newbits, tags:newtags, nvars: self.nvars, hash:HashMap::new() }}
@@ -276,9 +260,9 @@ impl Base for RawASTBase {
     macro_rules! dotop {
       ($s:expr, $n:expr $(,$xs:expr)*) => {{
         w!("  \"{}\"[label={}];", nid::raw($n), $s); // draw the node
-        $({ if nid::is_inv(*$xs) { w!("edge[style=dashed];"); }
+        $({ if nid::is_inv($xs) { w!("edge[style=dashed];"); }
             else { w!("edge[style=solid];"); }
-            w!(" \"{}\"->\"{}\";", nid::raw(*$xs), nid::raw($n)); })* }}}
+            w!(" \"{}\"->\"{}\";", nid::raw($xs), nid::raw($n)); })* }}}
 
     w!("digraph bdd {{");
     w!("rankdir=BT;"); // put root on top
@@ -289,11 +273,17 @@ impl Base for RawASTBase {
         nid::O => w!(" \"{}\"[label=⊥];", n),
         nid::I => w!(" \"{}\"[label=⊤];", n),
         _ if n.is_vid() => w!("\"{}\"[label=\"{}\"];", nid::raw(n), n.vid()),
-        _ => match &self.old_op(n) {
-          Op::And(x,y) => dotop!("∧",n,x,y),
-          Op::Xor(x,y) => dotop!("≠",n,x,y),
-          Op::Or(x,y)  => dotop!("∨",n,x,y),
-          _ => panic!("unexpected op in dot(): {:?}", n) }}});
+        _ => {
+          let rpn: Vec<NID> = self.get_ops(n).to_rpn().cloned().collect();
+          let fun = rpn.last().unwrap();
+          if let Some(2) = fun.arity() {
+            let (x, y) = (rpn[0], rpn[1]);
+            match *fun {
+              ops::AND => dotop!("∧",n,x,y),
+              ops::XOR => dotop!("≠",n,x,y),
+              ops::VEL => dotop!("∨",n,x,y),
+              _ => panic!("unexpected op in dot(): {:?}", n) }}
+          else { panic!("can't dot arbitrary ops yet: {:?}", rpn) }}}});
     w!("}}"); }
 } // impl Base for RawASTBase
 
