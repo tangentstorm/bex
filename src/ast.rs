@@ -10,8 +10,7 @@ use {ops, ops::Ops};
 
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord, Serialize, Deserialize)]
 enum Op {
-  O, I, Var(VID), Not(NID), And(NID,NID), Or(NID,NID), Xor(NID,NID),
-  // Eql(NID,NID), LT(NID,NID),
+  And(NID,NID), Or(NID,NID), Xor(NID,NID),
   Ch(NID, NID, NID), Mj(NID, NID, NID) }
 
 // !! TODO: move subs/subc into external structure
@@ -33,17 +32,13 @@ impl RawASTBase {
   pub fn is_empty(&self)->bool { self.bits.is_empty() }
 
   fn nid(&mut self, op:Op)->NID {
-    if op == Op::O { nid::O }
-    else if op == Op::I { nid::I }
-    else if let Op::Var(x) = op { NID::from_vid(x) }
-    else if let Op::Not(x) = op { !x }
-    else { match self.hash.get(&op) {
+    match self.hash.get(&op) {
       Some(&n) => n,
       None => {
         let nid = nid::ixn(self.bits.len() as u32);
         self.bits.push(op);
         self.hash.insert(op, nid);
-        nid }}}}
+        nid }}}
 
   pub fn load(path:&str)->::std::io::Result<RawASTBase> {
     let s = io::get(path)?;
@@ -60,10 +55,9 @@ impl RawASTBase {
         self.$f(x1,y1) }}}
     // if var is outside the base, it can't affect the expression
     if v.vid_ix() >= self.num_vars() { nid }
+    else if nid.is_vid() && nid.vid() == v { val }
+    else if nid.is_lit() { nid }
     else { match self.op(nid) {
-      Op::Var(x) if x==v => val,
-      Op::O | Op::I | Op::Var(_) => nid,
-      Op::Not(x)    => op![not x],
       Op::And(x, y) => op![and x y],
       Op::Xor(x, y) => op![xor x y],
       other => { println!("unhandled match: {:?}", other); nid }}}}
@@ -80,13 +74,12 @@ impl RawASTBase {
       f(n);
       let mut s = |x| self.step(x, f, seen);
       match self.op(n) {
-        Op::O | Op::I | Op::Var(_) => {  } // we already called f(n) so nothing to do
-        Op::Not(x)    => { s(x); }
         Op::And(x,y)  => { s(x); s(y); }
         Op::Xor(x,y)  => { s(x); s(y); }
         Op::Or(x,y)   => { s(x); s(y); }
         Op::Ch(x,y,z) => { s(x); s(y); s(z); }
-        Op::Mj(x,y,z) => { s(x); s(y); s(z); } }}}
+        Op::Mj(x,y,z) => { s(x); s(y); s(z); }
+        other => panic!("unexpected op: {:?}", other) }}}
 
   pub fn show(&self, n:NID) { self.show_named(n, "+ast+") }
 
@@ -118,9 +111,6 @@ impl RawASTBase {
           let m = mask(x) | mask(y);
           (m, max(cost(x), cost(y)) + 1 )};
         match bit {
-          Op::I | Op::O => (0, 0),
-          Op::Var(v)    => (vm(self, v), 1),
-          Op::Not(x)    => mc(x,nid::O),
           Op::And(x,y)  => mc(x,y),
           Op::Xor(x,y)  => mc(x,y),
           Op::Or (x,y)  => mc(x,y),
@@ -137,8 +127,6 @@ impl RawASTBase {
     for (n, &bit) in bits.iter().enumerate() {
       let mut f = |x:NID| res[nid::idx(x)].push(n);
       match bit {
-        Op::O | Op::I | Op::Var(_) => {}
-        Op::Not(x)    => { f(x); }
         Op::And(x,y)  => { f(x); f(y); }
         Op::Xor(x,y)  => { f(x); f(y); }
         Op::Or(x,y)   => { f(x); f(y); }
@@ -156,13 +144,12 @@ impl RawASTBase {
       seen[nid::idx(keep)] = true;
       let mut f = |x:&NID| { self.markdeps(*x, seen) };
       match &self.bits[nid::idx(keep)] {
-        Op::O | Op::I | Op::Var(_) => { }
-        Op::Not(x)    => { f(x); }
         Op::And(x,y)  => { f(x); f(y); }
         Op::Xor(x,y)  => { f(x); f(y); }
         Op::Or(x,y)   => { f(x); f(y); }
         Op::Ch(x,y,z) => { f(x); f(y); f(z); }
-        Op::Mj(x,y,z) => { f(x); f(y); f(z); } } } }
+        Op::Mj(x,y,z) => { f(x); f(y); f(z); }
+       other => panic!("bad op in markdeps: {:?}", other) } } }
 
   /// Construct a copy of the base, with the nodes reordered according to
   /// permutation vector pv. That is, pv is a vector of unique node indices
@@ -182,12 +169,12 @@ impl RawASTBase {
         if nid::is_inv(x) { !r } else { r }}};
     let newbits = pv.iter().map(|&old| {
       match self.bits[old] {
-        Op::O | Op::I | Op::Var(_) | Op::Not(_) => panic!("o,i,var,not should never be in self.bits"),
         Op::And(x,y)  => Op::And(nn(x), nn(y)),
         Op::Xor(x,y)  => Op::Xor(nn(x), nn(y)),
         Op::Or(x,y)   => Op::Or(nn(x), nn(y)),
         Op::Ch(x,y,z) => Op::Ch(nn(x), nn(y), nn(z)),
-        Op::Mj(x,y,z) => Op::Mj(nn(x), nn(y), nn(z)) }})
+        Op::Mj(x,y,z) => Op::Mj(nn(x), nn(y), nn(z)),
+       other => panic!("permute op: {:?}", other) }})
       .collect();
     let mut newtags = HashMap::new();
     for (key, &val) in &self.tags { newtags.insert(key.clone(), nn(val)); }
@@ -209,10 +196,7 @@ impl RawASTBase {
       nid::ixn(new[nid::idx(i) as usize].expect("?!") as u32)).collect()) }
 
   fn op(&self, n:NID)->Op {
-    if n == nid::O { Op::O }
-    else if n == nid::I { Op::I }
-    else if nid::is_var(n) { Op::Var(n.vid()) }
-    else if nid::no_var(n) { self.bits[nid::idx(n)] }
+    if nid::no_var(n) { self.bits[nid::idx(n)] }
     else { panic!("don't know how to op({:?})", n) }}
 
   pub fn get_ops(&self, nid:NID)->Ops {
@@ -250,44 +234,35 @@ impl Base for RawASTBase {
     self.tags.insert(s, n); n }
 
   fn and(&mut self, x:NID, y:NID)->NID {
-    if x == y { x }
-    else {
-      let (lo,hi) = if self.op(x) < self.op(y) { (x,y) } else { (y,x) };
-      match (self.op(lo), self.op(hi)) {
-        (Op::O,_) => nid::O,
-        (Op::I,_) => hi,
-        (Op::Not(n),_) if n==hi => nid::O,
-        (_,Op::Not(n)) if n==lo => nid::O,
-        _ => self.nid(Op::And(lo,hi)) }}}
+    match (x, y) {
+      (nid::O, _) => nid::O,
+      (_, nid::O) => nid::O,
+      (nid::I, y) => y,
+      (x, nid::I) => x,
+      _ if x == y => x,
+      _ if x == !y => nid::O,
+      _ => { let (lo, hi) = if x<y {(x,y)} else {(y,x)};  self.nid(Op::And(lo, hi)) }}}
 
   fn xor(&mut self, x:NID, y:NID)->NID {
-    if x == y { nid::O }
-    else {
-      let (lo,hi) = if self.op(x) < self.op(y) { (x,y) } else { (y,x) };
-      match (self.op(lo), self.op(hi)) {
-        (Op::O, _) => hi,
-        (Op::I, _) => !hi,
-        (Op::Var(_), Op::Not(n)) if n==lo => nid::I,
-        _ => self.nid(Op::Xor(lo,hi)) }}}
+    match (x, y) {
+      (nid::O, y) => y,
+      (x, nid::O) => x,
+      (nid::I, y) => !y,
+      (x, nid::I) => !x,
+      _ if x == y => nid::O,
+      _ if x == !y => nid::I,
+      _ => { let (lo, hi) = if x<y {(x,y)} else {(y,x)};  self.nid(Op::Xor(lo, hi)) }}}
 
   fn or(&mut self, x:NID, y:NID)->NID {
-    if x == y { x }
-    else {
-      let (lo,hi) = if self.op(x) < self.op(y) { (x,y) } else { (y,x) };
-      match (self.op(lo), self.op(hi)) {
-        (Op::O, _) => hi,
-        (Op::I, _) => nid::I,
-        (Op::Var(_), Op::Not(n)) if n==lo => nid::I,
-        (Op::Not(m), Op::Not(n)) => { !self.and(m,n) },
-        _ => self.nid(Op::Or(lo,hi)) }}}
-
-  #[cfg(todo)]
-  fn mj(&mut self, x:NID, y:NID, z:NID)->NID {
-    let (a,b,c) = order3(x,y,z);
-    self.nid(Op::Mj(x,y,z)) }
-
-  #[cfg(todo)]
-  fn ch(&mut self, x:NID, y:NID, z:NID)->NID { nid::O }
+    match (x, y) {
+      (nid::O, y) => y,
+      (x, nid::O) => x,
+      (nid::I, _) => nid::I,
+      (_, nid::I) => nid::I,
+      _ if x == y => x,
+      _ if x == !y => nid::I,
+      _ if x.is_inv() && y.is_inv() => !self.and(x, y),
+      _ => { let (lo, hi) = if x<y {(x,y)} else {(y,x)};  self.nid(Op::Xor(lo, hi)) }}}
 
   fn sub(&mut self, _v:vid::VID, _n:NID, _ctx:NID)->NID { todo!("ast::sub") }
 
@@ -312,14 +287,15 @@ impl Base for RawASTBase {
     w!("node[shape=circle];");
     w!("edge[style=solid];");
     self.walk(n, &mut |n| {
-      match &self.op(n) {
-        Op::O => w!(" \"{}\"[label=⊥];", n),
-        Op::I => w!(" \"{}\"[label=⊤];", n),
-        Op::Var(x)  => w!("\"{}\"[label=\"{}\"];", nid::raw(n), x),
-        Op::And(x,y) => dotop!("∧",n,x,y),
-        Op::Xor(x,y) => dotop!("≠",n,x,y),
-        Op::Or(x,y)  => dotop!("∨",n,x,y),
-        _ => panic!("unexpected node: {:?}", n) }});
+      match n {
+        nid::O => w!(" \"{}\"[label=⊥];", n),
+        nid::I => w!(" \"{}\"[label=⊤];", n),
+        _ if n.is_vid() => w!("\"{}\"[label=\"{}\"];", nid::raw(n), n.vid()),
+        _ => match &self.op(n) {
+          Op::And(x,y) => dotop!("∧",n,x,y),
+          Op::Xor(x,y) => dotop!("≠",n,x,y),
+          Op::Or(x,y)  => dotop!("∨",n,x,y),
+          _ => panic!("unexpected op in dot(): {:?}", n) }}});
     w!("}}"); }
 } // impl Base for RawASTBase
 
@@ -334,14 +310,6 @@ impl ASTBase {
 
 test_base_consts!(ASTBase);
 test_base_when!(ASTBase);
-
-#[test]
-fn ast_vars(){
-  let mut b = RawASTBase::empty();
-  let x0 = NID::var(0); let x1 = NID::var(1);
-  assert_eq!(x0.vid().var_ix(), 0);
-  assert_eq!(x1.vid().var_ix(), 1);
-  assert_eq!(!x0, b.nid(Op::Not(x0))); }
 
 #[test]
 fn ast_and(){
