@@ -57,7 +57,7 @@ impl RawASTBase {
     if v.vid_ix() >= self.num_vars() { nid }
     else if nid.is_vid() && nid.vid() == v { val }
     else if nid.is_lit() { nid }
-    else { match self.op(nid) {
+    else { match self.old_op(nid) {
       Op::And(x, y) => op![and x y],
       Op::Xor(x, y) => op![xor x y],
       other => { println!("unhandled match: {:?}", other); nid }}}}
@@ -73,7 +73,7 @@ impl RawASTBase {
       seen.insert(nid::raw(n));
       f(n);
       let mut s = |x| self.step(x, f, seen);
-      match self.op(n) {
+      match self.old_op(n) {
         Op::And(x,y)  => { s(x); s(y); }
         Op::Xor(x,y)  => { s(x); s(y); }
         Op::Or(x,y)   => { s(x); s(y); }
@@ -95,7 +95,7 @@ impl RawASTBase {
     use std::cmp::max;
     let mut masks = vec![];
     let mut costs = vec![];
-    for (i,&bit) in self.bits.iter().enumerate() {
+    for i in  0..self.bits.len() {
       let (mask, cost) = {
         let cost = |x:NID| {
           if nid::is_const(x) { 0 }
@@ -110,6 +110,7 @@ impl RawASTBase {
         let mc = |x,y| {
           let m = mask(x) | mask(y);
           (m, max(cost(x), cost(y)) + 1 )};
+        let bit = self.old_op(nid::ixn(i as u32));
         match bit {
           Op::And(x,y)  => mc(x,y),
           Op::Xor(x,y)  => mc(x,y),
@@ -143,7 +144,7 @@ impl RawASTBase {
     if !seen[nid::idx(keep)] {
       seen[nid::idx(keep)] = true;
       let mut f = |x:&NID| { self.markdeps(*x, seen) };
-      match &self.bits[nid::idx(keep)] {
+      match &self.old_op(keep) {
         Op::And(x,y)  => { f(x); f(y); }
         Op::Xor(x,y)  => { f(x); f(y); }
         Op::Or(x,y)   => { f(x); f(y); }
@@ -168,7 +169,7 @@ impl RawASTBase {
         let r = nid::ixn(new[nid::idx(x) as usize].expect("bad index in AST::permute") as u32);
         if nid::is_inv(x) { !r } else { r }}};
     let newbits = pv.iter().map(|&old| {
-      match self.bits[old] {
+      match self.old_op(nid::ixn(old as u32)) {
         Op::And(x,y)  => Op::And(nn(x), nn(y)),
         Op::Xor(x,y)  => Op::Xor(nn(x), nn(y)),
         Op::Or(x,y)   => Op::Or(nn(x), nn(y)),
@@ -195,16 +196,23 @@ impl RawASTBase {
     (self.permute(&old), keep.iter().map(|&i|
       nid::ixn(new[nid::idx(i) as usize].expect("?!") as u32)).collect()) }
 
-  fn op(&self, n:NID)->Op {
-    if nid::no_var(n) { self.bits[nid::idx(n)] }
-    else { panic!("don't know how to op({:?})", n) }}
-
-  pub fn get_ops(&self, nid:NID)->Ops {
-    match self.op(nid) {
+  pub fn get_ops(&self, n:NID)->Ops {
+    let old = if nid::no_var(n) { self.bits[nid::idx(n)] } else { panic!("don't know how to op({:?})", n) };
+    match old {
       Op::And(x,y) => ops::rpn(&[x, y, ops::AND]),
       Op::Xor(x,y) => ops::rpn(&[x, y, ops::XOR]),
       Op::Or(x,y)  => ops::rpn(&[x, y, ops::VEL]),
       other => panic!("don't know how to convert old op: {:?}", other) }}
+
+  fn old_op(&self, nid:NID)->Op {
+    let ops::Ops::RPN(rpn) = self.get_ops(nid);
+    let &fun = rpn.last().unwrap();
+    assert!(fun.is_fun());
+    match fun {
+      ops::AND => Op::And(rpn[0], rpn[1]),
+      ops::XOR => Op::Xor(rpn[0], rpn[1]),
+      ops::VEL => Op::Or(rpn[0], rpn[1]),
+      _ => panic!("get_op -> fun = {:?}", fun) }}
 
 } // impl RawASTBase
 
@@ -291,7 +299,7 @@ impl Base for RawASTBase {
         nid::O => w!(" \"{}\"[label=⊥];", n),
         nid::I => w!(" \"{}\"[label=⊤];", n),
         _ if n.is_vid() => w!("\"{}\"[label=\"{}\"];", nid::raw(n), n.vid()),
-        _ => match &self.op(n) {
+        _ => match &self.old_op(n) {
           Op::And(x,y) => dotop!("∧",n,x,y),
           Op::Xor(x,y) => dotop!("≠",n,x,y),
           Op::Or(x,y)  => dotop!("∨",n,x,y),
