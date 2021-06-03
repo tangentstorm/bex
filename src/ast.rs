@@ -8,7 +8,7 @@ use {vid, vid::VID};
 use {ops, ops::Ops};
 
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct RawASTBase {
   bits: Vec<Ops>,                   // all known bits (simplified)
   nvars: usize,
@@ -170,10 +170,6 @@ impl RawASTBase {
   pub fn get_ops(&self, n:NID)->&Ops {
     if nid::no_var(n) { &self.bits[nid::idx(n)] } else { panic!("don't know how to op({:?})", n) }}
 } // impl RawASTBase
-
-impl ::std::fmt::Debug for RawASTBase {
-  fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
-    write!(f,"RawASTBase[{}]", self.bits.len()) } }
 
 impl Base for RawASTBase {
 
