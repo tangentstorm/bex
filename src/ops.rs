@@ -6,7 +6,7 @@ use std::slice::Iter;
 ///! A sequence of operations.
 ///! Currently, RPN is the only format, but I made this an enum
 ///! to provide a little future-proofing.
-#[derive(PartialOrd, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
 pub enum Ops { RPN(Vec<NID>) }
 impl Ops {
   ///! Again, just for future proofing.

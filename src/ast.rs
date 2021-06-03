@@ -16,10 +16,10 @@ enum Op {
 // !! TODO: move subs/subc into external structure
 #[derive(Serialize, Deserialize)]
 pub struct RawASTBase {
-  bits: Vec<Op>,                    // all known bits (simplified)
+  bits: Vec<Ops>,                   // all known bits (simplified)
   nvars: usize,
   tags: HashMap<String, NID>,       // support for naming/tagging bits.
-  hash: HashMap<Op, NID>,           // expression cache (simple+complex)
+  hash: HashMap<Ops, NID>,          // expression cache (simple+complex)
 }
 
 type VarMaskFn = fn(&RawASTBase,vid::VID)->u64;
@@ -31,13 +31,13 @@ impl RawASTBase {
   pub fn len(&self)->usize { self.bits.len() }
   pub fn is_empty(&self)->bool { self.bits.is_empty() }
 
-  fn nid(&mut self, op:Op)->NID {
-    match self.hash.get(&op) {
+  fn nid(&mut self, ops:Ops)->NID {
+    match self.hash.get(&ops) {
       Some(&n) => n,
       None => {
         let nid = nid::ixn(self.bits.len() as u32);
-        self.bits.push(op);
-        self.hash.insert(op, nid);
+        self.bits.push(ops.clone());
+        self.hash.insert(ops, nid);
         nid }}}
 
   pub fn load(path:&str)->::std::io::Result<RawASTBase> {
@@ -170,11 +170,11 @@ impl RawASTBase {
         if nid::is_inv(x) { !r } else { r }}};
     let newbits = pv.iter().map(|&old| {
       match self.old_op(nid::ixn(old as u32)) {
-        Op::And(x,y)  => Op::And(nn(x), nn(y)),
-        Op::Xor(x,y)  => Op::Xor(nn(x), nn(y)),
-        Op::Or(x,y)   => Op::Or(nn(x), nn(y)),
-        Op::Ch(x,y,z) => Op::Ch(nn(x), nn(y), nn(z)),
-        Op::Mj(x,y,z) => Op::Mj(nn(x), nn(y), nn(z)),
+        Op::And(x,y)  => ops::and(nn(x), nn(y)),
+        Op::Xor(x,y)  => ops::xor(nn(x), nn(y)),
+        Op::Or(x,y)   => ops::vel(nn(x), nn(y)),
+        // Op::Ch(x,y,z) => Op::Ch(nn(x), nn(y), nn(z)),
+        // Op::Mj(x,y,z) => Op::Mj(nn(x), nn(y), nn(z)),
        other => panic!("permute op: {:?}", other) }})
       .collect();
     let mut newtags = HashMap::new();
@@ -196,13 +196,8 @@ impl RawASTBase {
     (self.permute(&old), keep.iter().map(|&i|
       nid::ixn(new[nid::idx(i) as usize].expect("?!") as u32)).collect()) }
 
-  pub fn get_ops(&self, n:NID)->Ops {
-    let old = if nid::no_var(n) { self.bits[nid::idx(n)] } else { panic!("don't know how to op({:?})", n) };
-    match old {
-      Op::And(x,y) => ops::rpn(&[x, y, ops::AND]),
-      Op::Xor(x,y) => ops::rpn(&[x, y, ops::XOR]),
-      Op::Or(x,y)  => ops::rpn(&[x, y, ops::VEL]),
-      other => panic!("don't know how to convert old op: {:?}", other) }}
+  pub fn get_ops(&self, n:NID)->&Ops {
+    if nid::no_var(n) { &self.bits[nid::idx(n)] } else { panic!("don't know how to op({:?})", n) }}
 
   fn old_op(&self, nid:NID)->Op {
     let ops::Ops::RPN(rpn) = self.get_ops(nid);
@@ -249,7 +244,7 @@ impl Base for RawASTBase {
       (x, nid::I) => x,
       _ if x == y => x,
       _ if x == !y => nid::O,
-      _ => { let (lo, hi) = if x<y {(x,y)} else {(y,x)};  self.nid(Op::And(lo, hi)) }}}
+      _ => { let (lo, hi) = if x<y {(x,y)} else {(y,x)};  self.nid(ops::and(lo, hi)) }}}
 
   fn xor(&mut self, x:NID, y:NID)->NID {
     match (x, y) {
@@ -259,7 +254,7 @@ impl Base for RawASTBase {
       (x, nid::I) => !x,
       _ if x == y => nid::O,
       _ if x == !y => nid::I,
-      _ => { let (lo, hi) = if x<y {(x,y)} else {(y,x)};  self.nid(Op::Xor(lo, hi)) }}}
+      _ => { let (lo, hi) = if x<y {(x,y)} else {(y,x)};  self.nid(ops::xor(lo, hi)) }}}
 
   fn or(&mut self, x:NID, y:NID)->NID {
     match (x, y) {
@@ -270,7 +265,7 @@ impl Base for RawASTBase {
       _ if x == y => x,
       _ if x == !y => nid::I,
       _ if x.is_inv() && y.is_inv() => !self.and(x, y),
-      _ => { let (lo, hi) = if x<y {(x,y)} else {(y,x)};  self.nid(Op::Xor(lo, hi)) }}}
+      _ => { let (lo, hi) = if x<y {(x,y)} else {(y,x)};  self.nid(ops::vel(lo, hi)) }}}
 
   fn sub(&mut self, _v:vid::VID, _n:NID, _ctx:NID)->NID { todo!("ast::sub") }
 
