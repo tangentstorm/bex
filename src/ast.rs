@@ -8,12 +8,6 @@ use {vid, vid::VID};
 use {ops, ops::Ops};
 
 
-#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord, Serialize, Deserialize)]
-enum Op {
-  And(NID,NID), Or(NID,NID), Xor(NID,NID),
-  Ch(NID, NID, NID), Mj(NID, NID, NID) }
-
-// !! TODO: move subs/subc into external structure
 #[derive(Serialize, Deserialize)]
 pub struct RawASTBase {
   bits: Vec<Ops>,                   // all known bits (simplified)
@@ -85,7 +79,7 @@ impl RawASTBase {
     use std::cmp::max;
     let mut masks = vec![];
     let mut costs = vec![];
-    for i in  0..self.bits.len() {
+    for bit in self.bits.iter() {
       let (mask, cost) = {
         let cost = |x:NID| {
           if nid::is_const(x) { 0 }
@@ -97,15 +91,13 @@ impl RawASTBase {
           else if nid::is_var(x) { vm(self, x.vid()) }
           else if nid::no_var(x) { masks[nid::idx(x)] }
           else { todo!("mask({:?})", x) }};
-        let mc = |x,y| {
-          let m = mask(x) | mask(y);
-          (m, max(cost(x), cost(y)) + 1 )};
-        let bit = self.old_op(nid::ixn(i as u32));
-        match bit {
-          Op::And(x,y)  => mc(x,y),
-          Op::Xor(x,y)  => mc(x,y),
-          Op::Or (x,y)  => mc(x,y),
-          _ => { println!("TODO: cost({}: {:?})", i, bit); (!0, 0) }}};
+        let mut m = 0u64;
+        let mut c = 0u32;
+        for &op in bit.to_rpn() {
+          if ! op.is_fun() {
+            m |= mask(op);
+            c = max(c, cost(op)); }}
+        (m, c+1) };
       masks.push(mask);
       costs.push(cost)}
     (masks, costs)}
@@ -177,17 +169,6 @@ impl RawASTBase {
 
   pub fn get_ops(&self, n:NID)->&Ops {
     if nid::no_var(n) { &self.bits[nid::idx(n)] } else { panic!("don't know how to op({:?})", n) }}
-
-  fn old_op(&self, nid:NID)->Op {
-    let ops::Ops::RPN(rpn) = self.get_ops(nid);
-    let &fun = rpn.last().unwrap();
-    assert!(fun.is_fun());
-    match fun {
-      ops::AND => Op::And(rpn[0], rpn[1]),
-      ops::XOR => Op::Xor(rpn[0], rpn[1]),
-      ops::VEL => Op::Or(rpn[0], rpn[1]),
-      _ => panic!("get_op -> fun = {:?}", fun) }}
-
 } // impl RawASTBase
 
 impl ::std::fmt::Debug for RawASTBase {

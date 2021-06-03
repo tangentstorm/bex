@@ -2,6 +2,11 @@
 
 A rust library for working with boolean expressions.
 
+## 0.1.6 (in progress)
+
+- Remove obsolete "substitution" concept from `ast.rs`, and replace
+  `ast::Op` with the more flexible `ops::Ops`.
+
 ## 0.1.5 (2020-05-20)
 
 - Added `SwapSolver`, a new substitution solver that (like any `SubSolver`)
