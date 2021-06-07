@@ -58,7 +58,6 @@ impl Base for ANFBase {
 
   fn new(n:usize)->Self {
     ANFBase { nvars: n, nodes:vec![], cache: HashMap::new(), tags:HashMap::new() }}
-  fn num_vars(&self)->usize { self.nvars }
 
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {
     macro_rules! w {
@@ -250,10 +249,9 @@ impl ANFBase {
 /// solutions: this only returns the *very first* solution for now.
 
   pub fn solutions(&mut self, n:NID)->ANFSolIterator {
-    self.solutions_trunc(n, self.num_vars())}
+    self.solutions_trunc(n, n.vid().var_ix())}
 
   pub fn solutions_trunc(&self, n:NID, nvars:usize)->ANFSolIterator {
-    assert!(nvars <= self.num_vars(), "nvars arg to solutions_trunc must be <= self.nvars");
     ANFSolIterator::from_anf_base(self, n, nvars)}
 } // impl ANFBase
 

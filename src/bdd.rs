@@ -495,9 +495,6 @@ impl Base for BDDBase {
   fn new(nvars:usize)->BDDBase {
     BDDBase{swarm: BddSwarm::new(nvars), tags:HashMap::new()}}
 
-  /// accessor for number of variables
-  fn num_vars(&self)->usize { self.swarm.nvars() }
-
   /// nid of y when x is high
   fn when_hi(&mut self, x:VID, y:NID)->NID {
     let yv = y.vid();
@@ -572,7 +569,6 @@ test_base_when!(BDDBase);
 #[test] fn test_base() {
   let mut base = BDDBase::new(3);
   let (v1, v2, v3) = (NID::var(1), NID::var(2), NID::var(3));
-  assert_eq!(base.num_vars(), 3);
   assert_eq!((I,O), base.tup(I));
   assert_eq!((O,I), base.tup(O));
   assert_eq!((I,O), base.tup(v1));
@@ -706,10 +702,9 @@ pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 
 impl BDDBase {
   pub fn solutions(&mut self, n:NID)->BDDSolIterator {
-    self.solutions_trunc(n, self.num_vars())}
+    self.solutions_trunc(n, self.swarm.nvars())}
 
   pub fn solutions_trunc(&self, n:NID, nvars:usize)->BDDSolIterator {
-    assert!(nvars <= self.num_vars(), "nvars arg to solutions_trunc must be <= self.num_vars");
     BDDSolIterator::from_bdd(self, n, nvars)}}
 
 

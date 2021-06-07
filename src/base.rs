@@ -12,7 +12,6 @@ use hashbrown::HashSet;
 
 pub trait Base {
   fn new(n:usize)->Self where Self:Sized; // Sized so we can use trait objects.
-  fn num_vars(&self)->usize;
 
   fn when_hi(&mut self, v:VID, n:NID)->NID;
   fn when_lo(&mut self, v:VID, n:NID)->NID;
@@ -86,8 +85,6 @@ impl<T:Base> GraphViz for T {
 
 /// This helper macro provides actual implementations for the names passed to `inherit!`
 #[macro_export] macro_rules! inherit_fn {
-  (new) =>      { fn new(_n:usize)->Self where Self:Sized { unimplemented!("you need to explicitly construct the decorator") }};
-  (num_vars) => { #[inline] fn num_vars(&self)->usize { self.base.num_vars() }};
   (when_hi) =>  { #[inline] fn when_hi(&mut self, v:VID, n:NID)->NID { self.base.when_hi(v, n) }};
   (when_lo) =>  { #[inline] fn when_lo(&mut self, v:VID, n:NID)->NID { self.base.when_lo(v, n) }};
   (and) =>      { #[inline] fn and(&mut self, x:NID, y:NID)->NID { self.base.and(x, y) }};
@@ -105,7 +102,8 @@ impl<T:Base> GraphViz for T {
 // !! start on isolating simplification rules (for use in AST, ANF)
 pub struct Simplify<T:Base> { pub base: T }
 impl<T:Base> Base for Simplify<T> {
-  inherit![ new, num_vars, when_hi, when_lo, xor, or, def, tag, get, sub, save, dot ];
+  inherit![ when_hi, when_lo, xor, or, def, tag, get, sub, save, dot ];
+  fn new(_n:usize)->Self where Self:Sized { unimplemented!("you need to explicitly construct the decorator") }
   fn and(&mut self, x:NID, y:NID)->NID {
     if x == y { x }
     else {

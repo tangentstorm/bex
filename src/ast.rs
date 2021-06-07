@@ -41,7 +41,7 @@ impl RawASTBase {
 
   fn when(&mut self, v:vid::VID, val:NID, nid:NID)->NID {
     // if var is outside the base, it can't affect the expression
-    if v.vid_ix() >= self.num_vars() { nid }
+    if v.vid_ix() >= self.nvars { nid }
     else if nid.is_vid() && nid.vid() == v { val }
     else if nid.is_lit() { nid }
     else {
@@ -177,13 +177,12 @@ impl Base for RawASTBase {
     let mut res = RawASTBase::empty();
     res.nvars = n;
     res }
-  fn num_vars(&self)->usize { self.nvars }
 
   fn when_hi(&mut self, v:vid::VID, n:NID)->NID { self.when(v, nid::I, n) }
   fn when_lo(&mut self, v:vid::VID, n:NID)->NID { self.when(v, nid::O, n) }
 
   fn def(&mut self, s:String, i:vid::VID)->NID {
-    let next = self.num_vars() as u32;
+    let next = self.nvars as u32;
     let nid = NID::var(next);
     self.nvars += 1;
     self.tag(nid, format!("{}{:?}", s, i)) }
@@ -266,7 +265,7 @@ impl Base for RawASTBase {
 
 pub struct ASTBase { base: Simplify<RawASTBase> }
 impl Base for ASTBase {
-  inherit![num_vars, when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ];
+  inherit![when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ];
   fn new(n:usize)->Self { ASTBase{ base: Simplify{ base: <RawASTBase as Base>::new(n) }}}}
 
 impl ASTBase {
