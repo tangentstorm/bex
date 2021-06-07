@@ -5,7 +5,7 @@ use vid::VID;
 
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Reg { nvars: usize, data: Vec<usize> }
+pub struct Reg { nbits: usize, data: Vec<usize> }
 
 const USIZE:usize = size_of::<usize>() * 8;
 
@@ -13,12 +13,12 @@ const USIZE:usize = size_of::<usize>() * 8;
 impl Reg {
 
   /// create a new register with the given number of bits
-  pub fn new( nvars: usize )-> Self {
-    Reg { nvars, data: vec![0; (nvars as f64 / USIZE as f64).ceil() as usize ]}}
+  pub fn new( nbits: usize )-> Self {
+    Reg { nbits, data: vec![0; (nbits as f64 / USIZE as f64).ceil() as usize ]}}
 
   /// constructor that takes the indices of the high bits
-  pub fn from_bits( nvars:usize, hi_bits: &[usize] )->Self {
-    let mut res = Reg::new(nvars);
+  pub fn from_bits( nbits:usize, hi_bits: &[usize] )->Self {
+    let mut res = Reg::new(nbits);
     for &bit in hi_bits { res.put(bit, true) }
     res}
 
@@ -36,12 +36,10 @@ impl Reg {
 
   /// fetch value of a bit by index
   pub fn get(&self, ix: usize )->bool {
-    // let ix = (self.nvars-1)-ix;
     0 < (self.data[ix/USIZE] & 1 << (ix%USIZE)) }
 
   /// assign value of a bit by index
   pub fn put(&mut self, ix:usize, v:bool) {
-    // let ix = (self.nvars-1)-ix;
     let i = ix/USIZE; let x = self.data[i];
     self.data[i] =
       if v { x |  (1 << (ix%USIZE)) }
@@ -55,15 +53,14 @@ impl Reg {
   /// assign value of bit with the given variable's index
   pub fn var_put(&mut self, v:VID, val:bool) {
     let ix = v.var_ix();
-    //let ix = if SMALL_ON_TOP { ix } else { (self.nvars-1)-ix };
     self.put(ix, val) }
 
   /// return the number of bits in the register.
-  pub fn len(&self)->usize { self.nvars }
+  pub fn len(&self)->usize { self.nbits }
 
   /// true when the number of bits is 0.
   /// (mostly because clippy complains about len() without is_empty())
-  pub fn is_empty(&self)->bool { self.nvars == 0 }
+  pub fn is_empty(&self)->bool { self.nbits == 0 }
 
 
 
@@ -72,9 +69,9 @@ impl Reg {
 
   /// build a usize from the least significant bits of the register, in reverse order.
   pub fn as_usize_rev(&self)->usize {
-    assert!(self.nvars <= 64, "usize_rev only works for <= 64 vars!");
+    assert!(self.nbits <= 64, "usize_rev only works for <= 64 bits!");
     let mut tmp = self.as_usize(); let mut res = 0;
-    for _ in 0..self.nvars {
+    for _ in 0..self.nbits {
       res <<= 1;
       res += tmp & 1;
       tmp >>= 1;}
@@ -105,7 +102,7 @@ impl Reg {
 
   /// increment the register as if adding 1.
   /// return position where the ripple-carry stopped.
-  pub fn increment(&mut self)->Option<usize> { self.ripple(0, self.nvars-1) }
+  pub fn increment(&mut self)->Option<usize> { self.ripple(0, self.nbits-1) }
 
 } // impl Reg
 
@@ -117,7 +114,7 @@ impl fmt::Display for Reg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
       write!(f, "reg[")?;
       let mut write_bit = |i| { write!(f, "{}", if self.get(i) {'1'} else {'o'}) };
-      for i in (0..self.nvars).rev() { write_bit(i)? };
+      for i in (0..self.nbits).rev() { write_bit(i)? };
       write!(f, "={:02x}]", self.as_usize()) }}
 
 /// Same as fmt::Display.
@@ -141,19 +138,6 @@ fn test_reg_mut() {
   assert_eq!(reg.data[0], 3);
   assert_eq!(reg.get(1), true); }
 
-#[cfg(feature="small_on_top")]
-#[test] fn test_reg_inc_lotop() {
-  let mut reg = Reg::new(2);
-  assert_eq!(0, reg.as_usize());
-  assert_eq!(Some(1), reg.increment(), "00 -> 01");
-  assert_eq!(1, reg.as_usize());
-  assert_eq!(Some(0), reg.increment(), "01 -> 10");
-  assert_eq!(2, reg.as_usize());
-  assert_eq!(Some(1), reg.increment(), "10 -> 11");
-  assert_eq!(3, reg.as_usize());
-  assert_eq!(None, reg.increment(), "11 -> 00"); }
-
-#[cfg(not(feature="small_on_top"))]
 #[test] fn test_reg_inc_hitop() {
   let mut reg = Reg::new(2);
   assert_eq!(0, reg.as_usize());
