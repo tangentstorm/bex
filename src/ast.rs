@@ -11,7 +11,6 @@ use {ops, ops::Ops};
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RawASTBase {
   bits: Vec<Ops>,                   // all known bits (simplified)
-  nvars: usize,
   tags: HashMap<String, NID>,       // support for naming/tagging bits.
   hash: HashMap<Ops, NID>,          // expression cache (simple+complex)
 }
@@ -21,7 +20,7 @@ type VarMaskFn = fn(&RawASTBase,vid::VID)->u64;
 /// An ASTBase that does not use extra simplification rules.
 impl RawASTBase {
 
-  pub fn empty()->RawASTBase { RawASTBase{ bits:vec![], nvars:0, tags:HashMap::new(), hash:HashMap::new() }}
+  pub fn empty()->RawASTBase { RawASTBase{ bits:vec![], tags:HashMap::new(), hash:HashMap::new() }}
   pub fn len(&self)->usize { self.bits.len() }
   pub fn is_empty(&self)->bool { self.bits.is_empty() }
 
@@ -40,9 +39,7 @@ impl RawASTBase {
 
 
   fn when(&mut self, v:vid::VID, val:NID, nid:NID)->NID {
-    // if var is outside the base, it can't affect the expression
-    if v.vid_ix() >= self.nvars { nid }
-    else if nid.is_vid() && nid.vid() == v { val }
+    if nid.is_vid() && nid.vid() == v { val }
     else if nid.is_lit() { nid }
     else {
       let ops = self.get_ops(nid).clone();
@@ -150,7 +147,7 @@ impl RawASTBase {
       ops::rpn(&new) }).collect();
     let mut newtags = HashMap::new();
     for (key, &val) in &self.tags { newtags.insert(key.clone(), nn(val)); }
-    RawASTBase{ bits:newbits, tags:newtags, nvars: self.nvars, hash:HashMap::new() }}
+    RawASTBase{ bits:newbits, tags:newtags, hash:HashMap::new() }}
 
   /// Construct a new RawASTBase with only the nodes necessary to define the given nodes.
   /// The relative order of the bits is preserved.
@@ -173,19 +170,14 @@ impl RawASTBase {
 
 impl Base for RawASTBase {
 
-  fn new(n:usize)->Self {
-    let mut res = RawASTBase::empty();
-    res.nvars = n;
-    res }
+  fn new(_nvars:usize)->Self { RawASTBase::empty() }
 
   fn when_hi(&mut self, v:vid::VID, n:NID)->NID { self.when(v, nid::I, n) }
   fn when_lo(&mut self, v:vid::VID, n:NID)->NID { self.when(v, nid::O, n) }
 
-  fn def(&mut self, s:String, i:vid::VID)->NID {
-    let next = self.nvars as u32;
-    let nid = NID::var(next);
-    self.nvars += 1;
-    self.tag(nid, format!("{}{:?}", s, i)) }
+  fn def(&mut self, s:String, v:vid::VID)->NID {
+    let nid = NID::from_vid(v);
+    self.tag(nid, format!("{}{:?}", s, v)) }
 
   fn tag(&mut self, n:NID, s:String)->NID {
     let n = n;
