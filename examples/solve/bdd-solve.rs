@@ -31,11 +31,9 @@
 
 
 /// Product of the first 15 primes: 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
-#[cfg(not(test))]
 const K:u64 = 614_889_782_588_491_410;
 
 /// All 3,827 ordered pairs of 32-bit ints that multiply to produce K.
-#[cfg(not(test))]
 #[allow(clippy::unreadable_literal)]
 fn factors()->Vec<(u64,u64)> {
   vec![
@@ -1323,6 +1321,5 @@ use bex::reg::Reg;
 use hashbrown::HashSet;
 
 /// The real challenge: factor the 64-bit product of the first 15 primes.
-#[cfg(not(test))]
 pub fn main() {
   find_factors!(SwapSolver, X32, X64, K as usize, factors()); }
