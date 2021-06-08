@@ -91,8 +91,6 @@ impl ITE {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct BddState {
-  /// number of variables
-  nvars: usize,
   /// cache of hi,lo pairs.
   hilos: vhl::HiLoCache,
   /// arbitrary memoization. These record normalized (f,g,h) lookups.
@@ -120,9 +118,8 @@ impl BddState {
       None => { self.put_simple_node(v, hilo) }}}
 
   /// constructor
-  fn new(nvars:usize)->BddState {
+  fn new(_nvars:usize)->BddState {
     BddState {
-      nvars,
       hilos: vhl::HiLoCache::new(),
       xmemo: BDDHashMap::default() }}
 
@@ -217,8 +214,6 @@ impl BddSwarm {
     Self{ me, rx, swarm, stable, recent, work:WorkState::new() }}
 
   fn get_state(&self)->&BddState { &self.recent }
-
-  fn nvars(&self)->usize { self.recent.nvars }
 
   fn tup(&self, n:NID)->(NID,NID) { self.recent.tup(n) }
 
