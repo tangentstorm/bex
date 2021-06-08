@@ -109,7 +109,7 @@ impl BddState {
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)-> (NID, NID) {
     if n.is_const() { if n==I { (I, O) } else { (O, I) } }
-    else if n.is_var() { if n.is_inv() { (O, I) } else { (I, O) }}
+    else if n.is_vid() { if n.is_inv() { (O, I) } else { (I, O) }}
     else { let hilo = self.get_hilo(n); (hilo.hi, hilo.lo) }}
 
   /// fetch or create a "simple" node, where the hi and lo branches are both
@@ -131,7 +131,7 @@ impl BddState {
 
   /// load the memoized NID if it exists
   #[inline] fn get_memo(&self, ite:&ITE) -> Option<NID> {
-    if ite.i.is_var() {
+    if ite.i.is_vid() {
       debug_assert!(!ite.i.is_inv()); // because it ought to be normalized by this point.
       let hilo = if ite.i.is_inv() { HiLo::new(ite.e,ite.t) } else { HiLo::new(ite.t,ite.e) };
       self.get_simple_node(ite.i.vid(), hilo) }
@@ -557,7 +557,7 @@ impl Base for BDDBase {
     w!("}}"); }
 
   fn solution_set(&self, n: NID, nvars: usize)->hashbrown::HashSet<Reg> {
-    self.solutions_trunc(n, nvars).collect() }}
+    self.solutions_pad(n, nvars).collect() }}
 
 use  std::iter::FromIterator; use std::hash::Hash;
 pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
@@ -565,9 +565,13 @@ pub fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 
 impl BDDBase {
   pub fn solutions(&mut self, n:NID)->BDDSolIterator {
-    self.solutions_trunc(n, self.swarm.nvars())}
+    let nvars = if n.is_const() { 1 } else if n.vid().is_var() { n.vid().var_ix() }
+    else if n.vid().is_vir() {
+      panic!("It probably doesn't make sense to call solutions(n) when n.vid().is_vir(), but you can try solutions_pad() if you think it makes sense.") }
+    else { panic!("Don't know how to find solutions({:?}). Maybe try solutions_pad()...?", n) };
+    self.solutions_pad(n, nvars)}
 
-  pub fn solutions_trunc(&self, n:NID, nvars:usize)->BDDSolIterator {
+  pub fn solutions_pad(&self, n:NID, nvars:usize)->BDDSolIterator {
     BDDSolIterator::from_bdd(self, n, nvars)}}
 
 

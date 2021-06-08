@@ -82,13 +82,13 @@ impl RawASTBase {
     for bit in self.bits.iter() {
       let (mask, cost) = {
         let cost = |x:NID| {
-          if nid::is_const(x) { 0 }
-          else if nid::is_var(x) { 1 }
+          if x.is_const() { 0 }
+          else if x.is_vid() { 1 }
           else if nid::no_var(x) { costs[nid::idx(x)] }
           else { todo!("cost({:?})", x) }};
         let mask = |x:NID| {
           if nid::is_const(x) { 0 }
-          else if nid::is_var(x) { vm(self, x.vid()) }
+          else if x.is_vid() { vm(self, x.vid()) }
           else if nid::no_var(x) { masks[nid::idx(x)] }
           else { todo!("mask({:?})", x) }};
         let mut m = 0u64;

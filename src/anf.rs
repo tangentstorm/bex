@@ -159,7 +159,7 @@ impl Base for ANFBase {
   fn save(&self, _path:&str)->::std::io::Result<()> { todo!("anf::save") }
 
   fn solution_set(&self, n: NID, nvars: usize)->hashbrown::HashSet<Reg> {
-    self.solutions_trunc(n, nvars).collect() }
+    self.solutions_pad(n, nvars).collect() }
 
 } // impl Base for ANFBase
 
@@ -168,7 +168,7 @@ impl Base for ANFBase {
 impl ANFBase {
 
   fn fetch(&self, n:NID)->ANF {
-    if nid::is_var(n) { // variables are (v*I)+O if normal, (v*I)+I if inverted.
+    if nid::is_vid(n) { // variables are (v*I)+O if normal, (v*I)+I if inverted.
       ANF{v:n.vid(), hi:I, lo: if nid::is_inv(n) { I } else { O } }}
     else {
       let mut anf = self.nodes[nid::idx(n)];
@@ -196,7 +196,7 @@ impl ANFBase {
     match xv.cmp_depth(&yv) {
       VidOrdering::Above =>
         // base case: x:a + y:(pq+r)  a<p<q, p<r  --> a(pq+r)
-        if nid::is_var(x) { self.vhl(x.vid(), y, O) }
+        if nid::is_vid(x) { self.vhl(x.vid(), y, O) }
         else {
           //     x:(ab+c) * y:(pq+r)
           //  =  ab(pq) + ab(r) + c(pq) + c(r)
@@ -245,13 +245,8 @@ impl ANFBase {
         let hi = self.xor(b, q);
         let lo = self.xor(c, r);
         self.vhl(a, hi, lo)}}}
-
-/// solutions: this only returns the *very first* solution for now.
 
-  pub fn solutions(&mut self, n:NID)->ANFSolIterator {
-    self.solutions_trunc(n, n.vid().var_ix())}
-
-  pub fn solutions_trunc(&self, n:NID, nvars:usize)->ANFSolIterator {
+  pub fn solutions_pad(&self, n:NID, nvars:usize)->ANFSolIterator {
     ANFSolIterator::from_anf_base(self, n, nvars)}
 } // impl ANFBase
 

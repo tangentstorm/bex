@@ -98,10 +98,7 @@ pub const I:NID = new(T|INV);
 #[inline(always)] pub fn idx(x:NID)->usize { (x.n & IDX_MASK) as usize }
 
 /// On which variable does this node branch? (I and O branch on TV)
-/// TODO: there should probably be a self.get_vid() instead
-#[inline(always)] pub fn var(x:NID)->VID { ((x.n & !(INV|VAR)) >> 32) as VID}
-/// Same as var() but strips out the RVAR bit.
-#[inline(always)] pub fn rvar(x:NID)->VID { ((x.n & !(INV|VAR|RVAR)) >> 32) as VID}
+#[inline(always)] pub fn vid(x:NID)->VID { ((x.n & !(INV|VAR)) >> 32) as VID}
 
 /// Toggle the INV bit, applying a logical "NOT" operation to the corressponding node.
 #[deprecated(note="use !nid instead")]
@@ -150,8 +147,8 @@ impl fmt::Display for NID {
     else { if is_inv(*self) { write!(f, "¬")?; }
            if is_var(*self) { write!(f, "{}", self.vid()) }
            else if is_rvar(*self) { write!(f, "@[{}:{}]", self.vid(), idx(*self)) }
-           else if var(*self) == NOVAR { write!(f, "#{}", idx(*self)) }
-           else { write!(f, "@[v{}:{}]", var(*self), idx(*self)) }}}}
+           else if vid(*self) == NOVAR { write!(f, "#{}", idx(*self)) }
+           else { write!(f, "@[v{}:{}]", vid(*self), idx(*self)) }}}}
 
 /// Same as fmt::Display. Mostly so it's easier to see the problem when an assertion fails.
 impl fmt::Debug for NID { // for test suite output
@@ -164,19 +161,19 @@ impl fmt::Debug for NID { // for test suite output
   assert_eq!(NID::vir(0), new(0x4000000000000000u64));
   assert_eq!(NID::var(0), new(0x5000000000000000u64));
   assert_eq!(NID::vir(1),  new(0x4000000100000000u64));
-  assert!(var(NID::vir(0)) < var(NID::var(0)));
+  assert!(vid(NID::vir(0)) < vid(NID::var(0)));
   assert_eq!(nvi(0,0), new(0x0000000000000000u64));
   assert_eq!(nvi(1,0), new(0x0000000100000000u64)); }
 
 #[test] fn test_var() {
-  assert_eq!(var(O), 536_870_912, "var(O)");
-  assert_eq!(var(I), var(O), "INV bit shouldn't be part of variable");
-  assert_eq!(var(NID::vir(0)), 0);
-  assert_eq!(var(NID::var(0)), 268_435_456);}
+  assert_eq!(vid(O), 536_870_912, "var(O)");
+  assert_eq!(vid(I), vid(O), "INV bit shouldn't be part of variable");
+  assert_eq!(vid(NID::vir(0)), 0);
+  assert_eq!(vid(NID::var(0)), 268_435_456);}
 
 #[test] fn test_cmp() {
   let v = |x:usize|->NID { nv(x) };  let x=|x:u32|->NID { NID::var(x) };
-  let o=|x:NID|var(x);   let n=|x:NID|x.vid();
+  let o=|x:NID|vid(x);   let n=|x:NID|x.vid();
   assert!(o(O) == o(I),      "old:no=no");  assert!(n(O) == n(I),       "new:no=no");
   assert!(o(O)    > o(v(0)), "old:no>v0");  assert!(n(O).is_below(&n(v(0))), "new:no bel v0");
   assert!(o(O)    > o(x(0)), "old:no>x0");  assert!(n(O).is_below(&n(x(0))), "new:no bel x0");
@@ -187,7 +184,7 @@ impl fmt::Debug for NID { // for test suite output
 // scaffolding for moving ASTBase over to use NIDS
 const NOVAR:VID = (1<<26) as VID; // 134_217_728
 const TOP:VID = (T>>32) as VID; // 536_870_912, // 1<<29, same as nid::T
-pub fn no_var(x:NID)->bool { var(x)==NOVAR }
+pub fn no_var(x:NID)->bool { vid(x)==NOVAR }
 /// return a nid that is not tied to a variable
 pub fn ixn(ix:IDX)->NID { nvi(NOVAR, ix) }
 
@@ -227,10 +224,11 @@ impl NID {
   pub fn from_vir(v:vid::VID)->Self { NID::vir(v.vir_ix() as u32)}
   pub fn from_vid(v:vid::VID)->Self { nv(vid_to_old(v)) }
   pub fn from_vid_idx(v:vid::VID, i:IDX)->Self { nvi(vid_to_old(v), i) }
-  pub fn vid(&self)->vid::VID { old_to_vid(var(*self)) }
+  pub fn vid(&self)->vid::VID { old_to_vid(vid(*self)) }
   pub fn is_const(&self)->bool { is_const(*self) }
-  pub fn is_var(&self)->bool { is_var(*self) }
   pub fn is_vid(&self)->bool { is_vid(*self)}
+  pub fn is_var(&self)->bool { self.is_vid() && self.vid().is_var() }
+  pub fn is_vir(&self)->bool { self.is_vid() && self.vid().is_vir() }
   pub fn is_lit(&self)->bool { is_lit(*self) }
   pub fn is_inv(&self)->bool { is_inv(*self) }
   pub fn idx(&self)->usize { idx(*self) }

@@ -92,18 +92,18 @@ test_base_when!(BDDBase);
 
 /// Test cases for SolutionIterator
 #[test] fn test_bdd_solutions_o() {
-  let mut base = BDDBase::new(2);  let mut it = base.solutions(O);
+  let mut base = BDDBase::new(0);  let mut it = base.solutions(O);
   assert_eq!(it.next(), None, "const O should yield no solutions.") }
 
 #[test] fn test_bdd_solutions_i() {
-  let mut base = BDDBase::new(2);
-  let actual:HashSet<usize> = base.solutions(I).map(|r| r.as_usize()).collect();
+  let base = BDDBase::new(0);
+  let actual:HashSet<usize> = base.solutions_pad(I, 2).map(|r| r.as_usize()).collect();
   assert_eq!(actual, hs(vec![0b00, 0b01, 0b10, 0b11]),
      "const true should yield all solutions"); }
 
 #[test] fn test_bdd_solutions_simple() {
-  let mut base = BDDBase::new(1); let a = NID::var(0);
-  let mut it = base.solutions(a);
+  let base = BDDBase::new(0); let a = NID::var(0);
+  let mut it = base.solutions_pad(a, 1);
   // it should be sitting on first solution, which is a=1
   assert_eq!(it.next().expect("expected solution!").as_usize(), 0b1);
   assert_eq!(it.next(), None);}
@@ -114,23 +114,21 @@ test_base_when!(BDDBase);
   let (b, d) = (NID::var(1), NID::var(3));
   // the idea here is that we have "don't care" above, below, and between the used vars:
   let n = base.and(b,d);
+  // by default, we ignore the "don't cares" above:
   let actual:Vec<_> = base.solutions(n).map(|r| r.as_usize()).collect();
-                          //abcde
-  assert_eq!(actual, vec![0b01010,
-                          0b01011,
-                          0b01110,
-                          0b01111,
-                          0b11010,
-                          0b11011,
-                          0b11110,
-                          0b11111])}
+  assert_eq!(actual, vec![0b1010, 0b1011, 0b1110, 0b1111]);
+
+  // but we can pad this if we prefer:
+  let actual:Vec<_> = base.solutions_pad(n, 5).map(|r| r.as_usize()).collect();
+  assert_eq!(actual, vec![0b01010, 0b01011, 0b01110, 0b01111,
+                          0b11010, 0b11011, 0b11110, 0b11111])}
 
 #[test] fn test_bdd_solutions_xor() {
   let mut base = BDDBase::new(3);
   let (a, b) = (NID::var(0), NID::var(1));
   let n = base.xor(a, b);
   // base.show(n);
-  let actual:Vec<usize> = base.solutions(n).map(|x|x.as_usize()).collect();
+  let actual:Vec<usize> = base.solutions_pad(n, 3).map(|x|x.as_usize()).collect();
   let expect = vec![0b001, 0b010, 0b101, 0b110 ]; // bits cba
   assert_eq!(actual, expect); }
 

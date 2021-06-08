@@ -140,7 +140,7 @@ pub fn convert_nid(sn:SrcNid)->DstNid {
   let SrcNid{ n } = sn;
   let r = if nid::is_const(n) { n }
   else {
-    let r0 = if nid::is_var(n) { NID::var(nid::var(n) as u32) }
+    let r0 = if n.is_vid() { NID::var(nid::vid(n) as u32) } // TODO: probably want
     else if nid::no_var(n) { NID::vir(nid::idx(n) as u32) }
     else { todo!("convert_nid({:?})", n) };
     if nid::is_inv(n) { !r0 } else { r0 }};
@@ -216,7 +216,7 @@ pub fn solve<S:SubSolver>(dst:&mut S, src0:&RawASTBase, sn:NID)->DstNid {
     <dyn Progress<S>>::on_start(&pr, &ctx);
 
     // main loop:
-    while !(nid::is_rvar(ctx.n) || nid::is_const(ctx.n)) {
+    while !(ctx.n.is_var() || ctx.n.is_const()) {
       let now = std::time::SystemTime::now();
       let old = ctx; ctx = refine_one(dst, v, &src, ctx);
       let millis = now.elapsed().expect("elapsed?").as_millis();

@@ -1257,7 +1257,7 @@ impl SubSolver for SwapSolver {
 
     // so now, src.vids is just the raw input variables (probably virtual ones).
     self.src = XVHLScaffold::new();
-    for nid in rpn.iter() { assert!(nid.is_var()); self.src.push(nid.vid()); }
+    for nid in rpn.iter() { assert!(nid.is_vid()); self.src.push(nid.vid()); }
 
     // untbl the function to give us the full BDD of our substitution.
     let tbl = fun_tbl(f);
@@ -1307,7 +1307,7 @@ impl SubSolver for SwapSolver {
 
     let mut res:HashSet<Reg> = HashSet::new();
     let nctx = x2n[&XID::from_nid(ctx)];
-    for reg in bdd.solutions_trunc(nctx, nvars) { res.insert(reg.permute_bits(&pv)); }
+    for reg in bdd.solutions_pad(nctx, nvars) { res.insert(reg.permute_bits(&pv)); }
     res}
 
   fn status(&self) -> String { "".to_string() } // TODO
