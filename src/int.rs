@@ -90,14 +90,14 @@ pub fn gbase_i()->BaseBit { BaseBit{base:gbase_ref(), n:nid::I} }
 
 pub trait BInt<U, T:TBit> : Sized {
   /// the number of bits
-  fn n() -> u8;
+  fn n() -> u32;
   fn i(&self) -> T;
   fn o(&self) -> T;
   fn zero() -> Self;
   fn new(&self, u:U) -> Self;
-  fn get(&self, i:u8) -> T;
-  fn set(&mut self, i:u8, v:T);
-  fn rotate_right(&self, y:u8) -> Self {
+  fn get(&self, i:u32) -> T;
+  fn set(&mut self, i:u32, v:T);
+  fn rotate_right(&self, y:u32) -> Self {
     let mut res = Self::zero();
     for i in 0..Self::n() { res.set(i, self.get((i+y) % Self::n())) }
     res}
@@ -144,8 +144,8 @@ macro_rules! xint_type {
            .collect()}}
 
       /// define an entire set of variables at once.
-      pub fn def(s:&str)->$T {
-        $T::from_vec((0..$n).map(|i|{ gbase_def(s.to_string(), VID::var(i)) }).collect()) }
+      pub fn def(s:&str, start:u32)->$T {
+        $T::from_vec((0..$n).map(|i|{ gbase_def(s.to_string(), VID::var(start+i)) }).collect()) }
 
       pub fn from_vec(v:Vec<BaseBit>)->$T {
         $T{bits: if v.len() >= $n { v.iter().take($n).map(|x|x.clone()).collect() }
@@ -184,13 +184,13 @@ macro_rules! xint_type {
 // TODO: just inline BInt here, so people don't have to import it.
 
     impl BInt<$U,BaseBit> for $T {
-      fn n()->u8 { $n }
+      fn n()->u32 { $n }
       fn zero()->Self { $T::new(0) }
       fn o(&self)->BaseBit { gbase_o() }
       fn i(&self)->BaseBit { gbase_i() }
       fn new(&self, u:$U)->Self { $T::new(u as usize) }
-      fn get(&self, i:u8)->BaseBit { self.bits[i as usize].clone() }
-      fn set(&mut self, i:u8, v:BaseBit) { self.bits[i as usize]=v }
+      fn get(&self, i:u32)->BaseBit { self.bits[i as usize].clone() }
+      fn set(&mut self, i:u32, v:BaseBit) { self.bits[i as usize]=v }
 
       fn u(self)->$U {
         let mut u = 0; let mut i = 0;
@@ -222,9 +222,9 @@ macro_rules! xint_type {
            .map(|(x,y)| x.clone() ^ y.clone())
            .collect() }}}
 
-    impl std::ops::Shr<u8> for $T {
+    impl std::ops::Shr<u32> for $T {
       type Output = Self;
-      fn shr(self, y:u8) -> Self {
+      fn shr(self, y:u32) -> Self {
         let mut res = Self::zero();
         for i in 0..($n-y) { res.bits[i as usize] = self.bits[(i+y) as usize].clone() }
         res }}

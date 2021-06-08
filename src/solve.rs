@@ -236,7 +236,7 @@ macro_rules! find_factors {
     use $crate::{GraphViz, nid, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}, bdd};
     bdd::COUNT_XMEMO_TEST.with(|c| *c.borrow_mut()=0 ); bdd::COUNT_XMEMO_TEST.with(|c| *c.borrow_mut()=0 ); // TODO: other bases
     GBASE.with(|gb| gb.replace(ASTBase::empty()));   // reset on each test
-    let (y, x) = ($T0::def("y"), $T0::def("x")); let lt = x.lt(&y);
+    let (y, x) = ($T0::def("y", 0), $T0::def("x", $T0::n())); let lt = x.lt(&y);
     let xy:$T1 = x.times(&y); let k = $T1::new($k); let eq = xy.eq(&k);
     let mut show_ast = false; // let mut show_res = false;
     for arg in env::args() { match arg.as_str() {
