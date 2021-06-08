@@ -5,7 +5,7 @@ test_base_when!(BDDBase);
 // basic test suite
 
 #[test] fn test_base() {
-  let mut base = BDDBase::new(3);
+  let mut base = BDDBase::new();
   let (v1, v2, v3) = (NID::var(1), NID::var(2), NID::var(3));
   assert_eq!((I,O), base.tup(I));
   assert_eq!((O,I), base.tup(O));
@@ -16,7 +16,7 @@ test_base_when!(BDDBase);
   assert_eq!(O, base.when_lo(VID::var(3),v3))}
 
 #[test] fn test_and() {
-  let mut base = BDDBase::new(3);
+  let mut base = BDDBase::new();
   let (v1, v2) = (NID::var(1), NID::var(2));
   let a = base.and(v1, v2);
   assert_eq!(O,  base.when_lo(VID::var(1),a));
@@ -27,7 +27,7 @@ test_base_when!(BDDBase);
   assert_eq!(a,  base.when_lo(VID::var(3),a))}
 
 #[test] fn test_xor() {
-  let mut base = BDDBase::new(3);
+  let mut base = BDDBase::new();
   let (v1, v2) = (NID::var(1), NID::var(2));
   let x = base.xor(v1, v2);
   assert_eq!(v2,  base.when_lo(VID::var(1),x));
@@ -39,7 +39,7 @@ test_base_when!(BDDBase);
 
 // swarm test suite
 #[test] fn test_swarm_xor() {
-  let mut base = BDDBase::new(2);
+  let mut base = BDDBase::new();
   let (x0, x1) = (NID::var(0), NID::var(1));
   let x = base.xor(x0, x1);
   assert_eq!(x1,  base.when_lo(VID::var(0),x));
@@ -50,7 +50,7 @@ test_base_when!(BDDBase);
   assert_eq!(x,   base.when_hi(VID::var(2),x))}
 
 #[test] fn test_swarm_and() {
-  let mut base = BDDBase::new(2);
+  let mut base = BDDBase::new();
   let (x0, x1) = (NID::var(0), NID::var(1));
   let a = base.and(x0, x1);
   assert_eq!(O,  base.when_lo(VID::var(0),a));
@@ -63,7 +63,7 @@ test_base_when!(BDDBase);
 /// slightly harder test case that requires ite() to recurse
 #[test] fn test_swarm_ite() {
   //use simplelog::*;  TermLogger::init(LevelFilter::Trace, Config::default()).unwrap();
-  let mut base = BDDBase::new(3);
+  let mut base = BDDBase::new();
   let (x0,x1,x2) = (NID::var(0), NID::var(1), NID::var(2));
   assert_eq!(vec![0,0,0,0,1,1,1,1], base.tt(x2, 3));
   assert_eq!(vec![0,0,1,1,0,0,1,1], base.tt(x1, 3));
@@ -79,7 +79,7 @@ test_base_when!(BDDBase);
 /// slightly harder test case that requires ite() to recurse
 #[test] fn test_swarm_another() {
   use simplelog::*;  TermLogger::init(LevelFilter::Trace, Config::default()).unwrap();
-  let mut base = BDDBase::new(4);
+  let mut base = BDDBase::new();
   let (a,b) = (NID::var(3), NID::var(2));
   let anb = base.and(a,!b);
   assert_eq!(vec![0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0], base.tt(anb, 4));
@@ -92,17 +92,17 @@ test_base_when!(BDDBase);
 
 /// Test cases for SolutionIterator
 #[test] fn test_bdd_solutions_o() {
-  let mut base = BDDBase::new(0);  let mut it = base.solutions(O);
+  let mut base = BDDBase::new();  let mut it = base.solutions(O);
   assert_eq!(it.next(), None, "const O should yield no solutions.") }
 
 #[test] fn test_bdd_solutions_i() {
-  let base = BDDBase::new(0);
+  let base = BDDBase::new();
   let actual:HashSet<usize> = base.solutions_pad(I, 2).map(|r| r.as_usize()).collect();
   assert_eq!(actual, hs(vec![0b00, 0b01, 0b10, 0b11]),
      "const true should yield all solutions"); }
 
 #[test] fn test_bdd_solutions_simple() {
-  let base = BDDBase::new(0); let a = NID::var(0);
+  let base = BDDBase::new(); let a = NID::var(0);
   let mut it = base.solutions_pad(a, 1);
   // it should be sitting on first solution, which is a=1
   assert_eq!(it.next().expect("expected solution!").as_usize(), 0b1);
@@ -110,7 +110,7 @@ test_base_when!(BDDBase);
 
 
 #[test] fn test_bdd_solutions_extra() {
-  let mut base = BDDBase::new(5);
+  let mut base = BDDBase::new();
   let (b, d) = (NID::var(1), NID::var(3));
   // the idea here is that we have "don't care" above, below, and between the used vars:
   let n = base.and(b,d);
@@ -124,7 +124,7 @@ test_base_when!(BDDBase);
                           0b11010, 0b11011, 0b11110, 0b11111])}
 
 #[test] fn test_bdd_solutions_xor() {
-  let mut base = BDDBase::new(3);
+  let mut base = BDDBase::new();
   let (a, b) = (NID::var(0), NID::var(1));
   let n = base.xor(a, b);
   // base.show(n);
@@ -133,7 +133,7 @@ test_base_when!(BDDBase);
   assert_eq!(actual, expect); }
 
 #[test] fn test_simple_nodes() {
-  let mut state = BddState::new(8);
+  let mut state = BddState::new();
   let hl = HiLo::new(NID::var(5), NID::var(6));
   let x0 = VID::var(0);
   let v0 = VID::vir(0);

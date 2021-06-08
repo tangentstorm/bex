@@ -170,7 +170,7 @@ impl RawASTBase {
 
 impl Base for RawASTBase {
 
-  fn new(_nvars:usize)->Self { RawASTBase::empty() }
+  fn new()->Self { RawASTBase::empty() }
 
   fn when_hi(&mut self, v:vid::VID, n:NID)->NID { self.when(v, nid::I, n) }
   fn when_lo(&mut self, v:vid::VID, n:NID)->NID { self.when(v, nid::O, n) }
@@ -258,7 +258,7 @@ impl Base for RawASTBase {
 pub struct ASTBase { base: Simplify<RawASTBase> }
 impl Base for ASTBase {
   inherit![when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ];
-  fn new(n:usize)->Self { ASTBase{ base: Simplify{ base: <RawASTBase as Base>::new(n) }}}}
+  fn new()->Self { ASTBase{ base: Simplify{ base: <RawASTBase as Base>::new() }}}}
 
 impl ASTBase {
   pub fn empty()->Self { ASTBase { base: Simplify{ base: RawASTBase::empty() }}}

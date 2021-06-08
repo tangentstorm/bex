@@ -112,7 +112,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
 
   // perform the substitution
   let (ss, xid) = {
-    let mut ss = SwapSolver::new(0); ss.init(rv);
+    let mut ss = SwapSolver::new(); ss.init(rv);
     ss.dst = dst.xs; ss.dx = dx;
     ss.src = src.xs; ss.sx = sx;
     let xid = ss.sub();

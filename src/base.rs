@@ -11,7 +11,7 @@ use reg::Reg;
 use hashbrown::HashSet;
 
 pub trait Base {
-  fn new(n:usize)->Self where Self:Sized; // Sized so we can use trait objects.
+  fn new()->Self where Self:Sized; // Sized so we can use trait objects.
 
   fn when_hi(&mut self, v:VID, n:NID)->NID;
   fn when_lo(&mut self, v:VID, n:NID)->NID;
@@ -77,7 +77,7 @@ impl<T:Base> GraphViz for T {
 /// // example do-nothing decorator
 /// pub struct Decorated<T:Base> { base: T }
 /// impl<T:Base> Base for Decorated<T> {
-///   inherit![ new, num_vars, when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ]; }
+///   inherit![ new, when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ]; }
 /// ```
 #[macro_export] macro_rules! inherit {
   ( $($i:ident),* ) => { $( inherit_fn!($i); )* }
@@ -85,6 +85,7 @@ impl<T:Base> GraphViz for T {
 
 /// This helper macro provides actual implementations for the names passed to `inherit!`
 #[macro_export] macro_rules! inherit_fn {
+  (new) =>      { #[inline] fn new()->Self where Self:Sized { Self { base: T::new() }} };
   (when_hi) =>  { #[inline] fn when_hi(&mut self, v:VID, n:NID)->NID { self.base.when_hi(v, n) }};
   (when_lo) =>  { #[inline] fn when_lo(&mut self, v:VID, n:NID)->NID { self.base.when_lo(v, n) }};
   (and) =>      { #[inline] fn and(&mut self, x:NID, y:NID)->NID { self.base.and(x, y) }};
@@ -102,8 +103,7 @@ impl<T:Base> GraphViz for T {
 // !! start on isolating simplification rules (for use in AST, ANF)
 pub struct Simplify<T:Base> { pub base: T }
 impl<T:Base> Base for Simplify<T> {
-  inherit![ when_hi, when_lo, xor, or, def, tag, get, sub, save, dot ];
-  fn new(_n:usize)->Self where Self:Sized { unimplemented!("you need to explicitly construct the decorator") }
+  inherit![ new, when_hi, when_lo, xor, or, def, tag, get, sub, save, dot ];
   fn and(&mut self, x:NID, y:NID)->NID {
     if x == y { x }
     else {
@@ -145,17 +145,17 @@ impl<B:Base> Tagged<B> {
 
 // Meta-macro that generates a macro for testing any base implementation.
 macro_rules! base_test {
-  ($name:ident, $basename:ident, $nvars:expr, $tt:tt) => {
+  ($name:ident, $basename:ident, $tt:tt) => {
     macro_rules! $name {
       ($BaseType:ident) => {
         #[test] fn $name() {
           use base::Base;
-          let mut $basename = <$BaseType as Base>::new($nvars);
+          let mut $basename = <$BaseType as Base>::new();
           $tt }}}}}
 
 
 // Test operations on constants.
-base_test!(test_base_consts, b, 0, {
+base_test!(test_base_consts, b, {
   use nid;
   let (o, i) = (nid::O, nid::I);
 
@@ -171,7 +171,7 @@ base_test!(test_base_consts, b, 0, {
 
 
 // Test when_lo and when_hi for the simple cases.
-base_test!(test_base_when, b, 2, {
+base_test!(test_base_when, b, {
   use nid::{O,I,NID};
   let (o, i, n0, n1) = (O, I, NID::var(0), NID::var(1));
   let (x0, x1) = (n0.vid(), n1.vid());

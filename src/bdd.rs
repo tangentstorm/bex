@@ -118,10 +118,7 @@ impl BddState {
       None => { self.put_simple_node(v, hilo) }}}
 
   /// constructor
-  fn new(_nvars:usize)->BddState {
-    BddState {
-      hilos: vhl::HiLoCache::new(),
-      xmemo: BDDHashMap::default() }}
+  fn new()->BddState { BddState { hilos: vhl::HiLoCache::new(), xmemo: BDDHashMap::default() }}
 
   #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID) {
     self.xmemo.insert(ite, new_nid); }
@@ -198,7 +195,7 @@ impl Serialize for BddSwarm {
 
 impl<'de> Deserialize<'de> for BddSwarm {
   fn deserialize<D:Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-    let mut res = Self::new(0);
+    let mut res = Self::new();
     res.stable = Arc::new(BddState::deserialize(d)?);
     Ok(res) }}
 
@@ -206,11 +203,11 @@ impl<'de> Deserialize<'de> for BddSwarm {
 
 impl BddSwarm {
 
-  fn new(nvars:usize)->Self {
+  fn new()->Self {
     let (me, rx) = channel::<(QID, RMsg)>();
     let swarm = vec![];
-    let stable = Arc::new(BddState::new(nvars));
-    let recent = BddState::new(nvars);
+    let stable = Arc::new(BddState::new());
+    let recent = BddState::new();
     Self{ me, rx, swarm, stable, recent, work:WorkState::new() }}
 
   fn get_state(&self)->&BddState { &self.recent }
@@ -487,8 +484,7 @@ impl BDDBase {
 
 impl Base for BDDBase {
 
-  fn new(nvars:usize)->BDDBase {
-    BDDBase{swarm: BddSwarm::new(nvars), tags:HashMap::new()}}
+  fn new()->BDDBase { BDDBase{swarm: BddSwarm::new(), tags:HashMap::new()}}
 
   /// nid of y when x is high
   fn when_hi(&mut self, x:VID, y:NID)->NID {

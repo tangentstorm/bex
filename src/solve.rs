@@ -252,7 +252,7 @@ macro_rules! find_factors {
     assert!(nid::no_var(top.n), "top nid seems to be a literal. (TODO: handle these already solved cases)");
     if show_ast { src.show_named(top.n, "ast"); }
     // --- now we have the ast, so solve ----
-    let mut dest = $TDEST::new(src.len()); dest.init(top.n.vid());
+    let mut dest = $TDEST::new(); dest.init(top.n.vid());
     let answer:DstNid = solve(&mut dest, &src, top.n);
     // if show_res { dest.show_named(answer.n, "result") }
     // except in this case we want to m

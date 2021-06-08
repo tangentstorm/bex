@@ -42,8 +42,8 @@ fn pop2<T>(data: &mut Vec<T>)->(T,T){
 fn repl(base:&mut ASTBase) {
   let mut scope = HashMap::new();
   let mut data: Vec<NID> = Vec::new();
-  let mut bdds = BDDBase::new(1024);
-  let mut anfs = ANFBase::new(1024);
+  let mut bdds = BDDBase::new();
+  let mut anfs = ANFBase::new();
 
   'main: loop {
     print!("[ "); for x in &data { print!("{} ", *x); } println!("]");
