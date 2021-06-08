@@ -1,6 +1,24 @@
 #+title: plans for bex
 
-* TODO [0/5] plans for version 0.2.0
+* TODO [1/6] plans for next version
+** DONE remove =nvars= param from =Base=
+** TODO [0/3] generalize swarm implementation
+*** TODO bdd: extract ite function that returns (V, HiPart, LoPart)
+(In other words, decouple the work for a single node from the work scheduler)
+*** TODO clean up / refactor the swarm code in general
+
+resolve-part calls:
+  resolve-vhl # when both sides are done
+
+resolve-vhl
+  ITE::norm # bdd-specific logic
+  resolve-nid
+
+resolve-nid
+  resolve-part
+  put-xmemo
+
+*** TODO re-use swarm for =ANF= implementation
 ** TODO [0/2] better benchmarking
 *** TODO [2/3] collect metrics
 **** what to collect
@@ -33,23 +51,6 @@ Query, sum, and reset the counters after each round.
 
 *** TODO store the metrics
 - write (step#, time, ord, lookups, hits, shorts) to csv after each step
-** TODO [0/3] generalize swarm implementation
-*** TODO bdd: extract ite function that returns (V, HiPart, LoPart)
-(In other words, decouple the work for a single node from the work scheduler)
-*** TODO clean up / refactor the swarm code in general
-
-resolve-part calls:
-  resolve-vhl # when both sides are done
-
-resolve-vhl
-  ITE::norm # bdd-specific logic
-  resolve-nid
-
-resolve-nid
-  resolve-part
-  put-xmemo
-
-*** TODO re-use swarm for =ANF= implementation
 ** TODO [0/6] solver optimizations
 *** TODO optimization: nid-level truth tables for bottom 5 variables
 *** TODO optimization: nid-level truth tables for /any/ 5 variables

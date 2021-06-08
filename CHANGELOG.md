@@ -4,6 +4,10 @@ A rust library for working with boolean expressions.
 
 ## 0.1.6 (in progress)
 
+- Remove `nvars` from all `Base` implementations. This member was
+  only really useful when the height of a node wasn't obvious from
+  the variable index.
+
 - Remove obsolete "substitution" concept from `ast.rs`, and replace
   `ast::Op` with the more flexible `ops::Ops`.
 
