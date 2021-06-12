@@ -1,6 +1,8 @@
-///! Iterator support for BDDBase
-use {vhl::{HiLo, HiLoBase}};
-use crate::{nid::{NID,I,O}, bdd::BDDBase, reg::Reg};
+///! Solution iterator for BDDBase
+
+use std::collections::HashSet;
+use {vhl::{HiLo, HiLoBase, Walkable}};
+use crate::{vid::VID, nid::{NID,I,O}, bdd::BDDBase, reg::Reg};
 use crate::cur::{Cursor, CursorPlan};
 
 
@@ -22,6 +24,16 @@ impl HiLoBase for BDDBase {
     let (hi, lo) = self.swarm.get_state().tup(n);
     Some(HiLo{ hi, lo }) }}
 
+impl Walkable for BDDBase {
+  /// internal helper: one step in the walk.
+  fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>, topdown:bool)
+  where F: FnMut(NID,VID,NID,NID) {
+    if !seen.contains(&n) {
+      seen.insert(n); let (hi,lo) = self.tup(n);
+      if topdown { f(n, n.vid(), hi,lo ) }
+      if !hi.is_const() { self.step(hi, f, seen, topdown) }
+      if !lo.is_const() { self.step(lo, f, seen, topdown) }
+      if !topdown { f(n, n.vid(), hi, lo) }}}}
 
 pub struct BDDSolIterator<'a> {
   bdd: &'a BDDBase,
