@@ -15,6 +15,7 @@
 //! In addition, identical suffixes after factoring always refer to the same node.
 use std::collections::HashSet;
 use base::{Base};
+use simp;
 use {nid, nid::{NID,I,O}};
 use vid::{VID,VidOrdering};
 use cur::{Cursor, CursorPlan};
@@ -107,11 +108,7 @@ impl Base for ANFBase {
   // logical ops
 
   fn and(&mut self, x:NID, y:NID)->NID {
-    if x == O || y == O { O }
-    else if x == I || x == y { y }
-    else if y == I { x }
-    else if x == !y { O }
-
+    if let Some(nid) = simp::and(x,y) { nid }
     // We want any 'xor 1' (not) to be kept at the top level. There are four cases:
     else {
       let (a,b) = (nid::raw(x), nid::raw(y));  // x!=I because it was handled above.
@@ -124,14 +121,9 @@ impl Base for ANFBase {
       else if nid::is_inv(y) { expr![ self, ((a & b) ^ a)] }
       // case 3: x:a & y:b ==> ab
       else { self.calc_and(x, y) }}}
-
+
   fn xor(&mut self, x:NID, y:NID)->NID {
-    if x == y { O }
-    else if x == O { y }
-    else if y == O { x }
-    else if x == I { !y }
-    else if y == I { !x }
-    else if x == !y { I }
+    if let Some(nid) = simp::xor(x,y) { nid }
     else {
       // xor the raw anf expressions (without any 'xor 1' bits), then xor the bits.
       let (a, b) = (nid::raw(x), nid::raw(y));
@@ -139,8 +131,10 @@ impl Base for ANFBase {
       if nid::is_inv(x) == nid::is_inv(y) { res }
       else { !res }}}
 
-  fn or(&mut self, x:NID, y:NID)->NID { expr![self, ((x & y) ^ (x ^ y))] }
-
+  fn or(&mut self, x:NID, y:NID)->NID {
+    if let Some(nid) = simp::or(x,y) { nid }
+    else { expr![self, ((x & y) ^ (x ^ y))] }}
+
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID {
     let cv = ctx.vid();
     if ctx.might_depend_on(v) {
@@ -460,7 +454,6 @@ test_base_when!(ANFBase);
   let expected = expr![base, ((ab & (pq ^ r)) ^ (c & (pq ^ r)))];
   assert_eq!(expected, actual); }
 
-// TODO: remove the argument to new()
 #[test] fn test_anf_and_same_head() {
   // x:(ab+c) * y:(aq+r) --> abq+abr+acq+cr --> a(b(q+r) + cq)+cr
   let mut base = ANFBase::new();

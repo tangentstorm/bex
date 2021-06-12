@@ -5,7 +5,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::process::Command;      // for creating and viewing digarams
-use {nid, nid::{NID}};
+use {simp, nid::{NID}};
 use vid::VID;
 use reg::Reg;
 use hashbrown::HashSet;
@@ -105,13 +105,10 @@ pub struct Simplify<T:Base> { pub base: T }
 impl<T:Base> Base for Simplify<T> {
   inherit![ new, when_hi, when_lo, xor, or, def, tag, get, sub, save, dot ];
   fn and(&mut self, x:NID, y:NID)->NID {
-    if x == y { x }
+    if let Some(nid) = simp::and(x,y) { nid }
     else {
       let (a, b) = if x < y { (x,y) } else { (y,x) };
-      if a == nid::O { nid::O }
-      else if a == nid::I { b }
-      else if !a == b { nid::O }
-      else { self.base.and(x, y) }}}
+      self.base.and(a, b) }}
 }
 
 

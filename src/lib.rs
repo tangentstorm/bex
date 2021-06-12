@@ -25,10 +25,10 @@ pub mod vhl;
 pub mod wip;
 /// RPN-like serialization structure for expressions.
 pub mod ops;
-
 // Cursors (register + stack and scope) for navigating vhl-graphs (Bdd, Anf, etc)
 pub mod cur;
-
+/// Simplification rules
+pub mod simp;
 /// Abstract syntax trees (simple logic combinators).
 pub mod ast;
 /// Binary decision diagrams (if-then-else).

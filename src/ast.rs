@@ -6,6 +6,7 @@ use base::*;
 use {nid, nid::NID};
 use {vid, vid::VID};
 use {ops, ops::Ops};
+use simp;
 
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -184,35 +185,23 @@ impl Base for RawASTBase {
     self.tags.insert(s, n); n }
 
   fn and(&mut self, x:NID, y:NID)->NID {
-    match (x, y) {
-      (nid::O, _) => nid::O,
-      (_, nid::O) => nid::O,
-      (nid::I, y) => y,
-      (x, nid::I) => x,
-      _ if x == y => x,
-      _ if x == !y => nid::O,
-      _ => { let (lo, hi) = if x<y {(x,y)} else {(y,x)};  self.nid(ops::and(lo, hi)) }}}
+    if let Some(nid) = simp::and(x,y) { nid }
+    else {
+      let (lo, hi) = if x<y {(x,y)} else {(y,x)};
+      self.nid(ops::and(lo, hi)) }}
 
   fn xor(&mut self, x:NID, y:NID)->NID {
-    match (x, y) {
-      (nid::O, y) => y,
-      (x, nid::O) => x,
-      (nid::I, y) => !y,
-      (x, nid::I) => !x,
-      _ if x == y => nid::O,
-      _ if x == !y => nid::I,
-      _ => { let (lo, hi) = if x<y {(x,y)} else {(y,x)};  self.nid(ops::xor(lo, hi)) }}}
+    if let Some(nid) = simp::xor(x,y) { nid }
+    else {
+      let (lo, hi) = if x<y {(x,y)} else {(y,x)};
+      self.nid(ops::xor(lo, hi)) }}
 
   fn or(&mut self, x:NID, y:NID)->NID {
-    match (x, y) {
-      (nid::O, y) => y,
-      (x, nid::O) => x,
-      (nid::I, _) => nid::I,
-      (_, nid::I) => nid::I,
-      _ if x == y => x,
-      _ if x == !y => nid::I,
-      _ if x.is_inv() && y.is_inv() => !self.and(x, y),
-      _ => { let (lo, hi) = if x<y {(x,y)} else {(y,x)};  self.nid(ops::vel(lo, hi)) }}}
+    if let Some(nid) = simp::or(x,y) { nid }
+    else if x.is_inv() && y.is_inv() { !self.and(x, y) }
+    else {
+      let (lo, hi) = if x<y {(x,y)} else {(y,x)};
+      self.nid(ops::vel(lo, hi)) }}
 
   fn sub(&mut self, _v:vid::VID, _n:NID, _ctx:NID)->NID { todo!("ast::sub") }
 
