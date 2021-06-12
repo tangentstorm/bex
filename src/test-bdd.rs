@@ -2,6 +2,9 @@
 test_base_consts!(BDDBase);
 test_base_when!(BDDBase);
 
+use  std::iter::FromIterator; use std::hash::Hash;
+fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
+
 // basic test suite
 
 #[test] fn test_base() {
