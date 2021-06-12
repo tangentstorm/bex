@@ -20,7 +20,7 @@ use {nid, nid::{NID,I,O}};
 use vid::{VID,VidOrdering};
 use cur::{Cursor, CursorPlan};
 use reg::Reg;
-use vhl::{HiLo, HiLoBase, Walkable};
+use vhl::{VHL, HiLo, HiLoBase, Walkable};
 use hashbrown::HashMap;
 use bdd::{BDDBase}; // for solutions
 #[cfg(test)] use vid::{topmost, botmost};
@@ -28,18 +28,9 @@ use bdd::{BDDBase}; // for solutions
 /// (v AND hi) XOR lo
 // TODO /// (ALL(v0..v1) AND hi) XOR lo
 // TODO: /// The v0..v1 thing is used to collapse long chains of nodes where lo=O.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-struct ANF {
-  /// v is the variable in the head.
-  v: VID,
-  /// the hi subgraph gets ANDed to the head.
-  hi: NID,
-  /// the lo subgraph gets XORed to the hi node.
-  lo: NID }
-
 pub struct ANFBase {
-  nodes:Vec<ANF>,
-  cache:HashMap<ANF,NID>,
+  nodes:Vec<VHL>,
+  cache:HashMap<VHL,NID>,
   tags:HashMap<String,NID>}
 
 
@@ -47,7 +38,7 @@ impl Walkable for ANFBase {
   fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>, topdown: bool)
   where F: FnMut(NID,VID,NID,NID) {
     if !seen.contains(&n) {
-      seen.insert(n); let ANF{ v, hi, lo, } = self.fetch(n);
+      seen.insert(n); let VHL{ v, hi, lo, } = self.fetch(n);
       if topdown { f(n,v,hi,lo) }
       if !nid::is_const(hi) { self.step(hi, f, seen, topdown) }
       if !nid::is_const(lo) { self.step(lo, f, seen, topdown) }
@@ -85,7 +76,7 @@ impl Base for ANFBase {
       VidOrdering::Above => n, // n independent of v
       VidOrdering::Level => self.fetch(n).lo,
       VidOrdering::Below => {
-        let ANF{ v:_, hi, lo } = self.fetch(nid::raw(n));
+        let VHL{ v:_, hi, lo } = self.fetch(nid::raw(n));
         let hi1 = self.when_lo(v, hi);
         let lo1 = self.when_lo(v, lo);
         let mut res = self.vhl(nv, hi1, lo1);
@@ -98,7 +89,7 @@ impl Base for ANFBase {
       VidOrdering::Above => n,  // n independent of v
       VidOrdering::Level => self.fetch(n).hi,
       VidOrdering::Below => {
-        let ANF{ v:_, hi, lo } = self.fetch(nid::raw(n));
+        let VHL{ v:_, hi, lo } = self.fetch(nid::raw(n));
         let hi1 = self.when_hi(v, hi);
         let lo1 = self.when_hi(v, lo);
         let mut res = self.vhl(nv, hi1, lo1);
@@ -159,9 +150,9 @@ impl Base for ANFBase {
 
 impl ANFBase {
 
-  fn fetch(&self, n:NID)->ANF {
+  fn fetch(&self, n:NID)->VHL {
     if nid::is_vid(n) { // variables are (v*I)+O if normal, (v*I)+I if inverted.
-      ANF{v:n.vid(), hi:I, lo: if nid::is_inv(n) { I } else { O } }}
+      VHL{v:n.vid(), hi:I, lo: if nid::is_inv(n) { I } else { O } }}
     else {
       let mut anf = self.nodes[nid::idx(n)];
       if nid::is_inv(n) { anf.lo = !anf.lo }
@@ -174,9 +165,9 @@ impl ANFBase {
     if hi0 == I && lo0 == O { return NID::from_vid(v) }
     let (hi,lo) = (hi0, nid::raw(lo0));
     let res =
-      if let Some(&nid) = self.cache.get(&ANF{v, hi, lo}) { nid }
+      if let Some(&nid) = self.cache.get(&VHL{v, hi, lo}) { nid }
       else {
-        let anf = ANF{ v, hi, lo };
+        let anf = VHL{ v, hi, lo };
         let nid = NID::from_vid_idx(v, self.nodes.len() as u32);
         self.cache.insert(anf, nid);
         self.nodes.push(anf);
@@ -195,7 +186,7 @@ impl ANFBase {
           //  =  a(b(pq+r)) + c(pq+r)
           //  =  a(by) + cy
           // TODO: these can all happen in parallel.
-          let ANF{v:a, hi:b, lo:c } = self.fetch(x);
+          let VHL{v:a, hi:b, lo:c } = self.fetch(x);
           let hi = self.and(b, y);
           let lo = self.and(c, y);
           self.vhl(a, hi, lo)},
@@ -206,8 +197,8 @@ impl ANFBase {
         //       abaq + abr + caq +cr
         //       abq  + abr + acq + cr
         //       a(b(q+r)+cq)+cr
-        let ANF{ v:a, hi:b, lo:c } = self.fetch(x);
-        let ANF{ v:p, hi:q, lo:r } = self.fetch(y);
+        let VHL{ v:a, hi:b, lo:c } = self.fetch(x);
+        let VHL{ v:p, hi:q, lo:r } = self.fetch(y);
         assert_eq!(a,p);
         // TODO: run in in parallel:
         let cr = self.and(c,r);
@@ -222,7 +213,7 @@ impl ANFBase {
     match xv.cmp_depth(&yv) {
       VidOrdering::Above =>  {
         // x:(ab+c) + y:(pq+r) --> ab+(c+(pq+r))
-        let ANF{v, hi, lo} = self.fetch(x);
+        let VHL{v, hi, lo} = self.fetch(x);
         let lo = self.xor(lo, y);
         self.vhl(v, hi, lo)},
       VidOrdering::Below => self.xor(y, x),
@@ -231,8 +222,8 @@ impl ANFBase {
         // a(1+0) + a(q+0)
         // a((1+0) + (q+0))
         // x:(ab+c) + y:(aq+r) -> ab+c+aq+r -> ab+aq+c+r -> a(b+q)+c+r
-        let ANF{v:a, hi:b, lo:c} = self.fetch(x);
-        let ANF{v:p, hi:q, lo:r} = self.fetch(y);
+        let VHL{v:a, hi:b, lo:c} = self.fetch(x);
+        let VHL{v:p, hi:q, lo:r} = self.fetch(y);
         assert_eq!(a,p);
         let hi = self.xor(b, q);
         let lo = self.xor(c, r);
@@ -245,7 +236,7 @@ impl ANFBase {
 
 impl HiLoBase for ANFBase {
   fn get_hilo(&self, nid:NID)->Option<HiLo> {
-    let ANF { v:_, hi, lo } = self.fetch(nid);
+    let VHL { v:_, hi, lo } = self.fetch(nid);
     Some(HiLo { hi, lo }) }}
 
 impl CursorPlan for ANFBase {}
@@ -358,7 +349,7 @@ test_base_when!(ANFBase);
 #[test] fn test_anf_hilo() {
   let base = ANFBase::new();
   let a = NID::var(0);
-  let ANF{ v, hi, lo } = base.fetch(a);
+  let VHL{ v, hi, lo } = base.fetch(a);
   assert_eq!(v, a.vid());
   assert_eq!(hi, I);
   assert_eq!(lo, O); }
@@ -366,7 +357,7 @@ test_base_when!(ANFBase);
 #[test] fn test_anf_hilo_not() {
   let base = ANFBase::new();
   let a = NID::var(0);
-  let ANF{ v, hi, lo } = base.fetch(!a);
+  let VHL{ v, hi, lo } = base.fetch(!a);
   assert_eq!(v, a.vid());
   assert_eq!(hi, I);
   assert_eq!(lo, I); // the final I never appears in the stored structure,
@@ -382,7 +373,7 @@ test_base_when!(ANFBase);
   assert_eq!(!a, base.xor(I,a), "a xor 1 should be ~a");
   assert_eq!(axb, bxa, "xor should be order-independent");
 
-  let ANF{ v, hi, lo } = base.fetch(axb);
+  let VHL{ v, hi, lo } = base.fetch(axb);
   // I want this to work regardless of which direction the graph goes:
   let topv = topmost(a.vid(), b.vid());
   let botv = botmost(a.vid(), b.vid());
@@ -413,7 +404,7 @@ test_base_when!(ANFBase);
   let mut base = ANFBase::new();
   let a = NID::var(0); let b = NID::var(1);
   let ab = base.and(a, b);
-  let ANF{v, hi, lo} = base.fetch(ab);
+  let VHL{v, hi, lo} = base.fetch(ab);
   let topv = topmost(a.vid(), b.vid());
   let botv = botmost(a.vid(), b.vid());
   assert_eq!(v, topv);
@@ -430,11 +421,11 @@ test_base_when!(ANFBase);
     let txtb = base.xor(t, tb); // b ^ ba = b((a+1)+0)
 
     let (bv, tv) = (b.vid(), t.vid());
-    assert_eq!(base.fetch(b), ANF{ v:bv, hi:I, lo:nid::O}, "b = b(1)+0");
-    assert_eq!(base.fetch(t), ANF{ v:tv, hi:I, lo:nid::O}, "t = t(1)+0");
-    assert_eq!(base.fetch(tb), ANF{ v:tv, hi:b, lo:nid::O}, "tb = t(b)+0");
-    assert_eq!(base.fetch(bxtb), ANF{ v:tv, hi:b, lo:b}, "b + tb = t(b)+b");
-    assert_eq!(base.fetch(txtb), ANF{ v:tv, hi:!b, lo:nid::O}, "t+tb = t(b+1)+0");
+    assert_eq!(base.fetch(b), VHL{ v:bv, hi:I, lo:nid::O}, "b = b(1)+0");
+    assert_eq!(base.fetch(t), VHL{ v:tv, hi:I, lo:nid::O}, "t = t(1)+0");
+    assert_eq!(base.fetch(tb), VHL{ v:tv, hi:b, lo:nid::O}, "tb = t(b)+0");
+    assert_eq!(base.fetch(bxtb), VHL{ v:tv, hi:b, lo:b}, "b + tb = t(b)+b");
+    assert_eq!(base.fetch(txtb), VHL{ v:tv, hi:!b, lo:nid::O}, "t+tb = t(b+1)+0");
   }
 
 #[test] fn test_anf_and3() {
