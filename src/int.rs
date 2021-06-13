@@ -88,13 +88,13 @@ pub fn gbase_i()->BaseBit { BaseBit{base:gbase_ref(), n:nid::I} }
 
 // TODO: implement iterators on the bits to simplify all these loops!!
 
-pub trait BInt<U, T:TBit> : Sized {
+pub trait BInt<T:TBit> : Sized {
   /// the number of bits
   fn n() -> u32;
   fn i(&self) -> T;
   fn o(&self) -> T;
   fn zero() -> Self;
-  fn new(&self, u:U) -> Self;
+  fn new(&self, u:usize) -> Self;
   fn get(&self, i:u32) -> T;
   fn set(&mut self, i:u32, v:T);
   fn rotate_right(&self, y:u32) -> Self {
@@ -111,12 +111,12 @@ pub trait BInt<U, T:TBit> : Sized {
       carry = bitmaj(a, b, c);}
     res}
 
-  fn from<B:BInt<U2,T>,U2>(other:&B) -> Self {
+  fn from<B:BInt<T>>(other:&B) -> Self {
     let mut res = Self::zero();
     for i in 0..min(Self::n(),B::n()) { res.set(i, other.get(i).clone()) }
     res }
 
-  fn times<U2,B:BInt<U2,T>>(&self, y0:&Self) -> B {
+  fn times<B:BInt<T>>(&self, y0:&Self) -> B {
     let mut sum = B::zero();
     let x = B::from(self);
     let y = B::from(y0);
@@ -128,11 +128,11 @@ pub trait BInt<U, T:TBit> : Sized {
       sum = sum.wrapping_add(xi.rotate_right(B::n() -i)); }
     sum }
 
-  fn u(self) -> U; }
+  fn u(self) -> usize; }
 
 
 macro_rules! xint_type {
-  ($n:expr, $c:ident, $T:ident, $U:ty) => {
+  ($n:expr, $c:ident, $T:ident) => {
 
     #[derive(Clone,PartialEq)]
     pub struct $T{pub bits:Vec<BaseBit>}
@@ -173,7 +173,7 @@ macro_rules! xint_type {
     }
 
     /// shorthand constructor
-    pub fn $c(u:$U) -> $T { $T::new(u as usize) }
+    pub fn $c(u:usize) -> $T { $T::new(u) }
 
     impl std::fmt::Debug for $T {
       fn fmt(&self, f: &mut std::fmt::Formatter)->std::fmt::Result {
@@ -183,16 +183,16 @@ macro_rules! xint_type {
 
 // TODO: just inline BInt here, so people don't have to import it.
 
-    impl BInt<$U,BaseBit> for $T {
+    impl BInt<BaseBit> for $T {
       fn n()->u32 { $n }
       fn zero()->Self { $T::new(0) }
       fn o(&self)->BaseBit { gbase_o() }
       fn i(&self)->BaseBit { gbase_i() }
-      fn new(&self, u:$U)->Self { $T::new(u as usize) }
+      fn new(&self, u:usize)->Self { $T::new(u) }
       fn get(&self, i:u32)->BaseBit { self.bits[i as usize].clone() }
       fn set(&mut self, i:u32, v:BaseBit) { self.bits[i as usize]=v }
 
-      fn u(self)->$U {
+      fn u(self)->usize {
         let mut u = 0; let mut i = 0;
         #[allow(clippy::toplevel_ref_arg)]
         for ref bit in self.bits.iter() {
@@ -238,34 +238,34 @@ macro_rules! xint_type {
 
 // actual type implementations:
 
-xint_type!( 2,  x2,  X2,  u8);  // there's no u2
-xint_type!( 4,  x4,  X4,  u8);  // there's no u4
-xint_type!( 8,  x8,  X8,  u8);
-xint_type!(16, x16, X16, u16);
-xint_type!(32, x32, X32, u32);
-xint_type!(64, x64, X64, u64);
+xint_type!( 2,  x2,  X2);  // there's no u2
+xint_type!( 4,  x4,  X4);  // there's no u4
+xint_type!( 8,  x8,  X8);
+xint_type!(16, x16, X16);
+xint_type!(32, x32, X32);
+xint_type!(64, x64, X64);
 
 
 
 // -- test suite for x32
 
 #[test] fn test_roundtrip() {
-  let k = 1234567890u32;
+  let k = 1234567890;
   assert_eq!(x32(k).u(), k) }
 
 #[test] fn test_add() {
-  assert_eq!((x32(2).wrapping_add(x32(3))).u(), 5u32) }
+  assert_eq!((x32(2).wrapping_add(x32(3))).u(), 5) }
 
 #[test] fn test_mul32() {
-  assert_eq!((x32(2).times::<u32,X32>(&x32(3))).u(),  6u32);
-  assert_eq!((x32(3).times::<u32,X32>(&x32(5))).u(), 15u32) }
+  assert_eq!((x32(2).times::<X32>(&x32(3))).u(),  6);
+  assert_eq!((x32(3).times::<X32>(&x32(5))).u(), 15) }
 
 #[test] fn test_mul64() {
-  assert_eq!((x64(2).times::<u64,X64>(&x64(3))).u(),  6u64);
-  assert_eq!((x64(3).times::<u64,X64>(&x64(5))).u(), 15u64) }
+  assert_eq!((x64(2).times::<X64>(&x64(3))).u(),  6);
+  assert_eq!((x64(3).times::<X64>(&x64(5))).u(), 15) }
 
 #[test] fn test_ror() {
-  assert_eq!((x32(10).rotate_right(1)).u(), 5u32) }
+  assert_eq!((x32(10).rotate_right(1)).u(), 5) }
 
 #[test] fn test_lt() {
   assert_eq!(x4(1).lt(&x4(2)), gbase_i());
