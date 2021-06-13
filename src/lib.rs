@@ -11,7 +11,7 @@ extern crate simplelog;
 
 /// Standard interface for working with databases of expressions.
 pub mod base;
-pub use base::*;
+pub use base::{Base, GraphViz};
 
 /// Variable IDs (used interally by Base implementations)
 pub mod vid;
@@ -43,7 +43,6 @@ pub mod int;
 /// Input/output helpers.
 pub mod io;
 
-/// (Experimental) support for algebraic normal form (XOR of AND).
 pub mod anf;
 
 /// swap solver

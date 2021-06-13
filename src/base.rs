@@ -10,29 +10,45 @@ use vid::VID;
 use reg::Reg;
 use hashbrown::HashSet;
 
+/// Functions common to all expression databases.
 pub trait Base {
+  /// Create a new instance of the `Base`.
   fn new()->Self where Self:Sized; // Sized so we can use trait objects.
 
+  /// Return the value of node `n` when `v=1`.
   fn when_hi(&mut self, v:VID, n:NID)->NID;
+  /// Return the value of node `n` when `v=0`.
   fn when_lo(&mut self, v:VID, n:NID)->NID;
 
+  /// Return a `NID` representing the logical AND of `x` and `y`.
   fn and(&mut self, x:NID, y:NID)->NID;
+
+  /// Return a `NID` representing the logical XOR of `x` and `y`.
   fn xor(&mut self, x:NID, y:NID)->NID;
+
+  /// Return a `NID` representing the logical OR of `x` and `y`.
   fn or(&mut self, x:NID, y:NID)->NID;
 
-  fn def(&mut self, s:String, i:VID)->NID;
+  /// Assign a name to variable `v`, and return its `NID`.
+  fn def(&mut self, s:String, v:VID)->NID;
+
+  /// Assign a name to node `n` and return `n`.
   fn tag(&mut self, n:NID, s:String)->NID;
-  fn get(&self, _s:&str)->Option<NID>;
+
+  /// Fetch a node by name.
+  fn get(&self, s:&str)->Option<NID>;
 
   /// substitute node for variable in context.
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID;
 
+  /// Save the `Base` to the given path.
   fn save(&self, path:&str)->::std::io::Result<()>;
 
-  /// implement this to render a node and its descendents in graphviz *.dot format.
+  /// Render node `n` (and its descendents) in graphviz *.dot format.
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write);
 
-  /// generate ALL solutions. This is a terrible idea, but it's the best I can do right now.
+  /// generate ALL solutions.
+  // !! This is a terrible idea, but it's the best I can do right now.
   // TODO: figure out the right way to return an iterator in a trait.
   fn solution_set(&self, _n:NID, _nvars:usize)->HashSet<Reg> { unimplemented!() }
 }
@@ -114,18 +130,21 @@ impl<T:Base> Base for Simplify<T> {
 
 // macros for building expressions
 
-#[macro_export]
-macro_rules! op {
+/// This is a helper macro used by `expr!`
+///
+/// ex: `op![base, (x & y) and (y ^ z)]`
+#[macro_export] macro_rules! expr_op {
   ($b:ident, $x:tt $op:ident $y:tt) => {{
     let x = expr![$b, $x];
     let y = expr![$b, $y];
     $b.$op(x,y) }}}
 
-#[macro_export]
-macro_rules! expr {
+/// Macro for building complex expressions in a `Base`.
+/// example: `expr![base, (x & y) | (y ^ z)]`
+#[macro_export] macro_rules! expr {
   ($_:ident, $id:ident) => { $id };
-  ($b:ident, ($x:tt ^ $y:tt)) => { op![$b, $x xor $y] };
-  ($b:ident, ($x:tt & $y:tt)) => { op![$b, $x and $y] };}
+  ($b:ident, ($x:tt ^ $y:tt)) => { expr_op![$b, $x xor $y] };
+  ($b:ident, ($x:tt & $y:tt)) => { expr_op![$b, $x and $y] };}
 
 
 /*

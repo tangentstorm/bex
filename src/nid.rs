@@ -1,6 +1,3 @@
-//! Defines a common NID scheme for bases whose nodes follow a
-//! (var, lo, hi) structure. Used by BDD, ANF, and eventually ZDD.
-
 /* Bitmask diagram:
 
    NID | VAR

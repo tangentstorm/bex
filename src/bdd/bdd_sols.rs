@@ -6,18 +6,6 @@ use crate::{vid::VID, nid::{NID,I,O}, bdd::BDDBase, reg::Reg};
 use crate::cur::{Cursor, CursorPlan};
 
 
-impl BDDBase {
-  pub fn solutions(&mut self, n:NID)->BDDSolIterator {
-    let nvars = if n.is_const() { 1 } else if n.vid().is_var() { n.vid().var_ix() }
-    else if n.vid().is_vir() {
-      panic!("It probably doesn't make sense to call solutions(n) when n.vid().is_vir(), but you can try solutions_pad() if you think it makes sense.") }
-    else { panic!("Don't know how to find solutions({:?}). Maybe try solutions_pad()...?", n) };
-    self.solutions_pad(n, nvars)}
-
-  pub fn solutions_pad(&self, n:NID, nvars:usize)->BDDSolIterator {
-    BDDSolIterator::from_bdd(self, n, nvars)}}
-
-
 /// helpers for solution cursor
 impl HiLoBase for BDDBase {
   fn get_hilo(&self, n:NID)->Option<HiLo> {
@@ -57,7 +45,19 @@ impl<'a> Iterator for BDDSolIterator<'a> {
     else { None }}}
     impl CursorPlan for BDDBase {}
 
+
+/// Solution iterators.
 impl BDDBase {
+  pub fn solutions(&mut self, n:NID)->BDDSolIterator {
+    let nvars = if n.is_const() { 1 } else if n.vid().is_var() { n.vid().var_ix() }
+    else if n.vid().is_vir() {
+      panic!("It probably doesn't make sense to call solutions(n) when n.vid().is_vir(), but you can try solutions_pad() if you think it makes sense.") }
+    else { panic!("Don't know how to find solutions({:?}). Maybe try solutions_pad()...?", n) };
+    self.solutions_pad(n, nvars)}
+
+  pub fn solutions_pad(&self, n:NID, nvars:usize)->BDDSolIterator {
+    BDDSolIterator::from_bdd(self, n, nvars)}
+
   pub fn first_solution(&self, n:NID, nvars:usize)->Option<Cursor> {
     if n== O || nvars == 0 { None }
     else {

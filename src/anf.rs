@@ -1,5 +1,4 @@
-
-//! Experimental structure for representing algebraic normal form (xor of ands).
+//! Structure for representing algebraic normal form (xor of ands).
 //!
 //! Algebraic normal form is essentially a boolean polynomial.
 //! Each term is a product of non-negated inputs. To normalize,

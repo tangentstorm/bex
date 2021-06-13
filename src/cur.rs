@@ -1,4 +1,5 @@
-/// Cursors: tools for navigating (v,hi,lo) structures.
+//! Cursors: tools for navigating (v,hi,lo) structures.
+
 use reg::Reg;
 use {nid,nid::NID};
 use vid::VID;
