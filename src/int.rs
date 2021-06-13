@@ -132,7 +132,7 @@ pub trait BInt<T:TBit> : Sized {
 
 
 macro_rules! xint_type {
-  ($n:expr, $c:ident, $T:ident) => {
+  ($n:expr, $T:ident) => {
 
     #[derive(Clone,PartialEq)]
     pub struct $T{pub bits:Vec<BaseBit>}
@@ -172,9 +172,6 @@ macro_rules! xint_type {
         res}
     }
 
-    /// shorthand constructor
-    pub fn $c(u:usize) -> $T { $T::new(u) }
-
     impl std::fmt::Debug for $T {
       fn fmt(&self, f: &mut std::fmt::Formatter)->std::fmt::Result {
         write!(f, "[").expect("!");
@@ -238,12 +235,12 @@ macro_rules! xint_type {
 
 // actual type implementations:
 
-xint_type!( 2,  x2,  X2);  // there's no u2
-xint_type!( 4,  x4,  X4);  // there's no u4
-xint_type!( 8,  x8,  X8);
-xint_type!(16, x16, X16);
-xint_type!(32, x32, X32);
-xint_type!(64, x64, X64);
+xint_type!( 2,  X2); pub fn x2(u:usize)->X2 { X2::new(u) }
+xint_type!( 4,  X4); pub fn x4(u:usize)->X4 { X4::new(u) }
+xint_type!( 8,  X8); pub fn x8(u:usize)->X8 { X8::new(u) }
+xint_type!(16, X16); pub fn x16(u:usize)->X16 { X16::new(u) }
+xint_type!(32, X32); pub fn x32(u:usize)->X32 { X32::new(u) }
+xint_type!(64, X64); pub fn x64(u:usize)->X64 { X64::new(u) }
 
 
 
