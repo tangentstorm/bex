@@ -16,7 +16,7 @@ use swarm;
 /// Query message for BddSwarm.
 pub enum Q {
   /// The main recursive operation: convert ITE triple to a BDD.
-  Ite(QID, ITE),
+  Ite(ITE),
   /// Give the worker a new reference to the central cache.
   Cache(Arc<BddState>),
   /// halt execution.
@@ -29,7 +29,7 @@ type R = wip::RMsg<Norm>;
 impl std::fmt::Debug for Q {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
-      Q::Ite(qid, ite) => { write!(f, "Q::Ite(q{}, {:?})", qid, ite) }
+      Q::Ite(ite) => { write!(f, "Q::Ite({:?})", ite) }
       Q::Cache(_) => { write!(f, "Q::Cache(...)") }
       Q::Halt => { write!(f, "Q::Halt")} } }}
 
@@ -44,9 +44,9 @@ impl swarm::Worker<Q,R> for BddWorker {
 
 
 /// Sender for Q
-pub type QTx = Sender<Q>;
+pub type QTx = Sender<(Option<QID>, Q)>;
 /// Receiver for Q
-pub type QRx = Receiver<Q>;
+pub type QRx = Receiver<(Option<QID>, Q)>;
 /// Sender for R
 pub type RTx = Sender<(QID, R)>;
 /// Receiver for R
@@ -122,7 +122,7 @@ impl BddSwarm {
     else {
       self.work.qid.insert(ite, qid); self.work.qs.push(ite);
       let w:usize = qid % self.swarm.len();
-      self.swarm[w].send(Q::Ite(qid, ite)).expect("send to swarm failed");
+      self.swarm[w].send((Some(qid), Q::Ite(ite))).expect("send to swarm failed");
       self.work.wip.push(WIP::Fresh);
       if let Some(dep) = opt_dep {
         trace!("*** added task #{}: {:?} invert:{}", qid, ite, dep.invert);
@@ -173,14 +173,14 @@ impl BddSwarm {
     let (me, rx) = channel::<(QID, R)>(); self.me = me; self.rx = rx;
     self.swarm = vec![];
     while self.swarm.len() < num_cpus::get() {
-      let (tx, rx) = channel::<Q>();
+      let (tx, rx) = channel::<(Option<QID>,Q)>();
       let me_clone = self.me.clone();
       let state = self.stable.clone();
       thread::spawn(move || swarm_loop(me_clone, rx, state));
       self.swarm.push(tx); }
     self.stable = Arc::new(self.recent.clone());
     for tx in self.swarm.iter() {
-      tx.send(Q::Cache(self.stable.clone())).expect("failed to send Q::Cache"); }}
+      tx.send((None, Q::Cache(self.stable.clone()))).expect("failed to send Q::Cache"); }}
 
   /// distrubutes the standard ite() operatation across a swarm of threads
   fn run_swarm(&mut self, i:NID, t:NID, e:NID)->NID {
@@ -209,7 +209,7 @@ impl BddSwarm {
             handle_part!(hi, HiLoPart::HiPart); handle_part!(lo, HiLoPart::LoPart); }
           R::Ret(n) => {
             result = Some(n);
-            for tx in self.swarm.iter() {  tx.send(Q::Halt).expect("failed to send Q::Halt") }}}}
+            for tx in self.swarm.iter() {  tx.send((None, Q::Halt)).expect("failed to send Q::Halt") }}}}
       let (mut tests, mut fails, mut reports, mut shorts) = (0, 0, 0, 0);
       // println!("waiting for MemoStats");
       while reports < self.swarm.len() {
@@ -267,13 +267,15 @@ fn swarm_ite_norm(state: &Arc<BddState>, ite:ITE)->R {
 
 /// This is the loop run by each thread in the swarm.
 fn swarm_loop(tx:RTx, rx:QRx, mut state:Arc<BddState>) {
-  for qmsg in rx.iter() {
+  for (oqid, qmsg) in rx.iter() {
     match qmsg {
       Q::Cache(s) => { state = s }
-      Q::Ite(qid, ite) => {
-        trace!("--->   thread worker got qmsg {}: {:?}", qid, qmsg);
-        let rmsg = swarm_ite(&state, ite);
-        if tx.send((qid, rmsg)).is_err() { break } }
+      Q::Ite(ite) => {
+        if let Some(qid) = oqid {
+          trace!("--->   thread worker got qmsg {}: {:?}", qid, qmsg);
+          let rmsg = swarm_ite(&state, ite);
+          if tx.send((qid, rmsg)).is_err() { break }}
+        else { panic!("didn't get qid") }}
       Q::Halt => {
         let tests = COUNT_XMEMO_TEST.with(|c| c.replace(0));
         let fails = COUNT_XMEMO_FAIL.with(|c| c.replace(0));
