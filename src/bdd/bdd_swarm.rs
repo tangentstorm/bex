@@ -7,30 +7,50 @@ use {wip, wip::{QID,Dep,WIP,WorkState}};
 use vhl::{HiLoPart, VHLParts};
 use {vid::VID, nid::{NID}, vhl::{HiLo}};
 use bdd::{ITE, Norm, BddState, BDDHashMap, COUNT_XMEMO_TEST, COUNT_XMEMO_FAIL};
+use swarm;
 
 // ----------------------------------------------------------------
-// Helper types for BddSwarm
+// BddSwarm Protocol
 // ----------------------------------------------------------------
 
 /// Query message for BddSwarm.
-pub enum QMsg { Ite(QID, ITE), Cache(Arc<BddState>), Halt }
-impl std::fmt::Debug for QMsg {
+pub enum Q {
+  /// The main recursive operation: convert ITE triple to a BDD.
+  Ite(QID, ITE),
+  /// Give the worker a new reference to the central cache.
+  Cache(Arc<BddState>),
+  /// halt execution.
+  Halt }
+
+type R = wip::RMsg<Norm>;
+
+
+// The Cache() message would be potentially huge to print out, so don't.
+impl std::fmt::Debug for Q {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
-      QMsg::Ite(qid, ite) => { write!(f, "QMsg::Ite(q{}, {:?})", qid, ite) }
-      QMsg::Cache(_) => { write!(f, "QMsg::Cache(...)") }
-      QMsg::Halt => { write!(f, "QMsg::Halt")} } }}
+      Q::Ite(qid, ite) => { write!(f, "Q::Ite(q{}, {:?})", qid, ite) }
+      Q::Cache(_) => { write!(f, "Q::Cache(...)") }
+      Q::Halt => { write!(f, "Q::Halt")} } }}
 
-type RMsg = wip::RMsg<Norm>;
 
-/// Sender for QMsg
-pub type QTx = Sender<QMsg>;
-/// Receiver for QMsg
-pub type QRx = Receiver<QMsg>;
-/// Sender for RMsg
-pub type RTx = Sender<(QID, RMsg)>;
-/// Receiver for RMsg
-pub type RRx = Receiver<(QID, RMsg)>;
+
+// ----------------------------------------------------------------
+// ----------------------------------------------------------------
+#[derive(Default)]
+struct BddWorker {}
+impl swarm::Worker<Q,R> for BddWorker {
+  fn work_step(&mut self, _qid:&swarm::QID, _q:Q)->Option<R> { None }}
+
+
+/// Sender for Q
+pub type QTx = Sender<Q>;
+/// Receiver for Q
+pub type QRx = Receiver<Q>;
+/// Sender for R
+pub type RTx = Sender<(QID, R)>;
+/// Receiver for R
+pub type RRx = Receiver<(QID, R)>;
 
 
 // ----------------------------------------------------------------
@@ -42,7 +62,7 @@ pub struct BddSwarm {
   rx: RRx,
   /// send messages to myself (so we can put them back in the queue.
   me: RTx,
-  /// QMsg senders for each thread, so we can send queries to work on.
+  /// Q senders for each thread, so we can send queries to work on.
   swarm: Vec<QTx>,
   /// read-only version of the state shared by all threads.
   stable: Arc<BddState>,
@@ -66,7 +86,7 @@ impl<'de> Deserialize<'de> for BddSwarm {
 impl BddSwarm {
 
   pub fn new()->Self {
-    let (me, rx) = channel::<(QID, RMsg)>();
+    let (me, rx) = channel::<(QID, R)>();
     let swarm = vec![];
     let stable = Arc::new(BddState::new());
     let recent = BddState::new();
@@ -102,7 +122,7 @@ impl BddSwarm {
     else {
       self.work.qid.insert(ite, qid); self.work.qs.push(ite);
       let w:usize = qid % self.swarm.len();
-      self.swarm[w].send(QMsg::Ite(qid, ite)).expect("send to swarm failed");
+      self.swarm[w].send(Q::Ite(qid, ite)).expect("send to swarm failed");
       self.work.wip.push(WIP::Fresh);
       if let Some(dep) = opt_dep {
         trace!("*** added task #{}: {:?} invert:{}", qid, ite, dep.invert);
@@ -125,7 +145,7 @@ impl BddSwarm {
       self.recent.xmemo.insert(ite, nid);
       for &dep in self.work.deps[qid].clone().iter() {
         self.resolve_part(dep.qid, dep.part, nid, dep.invert) }
-      if qid == 0 { self.me.send((0, RMsg::Ret(nid))).expect("failed to send Ret"); }}}
+      if qid == 0 { self.me.send((0, R::Ret(nid))).expect("failed to send Ret"); }}}
 
   /// called whenever the wip resolves to a new simple (v/hi/lo) node.
   fn resolve_vhl(&mut self, qid:QID, v:VID, hilo:HiLo, invert:bool) {
@@ -150,17 +170,17 @@ impl BddSwarm {
     self.work.wip = vec![]; self.work.qs = vec![]; self.work.deps = vec![]; self.work.qid = BDDHashMap::new();
     // wipe out and replace the channels so un-necessary work from last iteration
     // (that was still going on when we returned a value) gets ignored..
-    let (me, rx) = channel::<(QID, RMsg)>(); self.me = me; self.rx = rx;
+    let (me, rx) = channel::<(QID, R)>(); self.me = me; self.rx = rx;
     self.swarm = vec![];
     while self.swarm.len() < num_cpus::get() {
-      let (tx, rx) = channel::<QMsg>();
+      let (tx, rx) = channel::<Q>();
       let me_clone = self.me.clone();
       let state = self.stable.clone();
       thread::spawn(move || swarm_loop(me_clone, rx, state));
       self.swarm.push(tx); }
     self.stable = Arc::new(self.recent.clone());
     for tx in self.swarm.iter() {
-      tx.send(QMsg::Cache(self.stable.clone())).expect("failed to send QMsg::Cache"); }}
+      tx.send(Q::Cache(self.stable.clone())).expect("failed to send Q::Cache"); }}
 
   /// distrubutes the standard ite() operatation across a swarm of threads
   fn run_swarm(&mut self, i:NID, t:NID, e:NID)->NID {
@@ -170,13 +190,13 @@ impl BddSwarm {
       // each response can lead to up to two new ITE queries, and we'll relay those to
       // other workers too, until we get back enough info to solve the original query.
       while result.is_none() {
-        let (qid, rmsg) = self.rx.recv().expect("failed to read RMsg from queue!");
-        trace!("===> run_swarm got RMsg {}: {:?}", qid, rmsg);
+        let (qid, rmsg) = self.rx.recv().expect("failed to read R from queue!");
+        trace!("===> run_swarm got R {}: {:?}", qid, rmsg);
         match rmsg {
-          RMsg::MemoStats{ tests:_, fails:_ } => { panic!("got RMsg::MemoStats before sending QMsg::Halt"); }
-          RMsg::Nid(nid) =>  { self.resolve_nid(qid, nid); }
-          RMsg::Vhl{v,hi,lo,invert} => { self.resolve_vhl(qid, v, HiLo{hi, lo}, invert); }
-          RMsg::Wip{v,hi,lo,invert} => {
+          R::MemoStats{ tests:_, fails:_ } => { panic!("got R::MemoStats before sending Q::Halt"); }
+          R::Nid(nid) =>  { self.resolve_nid(qid, nid); }
+          R::Vhl{v,hi,lo,invert} => { self.resolve_vhl(qid, v, HiLo{hi, lo}, invert); }
+          R::Wip{v,hi,lo,invert} => {
             // by the time we get here, the task for this node was already created.
             // (add_task already filled in the v for us, so we don't need it.)
             assert_eq!(self.work.wip[qid], WIP::Fresh);
@@ -187,9 +207,9 @@ impl BddSwarm {
                 Norm::Ite(ite) => self.add_task(Some(Dep::new(qid, $part, false)), ite),
                 Norm::Not(ite) => self.add_task(Some(Dep::new(qid, $part, true)), ite)}}}
             handle_part!(hi, HiLoPart::HiPart); handle_part!(lo, HiLoPart::LoPart); }
-          RMsg::Ret(n) => {
+          R::Ret(n) => {
             result = Some(n);
-            for tx in self.swarm.iter() {  tx.send(QMsg::Halt).expect("failed to send QMsg::Halt") }}}}
+            for tx in self.swarm.iter() {  tx.send(Q::Halt).expect("failed to send Q::Halt") }}}}
       let (mut tests, mut fails, mut reports, mut shorts) = (0, 0, 0, 0);
       // println!("waiting for MemoStats");
       while reports < self.swarm.len() {
@@ -208,24 +228,24 @@ impl BddSwarm {
 } // end bddswarm
 
 /// Code run by each thread in the swarm. Isolated as a function without channels for testing.
-fn swarm_ite(state: &Arc<BddState>, ite0:ITE)->RMsg {
+fn swarm_ite(state: &Arc<BddState>, ite0:ITE)->R {
   let ITE { i, t, e } = ite0;
   match ITE::norm(i,t,e) {
-      Norm::Nid(n) => RMsg::Nid(n),
+      Norm::Nid(n) => R::Nid(n),
       Norm::Ite(ite) => swarm_ite_norm(state, ite),
       Norm::Not(ite) => !swarm_ite_norm(state, ite) }}
 
-fn swarm_vhl_norm(state: &Arc<BddState>, ite:ITE)->RMsg {
+fn swarm_vhl_norm(state: &Arc<BddState>, ite:ITE)->R {
   let ITE{i:vv,t:hi,e:lo} = ite; let v = vv.vid();
-  if let Some(n) = state.get_simple_node(v, HiLo{hi,lo}) { RMsg::Nid(n) }
-  else { RMsg::Vhl{ v, hi, lo, invert:false } }}
+  if let Some(n) = state.get_simple_node(v, HiLo{hi,lo}) { R::Nid(n) }
+  else { R::Vhl{ v, hi, lo, invert:false } }}
 
-fn swarm_ite_norm(state: &Arc<BddState>, ite:ITE)->RMsg {
+fn swarm_ite_norm(state: &Arc<BddState>, ite:ITE)->R {
   let ITE { i, t, e } = ite;
   let (vi, vt, ve) = (i.vid(), t.vid(), e.vid());
   let v = ite.top_vid();
   match state.get_memo(&ite) {
-    Some(n) => RMsg::Nid(n),
+    Some(n) => R::Nid(n),
     None => {
       let (hi_i, lo_i) = if v == vi {state.tup(i)} else {(i,i)};
       let (hi_t, lo_t) = if v == vt {state.tup(t)} else {(t,t)};
@@ -237,26 +257,26 @@ fn swarm_ite_norm(state: &Arc<BddState>, ite:ITE)->RMsg {
       if let (Norm::Nid(hn), Norm::Nid(ln)) = (hi,lo) {
         match ITE::norm(NID::from_vid(v), hn, ln) {
           // first, it might normalize to a nid directly:
-          Norm::Nid(n) => { RMsg::Nid(n) }
+          Norm::Nid(n) => { R::Nid(n) }
           // otherwise, the normalized triple might already be in cache:
           Norm::Ite(ite) => swarm_vhl_norm(state, ite),
           Norm::Not(ite) => !swarm_vhl_norm(state, ite)}}
       // otherwise at least one side is not a simple nid yet, and we have to defer
-      else { RMsg::Wip{ v, hi, lo, invert:false } }}}}
+      else { R::Wip{ v, hi, lo, invert:false } }}}}
 
 
 /// This is the loop run by each thread in the swarm.
 fn swarm_loop(tx:RTx, rx:QRx, mut state:Arc<BddState>) {
   for qmsg in rx.iter() {
     match qmsg {
-      QMsg::Cache(s) => { state = s }
-      QMsg::Ite(qid, ite) => {
+      Q::Cache(s) => { state = s }
+      Q::Ite(qid, ite) => {
         trace!("--->   thread worker got qmsg {}: {:?}", qid, qmsg);
         let rmsg = swarm_ite(&state, ite);
         if tx.send((qid, rmsg)).is_err() { break } }
-      QMsg::Halt => {
+      Q::Halt => {
         let tests = COUNT_XMEMO_TEST.with(|c| c.replace(0));
         let fails = COUNT_XMEMO_FAIL.with(|c| c.replace(0));
-        if tx.send((QID::MAX, RMsg::MemoStats{ tests, fails })).is_err() {
+        if tx.send((QID::MAX, R::MemoStats{ tests, fails })).is_err() {
           println!("failed to send memostats (tests:{} fails: {})", tests, fails)}
         break; } }}}
