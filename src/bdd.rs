@@ -56,12 +56,12 @@ impl ITE {
                 return Norm::Nid(if h==I { I } else { f }) } // (f, f, I/O)
                 else { g=I }}
       else if g.is_const() && h.is_const() { // both const, and we know g!=h
-        return if g==I { return Norm::Nid(f) } else { Norm::Nid(!f) }}
+        return if g==I { Norm::Nid(f) } else { Norm::Nid(!f) }}
       else {
         let nf = !f;
         if      g==nf { g=O }
-        else if h==f  { h=O }
         else if h==nf { h=I }
+        else if h==f  { h=O }
         else {
           let (fv, fi) = (f.vid(), f.idx());
           macro_rules! cmp { ($x0:expr,$x1:expr) => {
