@@ -14,6 +14,7 @@ use swarm;
 // ----------------------------------------------------------------
 
 /// Query message for BddSwarm.
+#[derive(Clone)]
 pub enum Q {
   /// The main recursive operation: convert ITE triple to a BDD.
   Ite(ITE),
@@ -24,8 +25,7 @@ pub enum Q {
 
 type R = wip::RMsg<Norm>;
 
-
-// The Cache() message would be potentially huge to print out, so don't.
+// Q::Cache() message could potentially be huge to print, so don't.
 impl std::fmt::Debug for Q {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
@@ -33,15 +33,19 @@ impl std::fmt::Debug for Q {
       Q::Cache(_) => { write!(f, "Q::Cache(...)") }
       Q::Halt => { write!(f, "Q::Halt")} } }}
 
-
-
 // ----------------------------------------------------------------
-// ----------------------------------------------------------------
+
 #[derive(Default)]
-struct BddWorker {}
+struct BddWorker { state:Option<Arc<BddState>> }
 impl swarm::Worker<Q,R> for BddWorker {
-  fn work_step(&mut self, _qid:&swarm::QID, _q:Q)->Option<R> { None }}
-
+  fn work_step(&mut self, _sqid:&swarm::QID, q:Q)->Option<R> {
+    match q {
+      Q::Cache(s) => { self.state = Some(s); None }
+      Q::Ite(ite) => { Some(swarm_ite(self.state.as_ref().unwrap(), ite)) }
+      Q::Halt => {
+        let tests = COUNT_XMEMO_TEST.with(|c| c.replace(0));
+        let fails = COUNT_XMEMO_FAIL.with(|c| c.replace(0));
+        Some(R::MemoStats{ tests, fails }) } }}}
 
 /// Sender for Q
 pub type QTx = Sender<(Option<QID>, Q)>;
@@ -266,19 +270,14 @@ fn swarm_ite_norm(state: &Arc<BddState>, ite:ITE)->R {
 
 
 /// This is the loop run by each thread in the swarm.
-fn swarm_loop(tx:RTx, rx:QRx, mut state:Arc<BddState>) {
-  for (oqid, qmsg) in rx.iter() {
-    match qmsg {
-      Q::Cache(s) => { state = s }
-      Q::Ite(ite) => {
-        if let Some(qid) = oqid {
-          trace!("--->   thread worker got qmsg {}: {:?}", qid, qmsg);
-          let rmsg = swarm_ite(&state, ite);
-          if tx.send((qid, rmsg)).is_err() { break }}
-        else { panic!("didn't get qid") }}
-      Q::Halt => {
-        let tests = COUNT_XMEMO_TEST.with(|c| c.replace(0));
-        let fails = COUNT_XMEMO_FAIL.with(|c| c.replace(0));
-        if tx.send((QID::MAX, R::MemoStats{ tests, fails })).is_err() {
-          println!("failed to send memostats (tests:{} fails: {})", tests, fails)}
-        break; } }}}
+fn swarm_loop(tx:RTx, rx:QRx, state:Arc<BddState>) {
+  use swarm::{QID, Worker};
+  let mut w:BddWorker = BddWorker{ state:Some(state) };
+  for (oqid, q) in rx.iter() {
+    let sqid:QID = match q {
+      Q::Cache(_) => QID::STEP(0),
+      Q::Ite(_) => QID::STEP(oqid.unwrap()),
+      Q::Halt => QID::STEP(0)};
+    if let Some(r) = w.work_step(&sqid, q.clone()) {
+      if tx.send((oqid.unwrap_or(0), r)).is_err() { panic!("error sending result!") }}
+    if let Q::Halt = q { break }}}
