@@ -99,25 +99,21 @@ thread_local!{
 
 
 impl BddState {
+  /// constructor
+  fn new()->BddState { BddState { hilos: vhl::HiLoCache::new(), xmemo: BDDHashMap::default() }}
 
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)-> (NID, NID) {
     if n.is_const() { if n==I { (I, O) } else { (O, I) } }
     else if n.is_vid() { if n.is_inv() { (O, I) } else { (I, O) }}
-    else { let hilo = self.get_hilo(n); (hilo.hi, hilo.lo) }}
+    else { let hilo = self.hilos.get_hilo(n); (hilo.hi, hilo.lo) }}
 
   /// fetch or create a "simple" node, where the hi and lo branches are both
   /// already fully computed pointers to existing nodes.
   #[inline] fn simple_node(&mut self, v:VID, hilo:HiLo)->NID {
     match self.get_simple_node(v, hilo) {
       Some(n) => n,
-      None => { self.put_simple_node(v, hilo) }}}
-
-  /// constructor
-  fn new()->BddState { BddState { hilos: vhl::HiLoCache::new(), xmemo: BDDHashMap::default() }}
-
-  #[inline] fn put_xmemo(&mut self, ite:ITE, new_nid:NID) {
-    self.xmemo.insert(ite, new_nid); }
+      None => { self.hilos.insert(v, hilo) }}}
 
   /// load the memoized NID if it exists
   #[inline] fn get_memo(&self, ite:&ITE) -> Option<NID> {
@@ -131,16 +127,8 @@ impl BddState {
       if test == None { COUNT_XMEMO_FAIL.with(|c| *c.borrow_mut() += 1 ); }
       test }}
 
-  #[inline] fn get_hilo(&self, n:NID)->HiLo {
-    self.hilos.get_hilo(n) }
-
   #[inline] fn get_simple_node(&self, v:VID, hl:HiLo)-> Option<NID> {
-    self.hilos.get_node(v, hl)}
-
-  #[inline] fn put_simple_node(&mut self, v:VID, hl:HiLo)->NID {
-    self.hilos.insert(v, hl) }}
-
-
+    self.hilos.get_node(v, hl) }}
 
 
 /// Finally, we put everything together. This is the top-level type for this crate.

@@ -122,7 +122,7 @@ impl BddSwarm {
       trace!("resolved_nid: q{}=>{}. deps: {:?}", qid, nid, self.work.deps[qid].clone());
       self.work.wip[qid] = WIP::Done(nid);
       let ite = self.work.qs[qid];
-      self.recent.put_xmemo(ite, nid);
+      self.recent.xmemo.insert(ite, nid);
       for &dep in self.work.deps[qid].clone().iter() {
         self.resolve_part(dep.qid, dep.part, nid, dep.invert) }
       if qid == 0 { self.me.send((0, RMsg::Ret(nid))).expect("failed to send Ret"); }}}
