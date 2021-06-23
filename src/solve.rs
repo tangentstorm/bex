@@ -190,6 +190,7 @@ pub fn solve<S:SubSolver>(dst:&mut S, src0:&RawASTBase, sn:NID)->DstNid {
   // If it's already a const or a VID::var, though, there's nothing to do.
   if sn.is_lit() { DstNid{n:sn} }
   else {
+    dst.init(sn.vid());
     // renumber and garbage collect, leaving only the AST nodes reachable from sn
     let (src, top) = sort_by_cost(&src0, SrcNid{n:sn});
 
@@ -246,16 +247,15 @@ macro_rules! find_factors {
     if show_ast {
       GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
       GBASE.with(|gb| { gb.borrow().show_named(eq.clone().n, "eq") }); }
-    let top0:BaseBit = lt & eq;
-    let gb = GBASE.with(|gb| gb.replace(ASTBase::empty())); // swap out the thread-local one
-    let (src, top) = sort_by_cost(gb.raw_ast(), SrcNid{n:top0.n});
+    let top:BaseBit = lt & eq;
     assert!(nid::no_var(top.n), "top nid seems to be a literal. (TODO: handle these already solved cases)");
+    let gb = GBASE.with(|gb| gb.replace(ASTBase::empty())); // swap out the thread-local one
+    let src = gb.raw_ast();
     if show_ast { src.show_named(top.n, "ast"); }
     // --- now we have the ast, so solve ----
-    let mut dest = $TDEST::new(); dest.init(top.n.vid());
+    let mut dest = $TDEST::new();
     let answer:DstNid = solve(&mut dest, &src, top.n);
     // if show_res { dest.show_named(answer.n, "result") }
-    // except in this case we want to m
     type Factors = (u64,u64);
     let to_factors = |r:&Reg|->Factors {
       let t = r.as_usize();
