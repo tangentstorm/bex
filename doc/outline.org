@@ -1,0 +1,41 @@
+#+title: bex outline
+
+* bex is a toolkit for manipulating boolean expressions.
+- that is, statements in propositional logic
+
+* there is a tool for converting high-level rust functions to boolean expressions
+- write code that appears to operate on integers
+- pass in arrays of input bits
+- bex records numeric operations (addition, etc) as raw logical operations
+
+* the "atoms" of the system are NIDs
+- like an enum but a bitmapped u64 in practice
+- can act like a reference to a node in a database
+- expressions of fewer than 5 inputs can be represented directly in the nid
+
+* there are multiple representations, each optimized for different use cases
+- abstract syntax tree (AST) -- general-purpose representation of expressions in logical language.
+- various forms of "var-hi-lo" graphs (VHL):
+  - binary decision diagrams (BDD) -- compressed truth tables
+    - ITE graph using NIDs (node references contain the variable for faster(??) processing)
+    - "Scaffold" representation using XIDs (decoupled from the variable for easy swapping)
+  - agebraic normal form (ANF) -- XOR-sum of AND-products / mod-2 polynomial
+  - probably others in the future (zdd, biconditional bdd(??))
+- uncompressed truth tables as arrays of raw bits ("registers")
+
+* there are multiple strategies ("solvers") for converting AST representations into the other forms.
+- primitive VHLs can be combined to produce more complicated VHLs.
+- an AST can be solved "backwards" by substitution
+  - subsolver starts with a simple bdd representing the output and recursively substituties each sub-expression with a BDD of its direct inputs
+  - swapsolver is a type of subsolver that first sorts BDD to make the substitutions much more efficient
+- (planned) simplification solvers repeatedly simplifying the AST (by setting an input variable to 1 or 0) while trying to avoid exponential memory usage.
+  - "worldsolver" attempts to build a VHL while replacing only the bottom-most layers of the graph
+  - "clocksolver" avoids work by observing which inputs to each intermediate AST node actually affect the output in "brute force time"
+
+* bex is also an ongoing exercise in optimization
+- the problem space is inherently exponential
+- there's a lot of work done in parallel.
+  - general-purpose "swarm" framework for dividing work
+    - currently divides work between cpu cores
+    - (eventually) share with remote machines across network
+  - "work-in-progress" concept that allows short-circuiting
