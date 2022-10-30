@@ -50,7 +50,7 @@ impl Base for ANFBase {
 
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {
     macro_rules! w {
-      ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap(); }}
+      ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap() }}
     w!("digraph anf {{");
     w!("subgraph head {{ h1[shape=plaintext; label=\"ANF\"] }}");
     w!("  I[label=⊤; shape=square];");

@@ -2,7 +2,10 @@
 test_base_consts!(BDDBase);
 test_base_when!(BDDBase);
 
+#[cfg(test)]
 use  std::iter::FromIterator; use std::hash::Hash;
+
+#[cfg(test)]
 fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 
 // basic test suite

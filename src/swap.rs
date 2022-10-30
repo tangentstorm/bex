@@ -76,7 +76,7 @@ impl XHiLo { fn as_tup(&self)->(XID,XID) { (self.hi, self.lo) }}
 pub struct XVHL { pub v: VID, pub hi: XID, pub lo: XID }
 impl XVHL {
   fn hilo(&self)->XHiLo { XHiLo { hi:self.hi, lo:self.lo } }
-  fn is_var(&self)->bool { self.v.is_var() && self.hi == XID_I && self.lo == XID_O }}
+  pub fn is_var(&self)->bool { self.v.is_var() && self.hi == XID_I && self.lo == XID_O }}
 impl std::ops::Not for XVHL { type Output = XVHL; fn not(self)->XVHL { XVHL { v:self.v, hi:!self.hi, lo:!self.lo }}}
 
 /// Dummy value to stick into vhls[0]
@@ -394,7 +394,7 @@ impl XVHLScaffold {
   /// This is a much simpler form of the logic used by regroup().
   /// If you are doing more than one swap, you should call regroup() instead,
   /// because it will take advantage of multiple cores to perform all the swaps in parallel.
-  fn swap(&mut self, vu:VID) {
+  pub fn swap(&mut self, vu:VID) {
     #[cfg(test)] { self.validate(&format!("swap({}) in {:?}.", vu, self.vids)); }
     let uix = self.vix(vu).expect("requested vid was not in the scaffold.");
     if uix+1 == self.vids.len() { println!("warning: attempt to lift top vid {}", vu); return }
@@ -716,7 +716,7 @@ impl GraphViz for XVHLScaffold {
   fn write_dot(&self, _:NID, wr: &mut dyn std::fmt::Write) {
     // TODO: show only the given nid, instead of the whole scaffold
     // assert_eq!(o, NID::o(), "can't visualize individual nids yet. pass O for now");
-    macro_rules! w { ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap(); }}
+    macro_rules! w { ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap() }}
     w!("digraph XVHL {{");
     w!("subgraph head {{ h1[shape=plaintext; label=\"XVHL\"] }}");
     w!("  {{rank=same XO XI}}");
@@ -1049,12 +1049,14 @@ impl SwapWorker {
 // -- debugger ------------------------------------------------------------
 
 /// A simple RPN debugger to make testing easier.
+#[cfg(test)]
 struct XSDebug {
   /** scaffold */   xs: XVHLScaffold,
   /** vid->char */  vc: HashMap<VID,char>,  // used in fmt for branch vars
   /** char->vid */  cv: HashMap<char,VID>,  // used in run to map iden->vid
   /** data stack */ ds: Vec<XID>}
 
+#[cfg(test)]
 impl XSDebug {
   pub fn new(vars:&str)->Self {
     let mut this = XSDebug {

@@ -1,7 +1,9 @@
 ///! A module for efficient implementation of binary decision diagrams.
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::cell::RefCell;
+
+#[cfg(test)]
+use std::collections::HashSet;
 
 extern crate num_cpus;
 
@@ -254,7 +256,7 @@ impl Base for BDDBase {
 
   // generate dot file (graphviz)
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {
-    macro_rules! w { ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap(); }}
+    macro_rules! w { ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap() }}
     w!("digraph bdd {{");
     w!("subgraph head {{ h1[shape=plaintext; label=\"BDD\"] }}");
     w!("  I[label=⊤; shape=square];");
