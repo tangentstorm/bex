@@ -246,6 +246,8 @@
 
     // checks generated from the diagram:
 
+  // refresh nids that may have been garbage collected and thus renumbered
+  let n2 = xs.get(n1).unwrap().hi;
   assert_eq!(xs.xids_on_row(vu), HashSet::from_iter(vec![n1]), "row u didn't match expected values!");
   assert_eq!(xs.xids_on_row(vd), HashSet::from_iter(vec![n2, n3]), "row d didn't match expected values!");
  { let x=xs.get(n3).unwrap();
@@ -452,6 +454,9 @@
 
     // checks generated from the diagram:
 
+  // refresh nids that may have been garbage collected and thus renumbered
+  let n2 = xs.get(n1).unwrap().hi;
+  let n3 = xs.get(n1).unwrap().lo;
   assert_eq!(xs.xids_on_row(vu), HashSet::from_iter(vec![n1]), "row u didn't match expected values!");
   assert_eq!(xs.xids_on_row(vd), HashSet::from_iter(vec![n2, n3]), "row d didn't match expected values!");
  { let x=xs.get(n3).unwrap();

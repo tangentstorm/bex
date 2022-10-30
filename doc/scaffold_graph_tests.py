@@ -128,6 +128,19 @@ def rust_scaffold_setup(ru,rd,ites):
 def rust_scaffold_check(ru,rd,ites):
     """used to translate the "after" diagram into a set of rust assertions to make after calling swap()"""
     refs = Counter()
+    # the downward-moving row can have nodes garbage-collected, which means that
+    # the variables we defined in the template might need to be overwritten.
+    refresh = [-n for n in rd if n<0]
+    if refresh:
+        yield '  // refresh nids that may have been garbage collected and thus renumbered'
+        # we want to find them by travelling down the graph from row u, NOT by looking up the children:
+        for (i,t,e) in ites:
+            if i in ru:
+                for (b,x) in [('hi',t), ('lo',e)]:
+                    if x in refresh:
+                        refresh.remove(x)
+                        yield f'  let n{x} = xs.get(n{i}).unwrap().{b};'
+
     # check that the nodes on rows u and d match the diagram exactly:
     for v, row in [('u',ru), ('d',rd)]:
         actual = f"xs.xids_on_row(v{v})"
