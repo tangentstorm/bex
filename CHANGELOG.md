@@ -4,6 +4,10 @@ A rust library for working with boolean expressions.
 
 ## 0.1.6 (in progress)
 
+- Cleaned up all compiler warnings
+
+- Fixed test failures that appeared with different threading configurations.
+
 - Remove `nvars` from all `Base` implementations. This member was
   only really useful when the height of a node wasn't obvious from
   the variable index.
