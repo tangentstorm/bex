@@ -1,9 +1,12 @@
+extern crate hashbrown;
+use hashbrown::HashSet;
+
 #[macro_use]
 extern crate bencher;
 use bencher::Bencher;
 
 extern crate bex;
-use bex::{bdd, find_factors, int::GBASE};
+use bex::{bdd, Base, find_factors, int::GBASE, reg::Reg};
 type BDD = bdd::BDDBase;
 
 pub fn tiny(b: &mut Bencher) {
