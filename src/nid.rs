@@ -145,53 +145,52 @@ fn permute_bits(x:u32, pv:&[u8])->u32 {
 
 
 impl NID {
-  pub fn var(v:u32)->Self { Self::from_vid(vid::VID::var(v)) }
-  pub fn vir(v:u32)->Self { Self::from_vid(vid::VID::vir(v)) }
+  #[inline(always)] pub fn var(v:u32)->Self { Self::from_vid(vid::VID::var(v)) }
+  #[inline(always)] pub fn vir(v:u32)->Self { Self::from_vid(vid::VID::vir(v)) }
   // return a nid that is not tied to a variable
-  pub fn ixn(ix:usize)->Self { nvi(NOVAR, ix) }
-  pub fn from_var(v:vid::VID)->Self { NID::var(v.var_ix() as u32)}
-  pub fn from_vir(v:vid::VID)->Self { NID::vir(v.vir_ix() as u32)}
-  pub fn from_vid(v:vid::VID)->Self { nv(vid_to_old(v)) }
-  pub fn from_vid_idx(v:vid::VID, i:usize)->Self { nvi(vid_to_old(v), i) }
-  pub fn vid(&self)->vid::VID { old_to_vid(vid(*self)) }
+  #[inline(always)] pub fn ixn(ix:usize)->Self { nvi(NOVAR, ix) }
+  #[inline(always)] pub fn from_var(v:vid::VID)->Self { NID::var(v.var_ix() as u32)}
+  #[inline(always)] pub fn from_vir(v:vid::VID)->Self { NID::vir(v.vir_ix() as u32)}
+  #[inline(always)] pub fn from_vid(v:vid::VID)->Self { nv(vid_to_old(v)) }
+  #[inline(always)] pub fn from_vid_idx(v:vid::VID, i:usize)->Self { nvi(vid_to_old(v), i) }
+  #[inline(always)] pub fn vid(&self)->vid::VID { old_to_vid(vid(*self)) }
 
   /// Does the NID refer to one of the two constant nodes (O or I)?
-  pub fn is_const(&self)->bool { (self.n & T) != 0 }
+  #[inline(always)] pub fn is_const(&self)->bool { (self.n & T) != 0 }
 
   /// Does the NID represent a VID (either Var or Vir)?
-  pub fn is_vid(&self)->bool { (self.n & VAR) != 0 }
+  #[inline(always)] pub fn is_vid(&self)->bool { (self.n & VAR) != 0 }
 
   /// Does the NID represent an input variable?
-  pub fn is_var(&self)->bool { self.is_vid() && self.vid().is_var() }
+  #[inline(always)] pub fn is_var(&self)->bool { self.is_vid() && self.vid().is_var() }
 
   /// Does the NID represent a virtual variable?
-  pub fn is_vir(&self)->bool { self.is_vid() && self.vid().is_vir() }
+  #[inline(always)] pub fn is_vir(&self)->bool { self.is_vid() && self.vid().is_vir() }
 
   /// Is n a literal (variable or constant)?
-  pub fn is_lit(&self)->bool { self.is_vid() | self.is_const()}
+  #[inline(always)] pub fn is_lit(&self)->bool { self.is_vid() | self.is_const()}
 
   /// Is the NID inverted? That is, does it represent `!(some other nid)`?
-  pub fn is_inv(&self)->bool { (self.n & INV) != 0 }
+  #[inline(always)] pub fn is_inv(&self)->bool { (self.n & INV) != 0 }
 
   /// is this NID just an indexed node with no variable?
-  pub fn is_ixn(self)->bool { vid(self)==NOVAR }
+  #[inline(always)] pub fn is_ixn(self)->bool { vid(self)==NOVAR }
 
   /// Map the NID to an index. (I.e., if n=idx(x), then x is the nth node branching on var(x))
-  pub fn idx(self)->usize { (self.n & IDX_MASK) as usize }
+  #[inline(always)] pub fn idx(self)->usize { (self.n & IDX_MASK) as usize }
 
   /// Return the NID with the 'INV' flag removed.
   // !! pos()? abs()? I don't love any of these names.
-  pub fn raw(self)->NID { NID{ n: self.n & !INV }}
+  #[inline(always)] pub fn raw(self)->NID { NID{ n: self.n & !INV }}
 
   /// construct a NID holding a truth table for up to 5 input bits.
-  pub const fn fun(arity:u8, tbl:u32)->Self { NID { n:F+(tbl as u64)+((arity as u64)<< 32)} }
+  #[inline(always)] pub const fn fun(arity:u8, tbl:u32)->Self { NID { n:F+(tbl as u64)+((arity as u64)<< 32)} }
   /// is this NID a function (truth table)?
-  pub fn is_fun(&self)->bool { self.n & F == F }
+  #[inline(always)] pub fn is_fun(&self)->bool { self.n & F == F }
 
+  #[inline(always)] pub fn tbl(&self)->Option<u32> { if self.is_fun(){ Some(self.idx() as u32)} else {None} }
 
-  pub fn tbl(&self)->Option<u32> { if self.is_fun(){ Some(self.idx() as u32)} else {None} }
-
-  pub fn arity(&self)->Option<u8> {
+  #[inline(always)] pub fn arity(&self)->Option<u8> {
     if self.is_fun(){ Some((self.n >> 32 & 0xff) as u8) }
     else if self.is_lit() { Some(0) }
     // !! TODO: decide what arity means for general nids.
