@@ -11,34 +11,35 @@ pub struct QMsg<Q> { qid:QID, q: Q }
 pub struct RMsg<R> { wid: WID, qid:QID, r:Option<R> }
 
 /// worker id
-#[derive(Debug,PartialEq,Eq,Hash,Clone,Copy)]
+#[derive(Debug,Default,PartialEq,Eq,Hash,Clone,Copy)]
 pub struct WID { n:usize }
 
-pub trait Worker<Q,R>:Send+Sync+Default where R:Debug {
+pub trait Worker<Q,R>:Send+Sync where R:Debug {
 
-  fn new(_wid:WID)->Self { Self::default() }
+  fn new(_wid:WID)->Self;
+  fn get_wid(&self)->WID;
+
+  fn send_msg(&self, tx:&Sender<RMsg<R>>, qid:QID, r:Option<R>) {
+    // println!("\x1b[32mSENDING msg: qid:{:?} for wid: {:?} -> r:{:?}\x1b[0m", &qid, wid, &r);
+    if tx.send(RMsg{ wid:self.get_wid(), qid:qid.clone(), r }).is_err() {
+       self.on_work_send_err(qid) }}
 
   /// Generic worker lifecycle implementation.
   /// Hopefully, you won't need to override this.
   /// The worker receives a stream of Option(Q) structs (queries),
   /// and returns an R (result) for each one.
   fn work_loop(&mut self, wid:WID, rx:&Receiver<Option<QMsg<Q>>>, tx:&Sender<RMsg<R>>) {
-    // any phase can send a message if it wants:
-    macro_rules! work_phase {
-        [$qid:expr, $x:expr] => {
-          let (qid, r) = ($qid, $x);
-          // println!("\x1b[32mSENDING WORK_PHASE msg: qid:{:?} for wid: {:?} -> r:{:?}\x1b[0m", &qid, wid, &r);
-          if tx.send(RMsg{ wid, qid, r }).is_err() { self.on_work_send_err($qid) }}}
     // and now the actual worker lifecycle:
-    work_phase![QID::INIT, self.work_init(wid)];
+    let msg = self.work_init(wid); self.send_msg(&tx, QID::INIT, msg);
     let mut stream = rx.iter();
     while let Some(Some(QMsg{qid, q})) = stream.next() {
-      if let QID::STEP(_) = qid { work_phase![qid.clone(), self.work_step(&qid, q)]; }
+      if let QID::STEP(_) = qid {
+        let msg = self.work_step(&qid, q); self.send_msg(&tx, qid, msg); }
       else { panic!("Worker {:?} got unexpected qid instead of STEP: {:?}", wid, qid)}}
-    work_phase![QID::DONE, self.work_done()]; }
+    let msg = self.work_done(); self.send_msg(&tx, QID::DONE, msg); }
 
   /// What to do if a message send fails. By default, just print to stdout.
-  fn on_work_send_err(&mut self, qid:QID) {
+  fn on_work_send_err(&self, qid:QID) {
     println!("failed to send response for qid:{:?}", qid); }
 
   /// Override this to implement your worker's query-handling logic.
@@ -61,7 +62,7 @@ pub enum SwarmCmd<Q:Debug,V:Debug> {
   // kill the worker
   Kill(WID)}
 
-pub struct Swarm<Q,R,W> where W:Default+Worker<Q,R>, Q:Debug, R:Debug {
+pub struct Swarm<Q,R,W> where W:Worker<Q,R>, Q:Debug, R:Debug {
   /// next QID
   nq: usize,
   //// sender that newly spawned workers can clone to talk to me.
@@ -82,7 +83,7 @@ pub struct Swarm<Q,R,W> where W:Default+Worker<Q,R>, Q:Debug, R:Debug {
   /// handles to the actual threads
   threads: Vec<thread::JoinHandle<()>> }
 
-impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug, R:'static+Send+Debug, W:Default+Worker<Q, R> {
+impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug, R:'static+Send+Debug, W:Worker<Q, R> {
 
   pub fn new(num_workers:usize)->Self {
     let (me, rx) = channel();

@@ -195,7 +195,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   let io = XHiLo{ hi: XID_I, lo: XID_O };
   let mut ru = XVHLRow::new(); ru.hm.insert(io, IxRc{ ix:v, irc: 1, erc:0 });
   let mut rd = XVHLRow::new(); rd.hm.insert(io, IxRc{ ix:w, irc: 1, erc:0 });
-  let mut worker = SwapWorker::default();
+  let mut worker = SwapWorker::new(WID::default());
   let res = worker.set_ru(VID::var(0), ru).set_rd(VID::var(1), rd).gather_umovs();
   assert_eq!(0, res.len());}
 

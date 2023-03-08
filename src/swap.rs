@@ -408,7 +408,7 @@ impl XVHLScaffold {
     //           oo   oi  io  ii                oo   io  oi   ii
     let ru = self.rows.remove(&vu).unwrap();
     let rd = self.rows.remove(&vd).unwrap();
-    let mut worker = SwapWorker::default();
+    let mut worker = SwapWorker::new(WID::default());
     worker.set_ru(vu, ru).set_rd(vd, rd).find_movers();
     let needed = worker.recycle();
     let xids = self.alloc(needed);
@@ -778,6 +778,8 @@ enum XWIP1 { XID(XID), NEW(i64) }
 enum ROW { U, D }
 
 struct SwapWorker {
+  // worker id
+  wid: WID,
   /// the upward-moving variable (only used for tracing)
   vu:VID,
   /// the downward-moving variable (only used for tracing)
@@ -803,14 +805,16 @@ struct SwapWorker {
   /// new parent nodes to create on row d
   dnew: HashMap<(XID,XID), IxRc> }
 
-impl Default for SwapWorker {
-  fn default()->SwapWorker {
-    SwapWorker{ next:0,
+impl Worker<Q,R> for SwapWorker {
+
+  fn new(wid:WID)->SwapWorker {
+    SwapWorker{ wid, next:0,
       vu:VID::nov(), ru:XVHLRow::new(), ru_map:HashMap::new(),
       vd:VID::nov(), rd:XVHLRow::new(), rd_map:HashMap::new(),
-      refs:HashMap::new(), dels:vec![], mods:vec![], umov:vec![], dnew:HashMap::new() }}}
+      refs:HashMap::new(), dels:vec![], mods:vec![], umov:vec![], dnew:HashMap::new() }}
 
-impl Worker<Q,R> for SwapWorker {
+  fn get_wid(&self)->WID { self.wid }
+
   fn work_step(&mut self, _qid:&QID, q:Q)->Option<R> {
     match q {
       Q::Init{vu, ru} => {

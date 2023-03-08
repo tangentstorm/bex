@@ -7,7 +7,7 @@ use {wip, wip::{QID,Dep,WIP,WorkState}};
 use vhl::{HiLoPart, VHLParts};
 use {vid::VID, nid::{NID}, vhl::{HiLo}};
 use bdd::{ITE, Norm, BddState, BDDHashMap, COUNT_XMEMO_TEST, COUNT_XMEMO_FAIL};
-use swarm;
+use {swarm, swarm::WID};
 
 // ----------------------------------------------------------------
 // BddSwarm Protocol
@@ -36,8 +36,10 @@ impl std::fmt::Debug for Q {
 // ----------------------------------------------------------------
 
 #[derive(Default)]
-struct BddWorker { state:Option<Arc<BddState>> }
+struct BddWorker { wid:WID, state:Option<Arc<BddState>> }
 impl swarm::Worker<Q,R> for BddWorker {
+  fn new(wid:WID)->Self { BddWorker{ wid, ..Default::default() }}
+  fn get_wid(&self)->WID { self.wid }
   fn work_step(&mut self, _sqid:&swarm::QID, q:Q)->Option<R> {
     match q {
       Q::Cache(s) => { self.state = Some(s); None }
@@ -272,7 +274,7 @@ fn swarm_ite_norm(state: &Arc<BddState>, ite:ITE)->R {
 /// This is the loop run by each thread in the swarm.
 fn swarm_loop(tx:RTx, rx:QRx, state:Arc<BddState>) {
   use swarm::{QID, Worker};
-  let mut w:BddWorker = BddWorker{ state:Some(state) };
+  let mut w:BddWorker = BddWorker{ wid:WID::default(), state:Some(state) };
   for (oqid, q) in rx.iter() {
     let sqid:QID = match q {
       Q::Cache(_) => QID::STEP(0),
