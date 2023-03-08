@@ -94,7 +94,6 @@ pub trait BInt<T:TBit> : Sized {
   fn i(&self) -> T;
   fn o(&self) -> T;
   fn zero() -> Self;
-  fn new(&self, u:usize) -> Self;
   fn get(&self, i:u32) -> T;
   fn set(&mut self, i:u32, v:T);
   fn rotate_right(&self, y:u32) -> Self {
@@ -185,7 +184,6 @@ macro_rules! xint_type {
       fn zero()->Self { $T::new(0) }
       fn o(&self)->BaseBit { gbase_o() }
       fn i(&self)->BaseBit { gbase_i() }
-      fn new(&self, u:usize)->Self { $T::new(u) }
       fn get(&self, i:u32)->BaseBit { self.bits[i as usize].clone() }
       fn set(&mut self, i:u32, v:BaseBit) { self.bits[i as usize]=v }
 
