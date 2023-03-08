@@ -3,10 +3,6 @@ use vid;
 
 // -- core data types ---
 
-/// (OLD) Variable ID: uniquely identifies an input variable in the BDD.
-/// This name is private to the nid module since vid::VID supercedes it.
-type OLDVID = usize;
-
 /// A NID represents a node in a Base. Essentially, this acts like a tuple
 /// containing a VID and index, but for performance reasons, it is packed into a u64.
 /// See below for helper functions that manipulate and analyze the packed bits.
@@ -52,18 +48,37 @@ pub const O:NID = NID{n: T};
 /// NID of the virtual node represeting the constant function 1, or "always true."
 pub const I:NID = NID{ n:T|INV };
 
-// NID support routines
+// scaffolding for moving ASTBase over to use NIDS
+
+/// bit buffer used for extracting/inserting a VID
+type VIDBITS = usize;
 
 /// On which variable does this node branch? (I and O branch on TV)
-#[inline(always)] fn vid(x:NID)->OLDVID { ((x.n & !(INV|VAR)) >> 32) as OLDVID}
+#[inline(always)] fn vid_bits(x:NID)->VIDBITS { ((x.n & !(INV|VAR)) >> 32) as VIDBITS}
 
 /// Construct the NID for the (virtual) node corresponding to an input variable.
 /// Private since moving to vid::VID, because this didn't set the "real" bit, and
 /// I want the real bit to eventually go away in favor of an unset "virtual" bit.
-#[inline(always)] fn nv(v:OLDVID)->NID { NID { n:((v as u64) << 32)|VAR }}
+#[inline(always)] fn nv(v:VIDBITS)->NID { NID { n:((v as u64) << 32)|VAR }}
 
 /// Construct a NID with the given variable and index.
-#[inline(always)] fn nvi(v:OLDVID,i:usize)->NID { NID{n: ((v as u64) << 32) + i as u64} }
+#[inline(always)] fn nvi(v:VIDBITS,i:usize)->NID { NID{n: ((v as u64) << 32) + i as u64} }
+
+const NOVAR:VIDBITS = (1<<26) as VIDBITS; // 134_217_728
+const TOP:VIDBITS = (T>>32) as VIDBITS; // 536_870_912, // 1<<29, same as nid::T
+
+fn vid_to_bits(v:vid::VID)->VIDBITS {
+  if v.is_nov() { NOVAR }
+  else if v.is_top() { TOP }
+  else if v.is_var() { v.var_ix() | (RVAR>>32) as VIDBITS }
+  else if v.is_vir() { v.vir_ix() as VIDBITS }
+  else { panic!("unknown vid::VID {:?}?", v) }}
+
+fn bits_to_vid(o:VIDBITS)->vid::VID {
+  if o == TOP { vid::VID::top() }
+  else if o == NOVAR { vid::VID::nov() }
+  else if o & (RVAR>>32) as VIDBITS > 0 { vid::VID::var((o & !(RVAR>>32) as VIDBITS) as u32) }
+  else { vid::VID::vir(o as u32) }}
 
 
 impl std::ops::Not for NID {
@@ -97,19 +112,19 @@ impl fmt::Debug for NID { // for test suite output
   assert_eq!(NID::vir(0), new(0x4000000000000000u64));
   assert_eq!(NID::var(0), new(0x5000000000000000u64));
   assert_eq!(NID::vir(1),  new(0x4000000100000000u64));
-  assert!(vid(NID::vir(0)) < vid(NID::var(0)));
+  assert!(vid_bits(NID::vir(0)) < vid_bits(NID::var(0)));
   assert_eq!(nvi(0,0), new(0x0000000000000000u64));
   assert_eq!(nvi(1,0), new(0x0000000100000000u64)); }
 
 #[test] fn test_var() {
-  assert_eq!(vid(O), 536_870_912, "var(O)");
-  assert_eq!(vid(I), vid(O), "INV bit shouldn't be part of variable");
-  assert_eq!(vid(NID::vir(0)), 0);
-  assert_eq!(vid(NID::var(0)), 268_435_456);}
+  assert_eq!(vid_bits(O), 536_870_912, "var(O)");
+  assert_eq!(vid_bits(I), vid_bits(O), "INV bit shouldn't be part of variable");
+  assert_eq!(vid_bits(NID::vir(0)), 0);
+  assert_eq!(vid_bits(NID::var(0)), 268_435_456);}
 
 #[test] fn test_cmp() {
   let v = |x:usize|->NID { nv(x) };  let x=|x:u32|->NID { NID::var(x) };
-  let o=vid;   let n=|x:NID|x.vid();
+  let o=vid_bits;   let n=|x:NID|x.vid();
   assert!(o(O) == o(I),      "old:no=no");  assert!(n(O) == n(I),       "new:no=no");
   assert!(o(O)    > o(v(0)), "old:no>v0");  assert!(n(O).is_below(&n(v(0))), "new:no bel v0");
   assert!(o(O)    > o(x(0)), "old:no>x0");  assert!(n(O).is_below(&n(x(0))), "new:no bel x0");
@@ -117,23 +132,6 @@ impl fmt::Debug for NID { // for test suite output
   assert!(o(v(1)) < o(x(0)), "old:v1<x0");  assert!(n(v(1)).is_above(&n(x(0))),  "new:v1 abv x0");}
 
 
-// scaffolding for moving ASTBase over to use NIDS
-const NOVAR:OLDVID = (1<<26) as OLDVID; // 134_217_728
-const TOP:OLDVID = (T>>32) as OLDVID; // 536_870_912, // 1<<29, same as nid::T
-
-fn vid_to_old(v:vid::VID)->OLDVID {
-  if v.is_nov() { NOVAR }
-  else if v.is_top() { TOP }
-  else if v.is_var() { v.var_ix() | (RVAR>>32) as OLDVID }
-  else if v.is_vir() { v.vir_ix() as OLDVID }
-  else { panic!("unknown vid::VID {:?}?", v) }}
-
-fn old_to_vid(o:OLDVID)->vid::VID {
-  if o == TOP { vid::VID::top() }
-  else if o == NOVAR { vid::VID::nov() }
-  else if o & (RVAR>>32) as OLDVID > 0 { vid::VID::var((o & !(RVAR>>32) as OLDVID) as u32) }
-  else { vid::VID::vir(o as u32) }}
-
 /// helper for 'fun' (function table) nids
 /// u32 x contains the bits to permute.
 /// pv is a permutation vector (the bytes 0..=31 in some order)
@@ -147,13 +145,14 @@ fn permute_bits(x:u32, pv:&[u8])->u32 {
 impl NID {
   #[inline(always)] pub fn var(v:u32)->Self { Self::from_vid(vid::VID::var(v)) }
   #[inline(always)] pub fn vir(v:u32)->Self { Self::from_vid(vid::VID::vir(v)) }
+  #[inline(always)] pub fn from_var(v:vid::VID)->Self { Self::var(v.var_ix() as u32)}
+  #[inline(always)] pub fn from_vir(v:vid::VID)->Self { Self::vir(v.vir_ix() as u32)}
+
+  #[inline(always)] pub fn from_vid(v:vid::VID)->Self { nv(vid_to_bits(v)) }
+  #[inline(always)] pub fn from_vid_idx(v:vid::VID, i:usize)->Self { nvi(vid_to_bits(v), i) }
+  #[inline(always)] pub fn vid(&self)->vid::VID { bits_to_vid(vid_bits(*self)) }
   // return a nid that is not tied to a variable
   #[inline(always)] pub fn ixn(ix:usize)->Self { nvi(NOVAR, ix) }
-  #[inline(always)] pub fn from_var(v:vid::VID)->Self { NID::var(v.var_ix() as u32)}
-  #[inline(always)] pub fn from_vir(v:vid::VID)->Self { NID::vir(v.vir_ix() as u32)}
-  #[inline(always)] pub fn from_vid(v:vid::VID)->Self { nv(vid_to_old(v)) }
-  #[inline(always)] pub fn from_vid_idx(v:vid::VID, i:usize)->Self { nvi(vid_to_old(v), i) }
-  #[inline(always)] pub fn vid(&self)->vid::VID { old_to_vid(vid(*self)) }
 
   /// Does the NID refer to one of the two constant nodes (O or I)?
   #[inline(always)] pub fn is_const(&self)->bool { (self.n & T) != 0 }
@@ -174,7 +173,7 @@ impl NID {
   #[inline(always)] pub fn is_inv(&self)->bool { (self.n & INV) != 0 }
 
   /// is this NID just an indexed node with no variable?
-  #[inline(always)] pub fn is_ixn(self)->bool { vid(self)==NOVAR }
+  #[inline(always)] pub fn is_ixn(self)->bool { vid_bits(self)==NOVAR }
 
   /// Map the NID to an index. (I.e., if n=idx(x), then x is the nth node branching on var(x))
   #[inline(always)] pub fn idx(self)->usize { (self.n & IDX_MASK) as usize }
@@ -185,6 +184,7 @@ impl NID {
 
   /// construct a NID holding a truth table for up to 5 input bits.
   #[inline(always)] pub const fn fun(arity:u8, tbl:u32)->Self { NID { n:F+(tbl as u64)+((arity as u64)<< 32)} }
+
   /// is this NID a function (truth table)?
   #[inline(always)] pub fn is_fun(&self)->bool { self.n & F == F }
 
