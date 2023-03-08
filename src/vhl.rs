@@ -1,7 +1,7 @@
 ///! (Var, Hi, Lo) triples
 use std::collections::BinaryHeap;
 use std::collections::HashSet;
-use nid::{NID, IDX};
+use nid::NID;
 use vid::VID;
 
 pub type VHLHashMap<K,V> = hashbrown::hash_map::HashMap<K,V>;
@@ -97,11 +97,11 @@ pub struct HiLoCache {
   /// variable-agnostic hi/lo pairs for individual bdd nodes.
   hilos: Vec<HiLo>,
   /// reverse map for hilos.
-  index: VHLHashMap<HiLo, IDX>,
+  index: VHLHashMap<HiLo, usize>,
   /// variable-specific memoization. These record (v,hilo) lookups.
   /// There shouldn't be any need for this, but an undiagnosed
   /// bug prevents me from removing it.
-  vindex: VHLHashMap<(VID,HiLo), IDX>}
+  vindex: VHLHashMap<(VID,HiLo), usize>}
 
 // TODO: remove vindex. There's no reason to store (x1,y,z) separately from (y,z).
 // !! Previously, in test_nano_bdd, I wind up with a node branching on x2
@@ -142,10 +142,10 @@ impl HiLoCache {
   #[inline] pub fn insert(&mut self, v:VID, hl0:HiLo)->NID {
     let inv = hl0.lo.is_inv();
     let hilo = if inv { hl0.invert() } else { hl0 };
-    let ix:IDX =
+    let ix:usize =
       if let Some(&ix) = self.index.get(&hilo) { ix }
       else {
-        let ix = self.hilos.len() as IDX;
+        let ix = self.hilos.len();
         self.hilos.push(hilo);
         self.index.insert(hilo, ix);
         self.vindex.insert((v,hilo), ix);

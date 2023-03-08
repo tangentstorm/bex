@@ -39,8 +39,8 @@ impl Walkable for ANFBase {
     if !seen.contains(&n) {
       seen.insert(n); let VHL{ v, hi, lo, } = self.fetch(n);
       if topdown { f(n,v,hi,lo) }
-      if !nid::is_const(hi) { self.step(hi, f, seen, topdown) }
-      if !nid::is_const(lo) { self.step(lo, f, seen, topdown) }
+      if !hi.is_const() { self.step(hi, f, seen, topdown) }
+      if !lo.is_const() { self.step(lo, f, seen, topdown) }
       if !topdown { f(n,v,hi,lo) }}}}
 
 
@@ -75,12 +75,11 @@ impl Base for ANFBase {
       VidOrdering::Above => n, // n independent of v
       VidOrdering::Level => self.fetch(n).lo,
       VidOrdering::Below => {
-        let VHL{ v:_, hi, lo } = self.fetch(nid::raw(n));
+        let VHL{ v:_, hi, lo } = self.fetch(n.raw());
         let hi1 = self.when_lo(v, hi);
         let lo1 = self.when_lo(v, lo);
-        let mut res = self.vhl(nv, hi1, lo1);
-        if nid::is_inv(n) != nid::is_inv(res) { res = !res }
-        res }}}
+        let res = self.vhl(nv, hi1, lo1);
+        if n.is_inv() == res.is_inv() { res } else { !res }}}}
 
   fn when_hi(&mut self, v:VID, n:NID)->NID {
     let nv = n.vid();
@@ -88,12 +87,11 @@ impl Base for ANFBase {
       VidOrdering::Above => n,  // n independent of v
       VidOrdering::Level => self.fetch(n).hi,
       VidOrdering::Below => {
-        let VHL{ v:_, hi, lo } = self.fetch(nid::raw(n));
+        let VHL{ v:_, hi, lo } = self.fetch(n.raw());
         let hi1 = self.when_hi(v, hi);
         let lo1 = self.when_hi(v, lo);
-        let mut res = self.vhl(nv, hi1, lo1);
-        if nid::is_inv(n) != nid::is_inv(res) { res = !res }
-        res }}}
+        let res = self.vhl(nv, hi1, lo1);
+        if n.is_inv() == res.is_inv() { res } else { !res }}}}
 
   // logical ops
 
@@ -101,14 +99,14 @@ impl Base for ANFBase {
     if let Some(nid) = simp::and(x,y) { nid }
     // We want any 'xor 1' (not) to be kept at the top level. There are four cases:
     else {
-      let (a,b) = (nid::raw(x), nid::raw(y));  // x!=I because it was handled above.
-      if nid::is_inv(x) {
+      let (a,b) = (x.raw(), y.raw());  // x!=I because it was handled above.
+      if x.is_inv() {
         // case 0:  x:~a & y:~b ==> 1 ^ a ^ ab ^ b
-        if nid::is_inv(y) { expr![ self,  (I ^ (a ^ ((a & b) ^ b)))] }
+        if y.is_inv() { expr![ self,  (I ^ (a ^ ((a & b) ^ b)))] }
         // case 1:  x:~a & y:b ==>  ab ^ b
         else { expr![ self, ((a & b) ^ b)] }}
       // case 2: x:a & y:~b ==> ab ^ a
-      else if nid::is_inv(y) { expr![ self, ((a & b) ^ a)] }
+      else if y.is_inv() { expr![ self, ((a & b) ^ a)] }
       // case 3: x:a & y:b ==> ab
       else { self.calc_and(x, y) }}}
 
@@ -116,10 +114,9 @@ impl Base for ANFBase {
     if let Some(nid) = simp::xor(x,y) { nid }
     else {
       // xor the raw anf expressions (without any 'xor 1' bits), then xor the bits.
-      let (a, b) = (nid::raw(x), nid::raw(y));
+      let (a, b) = (x.raw(), y.raw());
       let res = self.calc_xor(a, b);
-      if nid::is_inv(x) == nid::is_inv(y) { res }
-      else { !res }}}
+      if x.is_inv() == y.is_inv() { res } else { !res }}}
 
   fn or(&mut self, x:NID, y:NID)->NID {
     if let Some(nid) = simp::or(x,y) { nid }
@@ -150,11 +147,11 @@ impl Base for ANFBase {
 impl ANFBase {
 
   fn fetch(&self, n:NID)->VHL {
-    if nid::is_vid(n) { // variables are (v*I)+O if normal, (v*I)+I if inverted.
-      VHL{v:n.vid(), hi:I, lo: if nid::is_inv(n) { I } else { O } }}
+    if n.is_vid() { // variables are (v*I)+O if normal, (v*I)+I if inverted.
+      VHL{v:n.vid(), hi:I, lo: if n.is_inv() { I } else { O } }}
     else {
-      let mut anf = self.nodes[nid::idx(n)];
-      if nid::is_inv(n) { anf.lo = !anf.lo }
+      let mut anf = self.nodes[n.idx()];
+      if n.is_inv() { anf.lo = !anf.lo }
       anf }}
 
   fn vhl(&mut self, v:VID, hi0:NID, lo0:NID)->NID {
@@ -162,23 +159,23 @@ impl ANFBase {
     // we need to do the same logic as xor() to handle the 'not' bit.
     // note that the cache only ever contains 'raw' nodes, except hi=I
     if hi0 == I && lo0 == O { return NID::from_vid(v) }
-    let (hi,lo) = (hi0, nid::raw(lo0));
+    let (hi,lo) = (hi0, lo0.raw());
     let res =
       if let Some(&nid) = self.cache.get(&VHL{v, hi, lo}) { nid }
       else {
         let anf = VHL{ v, hi, lo };
-        let nid = NID::from_vid_idx(v, self.nodes.len() as u32);
+        let nid = NID::from_vid_idx(v, self.nodes.len());
         self.cache.insert(anf, nid);
         self.nodes.push(anf);
         nid };
-    if nid::is_inv(lo) { !res } else { res }}
+    if lo.is_inv() { !res } else { res }}
 
   fn calc_and(&mut self, x:NID, y:NID)->NID {
     let (xv, yv) = (x.vid(), y.vid());
     match xv.cmp_depth(&yv) {
       VidOrdering::Above =>
         // base case: x:a + y:(pq+r)  a<p<q, p<r  --> a(pq+r)
-        if nid::is_vid(x) { self.vhl(x.vid(), y, O) }
+        if x.is_vid() { self.vhl(x.vid(), y, O) }
         else {
           //     x:(ab+c) * y:(pq+r)
           //  =  ab(pq) + ab(r) + c(pq) + c(r)
@@ -258,7 +255,7 @@ impl ANFBase {
 
   pub fn next_term(&self, mut cur:Cursor)->Option<Cursor> {
     self.log(&cur,"== next_term()");
-    if !nid::is_const(cur.node) {
+    if !cur.node.is_const() {
       println!("warning: ANFBase::next_term should be called on cursor pointing at a leaf.");
       cur.descend(self); }
     loop {
@@ -329,8 +326,8 @@ impl ANFBase {
   /// transfer node to another base (e.g. bdd), and return the NID from that base.
   pub fn to_base(&self, n:NID, dest: &mut dyn Base)->NID {
     let mut sum = nid::O;
-    if nid::is_inv(n) { sum = nid::I }
-    for t in self.terms(nid::raw(n)) {
+    if n.is_inv() { sum = nid::I }
+    for t in self.terms(n.raw()) {
       let mut term = I;
       for v in t.hi_bits() {
         term = dest.and(term, NID::var(v as u32));

@@ -29,7 +29,7 @@ impl RawASTBase {
     match self.hash.get(&ops) {
       Some(&n) => n,
       None => {
-        let nid = nid::ixn(self.bits.len() as u32);
+        let nid = NID::ixn(self.bits.len());
         self.bits.push(ops.clone());
         self.hash.insert(ops, nid);
         nid }}}
@@ -56,8 +56,8 @@ impl RawASTBase {
     self.step(n,f,&mut seen)}
 
   fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>) where F:FnMut(NID) {
-    if !seen.contains(&nid::raw(n)) {
-      seen.insert(nid::raw(n));
+    if !seen.contains(&n.raw()) {
+      seen.insert(n.raw());
       f(n);
       for op in self.get_ops(n).to_rpn() {
         if !op.is_fun() {
@@ -82,12 +82,12 @@ impl RawASTBase {
         let cost = |x:NID| {
           if x.is_const() { 0 }
           else if x.is_vid() { 1 }
-          else if nid::no_var(x) { costs[nid::idx(x)] }
+          else if x.is_ixn() { costs[x.idx()] }
           else { todo!("cost({:?})", x) }};
         let mask = |x:NID| {
-          if nid::is_const(x) { 0 }
+          if x.is_const() { 0 }
           else if x.is_vid() { vm(self, x.vid()) }
-          else if nid::no_var(x) { masks[nid::idx(x)] }
+          else if x.is_ixn() { masks[x.idx()] }
           else { todo!("mask({:?})", x) }};
         let mut m = 0u64;
         let mut c = 0u32;
@@ -119,12 +119,12 @@ impl RawASTBase {
   /// seen gets marked true for every nid that is a dependency of keep.
   /// TODO:: use a HashSet for 'seen' in markdeps()
   fn markdeps(&self, keep:NID, seen:&mut Vec<bool>) {
-    if nid::is_lit(keep) { return }
-    if !nid::no_var(keep) { todo!("markdeps({:?})", keep) }
-    if !seen[nid::idx(keep)] {
-      seen[nid::idx(keep)] = true;
+    if keep.is_lit() { return }
+    if !keep.is_ixn() { todo!("markdeps({:?})", keep) }
+    if !seen[keep.idx()] {
+      seen[keep.idx()] = true;
       let mut f = |x:&NID| { self.markdeps(*x, seen) };
-      for op in self.bits[nid::idx(keep)].to_rpn() { if !op.is_fun() { f(op) }}}}
+      for op in self.bits[keep.idx()].to_rpn() { if !op.is_fun() { f(op) }}}}
 
 
   /// Construct a copy of the base, with the nodes reordered according to
@@ -139,10 +139,10 @@ impl RawASTBase {
       for (i,&n) in pv.iter().enumerate() { res[n] = Some(i) }
       res };
     let nn = |x:NID|{
-      if nid::is_lit(x) { x }
+      if x.is_lit() { x }
       else {
-        let r = nid::ixn(new[nid::idx(x)].expect("bad index in AST::permute") as u32);
-        if nid::is_inv(x) { !r } else { r }}};
+        let r = NID::ixn(new[x.idx()].expect("bad index in AST::permute"));
+        if x.is_inv() { !r } else { r }}};
     let newbits = pv.iter().map(|&old| {
       let new:Vec<NID> = self.bits[old].to_rpn().map(|&x| { if x.is_fun() { x } else { nn(x) }}).collect();
       ops::rpn(&new) }).collect();
@@ -163,10 +163,10 @@ impl RawASTBase {
       if deps[i] { new[i]=Some(old.len()); old.push(i); }}
 
     (self.permute(&old), keep.iter().map(|&i|
-      nid::ixn(new[nid::idx(i)].expect("?!") as u32)).collect()) }
+      NID::ixn(new[i.idx()].expect("?!"))).collect()) }
 
   pub fn get_ops(&self, n:NID)->&Ops {
-    if nid::no_var(n) { &self.bits[nid::idx(n)] } else { panic!("don't know how to op({:?})", n) }}
+    if n.is_ixn() { &self.bits[n.idx()] } else { panic!("don't know how to op({:?})", n) }}
 } // impl RawASTBase
 
 impl Base for RawASTBase {
@@ -216,10 +216,10 @@ impl Base for RawASTBase {
       ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap() }}
     macro_rules! dotop {
       ($s:expr, $n:expr $(,$xs:expr)*) => {{
-        w!("  \"{}\"[label={}];", nid::raw($n), $s); // draw the node
-        $({ if nid::is_inv($xs) { w!("edge[style=dashed];"); }
+        w!("  \"{}\"[label={}];", $n.raw(), $s); // draw the node
+        $({ if ($xs).is_inv() { w!("edge[style=dashed];"); }
             else { w!("edge[style=solid];"); }
-            w!(" \"{}\"->\"{}\";", nid::raw($xs), nid::raw($n)); })* }}}
+            w!(" \"{}\"->\"{}\";", $xs.raw(), $n.raw()); })* }}}
 
     w!("digraph bdd {{");
     w!("rankdir=BT;"); // put root on top
@@ -229,7 +229,7 @@ impl Base for RawASTBase {
       match n {
         nid::O => w!(" \"{}\"[label=⊥];", n),
         nid::I => w!(" \"{}\"[label=⊤];", n),
-        _ if n.is_vid() => w!("\"{}\"[label=\"{}\"];", nid::raw(n), n.vid()),
+        _ if n.is_vid() => w!("\"{}\"[label=\"{}\"];", n.raw(), n.vid()),
         _ => {
           let rpn: Vec<NID> = self.get_ops(n).to_rpn().cloned().collect();
           let fun = rpn.last().unwrap();

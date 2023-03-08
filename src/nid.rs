@@ -8,17 +8,14 @@
    60  | 28  : RVAR
 
 */
-
 use std::fmt;
+use vid;
 
 // -- core data types ---
 
 /// (OLD) Variable ID: uniquely identifies an input variable in the BDD.
 /// This name is private to the nid module since vid::VID supercedes it.
-type VID = usize;
-
-/// Index into a (usually VID-specific) vector.
-pub type IDX = u32;
+type OLDVID = usize;
 
 /// A NID represents a node in a Base. Essentially, this acts like a tuple
 /// containing a VID and IDX, but for performance reasons, it is packed into a u64.
@@ -71,49 +68,45 @@ pub const I:NID = new(T|INV);
 // NID support routines
 
 /// Does the NID represent a variable?
-#[inline(always)] pub fn is_var(x:NID)->bool { (x.n & VAR) != 0 }
+#[inline(always)] fn is_var(x:NID)->bool { (x.n & VAR) != 0 }
 /// Does the NID represent a *real* variable?
-#[inline(always)] pub fn is_rvar(x:NID)->bool { (x.n & RVAR) != 0 }
+#[inline(always)] fn is_rvar(x:NID)->bool { (x.n & RVAR) != 0 }
 
 /// Does the NID represent a VID?
-#[inline(always)] pub fn is_vid(x:NID)->bool { (x.n & VAR) != 0 }
+#[inline(always)] fn is_vid(x:NID)->bool { (x.n & VAR) != 0 }
 
 /// Is n a literal (variable or constant)?
-#[inline] pub fn is_lit(x:NID)->bool { is_vid(x) | is_const(x) }
+#[inline] fn is_lit(x:NID)->bool { is_vid(x) | is_const(x) }
 
 /// Is the NID inverted? That is, does it represent `not(some other nid)`?
-#[inline(always)] pub fn is_inv(x:NID)->bool { (x.n & INV) != 0 }
+#[inline(always)] fn is_inv(x:NID)->bool { (x.n & INV) != 0 }
 
 /// Return the NID with the 'INV' flag removed.
 // !! pos()? abs()? I don't love any of these names.
-#[inline(always)] pub fn raw(x:NID)->NID { new(x.n & !INV) }
+#[inline(always)] fn raw(x:NID)->NID { new(x.n & !INV) }
 
 /// Does the NID refer to one of the two constant nodes (O or I)?
-#[inline(always)] pub fn is_const(x:NID)->bool { (x.n & T) != 0 }
+#[inline(always)] fn is_const(x:NID)->bool { (x.n & T) != 0 }
 
 /// Map the NID to an index. (I,e, if n=idx(x), then x is the nth node branching on var(x))
-#[inline(always)] pub fn idx(x:NID)->usize { (x.n & IDX_MASK) as usize }
+#[inline(always)] fn idx(x:NID)->usize { (x.n & IDX_MASK) as usize }
 
 /// On which variable does this node branch? (I and O branch on TV)
-#[inline(always)] pub fn vid(x:NID)->VID { ((x.n & !(INV|VAR)) >> 32) as VID}
-
-/// Toggle the INV bit, applying a logical "NOT" operation to the corressponding node.
-#[deprecated(note="use !nid instead")]
-#[inline(always)] pub fn not(x:NID)->NID { NID { n:x.n^INV } }
+#[inline(always)] fn vid(x:NID)->OLDVID { ((x.n & !(INV|VAR)) >> 32) as OLDVID}
 
 /// Construct the NID for the (virtual) node corresponding to an input variable.
 /// Private since moving to vid::VID, because this didn't set the "real" bit, and
 /// I want the real bit to eventually go away in favor of an unset "virtual" bit.
-#[inline(always)] fn nv(v:VID)->NID { NID { n:((v as u64) << 32)|VAR }}
+#[inline(always)] fn nv(v:OLDVID)->NID { NID { n:((v as u64) << 32)|VAR }}
 
 /// Construct a NID with the given variable and index.
-#[inline(always)] pub fn nvi(v:VID,i:IDX)->NID { new(((v as u64) << 32) + i as u64) }
+#[inline(always)] fn nvi(v:OLDVID,i:usize)->NID { new(((v as u64) << 32) + i as u64) }
 
 /// construct an F node
-#[inline(always)] pub const fn fun(arity:u8,tbl:u32)->NID { NID { n:F+(tbl as u64)+((arity as u64)<< 32)}}
-#[inline(always)] pub fn is_fun(x:&NID)->bool { x.n & F == F }
-#[inline(always)] pub fn tbl(x:&NID)->Option<u32> { if is_fun(x){ Some(idx(*x) as u32)} else {None}}
-#[inline(always)] pub fn arity(x:&NID)->u8 {
+#[inline(always)] const fn fun(arity:u8,tbl:u32)->NID { NID { n:F+(tbl as u64)+((arity as u64)<< 32)}}
+#[inline(always)] fn is_fun(x:&NID)->bool { x.n & F == F }
+#[inline(always)] fn tbl(x:&NID)->Option<u32> { if is_fun(x){ Some(idx(*x) as u32)} else {None}}
+#[inline(always)] fn arity(x:&NID)->u8 {
   if is_fun(x){ (x.n >> 32 & 0xff) as u8 }
   else if is_lit(*x) { 0 }
   // !! TODO: decide what arity means for general nids.
@@ -179,25 +172,20 @@ impl fmt::Debug for NID { // for test suite output
 
 
 // scaffolding for moving ASTBase over to use NIDS
-const NOVAR:VID = (1<<26) as VID; // 134_217_728
-const TOP:VID = (T>>32) as VID; // 536_870_912, // 1<<29, same as nid::T
-pub fn no_var(x:NID)->bool { vid(x)==NOVAR }
-/// return a nid that is not tied to a variable
-pub fn ixn(ix:IDX)->NID { nvi(NOVAR, ix) }
+const NOVAR:OLDVID = (1<<26) as OLDVID; // 134_217_728
+const TOP:OLDVID = (T>>32) as OLDVID; // 536_870_912, // 1<<29, same as nid::T
 
-use vid;
-
-fn vid_to_old(v:vid::VID)->VID {
+fn vid_to_old(v:vid::VID)->OLDVID {
   if v.is_nov() { NOVAR }
   else if v.is_top() { TOP }
-  else if v.is_var() { v.var_ix() | (RVAR>>32) as VID }
-  else if v.is_vir() { v.vir_ix() as VID }
+  else if v.is_var() { v.var_ix() | (RVAR>>32) as OLDVID }
+  else if v.is_vir() { v.vir_ix() as OLDVID }
   else { panic!("unknown vid::VID {:?}?", v) }}
 
-fn old_to_vid(o:VID)->vid::VID {
+fn old_to_vid(o:OLDVID)->vid::VID {
   if o == TOP { vid::VID::top() }
   else if o == NOVAR { vid::VID::nov() }
-  else if o & (RVAR>>32) as VID > 0 { vid::VID::var((o & !(RVAR>>32) as VID) as u32) }
+  else if o & (RVAR>>32) as OLDVID > 0 { vid::VID::var((o & !(RVAR>>32) as OLDVID) as u32) }
   else { vid::VID::vir(o as u32) }}
 
 /// helper for 'fun' (function table) nids
@@ -217,10 +205,12 @@ fn permute_bits(x:u32, pv:&[u8])->u32 {
 impl NID {
   pub fn var(v:u32)->Self { Self::from_vid(vid::VID::var(v)) }
   pub fn vir(v:u32)->Self { Self::from_vid(vid::VID::vir(v)) }
+  // return a nid that is not tied to a variable
+  pub fn ixn(ix:usize)->Self { nvi(NOVAR, ix) }
   pub fn from_var(v:vid::VID)->Self { NID::var(v.var_ix() as u32)}
   pub fn from_vir(v:vid::VID)->Self { NID::vir(v.vir_ix() as u32)}
   pub fn from_vid(v:vid::VID)->Self { nv(vid_to_old(v)) }
-  pub fn from_vid_idx(v:vid::VID, i:IDX)->Self { nvi(vid_to_old(v), i) }
+  pub fn from_vid_idx(v:vid::VID, i:usize)->Self { nvi(vid_to_old(v), i) }
   pub fn vid(&self)->vid::VID { old_to_vid(vid(*self)) }
   pub fn is_const(&self)->bool { is_const(*self) }
   pub fn is_vid(&self)->bool { is_vid(*self)}
@@ -228,7 +218,10 @@ impl NID {
   pub fn is_vir(&self)->bool { self.is_vid() && self.vid().is_vir() }
   pub fn is_lit(&self)->bool { is_lit(*self) }
   pub fn is_inv(&self)->bool { is_inv(*self) }
-  pub fn idx(&self)->usize { idx(*self) }
+  /// is this NID just an indexed node with no variable?
+  pub fn is_ixn(self)->bool { vid(self)==NOVAR }
+  pub fn idx(self)->usize { idx(self) }
+  pub fn raw(self)->NID { raw(self) }
   pub const fn fun(arity:u8, tbl:u32)->Self { fun(arity,tbl) }
   pub fn is_fun(&self)->bool { is_fun(self) }
   pub fn tbl(&self)->Option<u32> { tbl(self) }

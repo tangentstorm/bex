@@ -58,8 +58,8 @@ impl XID {
     if x.vid()!=NOV { panic!("don't know how to convert nid.var(v!=NOV) -> xid")}
     if x.is_inv() { !XID{ x: x.idx() as i64 }} else { XID{ x: x.idx() as i64 } }}
   fn to_nid(self)->NID {
-    if self.is_inv() { !NID::from_vid_idx(NOV, !self.x as u32)}
-    else { NID::from_vid_idx(NOV, self.x as u32) }}
+    if self.is_inv() { !NID::from_vid_idx(NOV, !self.x as usize)}
+    else { NID::from_vid_idx(NOV, self.x as usize) }}
   fn to_bool(self)->bool {
     if self.is_const() { self == XID_I }
     else { panic!("attempted to convert non-constant XID->bool") }}

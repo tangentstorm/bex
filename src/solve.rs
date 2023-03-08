@@ -15,10 +15,10 @@
 /// capturing of stdout so that you can see debug lines from the solver)
 
 use ::{apl, ops};
-use ast::{RawASTBase};
-use base::{Base};
-use {nid, nid::NID};
-use {vid::VID};
+use ast::RawASTBase;
+use base::Base;
+use nid::NID;
+use vid::VID;
 use ops::Ops;
 use reg::Reg;
 use hashbrown::HashSet;
@@ -91,7 +91,7 @@ impl<'a, S:SubSolver> Progress<S> for ProgressReport<'a> {
     println!("{:4}, {:8} ms, {:45?} → {:45?}, {:45?}",
              step, millis, oldtop.n,
              if new.vid().is_vir() {
-               format!("{:?}", src.get_ops(nid::ixn(new.vid().vir_ix() as u32))) }
+               format!("{:?}", src.get_ops(NID::ixn(new.vid().vir_ix()))) }
              else { format!("{:?}", new)},
              newtop.n);
     // dest.show_named(newtop.n, format!("step-{}", step).as_str());
@@ -138,19 +138,21 @@ pub fn sort_by_cost(src:&RawASTBase, top:SrcNid)->(RawASTBase,SrcNid) {
 /// map a nid from the source to a (usually virtual) variable in the destination
 pub fn convert_nid(sn:SrcNid)->DstNid {
   let SrcNid{ n } = sn;
-  let r = if nid::is_const(n) { n }
+  let r = if n.is_const() { n }
   else {
-    let r0 = if n.is_vid() { NID::var(nid::vid(n) as u32) } // TODO: probably want
-    else if nid::no_var(n) { NID::vir(nid::idx(n) as u32) }
+    let r0 =
+         if n.is_vir() { panic!("what? should never be a VIR in the source."); }
+    else if n.is_var() { n.raw() }
+    else if n.is_ixn() { NID::vir(n.idx() as u32) }
     else { todo!("convert_nid({:?})", n) };
-    if nid::is_inv(n) { !r0 } else { r0 }};
+    if n.is_inv() { !r0 } else { r0 }};
   DstNid{ n: r } }
 
 /// replace node in destination with its definition form source
 fn refine_one(dst: &mut dyn SubSolver, v:VID, src:&RawASTBase, d:DstNid)->DstNid {
   // println!("refine_one({:?})", d)
   let ctx = d.n;
-  let ops = src.get_ops(nid::ixn(v.vir_ix() as u32));
+  let ops = src.get_ops(NID::ixn(v.vir_ix()));
   let cn = |x0:&NID|->NID { if x0.is_fun() { *x0 } else { convert_nid(SrcNid{n:*x0}).n }};
   let def:Ops = Ops::RPN( ops.to_rpn().map(cn).collect() );
   DstNid{n: dst.subst(ctx, v, &def) }}
@@ -195,7 +197,7 @@ pub fn solve<S:SubSolver>(dst:&mut S, src0:&RawASTBase, sn:NID)->DstNid {
     let (src, top) = sort_by_cost(src0, SrcNid{n:sn});
 
     // step is just a number that counts downward.
-    let mut step:usize = nid::idx(top.n);
+    let mut step:usize = top.n.idx();
 
     // !! These lines were a kludge to allow storing the step number in the dst,
     //    with the idea of persisting the destination to disk to resume later.
@@ -234,7 +236,7 @@ pub fn solve<S:SubSolver>(dst:&mut S, src0:&RawASTBase, sn:NID)->DstNid {
 macro_rules! find_factors {
   ($TDEST:ident, $T0:ident, $T1:ident, $k:expr, $expect:expr) => {{
     use std::env;
-    use $crate::{GraphViz, nid, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}, bdd};
+    use $crate::{GraphViz, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}, bdd};
     bdd::COUNT_XMEMO_TEST.with(|c| c.replace(0) );
     bdd::COUNT_XMEMO_FAIL.with(|c| c.replace(0) ); // TODO: other bases
     GBASE.with(|gb| gb.replace(ASTBase::empty()));   // reset on each test
@@ -249,7 +251,7 @@ macro_rules! find_factors {
       GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
       GBASE.with(|gb| { gb.borrow().show_named(eq.clone().n, "eq") }); }
     let top:BaseBit = lt & eq;
-    assert!(nid::no_var(top.n), "top nid seems to be a literal. (TODO: handle these already solved cases)");
+    assert!(top.n.is_ixn(), "top nid seems to be a literal. (TODO: handle these already solved cases)");
     let gb = GBASE.with(|gb| gb.replace(ASTBase::empty())); // swap out the thread-local one
     let src = gb.raw_ast();
     if show_ast { src.show_named(top.n, "ast"); }

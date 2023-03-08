@@ -15,6 +15,10 @@ A rust library for working with boolean expressions.
 - Remove obsolete "substitution" concept from `ast.rs`, and replace
   `ast::Op` with the more flexible `ops::Ops`.
 
+- Removed top level functions in `nid::`. Use the corresponding `nid::NID::`
+  methods instead. (ex: `nid::raw(n)` is now `n.raw()`) In particular,
+  `nid::not(n)` should be written `!n`.
+
 ## 0.1.5 (2020-05-20)
 
 - Added `SwapSolver`, a new substitution solver that (like any `SubSolver`)

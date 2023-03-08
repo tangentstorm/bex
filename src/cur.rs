@@ -37,7 +37,7 @@ impl Cursor {
     self.istack.push(self.invert);
     self.nstack.push(self.node);
     self.node = node;
-    self.invert = nid::is_inv(node) && !nid::is_const(node); }
+    self.invert = node.is_inv() && !node.is_const() }
 
   /// pop a node from the stack and return the old node id.
   fn pop_node(&mut self) {
@@ -63,7 +63,7 @@ impl Cursor {
 
   /// walk down to next included term while setting the scope
   pub fn descend(&mut self, base: &dyn CursorPlan) {
-    while !nid::is_const(self.node) {
+    while !self.node.is_const() {
       let hl = base.get_hilo(self.node).expect("couldn't get_hilo");
       let choice = !base.includes_lo(hl.lo);
       self.put_step(base, choice) }}
