@@ -23,7 +23,7 @@ pub type IDX = u32;
 /// A NID represents a node in a Base. Essentially, this acts like a tuple
 /// containing a VID and IDX, but for performance reasons, it is packed into a u64.
 /// See below for helper functions that manipulate and analyze the packed bits.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Serialize, Deserialize)]
+#[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct NID { n: u64 }
 
 /// Just a constructor so I can add extra temp fields in development without breaking code.
@@ -170,7 +170,7 @@ impl fmt::Debug for NID { // for test suite output
 
 #[test] fn test_cmp() {
   let v = |x:usize|->NID { nv(x) };  let x=|x:u32|->NID { NID::var(x) };
-  let o=|x:NID|vid(x);   let n=|x:NID|x.vid();
+  let o=vid;   let n=|x:NID|x.vid();
   assert!(o(O) == o(I),      "old:no=no");  assert!(n(O) == n(I),       "new:no=no");
   assert!(o(O)    > o(v(0)), "old:no>v0");  assert!(n(O).is_below(&n(v(0))), "new:no bel v0");
   assert!(o(O)    > o(x(0)), "old:no>x0");  assert!(n(O).is_below(&n(x(0))), "new:no bel x0");

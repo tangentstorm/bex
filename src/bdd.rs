@@ -25,7 +25,7 @@ pub type BDDHashMap<K,V> = vhl::VHLHashMap<K,V>;
 
 
 /// An if/then/else triple. Like VHL, but all three slots are NIDs.
-#[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
 pub struct ITE {i:NID, t:NID, e:NID}
 impl ITE {
   /// shorthand constructor
@@ -125,8 +125,8 @@ impl BddState {
       self.get_simple_node(ite.i.vid(), hilo) }
     else {
       COUNT_XMEMO_TEST.with(|c| *c.borrow_mut() += 1 );
-      let test = self.xmemo.get(&ite).copied();
-      if test == None { COUNT_XMEMO_FAIL.with(|c| *c.borrow_mut() += 1 ); }
+      let test = self.xmemo.get(ite).copied();
+      if test.is_none() { COUNT_XMEMO_FAIL.with(|c| *c.borrow_mut() += 1 ); }
       test }}
 
   #[inline] fn get_simple_node(&self, v:VID, hl:HiLo)-> Option<NID> {

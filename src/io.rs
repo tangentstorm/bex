@@ -30,7 +30,7 @@ pub fn get<T:Sized+Clone>(path:&str) -> ::std::io::Result<Vec<T>> {
   let mut f = File::open(path)?;
   let mut uv:Vec<u8> = Vec::new();
   f.read_to_end(&mut uv).expect("couldn't read file");
-  let s:&[T] = unsafe { u8s_to_slice(&uv.as_slice())};
+  let s:&[T] = unsafe { u8s_to_slice(uv.as_slice())};
   Ok(s.to_vec()) }
 
 

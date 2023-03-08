@@ -61,12 +61,12 @@ impl VID {
   pub const fn var(i:u32)->VID { VID { v: Var(i) }}
   pub const fn vir(i:u32)->VID { VID { v: Vir(i) }}
   pub fn is_top(&self)->bool { VID{ v:T } == *self }
-  pub fn is_nov(&self)->bool { if let VID{ v:NoV } = self { true } else { false } }
-  pub fn is_var(&self)->bool { if let VID{ v:Var(_) } = self { true } else { false } }
-  pub fn is_vir(&self)->bool { if let VID{ v:Vir(_) } = self { true } else { false } }
+  pub fn is_nov(&self)->bool { matches!(self, VID{ v:NoV }) }
+  pub fn is_var(&self)->bool { matches!(self, VID{v:Var(_)}) }
+  pub fn is_vir(&self)->bool { matches!(self, VID{v:Vir(_)}) }
 
-  pub fn is_above(&self, other:&VID)->bool { self.cmp_depth(&other) == VidOrdering::Above }
-  pub fn is_below(&self, other:&VID)->bool { self.cmp_depth(&other) == VidOrdering::Below }
+  pub fn is_above(&self, other:&VID)->bool { self.cmp_depth(other) == VidOrdering::Above }
+  pub fn is_below(&self, other:&VID)->bool { self.cmp_depth(other) == VidOrdering::Below }
   pub fn shift_up(&self)->VID {
     match self.v {
       NoV => panic!("VID::nov().shift_up() is undefined"),

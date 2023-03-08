@@ -30,13 +30,13 @@ pub trait Worker<Q,R>:Send+Sync where R:Debug {
   /// and returns an R (result) for each one.
   fn work_loop(&mut self, wid:WID, rx:&Receiver<Option<QMsg<Q>>>, tx:&Sender<RMsg<R>>) {
     // and now the actual worker lifecycle:
-    let msg = self.work_init(wid); self.send_msg(&tx, QID::INIT, msg);
+    let msg = self.work_init(wid); self.send_msg(tx, QID::INIT, msg);
     let mut stream = rx.iter();
     while let Some(Some(QMsg{qid, q})) = stream.next() {
       if let QID::STEP(_) = qid {
-        let msg = self.work_step(&qid, q); self.send_msg(&tx, qid, msg); }
+        let msg = self.work_step(&qid, q); self.send_msg(tx, qid, msg); }
       else { panic!("Worker {:?} got unexpected qid instead of STEP: {:?}", wid, qid)}}
-    let msg = self.work_done(); self.send_msg(&tx, QID::DONE, msg); }
+    let msg = self.work_done(); self.send_msg(tx, QID::DONE, msg); }
 
   /// What to do if a message send fails. By default, just print to stdout.
   fn on_work_send_err(&self, qid:QID) {
@@ -108,7 +108,8 @@ impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug, R:'static+Send+Debug, W:Wor
     self}
 
   pub fn get_worker(&mut self, wid:WID)->&Sender<Option<QMsg<Q>>> {
-    self.whs.get(&wid).expect(format!("requested non-exestant worker {:?}", wid).as_str()) }
+    self.whs.get(&wid).unwrap_or_else(||
+      panic!("requested non-existent worker {:?}", wid)) }
 
   pub fn kill(&mut self, w:WID) {
     if let Some(h) = self.whs.remove(&w) {

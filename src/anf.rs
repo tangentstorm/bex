@@ -245,10 +245,9 @@ impl ANFBase {
 
   fn log(&self, _cur:&Cursor, _msg: &str) {
     #[cfg(test)] {
-      print!("{:>10}", format!("{}", _cur.node));
+      print!("{:>10}", _cur.node);
       print!(" {:?}", _cur.scope);
-      let s = format!("{}", _msg);
-      println!(" {:50} {:?}", s, _cur.nstack); }}
+      println!(" {:50} {:?}", _msg, _cur.nstack); }}
 
   pub fn first_term(&self, n:NID)->Option<Cursor> {
     if n == O { return None } // O has no other terms, and we can't represent O with a cursor
@@ -273,7 +272,7 @@ impl ANFBase {
       if cur.node == I { self.log(&cur, "<-- answer (lo)"); return Some(cur) }}}
 
   pub fn terms(&self, n:NID)->ANFTermIterator {
-    ANFTermIterator::from_anf_base(&self, n) }}
+    ANFTermIterator::from_anf_base(self, n) }}
 
 pub struct ANFTermIterator<'a> {
   base: &'a ANFBase,
@@ -465,7 +464,7 @@ test_base_when!(ANFBase);
   assert_eq!(base.sub(b.vid(), xyz, ctx), expr![base, ((a & xyz) ^ c)]);}
 
 #[test] fn test_anf_sub_inv() {
-    let mut base = ANFBase::new(); let nv = |x|NID::var(x);
+    let mut base = ANFBase::new(); let nv = NID::var;
     let (v1,v2,v4,v6) = (nv(1), nv(2), nv(4), nv(6));
     let ctx = expr![base, (v1 & v6) ];
     let top = expr![base, ((I^v4) & v2)];
@@ -483,7 +482,7 @@ test_base_when!(ANFBase);
 
 
 #[test] fn test_anf_terms() {
-  let mut base = ANFBase::new(); let nv = |x|NID::var(x);
+  let mut base = ANFBase::new(); let nv = NID::var;
   let (x,y,z) = (nv(0), nv(1), nv(2));
   let n = expr![base, ((z^(z&y))^((y&x)^x))];
   // anf: x(0+1) + y(x(0+1)) + z(y(0+1))

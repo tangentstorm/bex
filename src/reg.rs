@@ -1,13 +1,12 @@
 /// Registers (bit vectors)
 use std::fmt;
-use std::mem::size_of;
 use vid::VID;
 
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Reg { nbits: usize, data: Vec<usize> }
 
-const USIZE:usize = size_of::<usize>() * 8;
+const USIZE:usize = usize::BITS as usize;
 
 
 impl Reg {
@@ -121,7 +120,7 @@ impl fmt::Display for Reg {
 impl fmt::Debug for Reg { // for test suite output
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self) }}
 
-#[test]
+#[test] #[allow(clippy::bool_assert_comparison)]
 fn test_reg_mut() {
   let mut reg = Reg::new(66);
   assert_eq!(reg.data.len(), 2);

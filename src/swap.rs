@@ -57,11 +57,11 @@ impl XID {
     if x.is_lit() { panic!("don't know how to convert lit nid -> xid")}
     if x.vid()!=NOV { panic!("don't know how to convert nid.var(v!=NOV) -> xid")}
     if x.is_inv() { !XID{ x: x.idx() as i64 }} else { XID{ x: x.idx() as i64 } }}
-  fn to_nid(&self)->NID {
+  fn to_nid(self)->NID {
     if self.is_inv() { !NID::from_vid_idx(NOV, !self.x as u32)}
     else { NID::from_vid_idx(NOV, self.x as u32) }}
-  fn to_bool(&self)->bool {
-    if self.is_const() { *self == XID_I }
+  fn to_bool(self)->bool {
+    if self.is_const() { self == XID_I }
     else { panic!("attempted to convert non-constant XID->bool") }}
   fn inv(&self) -> XID { XID { x: !self.x } }}
 impl std::ops::Not for XID { type Output = XID; fn not(self)->XID { self.inv() }}
@@ -165,8 +165,8 @@ impl XVHLScaffold {
 
     // vids must be unique:
     let mut vids:HashMap<VID, i64> = self.vids.iter().cloned().enumerate().map(|(i,v)|(v,i as i64)).collect();
-    if !(vids.len()==self.vids.len()) { return Err(format!("duplicate vid(s) in list: {:?}", self.vids))}
-    if !(vids.len()==self.rows.len()+self.locked.len()) { return Err("vids and rows should have the same len()".to_string()) }
+    if vids.len()!=self.vids.len() { return Err(format!("duplicate vid(s) in list: {:?}", self.vids))}
+    if vids.len()!=self.rows.len()+self.locked.len() { return Err("vids and rows should have the same len()".to_string()) }
     vids.insert(NOV, -1);
 
     let mut rc: HashMap<XID, usize> = HashMap::new();
@@ -192,8 +192,8 @@ impl XVHLScaffold {
           if lo.v == NOV && x.lo.raw() != XID_O { return Err(format!("lo branch to garbage-collected node {:?} @vhl[{}]",x.lo, i))}}
 
         // the hi and lo branches should point "downward"
-        if !(vids[&lo.v] < vids[&x.v]) { return Err(format!("upward lo branch @vhl[{}]: {:?}", i, x))}
-        if !(vids[&hi.v] < vids[&x.v]) { return Err(format!("upward hi branch @vhl[{}]: {:?}", i, x))};
+        if vids[&lo.v] >= vids[&x.v] { return Err(format!("upward lo branch @vhl[{}]: {:?}", i, x))}
+        if vids[&hi.v] >= vids[&x.v] { return Err(format!("upward hi branch @vhl[{}]: {:?}", i, x))};
 
         // there should be no duplicate entries.
         if let Some(j) = seen.get(&x) { return Err(format!("vhl[{}] is a duplicate of vhl[{}]: {:?}", i, j, x)) }
@@ -223,13 +223,9 @@ impl XVHLScaffold {
           let drc = *drcd.get(&ixrc.ix.raw()).unwrap_or(&0);
           // *subtract* drc from expected count because those changes haven't happened yet.
           let expect = (xrc - drc) as usize;
-          if ixrc.irc < expect {
-            return Err(format!("refcount was too low for xid: {:?} (expected {}-{}={}, got {})",
-               ixrc.ix, xrc, drc, expect, ixrc.irc)) }
-          else if ixrc.irc > expect {
-            return Err(format!("refcount was too high for xid: {:?} (expected {}-{}={}, got {})",
-               ixrc.ix, xrc, drc, expect, ixrc.irc)) }
-              }}
+          if ixrc.irc != expect {
+            return Err(format!("refcount was wrong for xid: {:?} (expected {}-{}={}, got {})",
+               ixrc.ix, xrc, drc, expect, ixrc.irc)) }}}
       Ok(())}
 
   pub fn get_ixrc(&self, x:XID)->Option<&IxRc> {
@@ -284,7 +280,7 @@ impl XVHLScaffold {
     if vhl == XVHL_O { return if inv { XID_I } else { XID_O }}
     debug_assert_ne!(vhl.hi, vhl.lo, "hi and lo should be different"); // to trigger traceback
     let hl = vhl.hilo();
-    let row = self.rows.entry(vhl.v).or_insert_with(|| XVHLRow::new());
+    let row = self.rows.entry(vhl.v).or_insert_with(XVHLRow::new);
     let ixrc =
       if let Some(mut x) = row.hm.remove(&hl) { x.irc += irc; x.erc += erc; x }
       else { // entry was vacant:
@@ -419,7 +415,7 @@ impl XVHLScaffold {
 
     // remove nodes (do these first in case the refcount changes touch umov)
     let dels = worker.dels.len();
-    self.reclaim_swapped_nodes(std::mem::replace(&mut worker.dels, vec![]));
+    self.reclaim_swapped_nodes(std::mem::take(&mut worker.dels));
 
     // commit changes to nodes:
     let (dnew, wipxid) = worker.dnew_mods(xids); let dnews=dnew.len();
@@ -513,11 +509,7 @@ fn plan_regroup(vids:&Vec<VID>, groups:&Vec<HashSet<VID>>)->HashMap<VID,usize> {
 impl XVHLScaffold {
 
   fn plan_regroup(&self, groups:&Vec<HashSet<VID>>)->HashMap<VID,usize> {
-    //println!("self.vids: {:?}", self.vids);
-    //println!("groups: {:?}", groups); // , groups.clone().iter().rev().collect::<Vec<_>>()
-    let plan = plan_regroup(&self.vids, groups);
-    //println!("plan: {:?}", plan);
-    plan }
+    plan_regroup(&self.vids, groups) }
 
   fn take_row(&mut self, v:&VID)->Option<XVHLRow> {
     if self.locked.contains(v) { None }
@@ -556,7 +548,7 @@ impl XVHLScaffold {
     self.validate("before regroup()");
     // (var, ix) pairs, where plan is to lift var to row ix
     let plan = self.plan_regroup(&groups);
-    if plan.len() == 0 { return }
+    if plan.is_empty() { return }
     let mut swarm: Swarm<Q,R,SwapWorker> = Swarm::new(plan.len());
     let mut alarm: HashMap<VID,WID> = HashMap::new();
     let _:Option<()> = swarm.run(|wid,qid,r|->SwarmCmd<Q,()> {
@@ -571,11 +563,11 @@ impl XVHLScaffold {
             // this also happens when we spawn a new thread to work on a formerly completed vid that got displaced
             _ => SwarmCmd::Pass }}}, // we have more threads than variables to swap.
         QID::STEP(_) => {
-          if let None = r { return SwarmCmd::Pass } // TODO: this wasn't supposed to happen, but then Batch[Init]
+          if r.is_none() { return SwarmCmd::Pass } // TODO: this wasn't supposed to happen, but then Batch[Init]
           match r.unwrap() {
 
             R::DRcD{vu} => {
-              SwarmCmd::Send(Q::DRcD(self.drcd.remove(&vu).unwrap_or_else(|| HashMap::new()))) },
+              SwarmCmd::Send(Q::DRcD(self.drcd.remove(&vu).unwrap_or_else(HashMap::new))) },
 
             // recycle or allocate xids:
             R::Alloc{needed}  => {
@@ -618,7 +610,7 @@ impl XVHLScaffold {
 
   /// apply deferred refcount delta (call whenever a row gets unlocked)
   fn apply_drcd(&mut self, v:&VID) {
-    if let Some(drcd) = self.drcd.remove(&v) {
+    if let Some(drcd) = self.drcd.remove(v) {
       // if xvhl.v changed again (due to umov), we may need to defer again (since new row may be locked)
       for (&xid, &drc) in drcd.iter() { self.add_ref_ix_or_defer(xid, drc)} }}
 
@@ -836,7 +828,7 @@ impl Worker<Q,R> for SwapWorker {
         // now return the newly swapped row:
         let rd = std::mem::replace(&mut self.rd, XVHLRow::new());
         let refs = std::mem::replace(&mut self.refs, HashMap::new());
-        let dels = std::mem::replace(&mut self.dels, vec![]);
+        let dels = std::mem::take(&mut self.dels);
         Some(R::PutRD{ vu:self.vu, vd:self.vd, rd, dnew, umov, dels, refs })},
       Q::Stop => {
         let ru = std::mem::replace(&mut self.ru, XVHLRow::new());
@@ -997,7 +989,7 @@ impl SwapWorker {
   /// and a vector mapping the wip ix to the final xid
   fn dnew_mods(&mut self, alloc:Vec<XID>)->(Vec<(usize, XID, XID)>, Vec<XID>) {
     self.mods.extend(alloc);
-    let xids = std::mem::replace(&mut self.mods, vec![]);
+    let xids = std::mem::take(&mut self.mods);
     assert_eq!(xids.len(), self.dnew.len());
     let mut res = vec![];
     let mut wipxid = vec![XID_O; self.dnew.len()];
@@ -1111,7 +1103,7 @@ impl XSDebug {
       _ => { let inv = x.is_inv(); let x = x.raw(); let sign = if inv { "!" } else { "" };
         let xv = self.xs.get(x).unwrap();
         let vc:char = *self.vc.get(&xv.v).unwrap();
-        if xv.is_var() { format!("{}{}", vc, sign).to_string() }
+        if xv.is_var() { format!("{}{}", vc, sign) }
         else { format!("{}{}{}?{} ", self.fmt(xv.lo), self.fmt(xv.hi), vc, sign) } } }}}
 
 // ------------------------------------------------------
@@ -1122,6 +1114,8 @@ pub struct SwapSolver {
   /** the variable we're replacing  */  rv: VID,
   /** the replacement (source) bdd  */  src: XVHLScaffold,
   /** top node in the source bdd    */  sx: XID }
+
+impl Default for SwapSolver { fn default() -> Self { Self::new() }}
 
 impl SwapSolver {
   /// constructor
@@ -1242,7 +1236,7 @@ fn fun_tbl(f:NID)->Vec<XID> {
   let ft = f.tbl().unwrap();
   let mut tbl = vec![XID_O;(1<<ar) as usize];
   let end = (1<<ar)-1;
-  for i in 0..=end { if ft & (1<<i) != 0 { tbl[end-i as usize] = XID_I; }}
+  for i in 0..=end { if ft & (1<<i) != 0 { tbl[end-i] = XID_I; }}
   tbl }
 
 impl SubSolver for SwapSolver {
@@ -1271,9 +1265,7 @@ impl SubSolver for SwapSolver {
     // everything's ready now, so just do it!
     self.dx = XID::from_nid(ctx);
     self.rv = v;
-    let r  = self.sub().to_nid();
-
-    r }
+    self.sub().to_nid()}
 
   fn get_all(&self, ctx: NID, nvars: usize)->HashSet<Reg> {
 

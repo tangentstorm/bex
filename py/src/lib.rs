@@ -26,12 +26,12 @@ impl PyNID {
 #[pyproto]
 impl PyObjectProtocol for PyNID {
   fn __str__(&self) -> String { self.nid.to_string() }
-  fn __repr__(&self) -> String { format!("<NID({:?})>", self.nid).to_string() }}
+  fn __repr__(&self) -> String { format!("<NID({:?})>", self.nid) }}
 
 #[pyproto]
 impl PyObjectProtocol for PyVID {
   fn __str__(&self) -> String { self.vid.to_string() }
-  fn __repr__(&self) -> String { format!("<VID({:?})>", self.vid).to_string() }}
+  fn __repr__(&self) -> String { format!("<VID({:?})>", self.vid) }}
 
 #[pymethods]
 impl PyAST {

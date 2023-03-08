@@ -81,9 +81,8 @@ impl BDDBase {
     #[cfg(test)]{
       print!(" {}", if _c.invert { '¬' } else { ' ' });
       print!("{:>10}", format!("{}", _c.node));
-      print!(" {:?}{}", _c.scope, if self.in_solution(&_c) { '.' } else { ' ' });
-      let s = format!("{}", /*"{}", "  ".repeat(self.indent as usize),*/ _msg,);
-      println!(" {:50} {:?}", s, _c.nstack);}}
+      print!(" {:?}{}", _c.scope, if self.in_solution(_c) { '.' } else { ' ' });
+      println!(" {:50} {:?}", _msg, _c.nstack);}}
 
   /// walk depth-first from lo to hi until we arrive at the next solution
   fn find_next_leaf(&self, cur:&mut Cursor)->Option<NID> {

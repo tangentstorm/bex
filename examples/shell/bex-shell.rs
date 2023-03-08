@@ -86,11 +86,11 @@ fn repl(base:&mut ASTBase) {
         //todo "load" => base.load("saved.bdd").expect("failed to load bdd"),
         _ => {
           // parse number:
-          if let Ok(w)=usize::from_str_radix(word, 10) { data.push(nid::ixn(w as u32)); }
+          if let Ok(w)=word.parse::<usize>() { data.push(nid::ixn(w as u32)); }
           // parse input variable
           else if word.starts_with('$') {
             let s = word.to_string().split_off(1);
-            if let Ok(n) = usize::from_str_radix(&s, 10) {
+            if let Ok(n) = s.parse::<usize>() {
               data.push(NID::var(n as u32)); }
             else { println!("bad var: {}", word) } }
           // define:

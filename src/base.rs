@@ -67,11 +67,11 @@ pub trait GraphViz {
   /// call save_dot, use graphviz to convert to svg, and open result in firefox
   fn show_named(&self, n:NID, s:&str) {
     self.save_dot(n, format!("{}.dot", s).as_str());
-    let out = Command::new("dot").args(&["-Tsvg",format!("{}.dot",s).as_str()])
+    let out = Command::new("dot").args(["-Tsvg",format!("{}.dot",s).as_str()])
       .output().expect("failed to run 'dot' command");
     let mut svg = File::create(format!("{}.svg",s).as_str()).expect("couldn't create svg");
     svg.write_all(&out.stdout).expect("couldn't write svg");
-    Command::new("firefox").args(&[format!("{}.svg",s).as_str()])
+    Command::new("firefox").args([format!("{}.svg",s).as_str()])
       .spawn().expect("failed to launch firefox"); }
 
   fn show(&self, n:NID) { self.show_named(n, "+bdd") }
@@ -79,7 +79,7 @@ pub trait GraphViz {
 
 impl<T:Base> GraphViz for T {
   fn write_dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {
-    T::dot(&self,n, wr)}}
+    T::dot(self,n, wr)}}
 
 
 /// This macro makes it easy to define decorators for `Base` implementations.

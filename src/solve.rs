@@ -98,7 +98,7 @@ impl<'a, S:SubSolver> Progress<S> for ProgressReport<'a> {
     if step.trailing_zeros() >= 3 { // every so often, save the state
       // !! TODO: expected number of steps only works if sort_by_cost was called.
       { let expected_steps = src.len() as f64;
-        let percent_done = 100.0 * (step as f64) / expected_steps as f64;
+        let percent_done = 100.0 * (step as f64) / expected_steps;
         println!("\n# newtop: {:?}  step:{}/{} ({:.2}%)",
                  newtop.n.vid(), step, src.len(), percent_done); }
       if self.save_dest {
@@ -192,7 +192,7 @@ pub fn solve<S:SubSolver>(dst:&mut S, src0:&RawASTBase, sn:NID)->DstNid {
   else {
     dst.init(sn.vid());
     // renumber and garbage collect, leaving only the AST nodes reachable from sn
-    let (src, top) = sort_by_cost(&src0, SrcNid{n:sn});
+    let (src, top) = sort_by_cost(src0, SrcNid{n:sn});
 
     // step is just a number that counts downward.
     let mut step:usize = nid::idx(top.n);

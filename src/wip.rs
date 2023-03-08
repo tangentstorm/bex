@@ -47,8 +47,8 @@ impl Dep{
 
 
 // TODO: come up with a better name for this.
-#[derive(Debug)]
-pub struct WorkState<Q:Eq+Hash> {
+#[derive(Debug, Default)]
+pub struct WorkState<Q:Eq+Hash+Default> {
   /// stores work in progress during a run:
   pub wip:Vec<WIP>,
   /// stores dependencies during a run. The bool specifies whether to invert.
@@ -59,16 +59,11 @@ pub struct WorkState<Q:Eq+Hash> {
   // !! not sure this one belongs here, but we'll see.
   pub qs: Vec<Q>}
 
-
-impl<Q: Eq+Hash> WorkState<Q> {
-  pub fn new() -> Self {
-    WorkState{
-      wip: vec![], deps: vec![], qid: WIPHashMap::new(), qs:vec![] }}
-
+impl<Q:Eq+Hash+Default> WorkState<Q> {
+  pub fn new() -> Self { Self::default() }
   pub fn resolve_part(&mut self, qid:QID, part:HiLoPart, nid:NID, invert: bool) {
     if let WIP::Parts(ref mut parts) = self.wip[qid] {
       let n = if invert { !nid } else { nid };
       trace!("   !! set {:?} for q{} to {}", part, qid, n);
       if part == HiLoPart::HiPart { parts.hi = Some(n) } else { parts.lo = Some(n) }}
-    else { warn!("???? got a part for a qid #{} that was already done!", qid) }}
-  }
+    else { warn!("???? got a part for a qid #{} that was already done!", qid) }}}

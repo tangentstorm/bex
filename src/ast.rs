@@ -141,7 +141,7 @@ impl RawASTBase {
     let nn = |x:NID|{
       if nid::is_lit(x) { x }
       else {
-        let r = nid::ixn(new[nid::idx(x) as usize].expect("bad index in AST::permute") as u32);
+        let r = nid::ixn(new[nid::idx(x)].expect("bad index in AST::permute") as u32);
         if nid::is_inv(x) { !r } else { r }}};
     let newbits = pv.iter().map(|&old| {
       let new:Vec<NID> = self.bits[old].to_rpn().map(|&x| { if x.is_fun() { x } else { nn(x) }}).collect();
@@ -163,7 +163,7 @@ impl RawASTBase {
       if deps[i] { new[i]=Some(old.len()); old.push(i); }}
 
     (self.permute(&old), keep.iter().map(|&i|
-      nid::ixn(new[nid::idx(i) as usize].expect("?!") as u32)).collect()) }
+      nid::ixn(new[nid::idx(i)].expect("?!") as u32)).collect()) }
 
   pub fn get_ops(&self, n:NID)->&Ops {
     if nid::no_var(n) { &self.bits[nid::idx(n)] } else { panic!("don't know how to op({:?})", n) }}
