@@ -1,13 +1,3 @@
-/* Bitmask diagram:
-
-   NID | VAR
-   ----+----------------------
-   63  | 31  : INV
-   62  | 30  : VAR
-   61  | 29  : T (const / max vid)
-   60  | 28  : RVAR
-
-*/
 use std::fmt;
 use vid;
 
@@ -18,13 +8,10 @@ use vid;
 type OLDVID = usize;
 
 /// A NID represents a node in a Base. Essentially, this acts like a tuple
-/// containing a VID and IDX, but for performance reasons, it is packed into a u64.
+/// containing a VID and index, but for performance reasons, it is packed into a u64.
 /// See below for helper functions that manipulate and analyze the packed bits.
 #[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct NID { n: u64 }
-
-/// Just a constructor so I can add extra temp fields in development without breaking code.
-const fn new (n:u64)->NID { NID{n} }
 
 
 // -- bits in the nid ---
@@ -61,35 +48,11 @@ const F:u64 = 1<<59;
 const IDX_MASK:u64 = (1<<32)-1;
 
 /// NID of the virtual node represeting the constant function 0, or "always false."
-pub const O:NID = new(T);
+pub const O:NID = NID{n: T};
 /// NID of the virtual node represeting the constant function 1, or "always true."
-pub const I:NID = new(T|INV);
+pub const I:NID = NID{ n:T|INV };
 
 // NID support routines
-
-/// Does the NID represent a variable?
-#[inline(always)] fn is_var(x:NID)->bool { (x.n & VAR) != 0 }
-/// Does the NID represent a *real* variable?
-#[inline(always)] fn is_rvar(x:NID)->bool { (x.n & RVAR) != 0 }
-
-/// Does the NID represent a VID?
-#[inline(always)] fn is_vid(x:NID)->bool { (x.n & VAR) != 0 }
-
-/// Is n a literal (variable or constant)?
-#[inline] fn is_lit(x:NID)->bool { is_vid(x) | is_const(x) }
-
-/// Is the NID inverted? That is, does it represent `not(some other nid)`?
-#[inline(always)] fn is_inv(x:NID)->bool { (x.n & INV) != 0 }
-
-/// Return the NID with the 'INV' flag removed.
-// !! pos()? abs()? I don't love any of these names.
-#[inline(always)] fn raw(x:NID)->NID { new(x.n & !INV) }
-
-/// Does the NID refer to one of the two constant nodes (O or I)?
-#[inline(always)] fn is_const(x:NID)->bool { (x.n & T) != 0 }
-
-/// Map the NID to an index. (I,e, if n=idx(x), then x is the nth node branching on var(x))
-#[inline(always)] fn idx(x:NID)->usize { (x.n & IDX_MASK) as usize }
 
 /// On which variable does this node branch? (I and O branch on TV)
 #[inline(always)] fn vid(x:NID)->OLDVID { ((x.n & !(INV|VAR)) >> 32) as OLDVID}
@@ -100,24 +63,7 @@ pub const I:NID = new(T|INV);
 #[inline(always)] fn nv(v:OLDVID)->NID { NID { n:((v as u64) << 32)|VAR }}
 
 /// Construct a NID with the given variable and index.
-#[inline(always)] fn nvi(v:OLDVID,i:usize)->NID { new(((v as u64) << 32) + i as u64) }
-
-/// construct an F node
-#[inline(always)] const fn fun(arity:u8,tbl:u32)->NID { NID { n:F+(tbl as u64)+((arity as u64)<< 32)}}
-#[inline(always)] fn is_fun(x:&NID)->bool { x.n & F == F }
-#[inline(always)] fn tbl(x:&NID)->Option<u32> { if is_fun(x){ Some(idx(*x) as u32)} else {None}}
-#[inline(always)] fn arity(x:&NID)->u8 {
-  if is_fun(x){ (x.n >> 32 & 0xff) as u8 }
-  else if is_lit(*x) { 0 }
-  // !! TODO: decide what arity means for general nids.
-  // !! if the node is already bound to variables. We could think of this as the number
-  // !! of distinct variables it contains, *or* we could think of it as an expression that
-  // !! takes no parameters. (Maybe the F bit, combined with the "T=Table" bit toggles this?)
-  // !! Also, it's not obvious how to track the number of variables when combining two nodes
-  // !! without a lot of external storage. The best we can do is look at the top var and
-  // !! get an upper bound. With virs, we can't even do that. In any case, I don't actually
-  // !! need this at the moment, so I will just leave it unimplemented.
-  else { todo!("arity is only implemented for fun and lit nids at the moment") }}
+#[inline(always)] fn nvi(v:OLDVID,i:usize)->NID { NID{n: ((v as u64) << 32) + i as u64} }
 
 
 impl std::ops::Not for NID {
@@ -128,17 +74,16 @@ impl std::ops::Not for NID {
 /// Pretty-printer for NIDS that reveal some of their internal data.
 impl fmt::Display for NID {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    if is_const(*self) { if is_inv(*self) { write!(f, "I") } else { write!(f, "O") } }
+    if self.is_const() { if self.is_inv() { write!(f, "I") } else { write!(f, "O") } }
     else if self.is_fun() {
       let ar:u8 = self.arity().unwrap();
       let ft:u32 = self.tbl().unwrap() & ((2<<ar as u32)-1);
       if ar == 2 { write!(f, "<{:04b}>", ft)} // TODO: dynamically format to a length
       else {  write!(f, "<{:b}>", ft) }}
-    else { if is_inv(*self) { write!(f, "¬")?; }
-           if is_var(*self) { write!(f, "{}", self.vid()) }
-           else if is_rvar(*self) { write!(f, "@[{}:{}]", self.vid(), idx(*self)) }
-           else if vid(*self) == NOVAR { write!(f, "#{}", idx(*self)) }
-           else { write!(f, "@[v{}:{}]", vid(*self), idx(*self)) }}}}
+    else { if self.is_inv() { write!(f, "¬")?; }
+           if self.is_vid() { write!(f, "{}", self.vid()) }
+           else if self.is_ixn() { write!(f, "#{}", self.idx()) }
+           else { write!(f, "@[v{}:{}]", self.vid(), self.idx()) }}}}
 
 /// Same as fmt::Display. Mostly so it's easier to see the problem when an assertion fails.
 impl fmt::Debug for NID { // for test suite output
@@ -146,6 +91,7 @@ impl fmt::Debug for NID { // for test suite output
 
 
 #[test] fn test_nids() {
+  let new = |n| { NID{n} };
   assert_eq!(O.n,   2305843009213693952); assert_eq!(O, new(0x2000000000000000));
   assert_eq!(I.n,  11529215046068469760); assert_eq!(I, new(0xa000000000000000));
   assert_eq!(NID::vir(0), new(0x4000000000000000u64));
@@ -198,10 +144,6 @@ fn permute_bits(x:u32, pv:&[u8])->u32 {
   r }
 
 
-// TODO: add n.is_vid() to replace current is_var()
-// TODO: is_var() should only be true for vars, not both virs and vars.
-// TODO: probably also need is_nov() for consistency.
-
 impl NID {
   pub fn var(v:u32)->Self { Self::from_vid(vid::VID::var(v)) }
   pub fn vir(v:u32)->Self { Self::from_vid(vid::VID::vir(v)) }
@@ -212,25 +154,61 @@ impl NID {
   pub fn from_vid(v:vid::VID)->Self { nv(vid_to_old(v)) }
   pub fn from_vid_idx(v:vid::VID, i:usize)->Self { nvi(vid_to_old(v), i) }
   pub fn vid(&self)->vid::VID { old_to_vid(vid(*self)) }
-  pub fn is_const(&self)->bool { is_const(*self) }
-  pub fn is_vid(&self)->bool { is_vid(*self)}
+
+  /// Does the NID refer to one of the two constant nodes (O or I)?
+  pub fn is_const(&self)->bool { (self.n & T) != 0 }
+
+  /// Does the NID represent a VID (either Var or Vir)?
+  pub fn is_vid(&self)->bool { (self.n & VAR) != 0 }
+
+  /// Does the NID represent an input variable?
   pub fn is_var(&self)->bool { self.is_vid() && self.vid().is_var() }
+
+  /// Does the NID represent a virtual variable?
   pub fn is_vir(&self)->bool { self.is_vid() && self.vid().is_vir() }
-  pub fn is_lit(&self)->bool { is_lit(*self) }
-  pub fn is_inv(&self)->bool { is_inv(*self) }
+
+  /// Is n a literal (variable or constant)?
+  pub fn is_lit(&self)->bool { self.is_vid() | self.is_const()}
+
+  /// Is the NID inverted? That is, does it represent `!(some other nid)`?
+  pub fn is_inv(&self)->bool { (self.n & INV) != 0 }
+
   /// is this NID just an indexed node with no variable?
   pub fn is_ixn(self)->bool { vid(self)==NOVAR }
-  pub fn idx(self)->usize { idx(self) }
-  pub fn raw(self)->NID { raw(self) }
-  pub const fn fun(arity:u8, tbl:u32)->Self { fun(arity,tbl) }
-  pub fn is_fun(&self)->bool { is_fun(self) }
-  pub fn tbl(&self)->Option<u32> { tbl(self) }
-  pub fn arity(&self)->Option<u8> { Some(arity(self)) }
+
+  /// Map the NID to an index. (I.e., if n=idx(x), then x is the nth node branching on var(x))
+  pub fn idx(self)->usize { (self.n & IDX_MASK) as usize }
+
+  /// Return the NID with the 'INV' flag removed.
+  // !! pos()? abs()? I don't love any of these names.
+  pub fn raw(self)->NID { NID{ n: self.n & !INV }}
+
+  /// construct a NID holding a truth table for up to 5 input bits.
+  pub const fn fun(arity:u8, tbl:u32)->Self { NID { n:F+(tbl as u64)+((arity as u64)<< 32)} }
+  /// is this NID a function (truth table)?
+  pub fn is_fun(&self)->bool { self.n & F == F }
+
+
+  pub fn tbl(&self)->Option<u32> { if self.is_fun(){ Some(self.idx() as u32)} else {None} }
+
+  pub fn arity(&self)->Option<u8> {
+    if self.is_fun(){ Some((self.n >> 32 & 0xff) as u8) }
+    else if self.is_lit() { Some(0) }
+    // !! TODO: decide what arity means for general nids.
+    // !! if the node is already bound to variables. We could think of this as the number
+    // !! of distinct variables it contains, *or* we could think of it as an expression that
+    // !! takes no parameters. (Maybe the F bit, combined with the "T=Table" bit toggles this?)
+    // !! Also, it's not obvious how to track the number of variables when combining two nodes
+    // !! without a lot of external storage. The best we can do is look at the top var and
+    // !! get an upper bound. With virs, we can't even do that. In any case, I don't actually
+    // !! need this at the moment, so I will just leave it unimplemented.
+    else { todo!("arity is only implemented for fun and lit nids at the moment") }}
+
   /// is it possible nid depends on var v?
   /// the goal here is to avoid exploring a subgraph if we don't have to.
   #[inline] pub fn might_depend_on(&self, v:vid::VID)->bool {
-    if is_const(*self) { false }
-    else if is_var(*self) { self.vid() == v }
+    if self.is_const() { false }
+    else if self.is_vid() { self.vid() == v }
     else { let sv = self.vid(); sv == v || sv.is_above(&v) }}
 
   /// given a function, return the function you'd get if you inverted one or more of the input bits.
