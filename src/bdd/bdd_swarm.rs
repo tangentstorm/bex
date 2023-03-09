@@ -6,7 +6,7 @@ use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use {wip, wip::{QID,Dep,WIP,WorkState}};
 use vhl::{HiLoPart, VHLParts};
 use {vid::VID, nid::{NID}, vhl::{HiLo}};
-use bdd::{ITE, Norm, BddState, BDDHashMap, COUNT_XMEMO_TEST, COUNT_XMEMO_FAIL};
+use bdd::{ITE, Norm, BddState, COUNT_XMEMO_TEST, COUNT_XMEMO_FAIL};
 use {swarm, swarm::WID};
 
 // ----------------------------------------------------------------
@@ -173,7 +173,7 @@ impl BddSwarm {
 
   /// initialization logic for running the swarm. spawns threads and copies latest cache.
   fn init_swarm(&mut self) {
-    self.work.wip = vec![]; self.work.qs = vec![]; self.work.deps = vec![]; self.work.qid = BDDHashMap::new();
+    self.work = WorkState::new();
     // wipe out and replace the channels so un-necessary work from last iteration
     // (that was still going on when we returned a value) gets ignored..
     let (me, rx) = channel::<(QID, R)>(); self.me = me; self.rx = rx;
@@ -263,6 +263,7 @@ fn swarm_ite_norm(state: &Arc<BddState>, ite:ITE)->R {
       if let (Norm::Nid(hn), Norm::Nid(ln)) = (hi,lo) {
         match ITE::norm(NID::from_vid(v), hn, ln) {
           // first, it might normalize to a nid directly:
+          // !! but wait. how is this possible? i.is_const() and v == fake variable "T"?
           Norm::Nid(n) => { R::Nid(n) }
           // otherwise, the normalized triple might already be in cache:
           Norm::Ite(ite) => swarm_vhl_norm(state, ite),
