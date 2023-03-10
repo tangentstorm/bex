@@ -687,7 +687,7 @@ impl XVHLScaffold {
 
 type Mod = (usize,XID,XID);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Q {
   Init{ vu:VID, ru: XVHLRow },
   Step{ vd:VID, rd: XVHLRow },

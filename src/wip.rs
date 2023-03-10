@@ -3,6 +3,7 @@ use std::hash::Hash;
 use nid::NID;
 use vid::VID;
 use {vhl, vhl::HiLoPart};
+use swarm::QID;
 
 pub type WIPHashMap<K,V> = hashbrown::hash_map::HashMap<K,V>;
 
@@ -10,8 +11,6 @@ pub type WIPHashMap<K,V> = hashbrown::hash_map::HashMap<K,V>;
 #[derive(PartialEq,Debug,Copy,Clone)]
 pub enum WIP { Fresh, Done(NID), Parts(vhl::VHLParts) }
 
-/// Query ID.
-pub type QID = usize;
 
 
 /// Response message. TWIP is whatever type is used for WIP hi/lo nodes.
@@ -50,20 +49,20 @@ impl Dep{
 #[derive(Debug, Default)]
 pub struct WorkState<Q:Eq+Hash+Default> {
   /// stores work in progress during a run:
-  pub wip:Vec<WIP>,
+  pub wip: WIPHashMap<QID,WIP>,
   /// stores dependencies during a run. The bool specifies whether to invert.
-  pub deps: Vec<Vec<Dep>>,
+  pub deps: WIPHashMap<QID, Vec<Dep>>,
   /// track ongoing tasks so we don't duplicate work in progress:
   pub qid: WIPHashMap<Q,QID>,
   /// track new queries so they can eventually be cached
   // !! not sure this one belongs here, but we'll see.
-  pub qs: Vec<Q>}
+  pub qs: WIPHashMap<QID,Q>}
 
 impl<Q:Eq+Hash+Default> WorkState<Q> {
   pub fn new() -> Self { Self::default() }
-  pub fn resolve_part(&mut self, qid:QID, part:HiLoPart, nid:NID, invert: bool) {
-    if let WIP::Parts(ref mut parts) = self.wip[qid] {
+  pub fn resolve_part(&mut self, qid:&QID, part:HiLoPart, nid:NID, invert: bool) {
+    if let Some(WIP::Parts(ref mut parts)) = self.wip.get_mut(qid) {
       let n = if invert { !nid } else { nid };
-      trace!("   !! set {:?} for q{} to {}", part, qid, n);
+      trace!("   !! set {:?} for q{:?} to {}", part, qid, n);
       if part == HiLoPart::HiPart { parts.hi = Some(n) } else { parts.lo = Some(n) }}
-    else { warn!("???? got a part for a qid #{} that was already done!", qid) }}}
+    else { warn!("???? got a part for {:?} that was already done!", qid) }}}

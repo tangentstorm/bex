@@ -87,7 +87,7 @@ impl ITE {
             else { return Norm::Ite(ITE::new(f,g,h)) }}}}}} }
 
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct BddState {
   /// cache of hi,lo pairs.
   hilos: vhl::HiLoCache,
@@ -102,7 +102,7 @@ thread_local!{
 
 impl BddState {
   /// constructor
-  fn new()->BddState { BddState { hilos: vhl::HiLoCache::new(), xmemo: BDDHashMap::default() }}
+  pub fn new()->Self { BddState { hilos: vhl::HiLoCache::new(), xmemo: BDDHashMap::default() }}
 
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)-> (NID, NID) {
