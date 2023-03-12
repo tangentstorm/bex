@@ -125,9 +125,9 @@ impl BddState {
       self.get_simple_node(ite.i.vid(), hilo) }
     else {
       COUNT_XMEMO_TEST.with(|c| *c.borrow_mut() += 1 );
-      let test = self.xmemo.get(ite).copied();
-      if test.is_none() { COUNT_XMEMO_FAIL.with(|c| *c.borrow_mut() += 1 ); }
-      test }}
+      let test = self.xmemo.get(ite);
+      if test.is_none() { COUNT_XMEMO_FAIL.with(|c| *c.borrow_mut() += 1 ); None }
+      else { Some(*test.unwrap()) } }}
 
   #[inline] fn get_simple_node(&self, v:VID, hl:HiLo)-> Option<NID> {
     self.hilos.get_node(v, hl) }}

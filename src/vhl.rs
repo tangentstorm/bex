@@ -134,16 +134,16 @@ impl HiLoCache {
   #[inline] pub fn get_node(&self, v:VID, hl0:HiLo)-> Option<NID> {
     let inv = hl0.lo.is_inv();
     let hl1 = if inv { hl0.invert() } else { hl0 };
-    let to_nid = |&ix| NID::from_vid_idx(v, ix);
-    let res = self.vindex.get(&(v, hl1)).map(to_nid);
-    // let res = if res.is_none() { self.index.get(&hl1).map(to_nid) } else { res };
-    if inv { res.map(|nid| !nid ) } else { res }}
+    if let Some(x) = self.vindex.get(&(v, hl1)) {
+      let nid = NID::from_vid_idx(v, *x);
+      Some(if inv { !nid  } else { nid }) }
+    else { None }}
 
   #[inline] pub fn insert(&mut self, v:VID, hl0:HiLo)->NID {
     let inv = hl0.lo.is_inv();
     let hilo = if inv { hl0.invert() } else { hl0 };
     let ix:usize =
-      if let Some(&ix) = self.index.get(&hilo) { ix }
+      if let Some(ix) = self.index.get(&hilo) { *ix }
       else {
         let ix = self.hilos.len();
         self.hilos.push(hilo);
