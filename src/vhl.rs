@@ -88,42 +88,20 @@ pub trait Walkable {
 
 
 pub trait HiLoBase {
-  fn get_hilo(&self, n:NID)->Option<HiLo>;
-}
+  fn get_hilo(&self, n:NID)->Option<HiLo>; }
 
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct HiLoCache {
   /// variable-agnostic hi/lo pairs for individual bdd nodes.
   hilos: Vec<HiLo>,
   /// reverse map for hilos.
-  index: VHLHashMap<HiLo, usize>,
-  /// variable-specific memoization. These record (v,hilo) lookups.
-  /// There shouldn't be any need for this, but an undiagnosed
-  /// bug prevents me from removing it.
-  vindex: VHLHashMap<(VID,HiLo), usize>}
+  index: VHLHashMap<HiLo, usize>}
 
-// TODO: remove vindex. There's no reason to store (x1,y,z) separately from (y,z).
-// !! Previously, in test_nano_bdd, I wind up with a node branching on x2
-//      to another node also branching on x2.
-//    As of 2020-07-10, the new problem is just that test_multi_bdd
-//      and test_nano_bdd start taking minutes to run.
-//    I can't currently think of a reason vindex[(vX,hilo)] shouldn't behave
-//      exactly the same as vindex[(vY,hilo)] and thus == index[hilo], but I'm
-//      obviously missing something. :/
-//    It could be a bug in replace(), but that's a simple function.
-//    More likely, it's something to do with the recent/stable dichotomy in BddSwarm,
-//      or simply the fact that each worker has its own recent state and they're getting
-//      out of sync.
 
-
 impl HiLoCache {
 
-  pub fn new()->Self {
-    HiLoCache {
-      hilos: vec![],
-      index: VHLHashMap::default(),
-      vindex: VHLHashMap::default()}}
+  pub fn new()->Self { Self::default() }
 
   // TODO: ->Option<HiLo>, and then impl HiLoBase
   #[inline] pub fn get_hilo(&self, n:NID)->HiLo {
@@ -134,10 +112,15 @@ impl HiLoCache {
   #[inline] pub fn get_node(&self, v:VID, hl0:HiLo)-> Option<NID> {
     let inv = hl0.lo.is_inv();
     let hl1 = if inv { hl0.invert() } else { hl0 };
-    if let Some(x) = self.vindex.get(&(v, hl1)) {
-      let nid = NID::from_vid_idx(v, *x);
-      Some(if inv { !nid  } else { nid }) }
-    else { None }}
+    if let Some(x) = self.index.get(&hl1) {
+      // !! maybe this should be an assertion, and callers
+      //   should be adjusted to avoid asking for ill-formed VHL triples?
+      // (without this check, we potentially break the contract of always
+      //  returning a NID that represents a valid Bdd)
+      if hl1.hi.vid().is_below(&v) && hl1.lo.vid().is_below(&v) {
+        let nid = NID::from_vid_idx(v, *x);
+        return Some(if inv { !nid  } else { nid }) }}
+    None }
 
   #[inline] pub fn insert(&mut self, v:VID, hl0:HiLo)->NID {
     let inv = hl0.lo.is_inv();
@@ -148,10 +131,6 @@ impl HiLoCache {
         let ix = self.hilos.len();
         self.hilos.push(hilo);
         self.index.insert(hilo, ix);
-        self.vindex.insert((v,hilo), ix);
         ix };
     let res = NID::from_vid_idx(v, ix);
     if inv { !res } else { res } }}
-
-impl Default for HiLoCache {
-  fn default() -> Self { Self::new() }}
