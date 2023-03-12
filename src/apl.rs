@@ -1,4 +1,4 @@
-// apl/j/k primitives for rust
+//! Helper routines inspired by the APL family of programming languages.
 use std;
 use std::collections::HashMap;
 

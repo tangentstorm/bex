@@ -1,4 +1,4 @@
-/// Registers (bit vectors)
+//! Registers -- arbitrarily large arrays of bits.
 use std::fmt;
 use vid::VID;
 

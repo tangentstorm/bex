@@ -1,8 +1,8 @@
-/// Swap Solver
-/// This solver attempts to optimize the BDD concept for substitution solving.
-/// It adjusts the input variable ordering by swapping adjacent inputs until the
-/// one to be replaced next is at the top of the BDD. The actual replacement work
-/// at each step then only involves the top three rows.
+//! Swap Solver
+//! This solver attempts to optimize the BDD concept for substitution solving.
+//! It adjusts the input variable ordering by swapping adjacent inputs until the
+//! one to be replaced next is at the top of the BDD. The actual replacement work
+//! at each step then only involves the top three rows.
 use base::GraphViz;
 use hashbrown::{HashMap, HashSet};
 use vid::{VID, NOV, TOP};

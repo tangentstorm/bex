@@ -1,4 +1,4 @@
-///! A module for efficient implementation of binary decision diagrams.
+//! A module for efficient implementation of binary decision diagrams.
 use std::collections::HashMap;
 use std::cell::RefCell;
 
@@ -48,7 +48,7 @@ pub enum Norm {
 impl ITE {
   /// choose normal form for writing this triple. Algorithm based on:
   /// "Efficient Implementation of a BDD Package"
-  /// http://www.cs.cmu.edu/~emc/15817-f08/bryant-bdd-1991.pdf
+  /// <http://www.cs.cmu.edu/~emc/15817-f08/bryant-bdd-1991.pdf>
   pub fn norm(f0:NID, g0:NID, h0:NID)->Norm {
     let mut f = f0; let mut g = g0; let mut h = h0;
     loop {
@@ -189,9 +189,9 @@ impl BDDBase {
       let lo = self.when_lo(v,n); self.tt_aux(res, lo, i*2, level-1);
       let hi = self.when_hi(v,n); self.tt_aux(res, hi, i*2+1, level-1); }}
 
-  /// Truth table. Could have been Vec<bool> but this is mostly for testing
-  /// and the literals are much smaller when you type '1' and '0' instead of
-  /// 'true' and 'false'.
+  /// Truth table. Could have been `Vec<bool>` but this is mostly for testing
+  /// and the literals are much smaller when you type `1` and `0` instead of
+  /// `true` and `false`.
   pub fn tt(&mut self, n0:NID, num_vars:u32)->Vec<u8> {
     // !! once the high vars are at the top, we can compare to nid.vid().u() and count down instead of up
     if !n0.vid().is_var() { todo!("tt only works for actual variables. got {:?}", n0); }

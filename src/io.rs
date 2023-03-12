@@ -1,4 +1,4 @@
-/// binary io for hashmap<String,NID> and typed vectors
+//! binary io for hashmap<String,NID> and typed vectors
 use std::fs::File;
 use std::io::BufReader;
 use std::io::prelude::*;
@@ -25,7 +25,7 @@ pub fn put<T:Sized>(path:&str, v:&[T]) -> ::std::io::Result<()> {
   let mut f = File::create(path)?;
   f.write_all( unsafe{ slice_to_u8s(v) }) }
 
-/// attempt to parse the file at the specified path as a binary Vec<T>.
+/// attempt to parse the file at the specified path as a binary `Vec<T>`.
 pub fn get<T:Sized+Clone>(path:&str) -> ::std::io::Result<Vec<T>> {
   let mut f = File::open(path)?;
   let mut uv:Vec<u8> = Vec::new();

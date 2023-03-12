@@ -1,4 +1,4 @@
-//! Cursors: tools for navigating (v,hi,lo) structures.
+//! Cursors (register + stack and scope) for navigating vhl-graphs (Bdd, Anf, etc)
 
 use reg::Reg;
 use {nid,nid::NID};

@@ -1,4 +1,4 @@
-///! Generic Work-in-progress support for VHL graphs.
+//! Generic Work-in-progress support for VHL graphs.
 use std::hash::Hash;
 use nid::NID;
 use vid::VID;

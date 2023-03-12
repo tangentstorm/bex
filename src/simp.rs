@@ -1,4 +1,4 @@
-///! Simplification rules for simple boolean operations.
+//! Simplification rules for simple boolean operations.
 use {nid::{NID, I, O}};
 
 pub fn xor(x:NID, y:NID)->Option<NID> {

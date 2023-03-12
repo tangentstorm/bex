@@ -1,4 +1,5 @@
-// a concrete implemetation:
+//! Abstract syntax trees (simple logic combinators).
+
 use std::collections::{HashMap,HashSet};
 
 use io;

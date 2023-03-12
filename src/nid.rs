@@ -1,3 +1,4 @@
+//! Node IDs (shared by various Base implementations)
 use std::fmt;
 use vid;
 

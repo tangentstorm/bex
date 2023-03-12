@@ -1,4 +1,4 @@
-/// "solve" ast-based expressions by converting to another form.
+//! Solve ast-based expressions by converting to another form.
 ///
 /// the tests in this module use command line options to show or hide diagrams.
 ///     -a show AST (problem statement)

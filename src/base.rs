@@ -1,7 +1,5 @@
 #![macro_use]
-///! bex: a boolean expression library for rust
-///! outside the base, you deal only with opaque node IDs (NIDs).
-///! inside, it could be stored any way we like.
+//! Standard trait for databases of boolean expressions.
 use std::fs::File;
 use std::io::Write;
 use std::process::Command;      // for creating and viewing digarams

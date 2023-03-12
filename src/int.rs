@@ -1,5 +1,4 @@
-/// This module allows you to work with vectors of bit objects
-/// as if they were plain old integers.
+//! Helpers for working with arrays of bit structures as if they were integers.
 extern crate std;
 use std::cell::RefCell;
 use std::rc::Rc;

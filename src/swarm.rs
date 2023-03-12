@@ -1,3 +1,4 @@
+//! mini-framework for multicore programming.
 use std::{marker::PhantomData, thread};
 use std::sync::mpsc::{Sender, Receiver, channel, SendError, RecvError};
 use std::fmt::Debug;

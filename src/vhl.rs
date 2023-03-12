@@ -1,4 +1,4 @@
-///! (Var, Hi, Lo) triples
+//! (Var, Hi, Lo) triples
 use std::collections::BinaryHeap;
 use std::collections::HashSet;
 use nid::NID;

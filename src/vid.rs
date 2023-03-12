@@ -1,4 +1,4 @@
-/// Variable Identifiers
+//! Variable IDs (used interally by Base implementations)
 use std::cmp::Ordering;
 use std::fmt;
 
