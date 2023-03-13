@@ -3,6 +3,7 @@ use std::{marker::PhantomData, thread};
 use std::sync::mpsc::{Sender, Receiver, channel, SendError, RecvError};
 use std::fmt::Debug;
 use hashbrown::HashMap;
+use rand::seq::SliceRandom;
 
 /// query id
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
@@ -86,16 +87,17 @@ pub struct Swarm<Q,R,W> where W:Worker<Q,R>, Q:Debug+Clone, R:Debug {
   threads: Vec<thread::JoinHandle<()>> }
 
 impl<Q,R,W> Default for Swarm<Q,R,W> where Q:'static+Send+Debug+Clone, R:'static+Send+Debug, W:Worker<Q, R> {
-fn default()->Self { Self::new(0) }}
+fn default()->Self { let mut me= Self::new(); me.start(2); me }}
 
 impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug+Clone, R:'static+Send+Debug, W:Worker<Q, R> {
 
-  pub fn new(num_workers:usize)->Self {
+  pub fn new()->Self {
     let (me, rx) = channel();
-    let n = if num_workers==0 { num_cpus::get() } else { num_workers };
-    let mut this = Self { nq: 0, me, rx, whs:HashMap::new(), nw:0, _w:PhantomData, threads:vec![]};
-    for _ in 0..n { this.spawn(); }
-    this }
+    Self { nq: 0, me, rx, whs:HashMap::new(), nw:0, _w:PhantomData, threads:vec![]}}
+
+  pub fn start(&mut self, num_workers:usize) {
+    let n = if num_workers==0 { num_cpus::get() } else { num_workers as usize };
+    for _ in 0..n { self.spawn(); }}
 
   fn spawn(&mut self)->WID {
     let wid = WID{ n: self.nw }; self.nw+=1;
@@ -107,9 +109,10 @@ impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug+Clone, R:'static+Send+Debug,
 
   /// send query to an arbitrary worker.
   pub fn add_query(&mut self, q:Q)->QID {
-    // and by "arbitrary", we just mean worker 0... for now?
-    let &wid = self.whs.keys().collect::<Vec<_>>()[0];
-    self.send(wid, q)}
+    // let wid = self.whs.keys().collect::<Vec<_>>()[0];
+    let &wid = self.whs.keys().collect::<Vec<_>>()
+       .choose(&mut rand::thread_rng()).unwrap();
+    self.send(*wid, q)}
 
   pub fn get_worker(&mut self, wid:WID)->&Sender<Option<QMsg<Q>>> {
     self.whs.get(&wid).unwrap_or_else(||

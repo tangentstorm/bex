@@ -146,6 +146,8 @@ impl BddSwarm {
 
   /// initialization logic for running the swarm. spawns threads and copies latest cache.
   fn init_swarm(&mut self) {
+    // self.swarm = Swarm::new();
+    //self.swarm.start(0);
     self.stable = Arc::new(self.recent.clone());
     self.swarm.send_to_all(&Q::Cache(self.stable.clone())); }
 
