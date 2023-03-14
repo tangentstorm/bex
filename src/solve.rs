@@ -69,7 +69,7 @@ impl<B:Base> SubSolver for B {
   fn dump(&self, _path:&Path, _note:&str, _step:usize, _old:NID, _vid:VID, _ops:&Ops, _new:NID) {}}
 
 pub trait Progress<S:SubSolver> {
-  fn on_start(&self, ctx:&DstNid) { println!("INITIAL ctx: {:?}", ctx) }
+  fn on_start(&self, _ctx:&DstNid) { } // println!("INITIAL ctx: {:?}", ctx)
   fn on_step(&mut self, src:&RawASTBase, dest: &mut S, step:usize, millis:u128, oldtop:DstNid, newtop:DstNid);
   fn on_done(&self, src:&RawASTBase, dest: &mut S, newtop:DstNid); }
 
@@ -85,7 +85,9 @@ pub struct ProgressReport<'a> {
 
 
 impl<'a, S:SubSolver> Progress<S> for ProgressReport<'a> {
-  fn on_step(&mut self, src:&RawASTBase, dest: &mut S, step:usize, millis:u128, oldtop:DstNid, newtop:DstNid) {
+  fn on_step(&mut self, _src:&RawASTBase, _dest: &mut S, _step:usize, _millis:u128, _oldtop:DstNid, _newtop:DstNid) {
+    return }
+    /*
     self.millis += millis;
     let DstNid{ n: new } = newtop;
     println!("{:4}, {:8} ms, {:45?} → {:45?}, {:45?}",
@@ -114,6 +116,7 @@ impl<'a, S:SubSolver> Progress<S> for ProgressReport<'a> {
       let path = Path::new("."); // todo
       let ops = &Ops::RPN(vec![]); // todo
       dest.dump(path, note, step, oldtop.n, newtop.n.vid(), ops, newtop.n); }}
+  */
 
   fn on_done(&self, _src:&RawASTBase, _dest: &mut S, _newtop:DstNid) {
     println!("total time: {} ms", self.millis) }}

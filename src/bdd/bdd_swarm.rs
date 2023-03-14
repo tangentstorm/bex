@@ -39,7 +39,7 @@ impl swarm::Worker<Q,R> for BddWorker {
   fn new(wid:WID)->Self { BddWorker{ wid, ..Default::default() }}
   fn get_wid(&self)->WID { self.wid }
   fn work_step(&mut self, _qid:&QID, q:Q)->Option<R> {
-    println!("Q--> {:?}, {:?}", _qid, q);
+    //println!("Q--> {:?}, {:?}", _qid, q);
     match q {
       Q::Cache(s) => { self.state = Some(s); None }
       Q::Ite(ite) => { Some(swarm_ite(self.state.as_ref().unwrap(), ite)) }
@@ -167,7 +167,7 @@ impl BddSwarm {
     // other workers too, until we get back enough info to solve the original query.
     while result.is_none() {
       let RMsg{wid:_,qid,r} = self.swarm.recv().expect("failed to recieve rmsg");
-      println!("{:?} -> {:?}", qid, r);
+      //println!("{:?} -> {:?}", qid, r);
       if let Some(rmsg) = r { match rmsg {
         R::Nid(nid) =>  { self.resolve_nid(&qid, nid); }
         R::Vhl{v,hi,lo,invert} => { self.resolve_vhl(&qid, v, HiLo{hi, lo}, invert); }

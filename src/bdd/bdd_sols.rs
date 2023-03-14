@@ -77,12 +77,13 @@ impl BDDBase {
     self.includes_leaf(cur.node) }
 
   fn log_indent(&self, _d:i8) { /*self.indent += d;*/ }
-  fn log(&self, _c:&Cursor, _msg: &str) {
-    #[cfg(test)]{
-      print!(" {}", if _c.invert { '¬' } else { ' ' });
-      print!("{:>10}", format!("{}", _c.node));
-      print!(" {:?}{}", _c.scope, if self.in_solution(_c) { '.' } else { ' ' });
-      println!(" {:50} {:?}", _msg, _c.nstack);}}
+  fn log(&self, _c:&Cursor, _msg: &str) {}
+    // #[cfg(test)]{
+    //   print!(" {}", if _c.invert { '¬' } else { ' ' });
+    //   print!("{:>10}", format!("{}", _c.node));
+    //   print!(" {:?}{}", _c.scope, if self.in_solution(_c) { '.' } else { ' ' });
+    //   println!(" {:50} {:?}", _msg, _c.nstack);}}
+
 
   /// walk depth-first from lo to hi until we arrive at the next solution
   fn find_next_leaf(&self, cur:&mut Cursor)->Option<NID> {
