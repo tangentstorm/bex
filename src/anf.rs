@@ -39,8 +39,8 @@ impl Walkable for ANFBase {
     if !seen.contains(&n) {
       seen.insert(n); let VHL{ v, hi, lo, } = self.fetch(n);
       if topdown { f(n,v,hi,lo) }
-      if !hi.is_const() { self.step(hi, f, seen, topdown) }
       if !lo.is_const() { self.step(lo, f, seen, topdown) }
+      if !hi.is_const() { self.step(hi, f, seen, topdown) }
       if !topdown { f(n,v,hi,lo) }}}}
 
 
@@ -52,11 +52,13 @@ impl Base for ANFBase {
     macro_rules! w {
       ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap() }}
     w!("digraph anf {{");
-    w!("subgraph head {{ h1[shape=plaintext; label=\"ANF\"] }}");
-    w!("  I[label=⊤; shape=square];");
-    w!("  O[label=⊥; shape=square];");
+    w!("  bgcolor=\"#3399cc\"; pad=0.225");
+    w!("  node[shape=circle, style=filled, fillcolor=\"#cccccc\", fontname=calibri]");
+    w!("  edge[arrowhead=none]");
+    w!("subgraph head {{ h1[shape=plaintext, fillcolor=none, label=\"ANF\"] }}");
+    w!("  I[label=⊤, shape=square, fillcolor=white]");
+    w!("  O[label=⊥, shape=square, fontcolor=white, fillcolor=\"#333333\"]");
     w!("{{rank = same; I; O;}}");
-    w!("node[shape=circle];");
     self.walk(n, &mut |n,_,_h,_l| w!("  \"{}\"[label=\"{:?}\"];", n, n.vid()));
     w!("edge[style=solid];");
     self.walk(n, &mut |n,_,hi,_l| w!("  \"{:?}\"->\"{:?}\";", n, hi));

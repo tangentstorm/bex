@@ -19,8 +19,8 @@ impl Walkable for BDDBase {
     if !seen.contains(&n) {
       seen.insert(n); let (hi,lo) = self.tup(n);
       if topdown { f(n, n.vid(), hi,lo ) }
-      if !hi.is_const() { self.step(hi, f, seen, topdown) }
       if !lo.is_const() { self.step(lo, f, seen, topdown) }
+      if !hi.is_const() { self.step(hi, f, seen, topdown) }
       if !topdown { f(n, n.vid(), hi, lo) }}}}
 
 pub struct BDDSolIterator<'a> {

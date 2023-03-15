@@ -257,16 +257,23 @@ impl Base for BDDBase {
   // generate dot file (graphviz)
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {
     macro_rules! w { ($x:expr $(,$xs:expr)*) => { writeln!(wr, $x $(,$xs)*).unwrap() }}
+    macro_rules! we { ($src:expr, $dst:expr) => {
+      w!("  \"{}\"->\"{}\"{}",$src, $dst,
+        (if $dst.is_inv() & !$dst.is_const() { "[arrowhead=dot]" } else {""})) }}
     w!("digraph bdd {{");
-    w!("subgraph head {{ h1[shape=plaintext; label=\"BDD\"] }}");
-    w!("  I[label=⊤; shape=square];");
-    w!("  O[label=⊥; shape=square];");
-    w!("node[shape=circle];");
+    w!("  bgcolor=\"#3399cc\"; pad=0.225");
+    w!("  node[shape=circle, style=filled, fillcolor=\"#cccccc\", fontname=calibri]");
+    w!("  edge[arrowhead=none]");
+    w!("  subgraph head {{ h1[shape=plaintext, fillcolor=none, label=\"BDD\"] }}");
+    w!("  I[label=⊤, shape=square, fillcolor=white]");
+    w!("  O[label=⊥, shape=square, fontcolor=white, fillcolor=\"#333333\"]");
+    if n.is_inv() {
+      w!("hook[label=\"\",shape=plain,style=invis]; hook->{}:n[arrowhead=dot,penwidth=0,minlen=0,constraint=false]", n); }
     self.walk(n, &mut |n,_,_,_| w!("  \"{}\"[label=\"{}\"];", n, n.vid()));
     w!("edge[style=solid];");
-    self.walk(n, &mut |n,_,t,_| w!("  \"{}\"->\"{}\";", n, t));
+    self.walk(n, &mut |n,_,t,_| we!(n, t));
     w!("edge[style=dashed];");
-    self.walk(n, &mut |n,_,_,e| w!("  \"{}\"->\"{}\";", n, e));
+    self.walk(n, &mut |n,_,_,e| we!(n, e));
     w!("}}"); }
 
   fn solution_set(&self, n: NID, nvars: usize)->hashbrown::HashSet<Reg> {
