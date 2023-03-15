@@ -60,9 +60,10 @@ impl RawASTBase {
     if !seen.contains(&n.raw()) {
       seen.insert(n.raw());
       f(n);
-      for op in self.get_ops(n).to_rpn() {
-        if !op.is_fun() {
-          self.step(*op, f, seen) }}}}
+      if !n.is_lit() {
+        for op in self.get_ops(n).to_rpn() {
+          if !op.is_fun() {
+            self.step(*op, f, seen) }}}}}
 
   pub fn show(&self, n:NID) { self.show_named(n, "+ast+") }
 
