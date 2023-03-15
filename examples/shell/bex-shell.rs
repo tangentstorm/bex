@@ -48,6 +48,8 @@ fn repl(base:&mut ASTBase) {
   'main: loop {
     print!("[ "); for x in &data { print!("{} ", *x); } println!("]");
     let line = readln();
+    macro_rules! num_suffix { ($word:expr) => {
+      $word.to_string().split_off(1).parse::<usize>() }}
     for word in line.split_whitespace() {
       match word {
         // bdd commands
@@ -73,7 +75,9 @@ fn repl(base:&mut ASTBase) {
         "dot" => { let mut s=String::new(); base.dot(pop(&mut data),&mut s); print!("{}", s); }
         "sho" => base.show(pop(&mut data)),
         "bdd" => { let top=pop(&mut data); let n = solve::solve(&mut bdds,base.raw_ast(),top).n; bdds.show(n); data.push(n); }
+        "bdd-dot" => { let mut s=String::new(); bdds.dot(pop(&mut data),&mut s); print!("{}", s); }
         "anf" => { let top=pop(&mut data); let n = solve::solve(&mut anfs,base.raw_ast(),top).n; anfs.show(n); data.push(n); }
+        "anf-dot" => { let mut s=String::new(); anfs.dot(pop(&mut data),&mut s); print!("{}", s); }
   
         // generic forth commands
         "q" => break 'main,
@@ -87,20 +91,22 @@ fn repl(base:&mut ASTBase) {
         _ => {
           // parse number:
           if let Ok(w)=word.parse::<usize>() { data.push(NID::ixn(w)); }
-          // parse input variable
-          else if word.starts_with('$') {
-            let s = word.to_string().split_off(1);
-            if let Ok(n) = s.parse::<usize>() {
-              data.push(NID::var(n as u32)); }
-            else { println!("bad var: {}", word) } }
-          // define:
-          else if word.starts_with(':') {
-            let var = word.to_string().split_off(1);
-            let val = pop(&mut data);
-            scope.insert(var,val); }
           // retrieve:
           else if let Some(&val) = scope.get(word) { data.push(val); }
-          else { println!("{}?", word) }}}}}}
+          // parse input variable
+          else { match word.chars().nth(0).unwrap() {
+            'x' => if let Ok(n) = num_suffix!(word) { data.push(NID::var(n as u32)) }
+                   else { println!("bad var: {}", word) }
+            'v' => if let Ok(n) = num_suffix!(word) { data.push(NID::vir(n as u32)) }
+                   else { println!("bad vir: {}", word) }
+            '#' => if let Ok(n) = num_suffix!(word) { data.push(NID::ixn(n)) }
+                   else { println!("bad ixn: {}", word) }
+            ':' => // define:
+              if word.starts_with(':') {
+                let var = word.to_string().split_off(1);
+                let val = pop(&mut data);
+                scope.insert(var,val); }
+            _ => { println!("{}?", word) }}}}}}}}
 
 
 fn main() {
