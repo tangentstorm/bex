@@ -26,6 +26,8 @@ pub struct VID { v:VidEnum }
 pub const NOV:VID = VID::nov();
 pub const TOP:VID = VID::top();
 
+impl Default for VID { fn default()->Self { NOV }}
+
 fn cmp_depth_idx(x:u32, y:&u32)->VidOrdering {
   match x.cmp(y) {
     Ordering::Less => VidOrdering::Below,
