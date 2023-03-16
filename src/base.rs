@@ -1,12 +1,12 @@
 #![macro_use]
 //! Standard trait for databases of boolean expressions.
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::Write;
 use std::process::Command;      // for creating and viewing digarams
 use {simp, nid::{NID}};
 use vid::VID;
 use reg::Reg;
-use hashbrown::HashSet;
 
 /// Functions common to all expression databases.
 pub trait Base {

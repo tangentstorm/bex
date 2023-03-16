@@ -1,9 +1,6 @@
 //! A module for efficient implementation of binary decision diagrams.
-use std::collections::HashMap;
+use std::collections::{HashMap,HashSet};
 use std::cell::RefCell;
-
-#[cfg(test)]
-use std::collections::HashSet;
 
 extern crate num_cpus;
 
@@ -276,7 +273,7 @@ impl Base for BDDBase {
     self.walk(n, &mut |n,_,_,e| we!(n, e));
     w!("}}"); }
 
-  fn solution_set(&self, n: NID, nvars: usize)->hashbrown::HashSet<Reg> {
+  fn solution_set(&self, n: NID, nvars: usize)->HashSet<Reg> {
     self.solutions_pad(n, nvars).collect() }}
 
 

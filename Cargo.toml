@@ -38,10 +38,6 @@ simplelog = "0.5"
 num_cpus = "1.0"
 rand = "0.8.5"
 
-[dependencies.hashbrown]
-version = "0.11"
-features = ["serde"]
-
 [dev-dependencies]
 bencher = "0.1.5"
 

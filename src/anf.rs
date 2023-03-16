@@ -12,7 +12,7 @@
 //!     ab(c(1+d) + d) + cd      (after factoring)
 //! ```
 //! In addition, identical suffixes after factoring always refer to the same node.
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use base::{Base};
 use simp;
 use {nid, nid::{NID,I,O}};
@@ -20,7 +20,6 @@ use vid::{VID,VidOrdering};
 use cur::{Cursor, CursorPlan};
 use reg::Reg;
 use vhl::{VHL, HiLo, HiLoBase, Walkable};
-use hashbrown::HashMap;
 use bdd::{BDDBase}; // for solutions
 #[cfg(test)] use vid::{topmost, botmost};
 
@@ -139,7 +138,7 @@ impl Base for ANFBase {
 
   fn save(&self, _path:&str)->::std::io::Result<()> { todo!("anf::save") }
 
-  fn solution_set(&self, n: NID, nvars: usize)->hashbrown::HashSet<Reg> {
+  fn solution_set(&self, n: NID, nvars: usize)->HashSet<Reg> {
     self.solutions_pad(n, nvars).collect() }
 
 } // impl Base for ANFBase

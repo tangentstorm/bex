@@ -1,11 +1,12 @@
 //! Generic Work-in-progress support for VHL graphs.
+use std::collections::HashMap;
 use std::hash::Hash;
 use nid::NID;
 use vid::VID;
 use {vhl, vhl::HiLoPart};
 use swarm::QID;
 
-pub type WIPHashMap<K,V> = hashbrown::hash_map::HashMap<K,V>;
+pub type WIPHashMap<K,V> = HashMap<K,V>;
 
 /// Work in progress for Swarms.
 #[derive(PartialEq,Debug,Copy,Clone)]

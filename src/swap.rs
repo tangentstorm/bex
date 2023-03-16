@@ -3,12 +3,12 @@
 //! It adjusts the input variable ordering by swapping adjacent inputs until the
 //! one to be replaced next is at the top of the BDD. The actual replacement work
 //! at each step then only involves the top three rows.
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
+use std::{fmt, hash::Hash};
 use base::GraphViz;
-use hashbrown::{HashMap, HashSet};
 use vid::{VID, NOV, TOP};
 use {solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops, std::path::Path, base::Base};
-use std::{fmt, hash::Hash};
-use std::cell::RefCell;
 use swarm::{Swarm,Worker,QID,SwarmCmd,WID};
 
 /// XID: An index-based unique identifier for nodes.

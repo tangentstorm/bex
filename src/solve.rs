@@ -14,6 +14,8 @@
 /// (the --nocapture is an optional argument to the test engine. it turns off
 /// capturing of stdout so that you can see debug lines from the solver)
 
+use std::collections::HashSet;
+use std::path::Path;
 use ::{apl, ops};
 use ast::RawASTBase;
 use base::Base;
@@ -21,8 +23,6 @@ use nid::NID;
 use vid::VID;
 use ops::Ops;
 use reg::Reg;
-use hashbrown::HashSet;
-use std::path::Path;
 
 
 /// protocol used by solve.rs. These allow the base to prepare itself for different steps
@@ -238,7 +238,7 @@ pub fn solve<S:SubSolver>(dst:&mut S, src0:&RawASTBase, sn:NID)->DstNid {
 #[macro_export]
 macro_rules! find_factors {
   ($TDEST:ident, $T0:ident, $T1:ident, $k:expr, $expect:expr) => {{
-    use std::env;
+    use std::env; use std::collections::HashSet;
     use $crate::{GraphViz, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}, bdd};
     bdd::COUNT_XMEMO_TEST.with(|c| c.replace(0) );
     bdd::COUNT_XMEMO_FAIL.with(|c| c.replace(0) ); // TODO: other bases

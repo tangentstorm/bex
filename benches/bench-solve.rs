@@ -1,6 +1,3 @@
-extern crate hashbrown;
-use hashbrown::HashSet;
-
 #[macro_use]
 extern crate bencher;
 use bencher::Bencher;

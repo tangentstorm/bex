@@ -2,7 +2,7 @@
 use std::{marker::PhantomData, thread};
 use std::sync::mpsc::{Sender, Receiver, channel, SendError, RecvError};
 use std::fmt::Debug;
-use hashbrown::HashMap;
+use std::collections::HashMap;
 use rand::seq::SliceRandom;
 
 /// query id
