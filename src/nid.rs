@@ -144,6 +144,8 @@ fn permute_bits(x:u32, pv:&[u8])->u32 {
 
 
 impl NID {
+  #[inline(always)] pub fn o()->Self { O }
+  #[inline(always)] pub fn i()->Self { I }
   #[inline(always)] pub fn var(v:u32)->Self { Self::from_vid(vid::VID::var(v)) }
   #[inline(always)] pub fn vir(v:u32)->Self { Self::from_vid(vid::VID::vir(v)) }
   #[inline(always)] pub fn from_var(v:vid::VID)->Self { Self::var(v.var_ix() as u32)}
