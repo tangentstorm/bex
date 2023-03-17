@@ -114,10 +114,6 @@ impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug+Clone, R:'static+Send+Debug,
        .choose(&mut rand::thread_rng()).unwrap();
     self.send(*wid, q)}
 
-  pub fn get_worker(&mut self, wid:WID)->&Sender<Option<QMsg<Q>>> {
-    self.whs.get(&wid).unwrap_or_else(||
-      panic!("requested non-existent worker {:?}", wid)) }
-
   pub fn num_workers(&self)->usize { self.whs.len() }
 
   pub fn kill(&mut self, w:WID) {
@@ -127,7 +123,9 @@ impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug+Clone, R:'static+Send+Debug,
 
   pub fn send(&mut self, wid:WID, q:Q)->QID {
     let qid = QID::STEP(self.nq); self.nq+=1;
-    if self.get_worker(wid).send(Some(QMsg{ qid, q })).is_err() {
+    let w = self.whs.get(&wid).unwrap_or_else(||
+      panic!("requested non-existent worker {:?}", wid));
+    if w.send(Some(QMsg{ qid, q })).is_err() {
       panic!("couldn't send message to worker {:?}", wid) }
     qid}
 
