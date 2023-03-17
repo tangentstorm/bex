@@ -1,10 +1,11 @@
 //! (Var, Hi, Lo) triples
 use std::collections::BinaryHeap;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+use dashmap::DashMap;
 use nid::NID;
 use vid::VID;
 
-pub type VHLHashMap<K,V> = HashMap<K,V>;
+pub type VHLHashMap<K,V> = DashMap<K,V>;
 
 
 /// Simple Hi/Lo pair stored internally when representing nodes.
