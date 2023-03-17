@@ -1,34 +1,72 @@
-<!-- Tufts VUE 3.3.0 concept-map (bex-types.vue) 2023-03-13 -->
+<!-- Tufts VUE 3.3.0 concept-map (bex-types.vue) 2023-03-17 -->
 <!-- Tufts VUE: http://vue.tufts.edu/ -->
 <!-- Do Not Remove: VUE mapping @version(1.1) jar:file:/C:/Program%20Files%20(x86)/VUE/VUE.jar!/tufts/vue/resources/lw_mapping_1_1.xml -->
-<!-- Do Not Remove: Saved date Mon Mar 13 15:50:31 EDT 2023 by michal on platform Windows 8 6.2 in JVM 1.7.0_21-b11 -->
+<!-- Do Not Remove: Saved date Fri Mar 17 15:03:07 EDT 2023 by michal on platform Windows 8 6.2 in JVM 1.7.0_21-b11 -->
 <!-- Do Not Remove: Saving version @(#)VUE: built October 8 2015 at 1658 by tomadm on Linux 2.6.32-504.23.4.el6.x86_64 i386 JVM 1.7.0_21-b11(bits=32) -->
 <?xml version="1.0" encoding="US-ASCII"?>
 <LW-MAP xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
     xsi:noNamespaceSchemaLocation="none" ID="0" label="bex-types.vue"
     created="1590418643801" x="0.0" y="0.0" width="1.4E-45"
     height="1.4E-45" strokeWidth="0.0" autoSized="false">
-    <resource referenceCreated="1678737031577" size="81038"
+    <resource referenceCreated="1679079790121" size="101824"
         spec="D:\ver\bex\doc\bex-types.vue" type="1" xsi:type="URLResource">
         <title>bex-types.vue</title>
         <property key="File" value="D:\ver\bex\doc\bex-types.vue"/>
     </resource>
-    <fillColor>#0066CC</fillColor>
+    <fillColor>#333333</fillColor>
     <strokeColor>#404040</strokeColor>
     <textColor>#000000</textColor>
     <font>SansSerif-plain-14</font>
     <URIString>http://vue.tufts.edu/rdf/resource/4c5d81a8c0a800750116aba6dc8d68cc</URIString>
     <child ID="35" label="trait base::Base" layerID="1"
-        created="1590419283801" x="140.54712" y="-498.5899"
+        created="1590419283801" x="140.54712" y="-527.5899"
         width="703.0" height="443.0" strokeWidth="1.0" autoSized="true" xsi:type="node">
         <fillColor>#000000</fillColor>
         <strokeColor>#000000</strokeColor>
         <textColor>#FFFFFF</textColor>
         <font>Consolas-bold-18</font>
         <URIString>http://vue.tufts.edu/rdf/resource/4c6371f7c0a800750116aba6271d6a91</URIString>
+        <child ID="70"
+            label="&#xa0; fn &#xa;        new()->Self &#xa;        where Self:Sized;"
+            created="1678730857109" x="34.0" y="30.0" width="664.0"
+            height="39.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
+            <strokeColor>#404040</strokeColor>
+            <textColor>#000000</textColor>
+            <font>SansSerif-plain-14</font>
+            <URIString>http://vue.tufts.edu/rdf/resource/dc290024c0a83801011bad8dd8ee45b3</URIString>
+            <richText>&lt;html&gt;
+  &lt;head color="#000000" style="color: #000000"&gt;
+    &lt;style type="text/css"&gt;
+      &lt;!--
+        body { margin-right: 0px; font-size: 18; margin-left: 0px; color: #000000; margin-top: 0px; font-family: Consolas; margin-bottom: 0px }
+        ol { vertical-align: middle; margin-left: 30; font-size: 18; list-style-position: outside; margin-top: 6; font-family: Consolas }
+        p { margin-right: 0; margin-left: 0; color: #000000; margin-top: 0; margin-bottom: 0 }
+        ul { vertical-align: middle; margin-left: 30; font-size: 18; list-style-position: outside; margin-top: 6; font-family: Consolas }
+      --&gt;
+    &lt;/style&gt;
+    
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div style="font-size: 14px; white-space: pre; color: #f8f8f8; line-height: 19px; font-weight: normal; font-family: Consolas, Courier New, monospace; background-color: #390000"&gt;
+      &lt;div&gt;
+        &lt;font color="#f8f8f8"&gt;&amp;#160; &lt;/font&gt;&lt;font color="#f12727"&gt;fn&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
+        &lt;/font&gt;&lt;font color="#fec758"&gt;new&lt;/font&gt;&lt;font color="#f8f8f8"&gt;()&lt;/font&gt;&lt;font color="#f12727"&gt;-&amp;gt;Self&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
+        &lt;/font&gt;&lt;font color="#f12727"&gt;where&lt;/font&gt;&lt;font color="#f8f8f8"&gt; &lt;/font&gt;&lt;font color="#f12727"&gt;Self:&lt;/font&gt;&lt;font color="#9df39f"&gt;Sized&lt;/font&gt;&lt;font color="#f8f8f8"&gt;;&lt;/font&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+    &lt;p color="#000000" style="color: #000000"&gt;
+      
+    &lt;/p&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</richText>
+            <label>&#xa0; fn 
+        new()-&gt;Self 
+        where Self:Sized;</label>
+        </child>
         <child ID="66"
             label="&#xa0; fn &#xa;        when_hi(&amp;mut &#xa;        self, v:VID, &#xa;        n:NID)->NID;&#xa;      &#xa;      &#xa;        &#xa0; fn &#xa;        when_lo(&amp;mut &#xa;        self, v:VID, &#xa;        n:NID)->NID;&#xa;      &#xa;      &#xa;        &#xa0; fn &#xa;        sub(&amp;mut &#xa;        self, v:VID, &#xa;        n:NID, &#xa;        ctx:NID)->NID;"
-            created="1678730735028" x="34.0" y="30.0" width="664.0"
+            created="1678730735028" x="34.0" y="72.0" width="664.0"
             height="85.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
             <strokeColor>#404040</strokeColor>
             <textColor>#000000</textColor>
@@ -94,7 +132,7 @@
         </child>
         <child ID="61"
             label="&#xa0; fn &#xa;        and(&amp;mut &#xa;        self, x:NID, &#xa;        y:NID)->NID;&#xa;      &#xa;      &#xa;        &#xa0; fn &#xa;        xor(&amp;mut &#xa;        self, x:NID, &#xa;        y:NID)->NID;&#xa;      &#xa;      &#xa;        &#xa0; fn &#xa;        or(&amp;mut &#xa;        self, x:NID, &#xa;        y:NID)->NID;"
-            created="1678730660339" x="34.0" y="118.0" width="664.0"
+            created="1678730660339" x="34.0" y="160.0" width="664.0"
             height="83.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
             <strokeColor>#404040</strokeColor>
             <textColor>#000000</textColor>
@@ -158,7 +196,7 @@
         </child>
         <child ID="60"
             label="&#xa0; fn &#xa;        def(&amp;mut &#xa;        self, s:String, &#xa;        v:VID)->NID;&#xa;      &#xa;      &#xa;        &#xa0; fn &#xa;        tag(&amp;mut &#xa;        self, n:NID, &#xa;        s:String)->NID;&#xa;      &#xa;      &#xa;        &#xa0; fn &#xa;        get(&amp;self, &#xa;        s:&amp;str)->Option&lt;NID>;"
-            created="1678730583008" x="34.0" y="204.0" width="664.0"
+            created="1678730583008" x="34.0" y="246.0" width="664.0"
             height="83.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
             <strokeColor>#404040</strokeColor>
             <textColor>#000000</textColor>
@@ -220,7 +258,7 @@
         </child>
         <child ID="58"
             label="&#xa0; fn &#xa;        save(&amp;self, &#xa;        path:&amp;str)->::std::io::Result&lt;()>;&#xa;      &#xa;      &#xa;        &#xa0; fn &#xa;        dot(&amp;self, &#xa;        n:NID, &#xa;        wr: &#xa;        &amp;mut dyn &#xa;        std::fmt::Write);"
-            created="1678730494990" x="34.0" y="290.0" width="664.0"
+            created="1678730494990" x="34.0" y="332.0" width="664.0"
             height="61.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
             <strokeColor>#404040</strokeColor>
             <textColor>#000000</textColor>
@@ -274,7 +312,7 @@
         </child>
         <child ID="68"
             label="&#xa0; fn &#xa;        solution_set(&amp;self, &#xa;        _n:NID, &#xa;        _nvars:usize)->HashSet&lt;Reg>"
-            created="1678730764452" x="34.0" y="354.0" width="664.0"
+            created="1678730764452" x="34.0" y="396.0" width="664.0"
             height="41.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
             <strokeColor>#404040</strokeColor>
             <textColor>#000000</textColor>
@@ -312,44 +350,6 @@
         _n:NID, 
         _nvars:usize)-&gt;HashSet&lt;Reg&gt;</label>
         </child>
-        <child ID="70"
-            label="&#xa0; fn &#xa;        new()->Self &#xa;        where Self:Sized;"
-            created="1678730857109" x="34.0" y="398.0" width="664.0"
-            height="39.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
-            <strokeColor>#404040</strokeColor>
-            <textColor>#000000</textColor>
-            <font>SansSerif-plain-14</font>
-            <URIString>http://vue.tufts.edu/rdf/resource/dc290024c0a83801011bad8dd8ee45b3</URIString>
-            <richText>&lt;html&gt;
-  &lt;head color="#000000" style="color: #000000"&gt;
-    &lt;style type="text/css"&gt;
-      &lt;!--
-        body { margin-right: 0px; font-size: 18; margin-left: 0px; color: #000000; margin-top: 0px; font-family: Consolas; margin-bottom: 0px }
-        ol { vertical-align: middle; margin-left: 30; font-size: 18; list-style-position: outside; margin-top: 6; font-family: Consolas }
-        p { margin-right: 0; margin-left: 0; color: #000000; margin-top: 0; margin-bottom: 0 }
-        ul { vertical-align: middle; margin-left: 30; font-size: 18; list-style-position: outside; margin-top: 6; font-family: Consolas }
-      --&gt;
-    &lt;/style&gt;
-    
-  &lt;/head&gt;
-  &lt;body&gt;
-    &lt;div style="font-size: 14px; white-space: pre; color: #f8f8f8; line-height: 19px; font-weight: normal; font-family: Consolas, Courier New, monospace; background-color: #390000"&gt;
-      &lt;div&gt;
-        &lt;font color="#f8f8f8"&gt;&amp;#160; &lt;/font&gt;&lt;font color="#f12727"&gt;fn&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
-        &lt;/font&gt;&lt;font color="#fec758"&gt;new&lt;/font&gt;&lt;font color="#f8f8f8"&gt;()&lt;/font&gt;&lt;font color="#f12727"&gt;-&amp;gt;Self&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
-        &lt;/font&gt;&lt;font color="#f12727"&gt;where&lt;/font&gt;&lt;font color="#f8f8f8"&gt; &lt;/font&gt;&lt;font color="#f12727"&gt;Self:&lt;/font&gt;&lt;font color="#9df39f"&gt;Sized&lt;/font&gt;&lt;font color="#f8f8f8"&gt;;&lt;/font&gt;
-      &lt;/div&gt;
-    &lt;/div&gt;
-    &lt;p color="#000000" style="color: #000000"&gt;
-      
-    &lt;/p&gt;
-  &lt;/body&gt;
-&lt;/html&gt;
-</richText>
-            <label>&#xa0; fn 
-        new()-&gt;Self 
-        where Self:Sized;</label>
-        </child>
         <shape arcwidth="20.0" archeight="20.0" xsi:type="roundRect"/>
     </child>
     <child ID="39" label="bex data types" layerID="1"
@@ -357,7 +357,7 @@
         width="296.0" height="68.0" strokeWidth="1.0" autoSized="true" xsi:type="node">
         <fillColor>#00000000</fillColor>
         <strokeColor>#00000000</strokeColor>
-        <textColor>#FFFFFF</textColor>
+        <textColor>#EEEEEE</textColor>
         <font>Impact-plain-48</font>
         <URIString>http://vue.tufts.edu/rdf/resource/dc1c5581c0a83801011bad8d4411b842</URIString>
         <shape arcwidth="20.0" archeight="20.0" xsi:type="roundRect"/>
@@ -441,7 +441,7 @@
         x="-243.78522" y="-505.8451" width="66.0" height="22.0"
         strokeWidth="0.0" autoSized="false" xsi:type="text">
         <strokeColor>#404040</strokeColor>
-        <textColor>#000000</textColor>
+        <textColor>#FFFFFF</textColor>
         <font>SansSerif-plain-14</font>
         <URIString>http://vue.tufts.edu/rdf/resource/dc1c5582c0a83801011bad8d93d4388b</URIString>
         <richText>&lt;html&gt;
@@ -458,7 +458,7 @@
   &lt;/head&gt;
   &lt;body&gt;
     &lt;p color="#000000" style="color: #000000"&gt;
-      Inverted?
+      &lt;font color="#ffffff"&gt;Inverted?&lt;/font&gt;
     &lt;/p&gt;
   &lt;/body&gt;
 &lt;/html&gt;
@@ -481,7 +481,7 @@
         x="-228.89801" y="-540.2057" width="92.0" height="22.0"
         strokeWidth="0.0" autoSized="false" xsi:type="text">
         <strokeColor>#404040</strokeColor>
-        <textColor>#000000</textColor>
+        <textColor>#FFFFFF</textColor>
         <font>SansSerif-plain-14</font>
         <URIString>http://vue.tufts.edu/rdf/resource/dc1c5582c0a83801011bad8df3beb6a1</URIString>
         <richText>&lt;html&gt;
@@ -498,7 +498,7 @@
   &lt;/head&gt;
   &lt;body&gt;
     &lt;p color="#000000" style="color: #000000"&gt;
-      Variable?
+      &lt;font color="#ffffff"&gt;Variable?&lt;/font&gt;
     &lt;/p&gt;
   &lt;/body&gt;
 &lt;/html&gt;
@@ -522,7 +522,7 @@
         x="-168.89825" y="-569.30316" width="66.0" height="22.0"
         strokeWidth="0.0" autoSized="false" xsi:type="text">
         <strokeColor>#404040</strokeColor>
-        <textColor>#000000</textColor>
+        <textColor>#FFFFFF</textColor>
         <font>SansSerif-plain-14</font>
         <URIString>http://vue.tufts.edu/rdf/resource/dc1c5583c0a83801011bad8dba37f8ee</URIString>
         <richText>&lt;html&gt;
@@ -539,7 +539,7 @@
   &lt;/head&gt;
   &lt;body&gt;
     &lt;p color="#000000" style="color: #000000"&gt;
-      Constant?
+      &lt;font color="#ffffff"&gt;Constant?&lt;/font&gt;
     &lt;/p&gt;
   &lt;/body&gt;
 &lt;/html&gt;
@@ -550,7 +550,7 @@
         x="-116.79352" y="-541.2582" width="59.0" height="22.0"
         strokeWidth="0.0" autoSized="false" xsi:type="text">
         <strokeColor>#404040</strokeColor>
-        <textColor>#000000</textColor>
+        <textColor>#FFFFFF</textColor>
         <font>SansSerif-plain-14</font>
         <URIString>http://vue.tufts.edu/rdf/resource/dc1c5583c0a83801011bad8da56fc973</URIString>
         <richText>&lt;html&gt;
@@ -567,7 +567,7 @@
   &lt;/head&gt;
   &lt;body&gt;
     &lt;p color="#000000" style="color: #000000"&gt;
-      Virtual?
+      &lt;font color="#ffffff"&gt;Virtual?&lt;/font&gt;
     &lt;/p&gt;
   &lt;/body&gt;
 &lt;/html&gt;
@@ -588,7 +588,7 @@
         <ID2 xsi:type="node">43</ID2>
     </child>
     <child ID="56" label="HiLo" layerID="1" created="1678730228650"
-        x="-812.76953" y="-144.98438" width="413.0" height="90.0"
+        x="-822.2808" y="-148.98438" width="413.0" height="90.0"
         strokeWidth="1.0" autoSized="true" xsi:type="node">
         <fillColor>#000000</fillColor>
         <strokeColor>#00000000</strokeColor>
@@ -638,7 +638,7 @@
         <shape arcwidth="20.0" archeight="20.0" xsi:type="roundRect"/>
     </child>
     <child ID="57" label="HiLoCache" layerID="1" created="1678730245195"
-        x="-812.808" y="-48.164795" width="341.0" height="136.0"
+        x="-822.2808" y="-45.164795" width="343.0" height="135.0"
         strokeWidth="1.0" autoSized="true" xsi:type="node">
         <fillColor>#000000</fillColor>
         <strokeColor>#00000000</strokeColor>
@@ -646,9 +646,9 @@
         <font>Impact-plain-18</font>
         <URIString>http://vue.tufts.edu/rdf/resource/dc290026c0a83801011bad8ddd4bc5de</URIString>
         <child ID="82"
-            label="pub struct &#xa;        HiLoCache {&#xa;      &#xa;      &#xa;        &#xa0; hilos: &#xa;        Vec&lt;HiLo>,&#xa;      &#xa;      &#xa;        &#xa0; index: &#xa;        HashMap&lt;HiLo, &#xa;        usize>}"
-            created="1678731371344" x="5.0" y="31.0" width="331.0"
-            height="99.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
+            label="pub struct &#xa;        HiLoCache {&#xa;      &#xa;      &#xa;        &#xa0; hilos: &#xa;        Vec&lt;HiLo>,&#xa;      &#xa;      &#xa;        &#xa0; index: &#xa;        VHLHashMap&lt;HiLo, &#xa;        usize>}"
+            created="1678731371344" x="5.0" y="31.0" width="333.0"
+            height="98.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
             <strokeColor>#404040</strokeColor>
             <textColor>#000000</textColor>
             <font>SansSerif-plain-14</font>
@@ -677,7 +677,7 @@
       &lt;/div&gt;
       &lt;div&gt;
         &lt;font color="#f8f8f8"&gt;&amp;#160; &lt;/font&gt;&lt;font color="#fb9a4b"&gt;&lt;i&gt;index&lt;/i&gt;&lt;/font&gt;&lt;font color="#f12727"&gt;:&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
-        &lt;/font&gt;&lt;font color="#fec758"&gt;HashMap&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;lt;&lt;/font&gt;&lt;font color="#fec758"&gt;HiLo&lt;/font&gt;&lt;font color="#f8f8f8"&gt;, 
+        VHL&lt;/font&gt;&lt;font color="#fec758"&gt;HashMap&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;lt;&lt;/font&gt;&lt;font color="#fec758"&gt;HiLo&lt;/font&gt;&lt;font color="#f8f8f8"&gt;, 
         &lt;/font&gt;&lt;font color="#9df39f"&gt;usize&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;gt;}&lt;/font&gt;
       &lt;/div&gt;
     &lt;/div&gt;
@@ -696,13 +696,13 @@
       
       
         &#xa0; index: 
-        HashMap&lt;HiLo, 
+        VHLHashMap&lt;HiLo, 
         usize&gt;}</label>
         </child>
         <shape arcwidth="20.0" archeight="20.0" xsi:type="roundRect"/>
     </child>
     <child ID="80" label="VHL" layerID="1" created="1678731278698"
-        x="-413.28082" y="-247.71928" width="513.0" height="90.0"
+        x="-396.28082" y="-255.71928" width="513.0" height="90.0"
         strokeWidth="1.0" autoSized="true" xsi:type="node">
         <fillColor>#000000</fillColor>
         <strokeColor>#00000000</strokeColor>
@@ -754,7 +754,7 @@
         <shape arcwidth="20.0" archeight="20.0" xsi:type="roundRect"/>
     </child>
     <child ID="89" label="bdd::ITE" layerID="1" created="1678731630931"
-        x="-815.2808" y="-247.78061" width="373.0" height="90.0"
+        x="-822.2808" y="-251.78061" width="373.0" height="90.0"
         strokeWidth="1.0" autoSized="true" xsi:type="node">
         <fillColor>#000000</fillColor>
         <strokeColor>#00000000</strokeColor>
@@ -804,7 +804,7 @@
         <shape arcwidth="20.0" archeight="20.0" xsi:type="roundRect"/>
     </child>
     <child ID="90" label="BddState" layerID="1" created="1678731862621"
-        x="-813.7273" y="94.778534" width="322.0" height="136.0"
+        x="-822.2808" y="102.778534" width="323.0" height="135.0"
         strokeWidth="1.0" autoSized="true" xsi:type="node">
         <fillColor>#000000</fillColor>
         <strokeColor>#00000000</strokeColor>
@@ -812,9 +812,9 @@
         <font>Impact-plain-18</font>
         <URIString>http://vue.tufts.edu/rdf/resource/dc383e3ac0a83801011bad8d5d42640b</URIString>
         <child ID="92"
-            label="pub struct &#xa;        BddState {&#xa;      &#xa;      &#xa;        &#xa0; hilos: &#xa;        vhl::HiLoCache,&#xa;      &#xa;      &#xa;        &#xa0; xmemo: &#xa;        HashMap&lt;ITE, &#xa;        NID> }"
-            created="1678731869132" x="5.0" y="31.0" width="312.0"
-            height="99.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
+            label="pub struct &#xa;        BddState {&#xa;      &#xa;      &#xa;        &#xa0; hilos: &#xa;        vhl::HiLoCache,&#xa;      &#xa;      &#xa;        &#xa0; xmemo: &#xa;        BddHashMap&lt;ITE, &#xa;        NID> }"
+            created="1678731869132" x="5.0" y="31.0" width="313.0"
+            height="98.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
             <strokeColor>#404040</strokeColor>
             <textColor>#000000</textColor>
             <font>SansSerif-plain-14</font>
@@ -843,7 +843,7 @@
       &lt;/div&gt;
       &lt;div&gt;
         &lt;font color="#f8f8f8"&gt;&amp;#160; &lt;/font&gt;&lt;font color="#fb9a4b"&gt;&lt;i&gt;xmemo&lt;/i&gt;&lt;/font&gt;&lt;font color="#f12727"&gt;:&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
-        &lt;/font&gt;&lt;font color="#fec758"&gt;HashMap&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;lt;&lt;/font&gt;&lt;font color="#fec758"&gt;ITE&lt;/font&gt;&lt;font color="#f8f8f8"&gt;, 
+        Bdd&lt;/font&gt;&lt;font color="#fec758"&gt;HashMap&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;lt;&lt;/font&gt;&lt;font color="#fec758"&gt;ITE&lt;/font&gt;&lt;font color="#f8f8f8"&gt;, 
         &lt;/font&gt;&lt;font color="#fec758"&gt;NID&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;gt; }&lt;/font&gt;
       &lt;/div&gt;
     &lt;/div&gt;
@@ -862,13 +862,13 @@
       
       
         &#xa0; xmemo: 
-        HashMap&lt;ITE, 
+        BddHashMap&lt;ITE, 
         NID&gt; }</label>
         </child>
         <shape arcwidth="20.0" archeight="20.0" xsi:type="roundRect"/>
     </child>
     <child ID="93" label="wip::WorkState" layerID="1"
-        created="1678732029845" x="-451.54102" y="-21.336433"
+        created="1678732029845" x="-433.08127" y="7.860115"
         width="393.0" height="175.0" strokeWidth="1.0" autoSized="true" xsi:type="node">
         <fillColor>#000000</fillColor>
         <strokeColor>#00000000</strokeColor>
@@ -1006,7 +1006,7 @@
         <shape arcwidth="20.0" archeight="20.0" xsi:type="roundRect"/>
     </child>
     <child ID="96" label="VID" layerID="1" created="1678732109639"
-        x="-822.2808" y="-506.90396" width="543.0" height="246.0"
+        x="-822.2808" y="-510.90396" width="543.0" height="246.0"
         strokeWidth="1.0" autoSized="true" xsi:type="node">
         <fillColor>#000000</fillColor>
         <strokeColor>#00000000</strokeColor>
@@ -1102,8 +1102,8 @@
         <shape arcwidth="20.0" archeight="20.0" xsi:type="roundRect"/>
     </child>
     <child ID="99" label="swarm::Swarm" layerID="1"
-        created="1678735258965" x="10.884155" y="-9.647461"
-        width="653.0" height="246.0" strokeWidth="1.0" autoSized="true" xsi:type="node">
+        created="1678735258965" x="0.9824219" y="52.83403" width="653.0"
+        height="246.0" strokeWidth="1.0" autoSized="true" xsi:type="node">
         <fillColor>#000000</fillColor>
         <strokeColor>#00000000</strokeColor>
         <textColor>#FFFFFF</textColor>
@@ -1223,12 +1223,358 @@
         </child>
         <shape arcwidth="20.0" archeight="20.0" xsi:type="roundRect"/>
     </child>
+    <child ID="104" label="Ops" layerID="1" created="1678755969767"
+        x="-1282.1293" y="-250.333" width="313.0" height="87.0"
+        strokeWidth="1.0" autoSized="true" xsi:type="node">
+        <fillColor>#000000</fillColor>
+        <strokeColor>#00000000</strokeColor>
+        <textColor>#FFFFFF</textColor>
+        <font>Impact-plain-18</font>
+        <URIString>http://vue.tufts.edu/rdf/resource/ddb1785dc0a83801011bad8dc8ccce10</URIString>
+        <child ID="106"
+            label="pub enum &#xa;        Ops { RPN(Vec&lt;NID>) &#xa;        }"
+            created="1678756018623" x="5.0" y="31.0" width="303.0"
+            height="50.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
+            <strokeColor>#404040</strokeColor>
+            <textColor>#000000</textColor>
+            <font>SansSerif-plain-14</font>
+            <URIString>http://vue.tufts.edu/rdf/resource/ddb1785dc0a83801011bad8dbb3b9eb7</URIString>
+            <richText>&lt;html&gt;
+  &lt;head color="#f8f8f8" style="color: #f8f8f8"&gt;
+    &lt;style type="text/css"&gt;
+      &lt;!--
+        body { margin-right: 0px; font-size: 18; margin-left: 0px; color: #f8f8f8; margin-top: 0px; font-family: Impact; margin-bottom: 0px }
+        ol { vertical-align: middle; margin-left: 30; font-size: 18; list-style-position: outside; margin-top: 6; font-family: Impact }
+        p { margin-right: 0; margin-left: 0; color: #f8f8f8; margin-top: 0; margin-bottom: 0 }
+        ul { vertical-align: middle; margin-left: 30; font-size: 18; list-style-position: outside; margin-top: 6; font-family: Impact }
+      --&gt;
+    &lt;/style&gt;
+    
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div style="font-size: 14px; white-space: pre; color: #f8f8f8; line-height: 19px; font-weight: normal; font-family: Consolas, Courier New, monospace; background-color: #390000"&gt;
+      &lt;div&gt;
+        &lt;font color="#f12727"&gt;pub&lt;/font&gt;&lt;font color="#f8f8f8"&gt; &lt;/font&gt;&lt;font color="#f12727"&gt;enum&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
+        &lt;/font&gt;&lt;font color="#fec758"&gt;Ops&lt;/font&gt;&lt;font color="#f8f8f8"&gt; { &lt;/font&gt;&lt;font color="#fb9a4b"&gt;&lt;i&gt;RPN&lt;/i&gt;&lt;/font&gt;&lt;font color="#f8f8f8"&gt;(&lt;/font&gt;&lt;font color="#fec758"&gt;Vec&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;lt;&lt;/font&gt;&lt;font color="#fec758"&gt;NID&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;gt;) 
+        }&lt;/font&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+    &lt;p color="#f8f8f8" style="color: #f8f8f8"&gt;
+      
+    &lt;/p&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</richText>
+            <label>pub enum 
+        Ops { RPN(Vec&lt;NID&gt;) 
+        }</label>
+        </child>
+        <shape arcwidth="20.0" archeight="20.0" xsi:type="roundRect"/>
+    </child>
+    <child ID="107" label="AST" layerID="1" created="1678756578010"
+        x="-1284.0831" y="-499.06836" width="342.0" height="214.0"
+        strokeWidth="1.0" autoSized="true" xsi:type="node">
+        <fillColor>#000000</fillColor>
+        <strokeColor>#00000000</strokeColor>
+        <textColor>#FFFFFF</textColor>
+        <font>Impact-plain-18</font>
+        <URIString>http://vue.tufts.edu/rdf/resource/ddb1785dc0a83801011bad8d165ebe4c</URIString>
+        <child ID="108"
+            label="pub struct &#xa;        RawASTBase {&#xa;      &#xa;      &#xa;        &#xa0; bits: &#xa;        Vec&lt;Ops>,&#xa;      &#xa;      &#xa;        &#xa0; tags: &#xa;        HashMap&lt;String, &#xa;        NID>,&#xa;      &#xa;      &#xa;        &#xa0; hash: &#xa;        HashMap&lt;Ops, &#xa;        NID>}"
+            created="1678756581511" x="34.0" y="31.0" width="293.0"
+            height="104.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
+            <strokeColor>#404040</strokeColor>
+            <textColor>#000000</textColor>
+            <font>SansSerif-plain-14</font>
+            <URIString>http://vue.tufts.edu/rdf/resource/ddb1785dc0a83801011bad8d0f361272</URIString>
+            <richText>&lt;html&gt;
+  &lt;head color="#ffffff" style="color: #ffffff"&gt;
+    &lt;style type="text/css"&gt;
+      &lt;!--
+        body { margin-right: 0px; font-size: 18; margin-left: 0px; color: #ffffff; margin-top: 0px; font-family: Consolas; margin-bottom: 0px }
+        ol { vertical-align: middle; margin-left: 30; font-size: 18; list-style-position: outside; margin-top: 6; font-family: Consolas }
+        p { margin-right: 0; margin-left: 0; color: #ffffff; margin-top: 0; margin-bottom: 0 }
+        ul { vertical-align: middle; margin-left: 30; font-size: 18; list-style-position: outside; margin-top: 6; font-family: Consolas }
+      --&gt;
+    &lt;/style&gt;
+    
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div style="font-size: 14px; white-space: pre; color: #f8f8f8; line-height: 19px; font-weight: normal; font-family: Consolas, Courier New, monospace; background-color: #390000"&gt;
+      &lt;div&gt;
+        &lt;font color="#f12727"&gt;pub&lt;/font&gt;&lt;font color="#f8f8f8"&gt; &lt;/font&gt;&lt;font color="#f12727"&gt;struct&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
+        &lt;/font&gt;&lt;font color="#fec758"&gt;RawASTBase&lt;/font&gt;&lt;font color="#f8f8f8"&gt; {&lt;/font&gt;
+      &lt;/div&gt;
+      &lt;div&gt;
+        &lt;font color="#f8f8f8"&gt;&amp;#160; &lt;/font&gt;&lt;font color="#fb9a4b"&gt;&lt;i&gt;bits&lt;/i&gt;&lt;/font&gt;&lt;font color="#f12727"&gt;:&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
+        &lt;/font&gt;&lt;font color="#fec758"&gt;Vec&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;lt;&lt;/font&gt;&lt;font color="#fec758"&gt;Ops&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;gt;,&lt;/font&gt;
+      &lt;/div&gt;
+      &lt;div&gt;
+        &lt;font color="#f8f8f8"&gt;&amp;#160; &lt;/font&gt;&lt;font color="#fb9a4b"&gt;&lt;i&gt;tags&lt;/i&gt;&lt;/font&gt;&lt;font color="#f12727"&gt;:&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
+        &lt;/font&gt;&lt;font color="#fec758"&gt;HashMap&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;lt;&lt;/font&gt;&lt;font color="#fec758"&gt;String&lt;/font&gt;&lt;font color="#f8f8f8"&gt;, 
+        &lt;/font&gt;&lt;font color="#fec758"&gt;NID&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;gt;,&lt;/font&gt;
+      &lt;/div&gt;
+      &lt;div&gt;
+        &lt;font color="#f8f8f8"&gt;&amp;#160; &lt;/font&gt;&lt;font color="#fb9a4b"&gt;&lt;i&gt;hash&lt;/i&gt;&lt;/font&gt;&lt;font color="#f12727"&gt;:&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
+        &lt;/font&gt;&lt;font color="#fec758"&gt;HashMap&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;lt;&lt;/font&gt;&lt;font color="#fec758"&gt;Ops&lt;/font&gt;&lt;font color="#f8f8f8"&gt;, 
+        &lt;/font&gt;&lt;font color="#fec758"&gt;NID&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;gt;}&lt;/font&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+    &lt;p color="#ffffff" style="color: #ffffff"&gt;
+      
+    &lt;/p&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</richText>
+            <label>pub struct 
+        RawASTBase {
+      
+      
+        &#xa0; bits: 
+        Vec&lt;Ops&gt;,
+      
+      
+        &#xa0; tags: 
+        HashMap&lt;String, 
+        NID&gt;,
+      
+      
+        &#xa0; hash: 
+        HashMap&lt;Ops, 
+        NID&gt;}</label>
+        </child>
+        <child ID="110"
+            label="pub struct &#xa;        ASTBase {&#xa;  base: &#xa;        Simplify&lt;RawASTBase> &#xa;        }"
+            created="1678756601458" x="34.0" y="138.0" width="303.0"
+            height="70.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
+            <strokeColor>#404040</strokeColor>
+            <textColor>#000000</textColor>
+            <font>SansSerif-plain-14</font>
+            <URIString>http://vue.tufts.edu/rdf/resource/ddb1785dc0a83801011bad8d7f4e5847</URIString>
+            <richText>&lt;html&gt;
+  &lt;head color="#ffffff" style="color: #ffffff"&gt;
+    &lt;style type="text/css"&gt;
+      &lt;!--
+        body { margin-right: 0px; font-size: 18; margin-left: 0px; color: #ffffff; margin-top: 0px; font-family: Consolas; margin-bottom: 0px }
+        ol { vertical-align: middle; margin-left: 30; font-size: 18; list-style-position: outside; margin-top: 6; font-family: Consolas }
+        p { margin-right: 0; margin-left: 0; color: #ffffff; margin-top: 0; margin-bottom: 0 }
+        ul { vertical-align: middle; margin-left: 30; font-size: 18; list-style-position: outside; margin-top: 6; font-family: Consolas }
+      --&gt;
+    &lt;/style&gt;
+    
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div style="font-size: 14px; white-space: pre; color: #f8f8f8; line-height: 19px; font-weight: normal; font-family: Consolas, Courier New, monospace; background-color: #390000"&gt;
+      &lt;div&gt;
+        &lt;font color="#f12727"&gt;pub&lt;/font&gt;&lt;font color="#f8f8f8"&gt; &lt;/font&gt;&lt;font color="#f12727"&gt;struct&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
+        &lt;/font&gt;&lt;font color="#fec758"&gt;ASTBase&lt;/font&gt;&lt;font color="#f8f8f8"&gt; {
+  &lt;/font&gt;&lt;font color="#fb9a4b"&gt;&lt;i&gt;base&lt;/i&gt;&lt;/font&gt;&lt;font color="#f12727"&gt;:&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
+        &lt;/font&gt;&lt;font color="#fec758"&gt;Simplify&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;lt;&lt;/font&gt;&lt;font color="#fec758"&gt;RawASTBase&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;gt; 
+        }&lt;/font&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+    &lt;p color="#ffffff" style="color: #ffffff"&gt;
+      
+    &lt;/p&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</richText>
+            <label>pub struct 
+        ASTBase {
+  base: 
+        Simplify&lt;RawASTBase&gt; 
+        }</label>
+        </child>
+        <shape arcwidth="20.0" archeight="20.0" xsi:type="roundRect"/>
+    </child>
+    <child ID="111" label="wip::WIP" layerID="1" created="1678758044370"
+        x="-26.514862" y="-68.70977" width="433.0" height="108.0"
+        strokeWidth="1.0" autoSized="true" xsi:type="node">
+        <fillColor>#000000</fillColor>
+        <strokeColor>#00000000</strokeColor>
+        <textColor>#FFFFFF</textColor>
+        <font>Impact-plain-18</font>
+        <URIString>http://vue.tufts.edu/rdf/resource/f0e03e59c0a83801011bad8d0481909d</URIString>
+        <child ID="114"
+            label="pub enum &#xa;        WIP {&#xa;  Fresh, Done(NID), &#xa;        Parts(vhl::VHLParts) &#xa;        }"
+            created="1678758068204" x="5.0" y="31.0" width="423.0"
+            height="71.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
+            <strokeColor>#404040</strokeColor>
+            <textColor>#000000</textColor>
+            <font>SansSerif-plain-14</font>
+            <URIString>http://vue.tufts.edu/rdf/resource/f0e03e5ac0a83801011bad8d8cff9124</URIString>
+            <richText>&lt;html&gt;
+  &lt;head color="#ffffff" style="color: #ffffff"&gt;
+    &lt;style type="text/css"&gt;
+      &lt;!--
+        body { margin-right: 0px; font-size: 18; margin-left: 0px; color: #ffffff; margin-top: 0px; font-family: Impact; margin-bottom: 0px }
+        ol { vertical-align: middle; margin-left: 30; font-size: 18; list-style-position: outside; margin-top: 6; font-family: Impact }
+        p { margin-right: 0; margin-left: 0; color: #ffffff; margin-top: 0; margin-bottom: 0 }
+        ul { vertical-align: middle; margin-left: 30; font-size: 18; list-style-position: outside; margin-top: 6; font-family: Impact }
+      --&gt;
+    &lt;/style&gt;
+    
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div style="font-size: 14px; white-space: pre; color: #f8f8f8; line-height: 19px; font-weight: normal; font-family: Consolas, Courier New, monospace; background-color: #390000"&gt;
+      &lt;div&gt;
+        &lt;font color="#f12727"&gt;pub&lt;/font&gt;&lt;font color="#f8f8f8"&gt; &lt;/font&gt;&lt;font color="#f12727"&gt;enum&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
+        &lt;/font&gt;&lt;font color="#fec758"&gt;WIP&lt;/font&gt;&lt;font color="#f8f8f8"&gt; {
+  &lt;/font&gt;&lt;font color="#fb9a4b"&gt;&lt;i&gt;Fresh&lt;/i&gt;&lt;/font&gt;&lt;font color="#f8f8f8"&gt;, &lt;/font&gt;&lt;font color="#fb9a4b"&gt;&lt;i&gt;Done&lt;/i&gt;&lt;/font&gt;&lt;font color="#f8f8f8"&gt;(&lt;/font&gt;&lt;font color="#fec758"&gt;NID&lt;/font&gt;&lt;font color="#f8f8f8"&gt;), 
+        &lt;/font&gt;&lt;font color="#fb9a4b"&gt;&lt;i&gt;Parts&lt;/i&gt;&lt;/font&gt;&lt;font color="#f8f8f8"&gt;(&lt;/font&gt;&lt;font color="#fec758"&gt;vhl&lt;/font&gt;&lt;font color="#f12727"&gt;::&lt;/font&gt;&lt;font color="#fec758"&gt;VHLParts&lt;/font&gt;&lt;font color="#f8f8f8"&gt;) 
+        }&lt;/font&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+    &lt;p color="#ffffff" style="color: #ffffff"&gt;
+      
+    &lt;/p&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</richText>
+            <label>pub enum 
+        WIP {
+  Fresh, Done(NID), 
+        Parts(vhl::VHLParts) 
+        }</label>
+        </child>
+        <shape arcwidth="20.0" archeight="20.0" xsi:type="roundRect"/>
+    </child>
+    <child ID="116" label="vhl::VHLParts" layerID="1"
+        created="1678758139111" x="-389.73978" y="-161.70041"
+        width="223.0" height="165.0" strokeWidth="1.0" autoSized="true" xsi:type="node">
+        <fillColor>#000000</fillColor>
+        <strokeColor>#00000000</strokeColor>
+        <textColor>#FFFFFF</textColor>
+        <font>Impact-plain-18</font>
+        <URIString>http://vue.tufts.edu/rdf/resource/f0e03ebdc0a83801011bad8d311ebee7</URIString>
+        <child ID="117"
+            label="pub struct &#xa;        VHLParts{&#xa;      &#xa;      &#xa;        &#xa0; pub &#xa;        v:VID,&#xa;      &#xa;      &#xa;        &#xa0; pub &#xa;        hi:Option&lt;NID>,&#xa;      &#xa;      &#xa;        &#xa0; pub &#xa;        lo:Option&lt;NID>,&#xa;      &#xa;      &#xa;        &#xa0; pub &#xa;        invert:bool}"
+            created="1678758146094" x="5.0" y="31.0" width="213.0"
+            height="128.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
+            <strokeColor>#404040</strokeColor>
+            <textColor>#000000</textColor>
+            <font>SansSerif-plain-14</font>
+            <URIString>http://vue.tufts.edu/rdf/resource/f0e03ebdc0a83801011bad8dac7211ef</URIString>
+            <richText>&lt;html&gt;
+  &lt;head color="#ffffff" style="color: #ffffff"&gt;
+    &lt;style type="text/css"&gt;
+      &lt;!--
+        body { margin-right: 0px; font-size: 18; margin-left: 0px; color: #ffffff; margin-top: 0px; font-family: Impact; margin-bottom: 0px }
+        ol { vertical-align: middle; margin-left: 30; font-size: 18; list-style-position: outside; margin-top: 6; font-family: Impact }
+        p { margin-right: 0; margin-left: 0; color: #ffffff; margin-top: 0; margin-bottom: 0 }
+        ul { vertical-align: middle; margin-left: 30; font-size: 18; list-style-position: outside; margin-top: 6; font-family: Impact }
+      --&gt;
+    &lt;/style&gt;
+    
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div style="font-size: 14px; white-space: pre; color: #f8f8f8; line-height: 19px; font-weight: normal; font-family: Consolas, Courier New, monospace; background-color: #390000"&gt;
+      &lt;div&gt;
+        &lt;font color="#f12727"&gt;pub&lt;/font&gt;&lt;font color="#f8f8f8"&gt; &lt;/font&gt;&lt;font color="#f12727"&gt;struct&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
+        &lt;/font&gt;&lt;font color="#fec758"&gt;VHLParts&lt;/font&gt;&lt;font color="#f8f8f8"&gt;{&lt;/font&gt;
+      &lt;/div&gt;
+      &lt;div&gt;
+        &lt;font color="#f8f8f8"&gt;&amp;#160; &lt;/font&gt;&lt;font color="#f12727"&gt;pub&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
+        &lt;/font&gt;&lt;font color="#fb9a4b"&gt;&lt;i&gt;v&lt;/i&gt;&lt;/font&gt;&lt;font color="#f12727"&gt;:&lt;/font&gt;&lt;font color="#fec758"&gt;VID&lt;/font&gt;&lt;font color="#f8f8f8"&gt;,&lt;/font&gt;
+      &lt;/div&gt;
+      &lt;div&gt;
+        &lt;font color="#f8f8f8"&gt;&amp;#160; &lt;/font&gt;&lt;font color="#f12727"&gt;pub&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
+        &lt;/font&gt;&lt;font color="#fb9a4b"&gt;&lt;i&gt;hi&lt;/i&gt;&lt;/font&gt;&lt;font color="#f12727"&gt;:&lt;/font&gt;&lt;font color="#fec758"&gt;Option&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;lt;&lt;/font&gt;&lt;font color="#fec758"&gt;NID&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;gt;,&lt;/font&gt;
+      &lt;/div&gt;
+      &lt;div&gt;
+        &lt;font color="#f8f8f8"&gt;&amp;#160; &lt;/font&gt;&lt;font color="#f12727"&gt;pub&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
+        &lt;/font&gt;&lt;font color="#fb9a4b"&gt;&lt;i&gt;lo&lt;/i&gt;&lt;/font&gt;&lt;font color="#f12727"&gt;:&lt;/font&gt;&lt;font color="#fec758"&gt;Option&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;lt;&lt;/font&gt;&lt;font color="#fec758"&gt;NID&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;gt;,&lt;/font&gt;
+      &lt;/div&gt;
+      &lt;div&gt;
+        &lt;font color="#f8f8f8"&gt;&amp;#160; &lt;/font&gt;&lt;font color="#f12727"&gt;pub&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
+        &lt;/font&gt;&lt;font color="#fb9a4b"&gt;&lt;i&gt;invert&lt;/i&gt;&lt;/font&gt;&lt;font color="#f12727"&gt;:&lt;/font&gt;&lt;font color="#9df39f"&gt;bool&lt;/font&gt;&lt;font color="#f8f8f8"&gt;}&lt;/font&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+    &lt;p color="#ffffff" style="color: #ffffff"&gt;
+      
+    &lt;/p&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</richText>
+            <label>pub struct 
+        VHLParts{
+      
+      
+        &#xa0; pub 
+        v:VID,
+      
+      
+        &#xa0; pub 
+        hi:Option&lt;NID&gt;,
+      
+      
+        &#xa0; pub 
+        lo:Option&lt;NID&gt;,
+      
+      
+        &#xa0; pub 
+        invert:bool}</label>
+        </child>
+        <shape arcwidth="20.0" archeight="20.0" xsi:type="roundRect"/>
+    </child>
+    <child ID="119" label="BddWorker" layerID="1"
+        created="1678822077733" x="-819.5912" y="253.1411" width="413.0"
+        height="99.0" strokeWidth="1.0" autoSized="true" xsi:type="node">
+        <fillColor>#000000</fillColor>
+        <strokeColor>#00000000</strokeColor>
+        <textColor>#FFFFFF</textColor>
+        <font>Impact-plain-18</font>
+        <URIString>http://vue.tufts.edu/rdf/resource/f0e03ee9c0a83801011bad8dcbe39bf1</URIString>
+        <child ID="118"
+            label="struct BddWorker &#xa;        {&#xa;  wid:WID, &#xa;        state:Option&lt;Arc&lt;BddState>> &#xa;        }"
+            created="1678822055406" x="5.0" y="31.0" width="403.0"
+            height="62.0" strokeWidth="0.0" autoSized="false" xsi:type="text">
+            <strokeColor>#404040</strokeColor>
+            <textColor>#000000</textColor>
+            <font>SansSerif-plain-14</font>
+            <URIString>http://vue.tufts.edu/rdf/resource/f0e03effc0a83801011bad8d770b2e27</URIString>
+            <richText>&lt;html&gt;
+  &lt;head color="#ffffff" style="color: #ffffff"&gt;
+    &lt;style type="text/css"&gt;
+      &lt;!--
+        body { margin-right: 0px; font-size: 18; margin-left: 0px; color: #ffffff; margin-top: 0px; font-family: Impact; margin-bottom: 0px }
+        ol { vertical-align: middle; margin-left: 30; font-size: 18; list-style-position: outside; margin-top: 6; font-family: Impact }
+        p { margin-right: 0; margin-left: 0; color: #ffffff; margin-top: 0; margin-bottom: 0 }
+        ul { vertical-align: middle; margin-left: 30; font-size: 18; list-style-position: outside; margin-top: 6; font-family: Impact }
+      --&gt;
+    &lt;/style&gt;
+    
+  &lt;/head&gt;
+  &lt;body&gt;
+    &lt;div style="font-size: 14px; white-space: pre; color: #f8f8f8; line-height: 19px; font-weight: normal; font-family: Consolas, Courier New, monospace; background-color: #390000"&gt;
+      &lt;div&gt;
+        &lt;font color="#f12727"&gt;struct&lt;/font&gt;&lt;font color="#f8f8f8"&gt; &lt;/font&gt;&lt;font color="#fec758"&gt;BddWorker&lt;/font&gt;&lt;font color="#f8f8f8"&gt; 
+        {
+  &lt;/font&gt;&lt;font color="#fb9a4b"&gt;&lt;i&gt;wid&lt;/i&gt;&lt;/font&gt;&lt;font color="#f12727"&gt;:&lt;/font&gt;&lt;font color="#fec758"&gt;WID&lt;/font&gt;&lt;font color="#f8f8f8"&gt;, 
+        &lt;/font&gt;&lt;font color="#fb9a4b"&gt;&lt;i&gt;state&lt;/i&gt;&lt;/font&gt;&lt;font color="#f12727"&gt;:&lt;/font&gt;&lt;font color="#fec758"&gt;Option&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;lt;&lt;/font&gt;&lt;font color="#fec758"&gt;Arc&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;lt;&lt;/font&gt;&lt;font color="#fec758"&gt;BddState&lt;/font&gt;&lt;font color="#f8f8f8"&gt;&amp;gt;&amp;gt; 
+        }&lt;/font&gt;
+      &lt;/div&gt;
+    &lt;/div&gt;
+    &lt;p color="#ffffff" style="color: #ffffff"&gt;
+      
+    &lt;/p&gt;
+  &lt;/body&gt;
+&lt;/html&gt;
+</richText>
+            <label>struct BddWorker 
+        {
+  wid:WID, 
+        state:Option&lt;Arc&lt;BddState&gt;&gt; 
+        }</label>
+        </child>
+        <shape arcwidth="20.0" archeight="20.0" xsi:type="roundRect"/>
+    </child>
     <layer ID="1" label="Layer 1" created="1590418643804" x="0.0"
         y="0.0" width="1.4E-45" height="1.4E-45" strokeWidth="0.0" autoSized="false">
         <URIString>http://vue.tufts.edu/rdf/resource/4c5d81bbc0a800750116aba6d2fedf55</URIString>
     </layer>
-    <userZoom>1.0</userZoom>
-    <userOrigin x="-997.7808" y="-685.1118"/>
+    <userZoom>1.2552729281629136</userZoom>
+    <userOrigin x="-1627.5236" y="-829.83356"/>
     <presentationBackground>#202020</presentationBackground>
     <PathwayList currentPathway="0" revealerIndex="-1">
         <pathway ID="0" label="Untitled Pathway" created="1590418643800"
