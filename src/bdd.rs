@@ -260,7 +260,7 @@ impl Base for BDDBase {
         (if $dst.is_inv() & !$dst.is_const() { "[arrowhead=dot]" } else {""})) }}
     w!("digraph bdd {{");
     w!("  bgcolor=\"#3399cc\"; pad=0.225");
-    w!("  node[shape=circle, style=filled, fillcolor=\"#cccccc\", fontname=calibri]");
+    w!("  node[shape=circle, style=filled, fillcolor=\"#bbbbbb\", fontname=calibri]");
     w!("  edge[arrowhead=none]");
     w!("  subgraph head {{ h1[shape=plaintext, fillcolor=none, label=\"BDD\"] }}");
     w!("  I[label=⊤, shape=square, fillcolor=white]");

@@ -224,14 +224,15 @@ impl Base for RawASTBase {
             w!(" \"{}\"->\"{}\";", $xs.raw(), $n.raw()); })* }}}
 
     w!("digraph bdd {{");
-    w!("rankdir=BT;"); // put root on top
-    w!("node[shape=circle];");
-    w!("edge[style=solid];");
+    w!("  bgcolor=\"#3399cc\"; pad=0.225");
+    w!("  rankdir=BT;"); // put root on top
+    w!("  node[shape=circle, style=filled, fillcolor=\"#dddddd\", fontname=calibri];");
+    w!("  edge[style=solid]");
     self.walk(n, &mut |n| {
       match n {
         nid::O => w!(" \"{}\"[label=⊥];", n),
         nid::I => w!(" \"{}\"[label=⊤];", n),
-        _ if n.is_vid() => w!("\"{}\"[label=\"{}\"];", n.raw(), n.vid()),
+        _ if n.is_vid() => w!("\"{}\"[fillcolor=\"#bbbbbb\",label=\"{}\"];", n.raw(), n.vid()),
         _ => {
           let rpn: Vec<NID> = self.get_ops(n).to_rpn().cloned().collect();
           let fun = rpn.last().unwrap();
