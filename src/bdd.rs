@@ -15,10 +15,11 @@ use vid::{VID,VidOrdering,topmost_of3};
 mod bdd_sols;
 mod bdd_swarm; use self::bdd_swarm::*;
 
-/// Type alias for whatever HashMap implementation we're curretly using -- std,
-/// fnv, hashbrown... Hashing is an extremely important aspect of a BDD base, so
-/// it's useful to have a single place to configure this.
-pub type BDDHashMap<K,V> = vhl::VHLHashMap<K,V>;
+/// Type alias for whatever HashMap implementation we're curretly using.
+/// Hashing is an extremely important aspect of a BDD base, so it's
+/// useful to have a single place to configure this.
+type BddHashMap<K,V> = dashmap::DashMap<K,V>;
+
 
 
 /// An if/then/else triple. Like VHL, but all three slots are NIDs.
@@ -89,7 +90,7 @@ pub struct BddState {
   /// cache of hi,lo pairs.
   hilos: vhl::HiLoCache,
   /// arbitrary memoization. These record normalized (f,g,h) lookups.
-  xmemo: BDDHashMap<ITE, NID> }
+  xmemo: BddHashMap<ITE, NID> }
 
 // cache lookup counters:
 thread_local!{
@@ -99,7 +100,7 @@ thread_local!{
 
 impl BddState {
   /// constructor
-  pub fn new()->Self { BddState { hilos: vhl::HiLoCache::new(), xmemo: BDDHashMap::default() }}
+  pub fn new()->Self { BddState { hilos: vhl::HiLoCache::new(), xmemo: BddHashMap::default() }}
 
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)-> (NID, NID) {
