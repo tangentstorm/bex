@@ -8,6 +8,7 @@ extern crate bincode;
 extern crate serde;
 extern crate simplelog;
 extern crate rand;
+extern crate dashmap;
 
 pub mod base;
 pub use base::{Base, GraphViz};
