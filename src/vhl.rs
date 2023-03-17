@@ -3,15 +3,27 @@ use std::collections::BinaryHeap;
 use std::collections::HashSet;
 use dashmap::DashMap;
 use nid::NID;
+use serde::Serialize;
 use vid::VID;
 
-pub type VHLHashMap<K,V> = DashMap<K,V>;
+type VHLHashMap<K,V> = DashMap<K,V>;
+
+#[derive(Debug,Default,Clone)]
+struct VhlVec<T>{ pub vec: boxcar::Vec<T> }
+
+impl<T> Serialize for VhlVec<T> {
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+    where S: serde::Serializer { todo!() } }
+
+impl<'de,T> serde::Deserialize<'de> for VhlVec<T> {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where D: serde::Deserializer<'de> { todo!() } }
 
 
 /// Simple Hi/Lo pair stored internally when representing nodes.
 /// All nodes with the same branching variable go in the same array, so there's
 /// no point duplicating it.
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize, Default)]
 pub struct HiLo {pub hi:NID, pub lo:NID}
 
 impl HiLo {
@@ -95,7 +107,7 @@ pub trait HiLoBase {
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct HiLoCache {
   /// variable-agnostic hi/lo pairs for individual bdd nodes.
-  hilos: Vec<HiLo>,
+  hilos: VhlVec<HiLo>,
   /// reverse map for hilos.
   index: VHLHashMap<HiLo, usize>}
 
@@ -107,7 +119,7 @@ impl HiLoCache {
   // TODO: ->Option<HiLo>, and then impl HiLoBase
   #[inline] pub fn get_hilo(&self, n:NID)->HiLo {
     assert!(!n.is_lit());
-    let res = self.hilos[n.idx()];
+    let res = self.hilos.vec[n.idx()];
     if n.is_inv() { res.invert() } else { res }}
 
   #[inline] pub fn get_node(&self, v:VID, hl0:HiLo)-> Option<NID> {
@@ -123,14 +135,14 @@ impl HiLoCache {
         return Some(if inv { !nid  } else { nid }) }}
     None }
 
-  #[inline] pub fn insert(&mut self, v:VID, hl0:HiLo)->NID {
+  #[inline] pub fn insert(&self, v:VID, hl0:HiLo)->NID {
     let inv = hl0.lo.is_inv();
     let hilo = if inv { hl0.invert() } else { hl0 };
     let ix:usize =
       if let Some(ix) = self.index.get(&hilo) { *ix }
       else {
-        let ix = self.hilos.len();
-        self.hilos.push(hilo);
+        let ix = self.hilos.vec.len();
+        self.hilos.vec.push(hilo);
         self.index.insert(hilo, ix);
         ix };
     let res = NID::from_vid_idx(v, ix);

@@ -9,6 +9,7 @@ extern crate serde;
 extern crate simplelog;
 extern crate rand;
 extern crate dashmap;
+extern crate boxcar;
 
 pub mod base;
 pub use base::{Base, GraphViz};
