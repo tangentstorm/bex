@@ -9,7 +9,7 @@ use crate::cur::{Cursor, CursorPlan};
 /// helpers for solution cursor
 impl HiLoBase for BDDBase {
   fn get_hilo(&self, n:NID)->Option<HiLo> {
-    let (hi, lo) = self.swarm.get_state().tup(n);
+    let (hi, lo) = self.swarm.tup(n);
     Some(HiLo{ hi, lo }) }}
 
 impl Walkable for BDDBase {

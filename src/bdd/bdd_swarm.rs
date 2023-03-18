@@ -78,8 +78,6 @@ impl BddSwarm {
 
   pub fn new()->Self { Self::default() }
 
-  pub fn get_state(&self)->&BddState { &self.recent }
-
   pub fn tup(&self, n:NID)->(NID,NID) { self.recent.tup(n) }
 
   /// all-purpose if-then-else node constructor. For the swarm implementation,
