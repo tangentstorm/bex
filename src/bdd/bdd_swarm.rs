@@ -39,7 +39,6 @@ impl swarm::Worker<Q,R> for BddWorker {
   fn new(wid:WID)->Self { BddWorker{ wid, ..Default::default() }}
   fn get_wid(&self)->WID { self.wid }
   fn work_step(&mut self, _qid:&QID, q:Q)->Option<R> {
-    //println!("Q--> {:?}, {:?}", _qid, q);
     match q {
       Q::Cache(s) => { self.state = Some(s); None }
       Q::Ite(ite) => { Some(swarm_ite(self.state.as_ref().unwrap(), ite)) }
@@ -55,30 +54,31 @@ impl swarm::Worker<Q,R> for BddWorker {
 #[derive(Debug, Default)]
 pub struct BddSwarm {
   swarm: Swarm<Q,R,BddWorker>,
-  /// read-only version of the state shared by all threads.
-  stable: Arc<BddState>,
-  /// mutable version of the state kept by the main thread.
-  recent: BddState,
+  /// reference to state shared by all threads.
+  state: Arc<BddState>,
   // work in progress
   work: WorkState<ITE>}
 
 impl Serialize for BddSwarm {
   fn serialize<S:Serializer>(&self, ser: S)->Result<S::Ok, S::Error> {
     // all we really care about is the state:
-    self.stable.serialize::<S>(ser) } }
+    self.state.serialize::<S>(ser) } }
 
 impl<'de> Deserialize<'de> for BddSwarm {
   fn deserialize<D:Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
     let mut res = Self::new();
-    res.stable = Arc::new(BddState::deserialize(d)?);
+    res.state = Arc::new(BddState::deserialize(d)?);
     Ok(res) }}
 
 
 impl BddSwarm {
 
-  pub fn new()->Self { Self::default() }
+  pub fn new()->Self {
+    let mut res = Self::default();
+    res.swarm.send_to_all(&Q::Cache(res.state.clone()));
+    res }
 
-  pub fn tup(&self, n:NID)->(NID,NID) { self.recent.tup(n) }
+  pub fn tup(&self, n:NID)->(NID,NID) { self.state.tup(n) }
 
   /// all-purpose if-then-else node constructor. For the swarm implementation,
   /// we push all the normalization and tree traversal work into the threads,
@@ -118,7 +118,7 @@ impl BddSwarm {
       trace!("resolved_nid: {:?}=>{}. deps: {:?}", qid, nid, self.work.deps.get(qid));
       self.work.wip.insert(*qid,WIP::Done(nid));
       let &ite = self.work.qs.get(qid).unwrap();
-      self.recent.xmemo.insert(ite, nid);
+      self.state.xmemo.insert(ite, nid);
       let deps = self.work.deps.get(qid); // !! can i avoid clone here?
       if deps.is_none() { self.swarm.send_to_self(R::Ret(nid)); }
       else { for dep in deps.cloned().unwrap() {
@@ -132,8 +132,8 @@ impl BddSwarm {
     let (h1,l1) = if invert { (!h0, !l0) } else { (h0, l0) };
     let nid = match ITE::norm(NID::from_vid(v), h1, l1) {
       Norm::Nid(n) => n,
-      Norm::Ite(ITE{i:vv,t:hi,e:lo}) =>  self.recent.simple_node(vv.vid(), HiLo{hi,lo}),
-      Norm::Not(ITE{i:vv,t:hi,e:lo}) => !self.recent.simple_node(vv.vid(), HiLo{hi,lo})};
+      Norm::Ite(ITE{i:vv,t:hi,e:lo}) =>  self.state.simple_node(vv.vid(), HiLo{hi,lo}),
+      Norm::Not(ITE{i:vv,t:hi,e:lo}) => !self.state.simple_node(vv.vid(), HiLo{hi,lo})};
     trace!("resolved vhl: {:?}=>{}. #deps: {}", qid, nid, self.work.deps[qid].len());
     self.resolve_nid(qid, nid) }
 
@@ -141,13 +141,6 @@ impl BddSwarm {
     self.work.resolve_part(qid, part, nid, invert);
     if let WIP::Parts(wip) = self.work.wip[qid] {
       if let Some(hilo) = wip.hilo() { self.resolve_vhl(qid, wip.v, hilo, wip.invert); }}}
-
-  /// initialization logic for running the swarm. spawns threads and copies latest cache.
-  fn init_swarm(&mut self) {
-    // self.swarm = Swarm::new();
-    //self.swarm.start(0);
-    self.stable = Arc::new(self.recent.clone());
-    self.swarm.send_to_all(&Q::Cache(self.stable.clone())); }
 
 
   /// distrubutes the standard ite() operatation across a swarm of threads
@@ -158,9 +151,8 @@ impl BddSwarm {
       Norm::Not(ite) => { !self.run_swarm_ite(ite) }}}
 
   fn run_swarm_ite(&mut self, ite:ITE)->NID {
-    self.init_swarm();
-    self.add_query(ite);
     let mut result: Option<NID> = None;
+    self.add_query(ite);
     // each response can lead to up to two new ITE queries, and we'll relay those to
     // other workers too, until we get back enough info to solve the original query.
     while result.is_none() {
