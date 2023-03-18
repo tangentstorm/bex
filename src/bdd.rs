@@ -110,7 +110,7 @@ impl BddState {
 
   /// fetch or create a "simple" node, where the hi and lo branches are both
   /// already fully computed pointers to existing nodes.
-  #[inline] fn simple_node(&mut self, v:VID, hilo:HiLo)->NID {
+  #[inline] fn simple_node(&self, v:VID, hilo:HiLo)->NID {
     match self.get_simple_node(v, hilo) {
       Some(n) => n,
       None => { self.hilos.insert(v, hilo) }}}
