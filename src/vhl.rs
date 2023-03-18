@@ -6,7 +6,7 @@ use nid::NID;
 use serde::Serialize;
 use vid::VID;
 
-type VHLHashMap<K,V> = DashMap<K,V>;
+type VHLHashMap<K,V> = DashMap<K,V,fxhash::FxBuildHasher>;
 
 #[derive(Debug,Default,Clone)]
 struct VhlVec<T>{ pub vec: boxcar::Vec<T> }

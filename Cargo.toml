@@ -39,6 +39,7 @@ num_cpus = "1.0"
 rand = "0.8.5"
 dashmap = { version="5.4.0", features = ["serde"]}
 boxcar = "0.1.0"
+fxhash = "0.2.1"
 
 [dev-dependencies]
 bencher = "0.1.5"

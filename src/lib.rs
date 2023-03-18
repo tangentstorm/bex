@@ -10,6 +10,7 @@ extern crate simplelog;
 extern crate rand;
 extern crate dashmap;
 extern crate boxcar;
+extern crate fxhash;
 
 pub mod base;
 pub use base::{Base, GraphViz};
