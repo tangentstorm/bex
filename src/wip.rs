@@ -6,7 +6,7 @@ use vid::VID;
 use {vhl, vhl::HiLoPart};
 use swarm::QID;
 
-pub type WIPHashMap<K,V> = HashMap<K,V>;
+pub type WIPHashMap<K,V> = HashMap<K,V,fxhash::FxBuildHasher>;
 
 /// Work in progress for Swarms.
 #[derive(PartialEq,Debug,Copy,Clone)]

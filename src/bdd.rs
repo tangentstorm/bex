@@ -18,7 +18,7 @@ mod bdd_swarm; use self::bdd_swarm::*;
 /// Type alias for whatever HashMap implementation we're curretly using.
 /// Hashing is an extremely important aspect of a BDD base, so it's
 /// useful to have a single place to configure this.
-type BddHashMap<K,V> = dashmap::DashMap<K,V>;
+type BddHashMap<K,V> = dashmap::DashMap<K,V,fxhash::FxBuildHasher>;
 
 
 
