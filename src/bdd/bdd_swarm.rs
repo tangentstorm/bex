@@ -18,8 +18,8 @@ pub enum Q {
   Ite(ITE),
   /// Give the worker a new reference to the central cache.
   Cache(Arc<BddState>),
-  /// halt execution.
-  Halt }
+  /// ask for stats about cache
+  Stats }
 
 type R = wip::RMsg<Norm>;
 
@@ -29,7 +29,7 @@ impl std::fmt::Debug for Q {
     match self {
       Q::Ite(ite) => { write!(f, "Q::Ite({:?})", ite) }
       Q::Cache(_) => { write!(f, "Q::Cache(...)") }
-      Q::Halt => { write!(f, "Q::Halt")} } }}
+      Q::Stats => { write!(f, "Q::Stats")} } }}
 
 // ----------------------------------------------------------------
 
@@ -43,7 +43,7 @@ impl swarm::Worker<Q,R> for BddWorker {
     match q {
       Q::Cache(s) => { self.state = Some(s); None }
       Q::Ite(ite) => { Some(swarm_ite(self.state.as_ref().unwrap(), ite)) }
-      Q::Halt => {
+      Q::Stats => {
         let tests = COUNT_XMEMO_TEST.with(|c| c.replace(0));
         let fails = COUNT_XMEMO_FAIL.with(|c| c.replace(0));
         Some(R::MemoStats{ tests, fails }) } }}}
@@ -182,8 +182,10 @@ impl BddSwarm {
         R::Ret(n) => { result = Some(n) }
         R::MemoStats{ tests:_, fails:_ }
           => { panic!("got R::MemoStats before sending Q::Halt"); } }}}
+    result.unwrap() }
 
-    self.swarm.send_to_all(&Q::Halt);
+  pub fn get_stats(&mut self) {
+    self.swarm.send_to_all(&Q::Stats);
     let (mut tests, mut fails, mut reports, mut shorts) = (0, 0, 0, 0);
     // // println!("waiting for MemoStats");
     while reports < self.swarm.num_workers() {
@@ -193,8 +195,7 @@ impl BddSwarm {
     // if tests > 0 { println!("{:?} result: {:?}  tests: {}  fails: {}  hits: {}", ite, result, tests, fails, tests-fails); }
     if shorts > 0 { println!("----------- shorts: {}", shorts)} // i don't think this actually happens.
     COUNT_XMEMO_TEST.with(|c| *c.borrow_mut() += tests );
-    COUNT_XMEMO_FAIL.with(|c| *c.borrow_mut() += fails );
-    result.unwrap() }
+    COUNT_XMEMO_FAIL.with(|c| *c.borrow_mut() += fails ); }
 
 } // end bddswarm
 
