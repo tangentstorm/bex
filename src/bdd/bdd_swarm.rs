@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, sync::mpsc::Sender};
 use std::sync::Arc;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use {wip, wip::{Dep,WIP,WorkState}};
@@ -6,18 +6,31 @@ use vhl::{HiLoPart, VHLParts};
 use {vid::VID, nid::{NID}, vhl::{HiLo}};
 use bdd::{ITE, Norm, BddState, COUNT_XMEMO_TEST, COUNT_XMEMO_FAIL};
 use {swarm, swarm::{WID, QID, Swarm, RMsg}};
+use concurrent_queue::{ConcurrentQueue,PopError};
 
 // ----------------------------------------------------------------
 // BddSwarm Protocol
 // ----------------------------------------------------------------
 
+#[derive(Debug)]
+struct IteQueue{q: ConcurrentQueue<ITE>}
+impl Default for IteQueue {
+    fn default() -> Self { IteQueue { q: ConcurrentQueue::unbounded() }}}
+impl IteQueue {
+  fn push(&self, ite:ITE) { self.q.push(ite).unwrap(); }
+  fn pop(&self)->Option<ITE> {
+    match self.q.pop() {
+      Ok(ite) => Some(ite),
+      Err(PopError::Empty) => None,
+      Err(PopError::Closed) => panic!("IteQueue was closed!") }}}
+
 /// Query message for BddSwarm.
 #[derive(Clone)]
-pub enum Q {
+ enum Q {
   /// The main recursive operation: convert ITE triple to a BDD.
   Ite(ITE),
   /// Initialize worker with its "hive mind".
-  Init(Arc<BddState>),
+  Init(Arc<BddState>, Arc<IteQueue>),
   /// ask for stats about cache
   Stats }
 
@@ -28,19 +41,42 @@ impl std::fmt::Debug for Q {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
       Q::Ite(ite) => { write!(f, "Q::Ite({:?})", ite) }
-      Q::Init(_) => { write!(f, "Q::Init(...)") }
+      Q::Init(_cache, _queue) => { write!(f, "Q::Init(...)") }
       Q::Stats => { write!(f, "Q::Stats")} } }}
 
 // ----------------------------------------------------------------
 
 #[derive(Debug, Default)]
-struct BddWorker { wid:WID, state:Option<Arc<BddState>> }
-impl swarm::Worker<Q,R> for BddWorker {
+struct BddWorker {
+  wid:WID,
+  // channel for sending back to the swarm
+  tx:Option<Sender<RMsg<R>>>,
+  state:Option<Arc<BddState>>,
+  queue:Option<Arc<IteQueue>> }
+
+impl swarm::Worker<Q,R,ITE> for BddWorker {
   fn new(wid:WID)->Self { BddWorker{ wid, ..Default::default() }}
   fn get_wid(&self)->WID { self.wid }
+  fn set_tx(&mut self, tx:&Sender<RMsg<R>>) { self.tx = Some(tx.clone()) }
+
+  // TODO: would be nice to never have an un-initialized worker.
+  //       this would require dropping this Q::Init concept.
+  //  (Ideally we would remove the Option<> on .state and .queue)
+  // !! Since the work_loop function is now non-blocking, it will
+  //    try to pop from this queue even before a Q::Init message
+  //    has been sent. So we have to do these dumb existence checks.
+  fn queue_pop(&self)->Option<ITE> {
+    if let Some(ref q) = self.queue { q.pop() }
+    else { None }}
+
+  fn queue_push(&self, item:ITE) {
+    if let Some(ref q) = self.queue { q.push(item) }}
+
+  fn work_item(&mut self, _item:ITE) {  }
+
   fn work_step(&mut self, _qid:&QID, q:Q)->Option<R> {
     match q {
-      Q::Init(s) => { self.state = Some(s); None }
+      Q::Init(s, q) => { self.state = Some(s); self.queue=Some(q); None }
       Q::Ite(ite) => { Some(self.ite(ite)) }
       Q::Stats => {
         let tests = COUNT_XMEMO_TEST.with(|c| c.replace(0));
@@ -93,9 +129,10 @@ impl BddWorker {
 // ----------------------------------------------------------------
 #[derive(Debug, Default)]
 pub struct BddSwarm {
-  swarm: Swarm<Q,R,BddWorker>,
+  swarm: Swarm<Q,R,BddWorker,ITE>,
   /// reference to state shared by all threads.
   state: Arc<BddState>,
+  queue: Arc<IteQueue>,
   // work in progress
   work: WorkState<ITE>}
 
@@ -114,9 +151,9 @@ impl<'de> Deserialize<'de> for BddSwarm {
 impl BddSwarm {
 
   pub fn new()->Self {
-    let mut res = Self::default();
-    res.swarm.send_to_all(&Q::Init(res.state.clone()));
-    res }
+    let mut me = Self::default();
+    me.swarm.send_to_all(&Q::Init(me.state.clone(), me.queue.clone()));
+    me }
 
   pub fn tup(&self, n:NID)->(NID,NID) { self.state.tup(n) }
 

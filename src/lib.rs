@@ -11,6 +11,7 @@ extern crate rand;
 extern crate dashmap;
 extern crate boxcar;
 extern crate fxhash;
+extern crate concurrent_queue;
 
 pub mod base;
 pub use base::{Base, GraphViz};
