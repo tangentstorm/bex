@@ -17,7 +17,7 @@ pub struct RMsg<R> { pub wid: WID, pub qid:QID, pub r:Option<R> }
 #[derive(Debug,Default,PartialEq,Eq,Hash,Clone,Copy)]
 pub struct WID { pub n:usize }
 
-pub trait Worker<Q,R>:Send+Sync where R:Debug, Q:Clone {
+pub trait Worker<Q,R,I=()>:Send+Sync where R:Debug, Q:Clone {
 
   fn new(_wid:WID)->Self;
   fn get_wid(&self)->WID;
@@ -27,6 +27,9 @@ pub trait Worker<Q,R>:Send+Sync where R:Debug, Q:Clone {
     let res = tx.send(RMsg{ wid:self.get_wid(), qid, r });
     if res.is_err() { self.on_work_send_err(res.err().unwrap()) }}
 
+  fn queue_push(&self, _item:I) { panic!("no queue defined"); }
+  fn queue_pop(&self)->Option<I> { None }
+
   /// Generic worker lifecycle implementation.
   /// Hopefully, you won't need to override this.
   /// The worker receives a stream of Option(Q) structs (queries),
@@ -34,16 +37,25 @@ pub trait Worker<Q,R>:Send+Sync where R:Debug, Q:Clone {
   fn work_loop(&mut self, wid:WID, rx:&Receiver<Option<QMsg<Q>>>, tx:&Sender<RMsg<R>>) {
     // and now the actual worker lifecycle:
     let msg = self.work_init(wid); self.send_msg(tx, QID::INIT, msg);
-    let mut stream = rx.iter();
-    while let Some(Some(QMsg{qid, q})) = stream.next() {
-      if let QID::STEP(_) = qid {
-        let msg = self.work_step(&qid, q); self.send_msg(tx, qid, msg); }
-      else { panic!("Worker {:?} got unexpected qid instead of STEP: {:?}", wid, qid)}}
+    loop {
+      if let Some(item) = self.queue_pop() { self.work_item(item) }
+      match rx.try_recv() {
+        Ok(None) => { break } // TODO: find right way to kill. remove Otion<> here.
+        Ok(Some(QMsg{qid, q})) => {
+          if let QID::STEP(_) = qid {
+            let msg = self.work_step(&qid, q); self.send_msg(tx, qid, msg); }
+          else { panic!("Worker {:?} got unexpected qid instead of STEP: {:?}", wid, qid)}}
+        Err(e) => match e {
+          std::sync::mpsc::TryRecvError::Empty => {} // no problem!
+          std::sync::mpsc::TryRecvError::Disconnected => break }}}
     let msg = self.work_done(); self.send_msg(tx, QID::DONE, msg); }
 
   /// What to do if a message send fails. By default, just print to stdout.
   fn on_work_send_err(&self, err:SendError<RMsg<R>>) {
     println!("failed to send response: {:?}", err.to_string()); }
+
+  /// Override this to implement logic for working on queue items
+  fn work_item(&mut self, _item:I) {  }
 
   /// Override this to implement your worker's query-handling logic.
   fn work_step(&mut self, _qid:&QID, _q:Q)->Option<R> { None }
@@ -67,7 +79,7 @@ pub enum SwarmCmd<Q:Debug,V:Debug> {
   Kill(WID)}
 
 #[derive(Debug)]
-pub struct Swarm<Q,R,W> where W:Worker<Q,R>, Q:Debug+Clone, R:Debug {
+pub struct Swarm<Q,R,W,I=()> where W:Worker<Q,R,I>, Q:Debug+Clone, R:Debug {
   /// next QID
   nq: usize,
   //// sender that newly spawned workers can clone to talk to me.
@@ -83,17 +95,19 @@ pub struct Swarm<Q,R,W> where W:Worker<Q,R>, Q:Debug+Clone, R:Debug {
   /// phantom reference to the Worker class. In practice, the workers are owned
   /// by their threads, so we don't actually touch them directly.
   _w: PhantomData<W>,
+  _i: PhantomData<I>,
   /// handles to the actual threads
   threads: Vec<thread::JoinHandle<()>> }
 
-impl<Q,R,W> Default for Swarm<Q,R,W> where Q:'static+Send+Debug+Clone, R:'static+Send+Debug, W:Worker<Q, R> {
+impl<Q,R,W,I> Default for Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+Debug, W:Worker<Q, R,I> {
 fn default()->Self { let mut me= Self::new(); me.start(4); me }}
 
-impl<Q,R,W> Swarm<Q,R,W> where Q:'static+Send+Debug+Clone, R:'static+Send+Debug, W:Worker<Q, R> {
+impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+Debug, W:Worker<Q, R, I> {
 
   pub fn new()->Self {
     let (me, rx) = channel();
-    Self { nq: 0, me, rx, whs:HashMap::new(), nw:0, _w:PhantomData, threads:vec![]}}
+    Self { nq: 0, me, rx, whs:HashMap::new(), nw:0,
+       _w:PhantomData, _i:PhantomData, threads:vec![]}}
 
   pub fn start(&mut self, num_workers:usize) {
     let n = if num_workers==0 { num_cpus::get() } else { num_workers as usize };
