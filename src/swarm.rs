@@ -17,7 +17,7 @@ pub struct RMsg<R> { pub wid: WID, pub qid:QID, pub r:Option<R> }
 #[derive(Debug,Default,PartialEq,Eq,Hash,Clone,Copy)]
 pub struct WID { pub n:usize }
 
-pub trait Worker<Q,R,I=()>:Send+Sync where R:Debug, Q:Clone {
+pub trait Worker<Q,R,I=()> where R:Debug, Q:Clone {
 
   fn new(_wid:WID)->Self;
   fn get_wid(&self)->WID;
