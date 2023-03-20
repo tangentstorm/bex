@@ -16,8 +16,8 @@ use {swarm, swarm::{WID, QID, Swarm, RMsg}};
 pub enum Q {
   /// The main recursive operation: convert ITE triple to a BDD.
   Ite(ITE),
-  /// Give the worker a new reference to the central cache.
-  Cache(Arc<BddState>),
+  /// Initialize worker with its "hive mind".
+  Init(Arc<BddState>),
   /// ask for stats about cache
   Stats }
 
@@ -28,7 +28,7 @@ impl std::fmt::Debug for Q {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     match self {
       Q::Ite(ite) => { write!(f, "Q::Ite({:?})", ite) }
-      Q::Cache(_) => { write!(f, "Q::Cache(...)") }
+      Q::Init(_) => { write!(f, "Q::Init(...)") }
       Q::Stats => { write!(f, "Q::Stats")} } }}
 
 // ----------------------------------------------------------------
@@ -40,7 +40,7 @@ impl swarm::Worker<Q,R> for BddWorker {
   fn get_wid(&self)->WID { self.wid }
   fn work_step(&mut self, _qid:&QID, q:Q)->Option<R> {
     match q {
-      Q::Cache(s) => { self.state = Some(s); None }
+      Q::Init(s) => { self.state = Some(s); None }
       Q::Ite(ite) => { Some(swarm_ite(self.state.as_ref().unwrap(), ite)) }
       Q::Stats => {
         let tests = COUNT_XMEMO_TEST.with(|c| c.replace(0));
@@ -75,7 +75,7 @@ impl BddSwarm {
 
   pub fn new()->Self {
     let mut res = Self::default();
-    res.swarm.send_to_all(&Q::Cache(res.state.clone()));
+    res.swarm.send_to_all(&Q::Init(res.state.clone()));
     res }
 
   pub fn tup(&self, n:NID)->(NID,NID) { self.state.tup(n) }
