@@ -22,6 +22,11 @@ pub trait Worker<Q,R,I=()>:Send+Sync where R:Debug, Q:Clone {
   fn new(_wid:WID)->Self;
   fn get_wid(&self)->WID;
 
+  // swarm will call this method so a worker implementation
+  // can clone the sender and send messages back to the swarm
+  // outside of the work_xxx methods.
+  fn set_tx(&mut self, _tx:&Sender<RMsg<R>>) {}
+
   fn send_msg(&self, tx:&Sender<RMsg<R>>, qid:QID, r:Option<R>) {
     // println!("\x1b[32mSENDING msg: qid:{:?} for wid: {:?} -> r:{:?}\x1b[0m", &qid, wid, &r);
     let res = tx.send(RMsg{ wid:self.get_wid(), qid, r });
@@ -35,6 +40,7 @@ pub trait Worker<Q,R,I=()>:Send+Sync where R:Debug, Q:Clone {
   /// The worker receives a stream of Option(Q) structs (queries),
   /// and returns an R (result) for each one.
   fn work_loop(&mut self, wid:WID, rx:&Receiver<Option<QMsg<Q>>>, tx:&Sender<RMsg<R>>) {
+    self.set_tx(tx);
     // and now the actual worker lifecycle:
     let msg = self.work_init(wid); self.send_msg(tx, QID::INIT, msg);
     loop {
