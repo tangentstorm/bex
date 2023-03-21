@@ -173,13 +173,13 @@ impl BddSwarm {
     self.work_state.wip.insert(qid, WIP::Fresh);
     qid }
 
-  fn add_sub_task(&mut self, dep:Dep, ite:ITE) {
+  fn add_sub_task(&mut self, dep:Dep<QID>, ite:ITE) {
     // if this ite already has a worker assigned...
     // !! TODO: really this should be combined with the bdd cache check
     if let Some(&qid) = self.work_state.qid.get(&ite) {
       trace!("*** task {:?} is dup of q{:?} invert: {}", ite, qid, dep.invert);
       if let Some(&WIP::Done(nid)) = self.work_state.wip.get(&qid) {
-        self.resolve_part(&dep.qid, dep.part, nid, dep.invert); }
+        self.resolve_part(&dep.dep, dep.part, nid, dep.invert); }
       else { self.work_state.deps.get_mut(&qid).unwrap().push(dep) }}
     else {
       let qid = self.add_query(ite);
@@ -200,7 +200,7 @@ impl BddSwarm {
       let deps = self.work_state.deps.get(qid); // !! can i avoid clone here?
       if deps.is_none() { self.swarm.send_to_self(R::Ret(nid)); }
       else { for dep in deps.cloned().unwrap() {
-        self.resolve_part(&dep.qid, dep.part, nid, dep.invert) }}}}
+        self.resolve_part(&dep.dep, dep.part, nid, dep.invert) }}}}
 
   /// called whenever the wip resolves to a new simple (v/hi/lo) node.
   fn resolve_vhl(&mut self, qid:&QID, v:VID, hilo:HiLo, invert:bool) {

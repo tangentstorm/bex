@@ -9,8 +9,14 @@ use vhl::{HiLoPart, VhlParts};
 use swarm::QID;
 use bdd::ITE;
 use dashmap::DashMap;
+
 
 pub type WIPHashMap<K,V> = HashMap<K,V,fxhash::FxBuildHasher>;
+
+#[derive(Debug,Copy,Clone)]
+pub struct Dep<K> { pub dep: K, pub part: HiLoPart, pub invert: bool }
+impl<K> Dep<K>{
+  pub fn new(dep: K, part: HiLoPart, invert: bool)->Dep<K> { Dep{dep, part, invert} }}
 
 #[derive(Debug, Default)]
 pub struct Wip<K=ITE, P=VhlParts> { parts : P, deps : Vec<K> }
@@ -60,19 +66,12 @@ impl<TWIP> std::ops::Not for RMsg<TWIP> {
         RMsg::MemoStats{ tests:_, fails: _} => panic!("not(MemoStats)? This makes no sense.") }}}
 
 
-/// Helps track dependencies between WIP tasks
-#[derive(Debug,Copy,Clone)]
-pub struct Dep { pub qid: QID, pub part: HiLoPart, pub invert: bool }
-impl Dep{
-  pub fn new(qid: QID, part: HiLoPart, invert: bool)->Dep { Dep{qid, part, invert} }}
-
-
 #[derive(Debug, Default)]
 pub struct WorkState<Q:Eq+Hash+Default> {
   /// stores work in progress during a run:
   pub wip: WIPHashMap<QID,WIP>,
   /// stores dependencies during a run. The bool specifies whether to invert.
-  pub deps: WIPHashMap<QID, Vec<Dep>>,
+  pub deps: WIPHashMap<QID, Vec<Dep<QID>>>,
   /// track ongoing tasks so we don't duplicate work in progress:
   pub qid: WIPHashMap<Q,QID>,
   /// track new queries so they can eventually be cached
