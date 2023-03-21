@@ -239,7 +239,15 @@ impl BddSwarm {
 
   fn resolve_part(&mut self, ite:&ITE, part:HiLoPart, nid:NID, invert:bool) {
     let qid = &self.ite_to_qid(ite);
-    self.work_state.resolve_part(qid, part, nid, invert);
+    {
+        let ref mut this = self.work_state;
+        let qid = qid;
+        let part = part;
+        if let Some(WIP::Parts(ref mut parts)) = this.wip.get_mut(qid) {
+          let n = if invert { !nid } else { nid };
+          trace!("   !! set {:?} for q{:?} to {}", part, qid, n);
+          if part == HiLoPart::HiPart { parts.hi = Some(n) } else { parts.lo = Some(n) }}
+        else { warn!("???? got a part for {:?} that was already done!", qid) }};
     if let WIP::Parts(wip) = self.work_state.wip[qid] {
       if let Some(hilo) = wip.hilo() {
         self.resolve_vhl(ite, wip.v, hilo, wip.invert); }}}

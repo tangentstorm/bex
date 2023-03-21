@@ -79,10 +79,4 @@ pub struct WorkState<Q:Eq+Hash+Default> {
   pub qs: WIPHashMap<QID,Q>}
 
 impl<Q:Eq+Hash+Default> WorkState<Q> {
-  pub fn new() -> Self { Self::default() }
-  pub fn resolve_part(&mut self, qid:&QID, part:HiLoPart, nid:NID, invert: bool) {
-    if let Some(WIP::Parts(ref mut parts)) = self.wip.get_mut(qid) {
-      let n = if invert { !nid } else { nid };
-      trace!("   !! set {:?} for q{:?} to {}", part, qid, n);
-      if part == HiLoPart::HiPart { parts.hi = Some(n) } else { parts.lo = Some(n) }}
-    else { warn!("???? got a part for {:?} that was already done!", qid) }}}
+  pub fn new() -> Self { Self::default() }}
