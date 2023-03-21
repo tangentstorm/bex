@@ -134,7 +134,7 @@ pub struct BddSwarm {
   state: Arc<BddState>,
   queue: Arc<IteQueue>,
   // work in progress
-  work: WorkState<ITE>}
+  work_state: WorkState<ITE>}
 
 impl Serialize for BddSwarm {
   fn serialize<S:Serializer>(&self, ser: S)->Result<S::Ok, S::Error> {
@@ -167,36 +167,36 @@ impl BddSwarm {
 
   fn add_query(&mut self, ite:ITE)->QID {
     let qid = self.swarm.add_query(Q::Ite(ite));
-    self.work.qid.insert(ite, qid);
-    self.work.qs.insert(qid, ite);
-    self.work.wip.insert(qid, WIP::Fresh);
+    self.work_state.qid.insert(ite, qid);
+    self.work_state.qs.insert(qid, ite);
+    self.work_state.wip.insert(qid, WIP::Fresh);
     qid }
 
   fn add_sub_task(&mut self, dep:Dep, ite:ITE) {
     // if this ite already has a worker assigned...
     // !! TODO: really this should be combined with the bdd cache check
-    if let Some(&qid) = self.work.qid.get(&ite) {
+    if let Some(&qid) = self.work_state.qid.get(&ite) {
       trace!("*** task {:?} is dup of q{:?} invert: {}", ite, qid, dep.invert);
-      if let Some(&WIP::Done(nid)) = self.work.wip.get(&qid) {
+      if let Some(&WIP::Done(nid)) = self.work_state.wip.get(&qid) {
         self.resolve_part(&dep.qid, dep.part, nid, dep.invert); }
-      else { self.work.deps.get_mut(&qid).unwrap().push(dep) }}
+      else { self.work_state.deps.get_mut(&qid).unwrap().push(dep) }}
     else {
       let qid = self.add_query(ite);
       trace!("*** added task #{:?}: {:?} with dep: {:?}", qid, ite, dep);
-      self.work.deps.insert(qid, vec![dep]);}}
+      self.work_state.deps.insert(qid, vec![dep]);}}
 
 
   /// called whenever the wip resolves to a single nid
   fn resolve_nid(&mut self, qid:&QID, nid:NID) {
-    if let Some(&WIP::Done(old)) = self.work.wip.get(qid) {
+    if let Some(&WIP::Done(old)) = self.work_state.wip.get(qid) {
       warn!("resolving already resolved nid for q{:?}", qid);
       assert_eq!(old, nid, "old and new resolutions didn't match!") }
     else {
-      trace!("resolved_nid: {:?}=>{}. deps: {:?}", qid, nid, self.work.deps.get(qid));
-      self.work.wip.insert(*qid,WIP::Done(nid));
-      let &ite = self.work.qs.get(qid).unwrap();
+      trace!("resolved_nid: {:?}=>{}. deps: {:?}", qid, nid, self.work_state.deps.get(qid));
+      self.work_state.wip.insert(*qid,WIP::Done(nid));
+      let &ite = self.work_state.qs.get(qid).unwrap();
       self.state.xmemo.insert(ite, nid);
-      let deps = self.work.deps.get(qid); // !! can i avoid clone here?
+      let deps = self.work_state.deps.get(qid); // !! can i avoid clone here?
       if deps.is_none() { self.swarm.send_to_self(R::Ret(nid)); }
       else { for dep in deps.cloned().unwrap() {
         self.resolve_part(&dep.qid, dep.part, nid, dep.invert) }}}}
@@ -211,12 +211,12 @@ impl BddSwarm {
       Norm::Nid(n) => n,
       Norm::Ite(ITE{i:vv,t:hi,e:lo}) =>  self.state.simple_node(vv.vid(), HiLo{hi,lo}),
       Norm::Not(ITE{i:vv,t:hi,e:lo}) => !self.state.simple_node(vv.vid(), HiLo{hi,lo})};
-    trace!("resolved vhl: {:?}=>{}. #deps: {}", qid, nid, self.work.deps[qid].len());
+    trace!("resolved vhl: {:?}=>{}. #deps: {}", qid, nid, self.work_state.deps[qid].len());
     self.resolve_nid(qid, nid) }
 
   fn resolve_part(&mut self, qid:&QID, part:HiLoPart, nid:NID, invert:bool) {
-    self.work.resolve_part(qid, part, nid, invert);
-    if let WIP::Parts(wip) = self.work.wip[qid] {
+    self.work_state.resolve_part(qid, part, nid, invert);
+    if let WIP::Parts(wip) = self.work_state.wip[qid] {
       if let Some(hilo) = wip.hilo() { self.resolve_vhl(qid, wip.v, hilo, wip.invert); }}}
 
 
@@ -241,8 +241,8 @@ impl BddSwarm {
         R::Wip{v,hi,lo,invert} => {
           // by the time we get here, the task for this node was already created.
           // (add_task already filled in the v for us, so we don't need it.)
-          assert_eq!(self.work.wip[&qid], WIP::Fresh);
-          self.work.wip.insert(qid, WIP::Parts(VHLParts{ v, hi:None, lo:None, invert }));
+          assert_eq!(self.work_state.wip[&qid], WIP::Fresh);
+          self.work_state.wip.insert(qid, WIP::Parts(VHLParts{ v, hi:None, lo:None, invert }));
           for &(xx, part) in &[(hi,HiLoPart::HiPart), (lo,HiLoPart::LoPart)] {
             match xx {
               Norm::Nid(nid) => self.resolve_part(&qid, part, nid, false),
