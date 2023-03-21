@@ -2,7 +2,7 @@ use std::{fmt, sync::mpsc::Sender};
 use std::sync::Arc;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use {wip, wip::{Dep,WIP,WorkState}};
-use vhl::{HiLoPart, VHLParts};
+use vhl::{HiLoPart, VhlParts};
 use {vid::VID, nid::{NID}, vhl::{HiLo}};
 use bdd::{ITE, Norm, BddState, COUNT_XMEMO_TEST, COUNT_XMEMO_FAIL};
 use {swarm, swarm::{WID, QID, Swarm, RMsg}};
@@ -242,7 +242,7 @@ impl BddSwarm {
           // by the time we get here, the task for this node was already created.
           // (add_task already filled in the v for us, so we don't need it.)
           assert_eq!(self.work_state.wip[&qid], WIP::Fresh);
-          self.work_state.wip.insert(qid, WIP::Parts(VHLParts{ v, hi:None, lo:None, invert }));
+          self.work_state.wip.insert(qid, WIP::Parts(VhlParts{ v, hi:None, lo:None, invert }));
           for &(xx, part) in &[(hi,HiLoPart::HiPart), (lo,HiLoPart::LoPart)] {
             match xx {
               Norm::Nid(nid) => self.resolve_part(&qid, part, nid, false),

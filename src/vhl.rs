@@ -6,7 +6,7 @@ use nid::NID;
 use serde::Serialize;
 use vid::VID;
 
-type VHLHashMap<K,V> = DashMap<K,V,fxhash::FxBuildHasher>;
+type VhlHashMap<K,V> = DashMap<K,V,fxhash::FxBuildHasher>;
 
 #[derive(Debug,Default,Clone)]
 struct VhlVec<T>{ pub vec: boxcar::Vec<T> }
@@ -41,32 +41,32 @@ impl std::ops::Not for HiLo {
   fn not(self)-> HiLo {HiLo { hi:!self.hi, lo: !self.lo }}}
 
 
-/// VHL (for when we really do need the variable)
+/// Vhl (for when we really do need the variable)
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct VHL {pub v:VID, pub hi:NID, pub lo:NID}
+pub struct Vhl {pub v:VID, pub hi:NID, pub lo:NID}
 
-impl VHL {
-  pub fn new(v: VID, hi:NID, lo:NID)->VHL { VHL{ v, hi, lo } }
+impl Vhl {
+  pub fn new(v: VID, hi:NID, lo:NID)->Vhl { Vhl{ v, hi, lo } }
   pub fn hilo(&self)->HiLo { HiLo{ hi:self.hi, lo: self.lo } }}
 
-impl std::ops::Not for VHL {
-  type Output = VHL;
-  fn not(self)->VHL { VHL { v:self.v, hi:!self.hi, lo: !self.lo }}}
+impl std::ops::Not for Vhl {
+  type Output = Vhl;
+  fn not(self)->Vhl { Vhl { v:self.v, hi:!self.hi, lo: !self.lo }}}
 
 
 /// Enum for referring to the parts of a HiLo (for WIP).
 #[derive(PartialEq,Debug,Copy,Clone)]
 pub enum HiLoPart { HiPart, LoPart }
 
-/// a deconstructed VHL (for WIP)
+/// a deconstructed Vhl (for WIP)
 #[derive(Default,PartialEq,Debug,Copy,Clone)]
-pub struct VHLParts{
+pub struct VhlParts{
   pub v:VID,
   pub hi:Option<NID>,
   pub lo:Option<NID>,
   pub invert:bool}
 
-impl VHLParts {
+impl VhlParts {
   pub fn hilo(&self)->Option<HiLo> {
     if let (Some(hi), Some(lo)) = (self.hi, self.lo) { Some(HiLo{hi,lo}) }
     else { None }}}
@@ -92,11 +92,11 @@ pub trait Walkable {
 
   /// this is meant for walking nodes ordered by variables from bottom to top.
   /// it's deprecated because the whole thing ought to be replaced by a nice iterator
-  /// (also, it's not clear to me why the derived Ord for VHL doesn't require Reverse() here)
+  /// (also, it's not clear to me why the derived Ord for Vhl doesn't require Reverse() here)
   #[deprecated]
-  fn as_heap(&self, n:NID)->BinaryHeap<(VHL, NID)> {
+  fn as_heap(&self, n:NID)->BinaryHeap<(Vhl, NID)> {
     let mut result = BinaryHeap::new();
-    self.walk_up(n, &mut |nid, v, hi, lo| result.push((VHL{ v, hi, lo }, nid)));
+    self.walk_up(n, &mut |nid, v, hi, lo| result.push((Vhl{ v, hi, lo }, nid)));
     result }}
 
 
@@ -109,7 +109,7 @@ pub struct HiLoCache {
   /// variable-agnostic hi/lo pairs for individual bdd nodes.
   hilos: VhlVec<HiLo>,
   /// reverse map for hilos.
-  index: VHLHashMap<HiLo, usize>}
+  index: VhlHashMap<HiLo, usize>}
 
 
 impl HiLoCache {
@@ -127,7 +127,7 @@ impl HiLoCache {
     let hl1 = if inv { hl0.invert() } else { hl0 };
     if let Some(x) = self.index.get(&hl1) {
       // !! maybe this should be an assertion, and callers
-      //   should be adjusted to avoid asking for ill-formed VHL triples?
+      //   should be adjusted to avoid asking for ill-formed Vhl triples?
       // (without this check, we potentially break the contract of always
       //  returning a NID that represents a valid Bdd)
       if hl1.hi.vid().is_below(&v) && hl1.lo.vid().is_below(&v) {

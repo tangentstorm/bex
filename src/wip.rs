@@ -10,7 +10,7 @@ pub type WIPHashMap<K,V> = HashMap<K,V,fxhash::FxBuildHasher>;
 
 /// Work in progress for Swarms.
 #[derive(PartialEq,Debug,Copy,Clone)]
-pub enum WIP { Fresh, Done(NID), Parts(vhl::VHLParts) }
+pub enum WIP { Fresh, Done(NID), Parts(vhl::VhlParts) }
 
 
 
