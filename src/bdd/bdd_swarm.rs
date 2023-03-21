@@ -1,7 +1,7 @@
 use std::{fmt, sync::mpsc::Sender};
 use std::sync::Arc;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
-use {wip, wip::{Dep,WIP,WorkState}};
+use {wip, wip::{Dep, WorkCache, WIP, WorkState}};
 use vhl::{HiLoPart, VhlParts};
 use {vid::VID, nid::{NID}, vhl::{HiLo}};
 use bdd::{ITE, Norm, BddState, COUNT_XMEMO_TEST, COUNT_XMEMO_FAIL};
@@ -134,6 +134,7 @@ pub struct BddSwarm {
   state: Arc<BddState>,
   queue: Arc<IteQueue>,
   // work in progress
+  work: Arc<WorkCache>,
   work_state: WorkState<ITE>}
 
 impl Serialize for BddSwarm {

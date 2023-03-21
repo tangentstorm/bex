@@ -1,16 +1,37 @@
 //! Generic Work-in-progress support for VHL graphs.
-use std::collections::HashMap;
+use std::default::Default;
+use std::marker::PhantomData;
+use std::{collections::HashMap, cell::RefCell};
 use std::hash::Hash;
 use nid::NID;
 use vid::VID;
-use {vhl, vhl::HiLoPart};
+use vhl::{HiLoPart, VhlParts};
 use swarm::QID;
+use bdd::ITE;
+use dashmap::DashMap;
 
 pub type WIPHashMap<K,V> = HashMap<K,V,fxhash::FxBuildHasher>;
 
+#[derive(Debug, Default)]
+pub struct Wip<K=ITE, P=VhlParts> { parts : P, deps : Vec<K> }
+
+type WipRef<K=ITE, P=VhlParts> = RefCell<Wip<K, P>>;
+
+#[derive(Debug)]
+pub enum Work<V, W=WipRef> { Todo(W), Done(V) }
+impl<V,W> Default for Work<V, W> where W:Default {
+    fn default() -> Self { Work::Todo(W::default()) }}
+
+
+#[derive(Debug, Default)]
+pub struct WorkCache<K=ITE, V=NID, P=VhlParts> where K:Eq+Hash {
+  _kvp: PhantomData<(K,V,P)>,
+  cache: DashMap<K, Work<V, WipRef<K,P>>> }
+
+
 /// Work in progress for Swarms.
 #[derive(PartialEq,Debug,Copy,Clone)]
-pub enum WIP { Fresh, Done(NID), Parts(vhl::VhlParts) }
+pub enum WIP { Fresh, Done(NID), Parts(VhlParts) }
 
 
 
@@ -46,7 +67,6 @@ impl Dep{
   pub fn new(qid: QID, part: HiLoPart, invert: bool)->Dep { Dep{qid, part, invert} }}
 
 
-// TODO: come up with a better name for this.
 #[derive(Debug, Default)]
 pub struct WorkState<Q:Eq+Hash+Default> {
   /// stores work in progress during a run:
