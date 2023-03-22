@@ -8,8 +8,6 @@ use bdd::{ITE, Norm, BddState, COUNT_XMEMO_TEST, COUNT_XMEMO_FAIL};
 use {swarm, swarm::{WID, QID, Swarm, RMsg}};
 use concurrent_queue::{ConcurrentQueue,PopError};
 
-use crate::vhl::Vhl;
-
 // ----------------------------------------------------------------
 // BddSwarm Protocol
 // ----------------------------------------------------------------
@@ -185,11 +183,14 @@ impl BddSwarm {
 impl BddSwarm {
 
   fn add_query(&mut self, ite:ITE)->QID {
-    // -- new way --
-    let v = self.work.cache.entry(ite).or_default();
-    // TODO: push to queue
 
-    // -- old way --
+    { // -- new way --
+      let v = self.work.cache.entry(ite.clone()).or_default();
+      // TODO: push to queue
+    }
+    self.old_add_query(ite) }
+
+  fn old_add_query(&mut self, ite:ITE)->QID {
     let qid = self.swarm.add_query(Q::Ite(ite));
     self.work_state.qid.insert(ite, qid);
     self.work_state.qs.insert(qid, ite);
@@ -198,62 +199,47 @@ impl BddSwarm {
 
   fn add_sub_task(&mut self, idep:Dep<ITE>, ite:ITE) {
 
-    let mut done_nid = None;
+    let mut done_nid = None; let mut was_empty = false;
     { // -- new way -- add_sub_task
-      let v = self.work.cache.entry(ite).or_default();
+      // this handles both the occupied and vacant cases:
+      let v = self.work.cache.entry(ite).or_insert_with(|| {
+        was_empty = true;
+        Work::default()});
       match v.value() {
         wip::Work::Todo(w) => w.borrow_mut().deps.push(idep),
         wip::Work::Done(n) => done_nid=Some(*n) }}
     if let Some(nid)=done_nid {
       self.resolve_part(&idep.dep, idep.part, nid, idep.invert); }
-    // TODO: push to queue (or call add_query)
+    // if was_empty {  } // TODO: push to queue
 
     // -- old way --
     let dep_qid = self.ite_to_qid(&idep.dep);
     let qdep : Dep<QID> = Dep { dep: dep_qid, part:idep.part, invert:idep.invert };
     // if this ite already has a worker assigned...
-    // !! TODO: really this should be combined with the bdd cache check
+    // occupied:
     if let Some(&qid) = self.work_state.qid.get(&ite) {
-      if let Some(&WIP::Done(nid)) = self.work_state.wip.get(&qid) {
-        self.resolve_part(&idep.dep, idep.part, nid, idep.invert); }
+      if let Some(&WIP::Done(_)) = self.work_state.wip.get(&qid) { }
       else { self.work_state.deps.get_mut(&qid).unwrap().push(qdep) }}
-    else {
+
+    if was_empty {
       let qid = self.add_query(ite);
       self.work_state.deps.insert(qid, vec![qdep]);}}
 
 
   /// called whenever the wip resolves to a single nid
   fn resolve_nid(&mut self, ite:&ITE, nid:NID) {
-
-    let mut _ideps = vec![];
+    let mut ideps = vec![];
     { // update work_cache and extract the ideps
       let mut v = self.work.cache.get_mut(ite).unwrap();
       if let Work::Done(old) = v.value() {
         warn!("resolving an already resolved nid for {:?}", ite);
         assert_eq!(*old, nid, "old and new resolutions didn't match!") }
       else {
-        _ideps = std::mem::take(&mut v.value().wip().borrow_mut().deps);
+        ideps = std::mem::take(&mut v.value().wip().borrow_mut().deps);
         *v = Work::Done(nid) }}
-    // TODO: now propagate the information
-    // self.state.xmemo.insert(*ite, nid);  // (only while xmemo still exists)
-    // if ideps.is_empty() { self.swarm.send_to_self(R::Ret(nid)) }
-    // else { for d in ideps { self.resolve_part(&d.dep, d.part, nid, d.invert); }
-
-    // -- old behavior --
-    let qid = &self.ite_to_qid(ite);
-    if let Some(&WIP::Done(old)) = self.work_state.wip.get(qid) {
-      warn!("resolving already resolved nid for q{:?}", qid);
-      assert_eq!(old, nid, "old and new resolutions didn't match!") }
-    else {
-      trace!("resolved_nid: {:?}=>{}. deps: {:?}", qid, nid, self.work_state.deps.get(qid));
-      self.work_state.wip.insert(*qid,WIP::Done(nid));
-      assert!(ite == self.work_state.qs.get(qid).unwrap());
-      self.state.xmemo.insert(*ite, nid);
-      let deps = self.work_state.deps.get(qid); // !! can i avoid clone here?
-      if deps.is_none() { self.swarm.send_to_self(R::Ret(nid)); }
-      else { for dep in deps.cloned().unwrap() {
-        let dep_ite = self.qid_to_ite(&dep.dep);
-        self.resolve_part(&dep_ite, dep.part, nid, dep.invert) }}}}
+    self.state.xmemo.insert(*ite, nid);  // (only while xmemo still exists)
+    if ideps.is_empty() { self.swarm.send_to_self(R::Ret(nid)) }
+    else { for d in ideps { self.resolve_part(&d.dep, d.part, nid, d.invert); }}}
 
   /// called whenever the wip resolves to a new simple (v/hi/lo) node.
   fn resolve_vhl(&mut self, ite:&ITE, v:VID, hilo:HiLo, invert:bool) {
@@ -267,14 +253,25 @@ impl BddSwarm {
     self.resolve_nid(&ite, nid) }
 
   fn resolve_part(&mut self, ite:&ITE, part:HiLoPart, nid:NID, invert:bool) {
-    let qid = &self.ite_to_qid(ite);
     let mut parts = VhlParts::default();
+    { // -- new way --
+      let v = self.work.cache.get_mut(ite).unwrap();
+      match v.value() {
+        wip::Work::Todo(w) => {
+          let n = if invert { !nid } else { nid };
+          w.borrow_mut().parts.set_part(part, Some(n));
+          parts = w.borrow().parts.clone() }
+        wip::Work::Done(_) => {} }}
 
+    // -- old way -----------
+    // TODO: remove this
+    let qid = &self.ite_to_qid(ite);
     if let Some(WIP::Parts(ref mut entry)) = self.work_state.wip.get_mut(qid) {
-      let n = if invert { !nid } else { nid };
-      if part == HiLoPart::HiPart { entry.hi = Some(n) } else { entry.lo = Some(n) }
-      parts = entry.clone(); }
+      entry.set_part(part, Some(if invert { !nid } else { nid }));
+      parts = entry.clone();
+     }
     else { warn!("???? got a part for {:?} that was already done!", qid) }
+    // ----- end old way ----
 
     if let Some(hilo) = parts.hilo() {
         self.resolve_vhl(ite, parts.v, hilo, parts.invert); }}
