@@ -66,10 +66,13 @@ pub struct VhlParts{
   pub lo:Option<NID>,
   pub invert:bool}
 
-impl VhlParts {
-  pub fn hilo(&self)->Option<HiLo> {
-    if let (Some(hi), Some(lo)) = (self.hi, self.lo) { Some(HiLo{hi,lo}) }
-    else { None }}}
+  impl VhlParts {
+    pub fn hilo(&self)->Option<HiLo> {
+      if let (Some(hi), Some(lo)) = (self.hi, self.lo) { Some(HiLo{hi,lo}) }
+      else { None }}
+    pub fn set_part(&mut self, part:HiLoPart, v:Option<NID>) {
+      if part == HiLoPart::HiPart { self.hi = v }
+      else { self.lo = v }}}
 
 
 pub trait Walkable {
