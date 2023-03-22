@@ -19,20 +19,37 @@ impl<K> Dep<K>{
   pub fn new(dep: K, part: HiLoPart, invert: bool)->Dep<K> { Dep{dep, part, invert} }}
 
 #[derive(Debug, Default)]
-pub struct Wip<K=ITE, P=VhlParts> { parts : P, deps : Vec<K> }
+pub struct Wip<K=ITE, P=VhlParts> { pub parts : P, pub deps : Vec<Dep<K>> }
 
 type WipRef<K=ITE, P=VhlParts> = RefCell<Wip<K, P>>;
 
 #[derive(Debug)]
 pub enum Work<V, W=WipRef> { Todo(W), Done(V) }
+
 impl<V,W> Default for Work<V, W> where W:Default {
     fn default() -> Self { Work::Todo(W::default()) }}
+
+impl<V,W> Work<V,W> {
+
+  pub fn is_todo(&self)->bool {
+    if let Self::Todo(_) = self { true } else { false }}
+
+  pub fn is_done(&self)->bool {
+    if let Self::Done(_) = self { true } else { false }}
+
+  pub fn unwrap(&self)->&V {
+    if let Self::Done(v) = self { &v } else {
+      panic!("cannot unwrap() a Work::Todo") }}
+
+  pub fn wip(&self)->&W {
+    if let Self::Todo(w) = self { &w } else {
+      panic!("cannot get wip() from a Work::Done") }}}
 
 
 #[derive(Debug, Default)]
 pub struct WorkCache<K=ITE, V=NID, P=VhlParts> where K:Eq+Hash {
   _kvp: PhantomData<(K,V,P)>,
-  cache: DashMap<K, Work<V, WipRef<K,P>>> }
+  pub cache: DashMap<K, Work<V, WipRef<K,P>>> }
 
 
 /// Work in progress for Swarms.
