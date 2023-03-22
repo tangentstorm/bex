@@ -47,7 +47,7 @@ impl<V,W> Work<V,W> {
 
 
 #[derive(Debug, Default)]
-pub struct WorkCache<K=NormIteKey, V=NID, P=VhlParts> where K:Eq+Hash {
+pub struct WorkState<K=NormIteKey, V=NID, P=VhlParts> where K:Eq+Hash {
   _kvp: PhantomData<(K,V,P)>,
   pub cache: DashMap<K, Work<V, WipRef<K,P>>> }
 
