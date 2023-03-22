@@ -1,7 +1,7 @@
 //! Generic Work-in-progress support for VHL graphs.
 use std::default::Default;
 use std::marker::PhantomData;
-use std::{collections::HashMap, cell::RefCell};
+use std::{collections::HashMap};
 use std::hash::Hash;
 use nid::NID;
 use vid::VID;
@@ -21,7 +21,8 @@ impl<K> Dep<K>{
 #[derive(Debug, Default)]
 pub struct Wip<K=NormIteKey, P=VhlParts> { pub parts : P, pub deps : Vec<Dep<K>> }
 
-type WipRef<K=NormIteKey, P=VhlParts> = RefCell<Wip<K, P>>;
+// TODO: wrap this with a smart pointer so Work::Done and Work::Todo are both usizes.
+type WipRef<K=NormIteKey, P=VhlParts> = Wip<K, P>;
 
 #[derive(Debug)]
 pub enum Work<V, W=WipRef> { Todo(W), Done(V) }
@@ -40,6 +41,10 @@ impl<V,W> Work<V,W> {
   pub fn unwrap(&self)->&V {
     if let Self::Done(v) = self { &v } else {
       panic!("cannot unwrap() a Work::Todo") }}
+
+  pub fn wip_mut(&mut self)->&mut W {
+    if let Self::Todo(w) = self { w } else {
+      panic!("cannot get wip() from a Work::Done") }}
 
   pub fn wip(&self)->&W {
     if let Self::Todo(w) = self { &w } else {

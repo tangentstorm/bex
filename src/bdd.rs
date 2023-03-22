@@ -9,6 +9,7 @@ use reg::Reg;
 use {vhl, vhl::{HiLo, Walkable}};
 use nid::{NID,O,I};
 use vid::{VID,VidOrdering,topmost_of3};
+use wip;
 
 mod bdd_sols;
 mod bdd_swarm; use self::bdd_swarm::*;
@@ -95,10 +96,13 @@ impl ITE {
             else { return Norm::Ite(NormIteKey(ITE::new(f,g,h))) }}}}}} }
 
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct BddState {
   /// cache of hi,lo pairs.
   hilos: vhl::HiLoCache,
+  /// this demonstrates that WorkState can be held inside an Arc
+  /// (because each BddWorker has an Arc to this state.)
+  _state: wip::WorkState,
   /// arbitrary memoization. These record normalized (f,g,h) lookups.
   xmemo: BddHashMap<NormIteKey, NID> }
 
@@ -109,8 +113,6 @@ thread_local!{
 
 
 impl BddState {
-  /// constructor
-  pub fn new()->Self { BddState { hilos: vhl::HiLoCache::new(), xmemo: BddHashMap::default() }}
 
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)-> (NID, NID) {

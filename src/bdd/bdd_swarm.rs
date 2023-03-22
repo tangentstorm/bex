@@ -1,3 +1,4 @@
+use std::borrow::BorrowMut;
 use std::{fmt, sync::mpsc::Sender};
 use std::sync::Arc;
 use {wip, wip::{Dep, WorkState, Work}};
@@ -158,22 +159,24 @@ impl BddSwarm {
       // TODO: push to queue
       self.swarm.add_query(Q::Ite(ite)); }
 
-  fn add_wip(&self, q:NormIteKey, v:VID, invert:bool) {
-    if let wip::Work::Todo(w) = self.work.cache.get(&q).unwrap().value() {
-      let mut val = w.borrow_mut();
-      val.parts.v = v;
-      val.parts.invert = invert; }
-    else { panic!("got wip for non-Todo task"); }}
+  fn add_wip(&self, q:NormIteKey, vid:VID, invert:bool) {
+    if self.work.cache.contains_key(&q) {
+      self.work.cache.alter(&q, |_k, v| match v {
+        Work::Todo(wip::Wip{parts,deps}) => {
+          let mut p = parts; p.v = vid; p.invert = invert;
+          Work::Todo(wip::Wip{parts:p,deps})},
+        Work::Done(_) => panic!("got wip for a Work::Done")})}
+      else { panic!("got wip for unknown task");}}
 
   fn add_sub_task(&mut self, idep:Dep<NormIteKey>, ite:NormIteKey) {
 
     let mut done_nid = None; let mut was_empty = false;
     { // -- new way -- add_sub_task
       // this handles both the occupied and vacant cases:
-      let v = self.work.cache.entry(ite).or_insert_with(|| {
+      let mut v = self.work.cache.entry(ite).or_insert_with(|| {
         was_empty = true;
         Work::default()});
-      match v.value() {
+      match v.value_mut() {
         wip::Work::Todo(w) => w.borrow_mut().deps.push(idep),
         wip::Work::Done(n) => done_nid=Some(*n) }}
     if let Some(nid)=done_nid {
@@ -190,7 +193,7 @@ impl BddSwarm {
         warn!("resolving an already resolved nid for {:?}", ite);
         assert_eq!(*old, nid, "old and new resolutions didn't match!") }
       else {
-        ideps = std::mem::take(&mut v.value().wip().borrow_mut().deps);
+        ideps = std::mem::take(&mut v.value_mut().wip_mut().deps);
         *v = Work::Done(nid) }}
     self.state.xmemo.insert(*ite, nid);  // (only while xmemo still exists)
     if ideps.is_empty() { self.swarm.send_to_self(R::Ret(nid)) }
@@ -212,12 +215,12 @@ impl BddSwarm {
   fn resolve_part(&mut self, ite:&NormIteKey, part:HiLoPart, nid:NID, invert:bool) {
     let mut parts = VhlParts::default();
     { // -- new way --
-      let v = self.work.cache.get_mut(ite).unwrap();
-      match v.value() {
+      let mut v = self.work.cache.get_mut(ite).unwrap();
+      match v.value_mut() {
         wip::Work::Todo(w) => {
           let n = if invert { !nid } else { nid };
           w.borrow_mut().parts.set_part(part, Some(n));
-          parts = w.borrow().parts.clone() }
+          parts = w.borrow_mut().parts.clone() }
         wip::Work::Done(_) => {} }}
 
     if let Some(hilo) = parts.hilo() {

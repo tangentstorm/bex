@@ -139,7 +139,7 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   assert_eq!(actual, expect); }
 
 #[test] fn test_simple_nodes() {
-  let state = BddState::new();
+  let state = BddState::default();
   let hl = HiLo::new(NID::var(5), NID::var(6));
   let x0 = VID::var(0);
   let v0 = VID::vir(0);
