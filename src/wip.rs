@@ -7,7 +7,7 @@ use nid::NID;
 use vid::VID;
 use vhl::{HiLoPart, VhlParts};
 use swarm::QID;
-use bdd::NormIteKey;
+use bdd::{Norm, NormIteKey};
 use dashmap::DashMap;
 
 
@@ -59,29 +59,35 @@ pub enum WIP { Fresh, Done(NID), Parts(VhlParts) }
 
 
 
-/// Response message. TWIP is whatever type is used for WIP hi/lo nodes.
+// one step in the resolution of a query.
+// !! to be replaced by direct calls to
+//    work.cache.resolve_nid, resolve_vhl, resolve_part
 #[derive(PartialEq,Debug)]
-pub enum RMsg<TWIP> {
+pub enum ResStep {
   /// resolved to a nid
   Nid(NID),
   /// a simple node needs to be constructed:
   Vhl{v:VID, hi:NID, lo:NID, invert:bool},
   /// other work in progress
-  Wip{v:VID, hi:TWIP, lo:TWIP, invert:bool},
+  Wip{v:VID, hi:Norm, lo:Norm, invert:bool}}
+
+impl std::ops::Not for ResStep {
+  type Output = ResStep;
+  fn not(self)->ResStep {
+    match self {
+      ResStep::Nid(n) => ResStep::Nid(!n),
+      ResStep::Vhl{v,hi,lo,invert} => ResStep::Vhl{v,hi,lo,invert:!invert},
+      ResStep::Wip{v,hi,lo,invert} => ResStep::Wip{v,hi,lo,invert:!invert} }}}
+
+/// Response message.
+#[derive(PartialEq,Debug)]
+pub enum RMsg {
+  Res(NormIteKey, ResStep),
   /// We've solved the whole problem, so exit the loop and return this nid.
   Ret(NID),
   /// return stats about the memo cache
   MemoStats { tests: u64, fails: u64 }}
 
-impl<TWIP> std::ops::Not for RMsg<TWIP> {
-    type Output = RMsg<TWIP>;
-    fn not(self)->RMsg<TWIP> {
-      match self {
-        RMsg::Nid(n) => RMsg::Nid(!n),
-        RMsg::Vhl{v,hi,lo,invert} => RMsg::Vhl{v,hi,lo,invert:!invert},
-        RMsg::Wip{v,hi,lo,invert} => RMsg::Wip{v,hi,lo,invert:!invert},
-        RMsg::Ret(n) => RMsg::Ret(!n),
-        RMsg::MemoStats{ tests:_, fails: _} => panic!("not(MemoStats)? This makes no sense.") }}}
 
 
 #[derive(Debug, Default)]

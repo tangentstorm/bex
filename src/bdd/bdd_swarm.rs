@@ -8,6 +8,8 @@ use bdd::{ITE, NormIteKey, Norm, BddState, COUNT_XMEMO_TEST, COUNT_XMEMO_FAIL};
 use {swarm, swarm::{WID, QID, Swarm, RMsg}};
 use concurrent_queue::{ConcurrentQueue,PopError};
 
+use crate::wip::ResStep;
+
 // ----------------------------------------------------------------
 // BddSwarm Protocol
 // ----------------------------------------------------------------
@@ -34,7 +36,7 @@ impl IteQueue {
   /// ask for stats about cache
   Stats }
 
-type R = wip::RMsg<Norm>;
+type R = wip::RMsg;
 
 // Q::Cache() message could potentially be huge to print, so don't.
 impl std::fmt::Debug for Q {
@@ -77,7 +79,7 @@ impl swarm::Worker<Q,R,ITE> for BddWorker {
   fn work_step(&mut self, _qid:&QID, q:Q)->Option<R> {
     match q {
       Q::Init(s, q) => { self.state = Some(s); self.queue=Some(q); None }
-      Q::Ite(ite) => { Some(self.ite_norm(ite)) }
+      Q::Ite(ite) => { Some(R::Res(ite, self.ite_norm(ite))) }
       Q::Stats => {
         let tests = COUNT_XMEMO_TEST.with(|c| c.replace(0));
         let fails = COUNT_XMEMO_FAIL.with(|c| c.replace(0));
@@ -85,25 +87,19 @@ impl swarm::Worker<Q,R,ITE> for BddWorker {
 
 /// Code run by each thread in the swarm. Isolated as a function without channels for testing.
 impl BddWorker {
-  fn ite(&self, ite0:ITE)->R {
-    let ITE { i, t, e } = ite0;
-    match ITE::norm(i,t,e) {
-        Norm::Nid(n) => R::Nid(n),
-        Norm::Ite(ite) => self.ite_norm(ite),
-        Norm::Not(ite) => !self.ite_norm(ite) }}
 
-  fn vhl_norm(&self, ite:NormIteKey)->R {
+  fn vhl_norm(&self, ite:NormIteKey)->ResStep {
     let ITE{i:vv,t:hi,e:lo} = ite.0; let v = vv.vid();
     if let Some(n) = self.state.as_ref().unwrap().get_simple_node(v, HiLo{hi,lo}) {
-      R::Nid(n) }
-    else { R::Vhl{ v, hi, lo, invert:false } }}
+      ResStep::Nid(n) }
+    else { ResStep::Vhl{ v, hi, lo, invert:false } }}
 
-  fn ite_norm(&self, ite:NormIteKey)->R {
+  fn ite_norm(&self, ite:NormIteKey)->ResStep {
     let ITE { i, t, e } = ite.0;
     let (vi, vt, ve) = (i.vid(), t.vid(), e.vid());
     let v = ite.0.top_vid(); let state = self.state.as_ref().unwrap();
     match state.get_memo(&ite) {
-      Some(n) => R::Nid(n),
+      Some(n) => ResStep::Nid(n),
       None => {
         let (hi_i, lo_i) = if v == vi {state.tup(i)} else {(i,i)};
         let (hi_t, lo_t) = if v == vt {state.tup(t)} else {(t,t)};
@@ -116,12 +112,12 @@ impl BddWorker {
           match ITE::norm(NID::from_vid(v), hn, ln) {
             // first, it might normalize to a nid directly:
             // !! but wait. how is this possible? i.is_const() and v == fake variable "T"?
-            Norm::Nid(n) => { R::Nid(n) }
+            Norm::Nid(n) => { ResStep::Nid(n) }
             // otherwise, the normalized triple might already be in cache:
             Norm::Ite(ite) => self.vhl_norm(ite),
             Norm::Not(ite) => !self.vhl_norm(ite)}}
         // otherwise at least one side is not a simple nid yet, and we have to defer
-        else { R::Wip{ v, hi, lo, invert:false } }}}} }
+        else { ResStep::Wip{ v, hi, lo, invert:false } }}}} }
 
 
 // ----------------------------------------------------------------
@@ -139,10 +135,6 @@ pub struct BddSwarm {
 
 // temp methods
 impl BddSwarm {
-
-  fn qid_to_ite(&self, qid:&QID)->NormIteKey {
-    if let Some(&ite) = self.work_state.qs.get(qid) { ite }
-    else { panic!("no ite found for qid: {:?}", qid)}}
 
   fn ite_to_qid(&self, ite:&NormIteKey)->QID {
     if let Some(&qid) = self.work_state.qid.get(ite) { qid }
@@ -189,7 +181,7 @@ impl BddSwarm {
   fn add_query(&mut self, ite:NormIteKey)->QID {
 
     { // -- new way --
-      let v = self.work.cache.entry(ite).or_default();
+      let _v = self.work.cache.entry(ite).or_default();
       // TODO: push to queue
     }
     self.old_add_query(ite) }
@@ -289,24 +281,22 @@ impl BddSwarm {
     // each response can lead to up to two new ITE queries, and we'll relay those to
     // other workers too, until we get back enough info to solve the original query.
     while result.is_none() {
-      let RMsg{wid:_,qid,r} = self.swarm.recv().expect("failed to recieve rmsg");
+      let RMsg{wid:_,qid:_,r} = self.swarm.recv().expect("failed to recieve rmsg");
       //println!("{:?} -> {:?}", qid, r);
       if let Some(rmsg) = r { match rmsg {
-        R::Nid(nid) =>  {
-          let ite = self.qid_to_ite(&qid);
-          self.resolve_nid(&ite, nid); }
-        R::Vhl{v,hi,lo,invert} => {
-          let ite = self.qid_to_ite(&qid);
-          self.resolve_vhl(&ite, v, HiLo{hi, lo}, invert); }
-        R::Wip{v,hi,lo,invert} => {
-          // by the time we get here, the task for this node was already created.
-          let q_ite = self.qid_to_ite(&qid);
-          self.add_wip(&q_ite, VhlParts{ v, hi:None, lo:None, invert });
-          for &(xx, part) in &[(hi,HiLoPart::HiPart), (lo,HiLoPart::LoPart)] {
-            match xx {
-              Norm::Nid(nid) => self.resolve_part(&q_ite, part, nid, false),
-              Norm::Ite(ite) => { self.add_sub_task(Dep::new(q_ite, part, false), ite);},
-              Norm::Not(ite) => { self.add_sub_task(Dep::new(q_ite, part, true), ite);}}}}
+        R::Res(q_ite, step) => match step {
+          ResStep::Nid(nid) =>  {
+            self.resolve_nid(&q_ite, nid); }
+          ResStep::Vhl{v,hi,lo,invert} => {
+            self.resolve_vhl(&q_ite, v, HiLo{hi, lo}, invert); }
+          ResStep::Wip{v,hi,lo,invert} => {
+            // by the time we get here, the task for this node was already created.
+            self.add_wip(&q_ite, VhlParts{ v, hi:None, lo:None, invert });
+            for &(xx, part) in &[(hi,HiLoPart::HiPart), (lo,HiLoPart::LoPart)] {
+              match xx {
+                Norm::Nid(nid) => self.resolve_part(&q_ite, part, nid, false),
+                Norm::Ite(ite) => { self.add_sub_task(Dep::new(q_ite, part, false), ite);},
+                Norm::Not(ite) => { self.add_sub_task(Dep::new(q_ite, part, true), ite);}}}}}
         R::Ret(n) => { result = Some(n) }
         R::MemoStats{ tests:_, fails:_ }
           => { panic!("got R::MemoStats before sending Q::Halt"); } }}}
