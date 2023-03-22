@@ -14,11 +14,6 @@ use wip;
 mod bdd_sols;
 mod bdd_swarm; use self::bdd_swarm::*;
 
-/// Type alias for whatever HashMap implementation we're curretly using.
-/// Hashing is an extremely important aspect of a BDD base, so it's
-/// useful to have a single place to configure this.
-type BddHashMap<K,V> = dashmap::DashMap<K,V,fxhash::FxBuildHasher>;
-
 
 
 /// An if/then/else triple. Like VHL, but all three slots are NIDs.
@@ -100,11 +95,7 @@ impl ITE {
 pub struct BddState {
   /// cache of hi,lo pairs.
   hilos: vhl::HiLoCache,
-  /// this demonstrates that WorkState can be held inside an Arc
-  /// (because each BddWorker has an Arc to this state.)
-  _state: wip::WorkState,
-  /// arbitrary memoization. These record normalized (f,g,h) lookups.
-  xmemo: BddHashMap<NormIteKey, NID> }
+  work: wip::WorkState}
 
 // cache lookup counters:
 thread_local!{
@@ -136,9 +127,8 @@ impl BddState {
       self.get_simple_node(ite.i.vid(), hilo) }
     else {
       COUNT_XMEMO_TEST.with(|c| *c.borrow_mut() += 1 );
-      let test = self.xmemo.get(key);
-      if test.is_none() { COUNT_XMEMO_FAIL.with(|c| *c.borrow_mut() += 1 ); None }
-      else { Some(*test.unwrap()) } }}
+      if let Some(n) = self.work.get_done(key) { Some(n) }
+      else { COUNT_XMEMO_FAIL.with(|c| *c.borrow_mut() += 1 ); None }}}
 
   #[inline] fn get_simple_node(&self, v:VID, hl:HiLo)-> Option<NID> {
     self.hilos.get_node(v, hl) }}

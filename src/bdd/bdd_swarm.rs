@@ -1,7 +1,7 @@
 use std::borrow::BorrowMut;
 use std::{fmt, sync::mpsc::Sender};
 use std::sync::Arc;
-use {wip, wip::{Dep, WorkState, Work}};
+use {wip, wip::{Dep, Work}};
 use vhl::{HiLoPart, VhlParts};
 use {vid::VID, nid::{NID}, vhl::{HiLo}};
 use bdd::{ITE, NormIteKey, Norm, BddState, COUNT_XMEMO_TEST, COUNT_XMEMO_FAIL};
@@ -128,9 +128,7 @@ pub struct BddSwarm {
   swarm: Swarm<Q,R,BddWorker,ITE>,
   /// reference to state shared by all threads.
   state: Arc<BddState>,
-  queue: Arc<IteQueue>,
-  // work in progress
-  work: Arc<WorkState>}
+  queue: Arc<IteQueue>}
 
 
 impl BddSwarm {
@@ -155,13 +153,13 @@ impl BddSwarm {
 impl BddSwarm {
 
   fn add_query(&mut self, ite:NormIteKey) {
-      let _v = self.work.cache.entry(ite).or_default();
+      let _v = self.state.work.cache.entry(ite).or_default();
       // TODO: push to queue
       self.swarm.add_query(Q::Ite(ite)); }
 
   fn add_wip(&self, q:NormIteKey, vid:VID, invert:bool) {
-    if self.work.cache.contains_key(&q) {
-      self.work.cache.alter(&q, |_k, v| match v {
+    if self.state.work.cache.contains_key(&q) {
+      self.state.work.cache.alter(&q, |_k, v| match v {
         Work::Todo(wip::Wip{parts,deps}) => {
           let mut p = parts; p.v = vid; p.invert = invert;
           Work::Todo(wip::Wip{parts:p,deps})},
@@ -173,7 +171,7 @@ impl BddSwarm {
     let mut done_nid = None; let mut was_empty = false;
     { // -- new way -- add_sub_task
       // this handles both the occupied and vacant cases:
-      let mut v = self.work.cache.entry(ite).or_insert_with(|| {
+      let mut v = self.state.work.cache.entry(ite).or_insert_with(|| {
         was_empty = true;
         Work::default()});
       match v.value_mut() {
@@ -188,14 +186,13 @@ impl BddSwarm {
   fn resolve_nid(&mut self, ite:&NormIteKey, nid:NID) {
     let mut ideps = vec![];
     { // update work_cache and extract the ideps
-      let mut v = self.work.cache.get_mut(ite).unwrap();
+      let mut v = self.state.work.cache.get_mut(ite).unwrap();
       if let Work::Done(old) = v.value() {
         warn!("resolving an already resolved nid for {:?}", ite);
         assert_eq!(*old, nid, "old and new resolutions didn't match!") }
       else {
         ideps = std::mem::take(&mut v.value_mut().wip_mut().deps);
         *v = Work::Done(nid) }}
-    self.state.xmemo.insert(*ite, nid);  // (only while xmemo still exists)
     if ideps.is_empty() { self.swarm.send_to_self(R::Ret(nid)) }
     else { for d in ideps { self.resolve_part(&d.dep, d.part, nid, d.invert); }}}
 
@@ -215,7 +212,7 @@ impl BddSwarm {
   fn resolve_part(&mut self, ite:&NormIteKey, part:HiLoPart, nid:NID, invert:bool) {
     let mut parts = VhlParts::default();
     { // -- new way --
-      let mut v = self.work.cache.get_mut(ite).unwrap();
+      let mut v = self.state.work.cache.get_mut(ite).unwrap();
       match v.value_mut() {
         wip::Work::Todo(w) => {
           let n = if invert { !nid } else { nid };

@@ -56,6 +56,18 @@ pub struct WorkState<K=NormIteKey, V=NID, P=VhlParts> where K:Eq+Hash {
   _kvp: PhantomData<(K,V,P)>,
   pub cache: DashMap<K, Work<V, WipRef<K,P>>> }
 
+impl<K:Eq+Hash,V:Clone> WorkState<K,V> {
+
+  /// If the key exists in the cache AND the work is
+  /// done, return the completed value, otherwise
+  /// return None.
+  pub fn get_done(&self, k:&K)->Option<V> {
+    if let Some(w) = self.cache.get(k) {
+      match w.value() {
+        Work::Todo(_) => None,
+        Work::Done(v) => Some(v.clone())}}
+    else { None }}}
+
 
 
 // one step in the resolution of a query.
