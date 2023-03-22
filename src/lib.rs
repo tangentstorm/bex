@@ -3,9 +3,6 @@
 #![allow(clippy::many_single_char_names)]
 
 #[macro_use] extern crate log;
-extern crate bincode;
-#[macro_use] extern crate serde_derive;
-extern crate serde;
 extern crate simplelog;
 extern crate rand;
 extern crate dashmap;

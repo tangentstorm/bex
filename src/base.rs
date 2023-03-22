@@ -39,9 +39,6 @@ pub trait Base {
   /// substitute node for variable in context.
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID;
 
-  /// Save the `Base` to the given path.
-  fn save(&self, path:&str)->::std::io::Result<()>;
-
   /// Render node `n` (and its descendents) in graphviz *.dot format.
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write);
 
@@ -91,7 +88,7 @@ impl<T:Base> GraphViz for T {
 /// // example do-nothing decorator
 /// pub struct Decorated<T:Base> { base: T }
 /// impl<T:Base> Base for Decorated<T> {
-///   inherit![ new, when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ]; }
+///   inherit![ new, when_hi, when_lo, and, xor, or, def, tag, get, sub, dot ]; }
 /// ```
 #[macro_export] macro_rules! inherit {
   ( $($i:ident),* ) => { $( inherit_fn!($i); )* }
@@ -109,7 +106,6 @@ impl<T:Base> GraphViz for T {
   (tag) =>      { #[inline] fn tag(&mut self, n:NID, s:String)->NID { self.base.tag(n, s) }};
   (get) =>      { #[inline] fn get(&self, s:&str)->Option<NID> { self.base.get(s) }};
   (sub) =>      { #[inline] fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID { self.base.sub(v, n, ctx) }};
-  (save) =>     { #[inline] fn save(&self, path:&str)->::std::io::Result<()> { self.base.save(path) }};
   (dot) =>      { #[inline] fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) { self.base.dot(n, wr) }};
 }
 
@@ -117,7 +113,7 @@ impl<T:Base> GraphViz for T {
 // !! start on isolating simplification rules (for use in AST, ANF)
 pub struct Simplify<T:Base> { pub base: T }
 impl<T:Base> Base for Simplify<T> {
-  inherit![ new, when_hi, when_lo, xor, or, def, tag, get, sub, save, dot ];
+  inherit![ new, when_hi, when_lo, xor, or, def, tag, get, sub, dot ];
   fn and(&mut self, x:NID, y:NID)->NID {
     if let Some(nid) = simp::and(x,y) { nid }
     else {

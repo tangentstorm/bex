@@ -2,7 +2,6 @@
 
 use std::collections::{HashMap,HashSet};
 
-use io;
 use base::*;
 use {nid, nid::NID};
 use {vid, vid::VID};
@@ -10,7 +9,7 @@ use {ops, ops::Ops};
 use simp;
 
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Debug)]
 pub struct RawASTBase {
   bits: Vec<Ops>,                   // all known bits (simplified)
   tags: HashMap<String, NID>,       // support for naming/tagging bits.
@@ -34,10 +33,6 @@ impl RawASTBase {
         self.bits.push(ops.clone());
         self.hash.insert(ops, nid);
         nid }}}
-
-  pub fn load(path:&str)->::std::io::Result<RawASTBase> {
-    let s = io::get(path)?;
-    Ok(bincode::deserialize(&s).unwrap()) }
 
 
   fn when(&mut self, v:vid::VID, val:NID, nid:NID)->NID {
@@ -208,9 +203,6 @@ impl Base for RawASTBase {
   fn sub(&mut self, _v:vid::VID, _n:NID, _ctx:NID)->NID { todo!("ast::sub") }
 
   fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
-  fn save(&self, path:&str)->::std::io::Result<()> {
-    let s = bincode::serialize(&self).unwrap();
-    io::put(path, &s) }
 
   // generate dot file (graphviz)
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {
@@ -249,7 +241,7 @@ impl Base for RawASTBase {
 
 pub struct ASTBase { base: Simplify<RawASTBase> }
 impl Base for ASTBase {
-  inherit![when_hi, when_lo, and, xor, or, def, tag, get, sub, save, dot ];
+  inherit![when_hi, when_lo, and, xor, or, def, tag, get, sub, dot ];
   fn new()->Self { ASTBase{ base: Simplify{ base: <RawASTBase as Base>::new() }}}}
 
 impl ASTBase {

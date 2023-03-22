@@ -4,9 +4,7 @@ use std::cell::RefCell;
 
 extern crate num_cpus;
 
-use bincode;
 use base::{Base};
-use io;
 use reg::Reg;
 use {vhl, vhl::{HiLo, Walkable}};
 use nid::{NID,O,I};
@@ -23,7 +21,7 @@ type BddHashMap<K,V> = dashmap::DashMap<K,V,fxhash::FxBuildHasher>;
 
 
 /// An if/then/else triple. Like VHL, but all three slots are NIDs.
-#[derive(Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, Clone, Copy)]
+#[derive(Debug, Default, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ITE {i:NID, t:NID, e:NID}
 impl ITE {
   /// shorthand constructor
@@ -50,7 +48,7 @@ impl Norm {
       Norm::Ite(ite) => *ite}}}
 
 /// a normalized ITE suitable for use as a key in the computed cache
-#[derive(Eq,PartialEq,Hash,Debug,Default,Clone,Copy,Serialize,Deserialize)]
+#[derive(Eq,PartialEq,Hash,Debug,Default,Clone,Copy)]
 pub struct NormIteKey(ITE);
 
 
@@ -97,7 +95,7 @@ impl ITE {
             else { return Norm::Ite(NormIteKey(ITE::new(f,g,h))) }}}}}} }
 
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct BddState {
   /// cache of hi,lo pairs.
   hilos: vhl::HiLoCache,
@@ -145,7 +143,7 @@ impl BddState {
 
 
 /// Finally, we put everything together. This is the top-level type for this crate.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct BDDBase {
   /// allows us to give user-friendly names to specific nodes in the base.
   pub tags: HashMap<String, NID>,
@@ -156,9 +154,6 @@ impl BDDBase {
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)->(NID,NID) { self.swarm.tup(n) }
 
-  pub fn load(path:&str)->::std::io::Result<BDDBase> {
-    let s = io::get(path)?;
-    Ok(bincode::deserialize(&s).unwrap()) }
 
   // public node constructors
 
@@ -260,10 +255,6 @@ impl Base for BDDBase {
         let el = self.sub(v, n, ze);
         self.ite(NID::from_vid(zv), th, el) }}
     else { ctx }}
-
-  fn save(&self, path:&str)->::std::io::Result<()> {
-    let s = bincode::serialize(&self).unwrap();
-    io::put(path, &s) }
 
   // generate dot file (graphviz)
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {

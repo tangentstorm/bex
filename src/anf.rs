@@ -136,8 +136,6 @@ impl Base for ANFBase {
         expr![self, ((top & rhi) ^ rlo)] }}
     else { ctx }}
 
-  fn save(&self, _path:&str)->::std::io::Result<()> { todo!("anf::save") }
-
   fn solution_set(&self, n: NID, nvars: usize)->HashSet<Reg> {
     self.solutions_pad(n, nvars).collect() }
 

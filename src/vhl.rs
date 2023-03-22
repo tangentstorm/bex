@@ -3,7 +3,6 @@ use std::collections::BinaryHeap;
 use std::collections::HashSet;
 use dashmap::DashMap;
 use nid::NID;
-use serde::Serialize;
 use vid::VID;
 
 type VhlHashMap<K,V> = DashMap<K,V,fxhash::FxBuildHasher>;
@@ -11,19 +10,11 @@ type VhlHashMap<K,V> = DashMap<K,V,fxhash::FxBuildHasher>;
 #[derive(Debug,Default,Clone)]
 struct VhlVec<T>{ pub vec: boxcar::Vec<T> }
 
-impl<T> Serialize for VhlVec<T> {
-    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer { todo!() } }
-
-impl<'de,T> serde::Deserialize<'de> for VhlVec<T> {
-    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
-    where D: serde::Deserializer<'de> { todo!() } }
-
 
 /// Simple Hi/Lo pair stored internally when representing nodes.
 /// All nodes with the same branching variable go in the same array, so there's
 /// no point duplicating it.
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Serialize, Deserialize, Default)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Default)]
 pub struct HiLo {pub hi:NID, pub lo:NID}
 
 impl HiLo {
@@ -42,7 +33,7 @@ impl std::ops::Not for HiLo {
 
 
 /// Vhl (for when we really do need the variable)
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Debug)]
 pub struct Vhl {pub v:VID, pub hi:NID, pub lo:NID}
 
 impl Vhl {
@@ -107,7 +98,7 @@ pub trait HiLoBase {
   fn get_hilo(&self, n:NID)->Option<HiLo>; }
 
 
-#[derive(Debug, Default, Serialize, Deserialize, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct HiLoCache {
   /// variable-agnostic hi/lo pairs for individual bdd nodes.
   hilos: VhlVec<HiLo>,

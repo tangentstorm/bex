@@ -1,6 +1,5 @@
 use std::{fmt, sync::mpsc::Sender};
 use std::sync::Arc;
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use {wip, wip::{Dep, WorkState, Work}};
 use vhl::{HiLoPart, VhlParts};
 use {vid::VID, nid::{NID}, vhl::{HiLo}};
@@ -131,17 +130,6 @@ pub struct BddSwarm {
   queue: Arc<IteQueue>,
   // work in progress
   work: Arc<WorkState>}
-
-impl Serialize for BddSwarm {
-  fn serialize<S:Serializer>(&self, ser: S)->Result<S::Ok, S::Error> {
-    // all we really care about is the state:
-    self.state.serialize::<S>(ser) } }
-
-impl<'de> Deserialize<'de> for BddSwarm {
-  fn deserialize<D:Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-    let mut res = Self::new();
-    res.state = Arc::new(BddState::deserialize(d)?);
-    Ok(res) }}
 
 
 impl BddSwarm {

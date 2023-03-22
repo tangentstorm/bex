@@ -30,14 +30,11 @@ slowtests = []
 members = ["py"]
 
 [dependencies]
-serde = "1.0"
-serde_derive = "1.0.156"
-bincode = "1.0"
 log = { version = "0.4", features = ["max_level_debug"]}
 simplelog = "0.5"
 num_cpus = "1.0"
 rand = "0.8.5"
-dashmap = { version="5.4.0", features = ["serde"]}
+dashmap = { version="5.4.0"}
 boxcar = "0.1.0"
 fxhash = "0.2.1"
 concurrent-queue = "2.1.0"
