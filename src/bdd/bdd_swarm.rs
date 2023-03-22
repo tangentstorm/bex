@@ -4,7 +4,7 @@ use serde::{Serialize, Serializer, Deserialize, Deserializer};
 use {wip, wip::{Dep, WorkCache, Work, WIP, WorkState}};
 use vhl::{HiLoPart, VhlParts};
 use {vid::VID, nid::{NID}, vhl::{HiLo}};
-use bdd::{ITE, Norm, BddState, COUNT_XMEMO_TEST, COUNT_XMEMO_FAIL};
+use bdd::{ITE, NormIteKey, Norm, BddState, COUNT_XMEMO_TEST, COUNT_XMEMO_FAIL};
 use {swarm, swarm::{WID, QID, Swarm, RMsg}};
 use concurrent_queue::{ConcurrentQueue,PopError};
 
@@ -28,7 +28,7 @@ impl IteQueue {
 #[derive(Clone)]
  enum Q {
   /// The main recursive operation: convert ITE triple to a BDD.
-  Ite(ITE),
+  Ite(NormIteKey),
   /// Initialize worker with its "hive mind".
   Init(Arc<BddState>, Arc<IteQueue>),
   /// ask for stats about cache
@@ -77,7 +77,7 @@ impl swarm::Worker<Q,R,ITE> for BddWorker {
   fn work_step(&mut self, _qid:&QID, q:Q)->Option<R> {
     match q {
       Q::Init(s, q) => { self.state = Some(s); self.queue=Some(q); None }
-      Q::Ite(ite) => { Some(self.ite(ite)) }
+      Q::Ite(ite) => { Some(self.ite_norm(ite)) }
       Q::Stats => {
         let tests = COUNT_XMEMO_TEST.with(|c| c.replace(0));
         let fails = COUNT_XMEMO_FAIL.with(|c| c.replace(0));
@@ -92,16 +92,16 @@ impl BddWorker {
         Norm::Ite(ite) => self.ite_norm(ite),
         Norm::Not(ite) => !self.ite_norm(ite) }}
 
-  fn vhl_norm(&self, ite:ITE)->R {
-    let ITE{i:vv,t:hi,e:lo} = ite; let v = vv.vid();
+  fn vhl_norm(&self, ite:NormIteKey)->R {
+    let ITE{i:vv,t:hi,e:lo} = ite.0; let v = vv.vid();
     if let Some(n) = self.state.as_ref().unwrap().get_simple_node(v, HiLo{hi,lo}) {
       R::Nid(n) }
     else { R::Vhl{ v, hi, lo, invert:false } }}
 
-  fn ite_norm(&self, ite:ITE)->R {
-    let ITE { i, t, e } = ite;
+  fn ite_norm(&self, ite:NormIteKey)->R {
+    let ITE { i, t, e } = ite.0;
     let (vi, vt, ve) = (i.vid(), t.vid(), e.vid());
-    let v = ite.top_vid(); let state = self.state.as_ref().unwrap();
+    let v = ite.0.top_vid(); let state = self.state.as_ref().unwrap();
     match state.get_memo(&ite) {
       Some(n) => R::Nid(n),
       None => {
@@ -134,22 +134,22 @@ pub struct BddSwarm {
   state: Arc<BddState>,
   queue: Arc<IteQueue>,
   // work in progress
-  work_state: WorkState<ITE>,
+  work_state: WorkState,
   work: Arc<WorkCache>}
 
 // temp methods
 impl BddSwarm {
 
-  fn qid_to_ite(&self, qid:&QID)->ITE {
+  fn qid_to_ite(&self, qid:&QID)->NormIteKey {
     if let Some(&ite) = self.work_state.qs.get(qid) { ite }
     else { panic!("no ite found for qid: {:?}", qid)}}
 
-  fn ite_to_qid(&self, ite:&ITE)->QID {
+  fn ite_to_qid(&self, ite:&NormIteKey)->QID {
     if let Some(&qid) = self.work_state.qid.get(ite) { qid }
     else { panic!("no qid found for ite: {:?}", ite)}}
 
-  fn add_wip(&mut self, top:&ITE, p:VhlParts) {
-    let qid = self.ite_to_qid(top);
+  fn add_wip(&mut self, ite:&NormIteKey, p:VhlParts) {
+    let qid = self.ite_to_qid(ite);
     self.work_state.wip.insert(qid, WIP::Parts(p)); }}
 
 
@@ -177,27 +177,31 @@ impl BddSwarm {
   /// all-purpose if-then-else node constructor. For the swarm implementation,
   /// we push all the normalization and tree traversal work into the threads,
   /// while this function puts all the parts together.
-  pub fn ite(&mut self, i:NID, t:NID, e:NID)->NID { self.run_swarm(i,t,e) } }
+  pub fn ite(&mut self, i:NID, t:NID, e:NID)->NID {
+    match ITE::norm(i,t,e) {
+      Norm::Nid(n) => n,
+      Norm::Ite(ite) => { self.run_swarm_ite(ite) }
+      Norm::Not(ite) => { !self.run_swarm_ite(ite) }}} }
 
 
 impl BddSwarm {
 
-  fn add_query(&mut self, ite:ITE)->QID {
+  fn add_query(&mut self, ite:NormIteKey)->QID {
 
     { // -- new way --
-      let v = self.work.cache.entry(ite.clone()).or_default();
+      let v = self.work.cache.entry(ite).or_default();
       // TODO: push to queue
     }
     self.old_add_query(ite) }
 
-  fn old_add_query(&mut self, ite:ITE)->QID {
+  fn old_add_query(&mut self, ite:NormIteKey)->QID {
     let qid = self.swarm.add_query(Q::Ite(ite));
     self.work_state.qid.insert(ite, qid);
     self.work_state.qs.insert(qid, ite);
     self.work_state.wip.insert(qid, WIP::Fresh);
     qid }
 
-  fn add_sub_task(&mut self, idep:Dep<ITE>, ite:ITE) {
+  fn add_sub_task(&mut self, idep:Dep<NormIteKey>, ite:NormIteKey) {
 
     let mut done_nid = None; let mut was_empty = false;
     { // -- new way -- add_sub_task
@@ -227,7 +231,7 @@ impl BddSwarm {
 
 
   /// called whenever the wip resolves to a single nid
-  fn resolve_nid(&mut self, ite:&ITE, nid:NID) {
+  fn resolve_nid(&mut self, ite:&NormIteKey, nid:NID) {
     let mut ideps = vec![];
     { // update work_cache and extract the ideps
       let mut v = self.work.cache.get_mut(ite).unwrap();
@@ -242,17 +246,19 @@ impl BddSwarm {
     else { for d in ideps { self.resolve_part(&d.dep, d.part, nid, d.invert); }}}
 
   /// called whenever the wip resolves to a new simple (v/hi/lo) node.
-  fn resolve_vhl(&mut self, ite:&ITE, v:VID, hilo:HiLo, invert:bool) {
+  fn resolve_vhl(&mut self, ite:&NormIteKey, v:VID, hilo:HiLo, invert:bool) {
     let HiLo{hi:h0,lo:l0} = hilo;
     // we apply invert first so it normalizes correctly.
     let (h1,l1) = if invert { (!h0, !l0) } else { (h0, l0) };
     let nid = match ITE::norm(NID::from_vid(v), h1, l1) {
       Norm::Nid(n) => n,
-      Norm::Ite(ITE{i:vv,t:hi,e:lo}) =>  self.state.simple_node(vv.vid(), HiLo{hi,lo}),
-      Norm::Not(ITE{i:vv,t:hi,e:lo}) => !self.state.simple_node(vv.vid(), HiLo{hi,lo})};
-    self.resolve_nid(&ite, nid) }
+      Norm::Ite(NormIteKey(ITE{i:vv,t:hi,e:lo})) =>
+        self.state.simple_node(vv.vid(), HiLo{hi,lo}),
+      Norm::Not(NormIteKey(ITE{i:vv,t:hi,e:lo})) =>
+       !self.state.simple_node(vv.vid(), HiLo{hi,lo})};
+    self.resolve_nid(ite, nid) }
 
-  fn resolve_part(&mut self, ite:&ITE, part:HiLoPart, nid:NID, invert:bool) {
+  fn resolve_part(&mut self, ite:&NormIteKey, part:HiLoPart, nid:NID, invert:bool) {
     let mut parts = VhlParts::default();
     { // -- new way --
       let v = self.work.cache.get_mut(ite).unwrap();
@@ -277,14 +283,7 @@ impl BddSwarm {
         self.resolve_vhl(ite, parts.v, hilo, parts.invert); }}
 
 
-  /// distrubutes the standard ite() operatation across a swarm of threads
-  fn run_swarm(&mut self, i:NID, t:NID, e:NID)->NID {
-    match ITE::norm(i,t,e) {
-      Norm::Nid(n) => n,
-      Norm::Ite(ite) => { self.run_swarm_ite(ite) }
-      Norm::Not(ite) => { !self.run_swarm_ite(ite) }}}
-
-  fn run_swarm_ite(&mut self, ite0:ITE)->NID {
+  fn run_swarm_ite(&mut self, ite0:NormIteKey)->NID {
     let mut result: Option<NID> = None;
     self.add_query(ite0);
     // each response can lead to up to two new ITE queries, and we'll relay those to

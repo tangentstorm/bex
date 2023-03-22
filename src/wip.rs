@@ -7,8 +7,9 @@ use nid::NID;
 use vid::VID;
 use vhl::{HiLoPart, VhlParts};
 use swarm::QID;
-use bdd::ITE;
+use bdd::NormIteKey;
 use dashmap::DashMap;
+
 
 
 pub type WIPHashMap<K,V> = HashMap<K,V,fxhash::FxBuildHasher>;
@@ -19,9 +20,9 @@ impl<K> Dep<K>{
   pub fn new(dep: K, part: HiLoPart, invert: bool)->Dep<K> { Dep{dep, part, invert} }}
 
 #[derive(Debug, Default)]
-pub struct Wip<K=ITE, P=VhlParts> { pub parts : P, pub deps : Vec<Dep<K>> }
+pub struct Wip<K=NormIteKey, P=VhlParts> { pub parts : P, pub deps : Vec<Dep<K>> }
 
-type WipRef<K=ITE, P=VhlParts> = RefCell<Wip<K, P>>;
+type WipRef<K=NormIteKey, P=VhlParts> = RefCell<Wip<K, P>>;
 
 #[derive(Debug)]
 pub enum Work<V, W=WipRef> { Todo(W), Done(V) }
@@ -47,7 +48,7 @@ impl<V,W> Work<V,W> {
 
 
 #[derive(Debug, Default)]
-pub struct WorkCache<K=ITE, V=NID, P=VhlParts> where K:Eq+Hash {
+pub struct WorkCache<K=NormIteKey, V=NID, P=VhlParts> where K:Eq+Hash {
   _kvp: PhantomData<(K,V,P)>,
   pub cache: DashMap<K, Work<V, WipRef<K,P>>> }
 
@@ -84,16 +85,16 @@ impl<TWIP> std::ops::Not for RMsg<TWIP> {
 
 
 #[derive(Debug, Default)]
-pub struct WorkState<Q:Eq+Hash+Default> {
+pub struct WorkState {
   /// stores work in progress during a run:
   pub wip: WIPHashMap<QID,WIP>,
   /// stores dependencies during a run. The bool specifies whether to invert.
   pub deps: WIPHashMap<QID, Vec<Dep<QID>>>,
   /// track ongoing tasks so we don't duplicate work in progress:
-  pub qid: WIPHashMap<Q,QID>,
+  pub qid: WIPHashMap<NormIteKey,QID>,
   /// track new queries so they can eventually be cached
   // !! not sure this one belongs here, but we'll see.
-  pub qs: WIPHashMap<QID,Q>}
+  pub qs: WIPHashMap<QID,NormIteKey>}
 
-impl<Q:Eq+Hash+Default> WorkState<Q> {
+impl WorkState {
   pub fn new() -> Self { Self::default() }}

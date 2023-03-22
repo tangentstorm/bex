@@ -38,9 +38,21 @@ pub enum Norm {
   /// used when the ITE simplifies to a single NID.
   Nid(NID),
   /// a normalized ITE.
-  Ite(ITE),
+  Ite(NormIteKey),
   /// a normalized, inverted ITE.
-  Not(ITE)}
+  Not(NormIteKey)}
+
+impl Norm {
+  pub fn to_key(&self)->NormIteKey {
+    match self {
+      Norm::Nid(_) => panic!("Norm::Nid cannot be a key!"),
+      Norm::Not(_) => panic!("Norm::Not cannot be a key!"),
+      Norm::Ite(ite) => *ite}}}
+
+/// a normalized ITE suitable for use as a key in the computed cache
+#[derive(Eq,PartialEq,Hash,Debug,Default,Clone,Copy,Serialize,Deserialize)]
+pub struct NormIteKey(ITE);
+
 
 
 impl ITE {
@@ -82,7 +94,7 @@ impl ITE {
               Norm::Nid(nid) => Norm::Nid(!nid),
               Norm::Not(ite) => Norm::Ite(ite),
               Norm::Ite(ite) => Norm::Not(ite)}}
-            else { return Norm::Ite(ITE::new(f,g,h)) }}}}}} }
+            else { return Norm::Ite(NormIteKey(ITE::new(f,g,h))) }}}}}} }
 
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
@@ -90,7 +102,7 @@ pub struct BddState {
   /// cache of hi,lo pairs.
   hilos: vhl::HiLoCache,
   /// arbitrary memoization. These record normalized (f,g,h) lookups.
-  xmemo: BddHashMap<ITE, NID> }
+  xmemo: BddHashMap<NormIteKey, NID> }
 
 // cache lookup counters:
 thread_local!{
@@ -116,14 +128,15 @@ impl BddState {
       None => { self.hilos.insert(v, hilo) }}}
 
   /// load the memoized NID if it exists
-  #[inline] fn get_memo(&self, ite:&ITE) -> Option<NID> {
+  #[inline] fn get_memo(&self, key:&NormIteKey) -> Option<NID> {
+    let ite = key.0;
     if ite.i.is_vid() {
       debug_assert!(!ite.i.is_inv()); // because it ought to be normalized by this point.
       let hilo = if ite.i.is_inv() { HiLo::new(ite.e,ite.t) } else { HiLo::new(ite.t,ite.e) };
       self.get_simple_node(ite.i.vid(), hilo) }
     else {
       COUNT_XMEMO_TEST.with(|c| *c.borrow_mut() += 1 );
-      let test = self.xmemo.get(ite);
+      let test = self.xmemo.get(key);
       if test.is_none() { COUNT_XMEMO_FAIL.with(|c| *c.borrow_mut() += 1 ); None }
       else { Some(*test.unwrap()) } }}
 
