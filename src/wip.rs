@@ -6,7 +6,6 @@ use std::hash::Hash;
 use nid::NID;
 use vid::VID;
 use vhl::{HiLoPart, VhlParts};
-use swarm::QID;
 use bdd::{Norm, NormIteKey};
 use dashmap::DashMap;
 
@@ -52,11 +51,6 @@ pub struct WorkCache<K=NormIteKey, V=NID, P=VhlParts> where K:Eq+Hash {
   _kvp: PhantomData<(K,V,P)>,
   pub cache: DashMap<K, Work<V, WipRef<K,P>>> }
 
-
-/// Work in progress for Swarms.
-#[derive(PartialEq,Debug,Copy,Clone)]
-pub enum WIP { Fresh, Done(NID), Parts(VhlParts) }
-
 
 
 // one step in the resolution of a query.
@@ -87,20 +81,3 @@ pub enum RMsg {
   Ret(NID),
   /// return stats about the memo cache
   MemoStats { tests: u64, fails: u64 }}
-
-
-
-#[derive(Debug, Default)]
-pub struct WorkState {
-  /// stores work in progress during a run:
-  pub wip: WIPHashMap<QID,WIP>,
-  /// stores dependencies during a run. The bool specifies whether to invert.
-  pub deps: WIPHashMap<QID, Vec<Dep<QID>>>,
-  /// track ongoing tasks so we don't duplicate work in progress:
-  pub qid: WIPHashMap<NormIteKey,QID>,
-  /// track new queries so they can eventually be cached
-  // !! not sure this one belongs here, but we'll see.
-  pub qs: WIPHashMap<QID,NormIteKey>}
-
-impl WorkState {
-  pub fn new() -> Self { Self::default() }}

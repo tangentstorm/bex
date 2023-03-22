@@ -1,7 +1,7 @@
 use std::{fmt, sync::mpsc::Sender};
 use std::sync::Arc;
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
-use {wip, wip::{Dep, WorkCache, Work, WIP, WorkState}};
+use {wip, wip::{Dep, WorkCache, Work}};
 use vhl::{HiLoPart, VhlParts};
 use {vid::VID, nid::{NID}, vhl::{HiLo}};
 use bdd::{ITE, NormIteKey, Norm, BddState, COUNT_XMEMO_TEST, COUNT_XMEMO_FAIL};
@@ -130,20 +130,7 @@ pub struct BddSwarm {
   state: Arc<BddState>,
   queue: Arc<IteQueue>,
   // work in progress
-  work_state: WorkState,
   work: Arc<WorkCache>}
-
-// temp methods
-impl BddSwarm {
-
-  fn ite_to_qid(&self, ite:&NormIteKey)->QID {
-    if let Some(&qid) = self.work_state.qid.get(ite) { qid }
-    else { panic!("no qid found for ite: {:?}", ite)}}
-
-  fn add_wip(&mut self, ite:&NormIteKey, p:VhlParts) {
-    let qid = self.ite_to_qid(ite);
-    self.work_state.wip.insert(qid, WIP::Parts(p)); }}
-
 
 impl Serialize for BddSwarm {
   fn serialize<S:Serializer>(&self, ser: S)->Result<S::Ok, S::Error> {
@@ -178,20 +165,17 @@ impl BddSwarm {
 
 impl BddSwarm {
 
-  fn add_query(&mut self, ite:NormIteKey)->QID {
-
-    { // -- new way --
+  fn add_query(&mut self, ite:NormIteKey) {
       let _v = self.work.cache.entry(ite).or_default();
       // TODO: push to queue
-    }
-    self.old_add_query(ite) }
+      self.swarm.add_query(Q::Ite(ite)); }
 
-  fn old_add_query(&mut self, ite:NormIteKey)->QID {
-    let qid = self.swarm.add_query(Q::Ite(ite));
-    self.work_state.qid.insert(ite, qid);
-    self.work_state.qs.insert(qid, ite);
-    self.work_state.wip.insert(qid, WIP::Fresh);
-    qid }
+  fn add_wip(&self, q:NormIteKey, v:VID, invert:bool) {
+    if let wip::Work::Todo(w) = self.work.cache.get(&q).unwrap().value() {
+      let mut val = w.borrow_mut();
+      val.parts.v = v;
+      val.parts.invert = invert; }
+    else { panic!("got wip for non-Todo task"); }}
 
   fn add_sub_task(&mut self, idep:Dep<NormIteKey>, ite:NormIteKey) {
 
@@ -206,20 +190,7 @@ impl BddSwarm {
         wip::Work::Done(n) => done_nid=Some(*n) }}
     if let Some(nid)=done_nid {
       self.resolve_part(&idep.dep, idep.part, nid, idep.invert); }
-    // if was_empty {  } // TODO: push to queue
-
-    // -- old way --
-    let dep_qid = self.ite_to_qid(&idep.dep);
-    let qdep : Dep<QID> = Dep { dep: dep_qid, part:idep.part, invert:idep.invert };
-    // if this ite already has a worker assigned...
-    // occupied:
-    if let Some(&qid) = self.work_state.qid.get(&ite) {
-      if let Some(&WIP::Done(_)) = self.work_state.wip.get(&qid) { }
-      else { self.work_state.deps.get_mut(&qid).unwrap().push(qdep) }}
-
-    if was_empty {
-      let qid = self.add_query(ite);
-      self.work_state.deps.insert(qid, vec![qdep]);}}
+    if was_empty { self.add_query(ite); }}
 
 
   /// called whenever the wip resolves to a single nid
@@ -261,16 +232,6 @@ impl BddSwarm {
           parts = w.borrow().parts.clone() }
         wip::Work::Done(_) => {} }}
 
-    // -- old way -----------
-    // TODO: remove this
-    let qid = &self.ite_to_qid(ite);
-    if let Some(WIP::Parts(ref mut entry)) = self.work_state.wip.get_mut(qid) {
-      entry.set_part(part, Some(if invert { !nid } else { nid }));
-      parts = entry.clone();
-     }
-    else { warn!("???? got a part for {:?} that was already done!", qid) }
-    // ----- end old way ----
-
     if let Some(hilo) = parts.hilo() {
         self.resolve_vhl(ite, parts.v, hilo, parts.invert); }}
 
@@ -282,7 +243,6 @@ impl BddSwarm {
     // other workers too, until we get back enough info to solve the original query.
     while result.is_none() {
       let RMsg{wid:_,qid:_,r} = self.swarm.recv().expect("failed to recieve rmsg");
-      //println!("{:?} -> {:?}", qid, r);
       if let Some(rmsg) = r { match rmsg {
         R::Res(q_ite, step) => match step {
           ResStep::Nid(nid) =>  {
@@ -290,8 +250,7 @@ impl BddSwarm {
           ResStep::Vhl{v,hi,lo,invert} => {
             self.resolve_vhl(&q_ite, v, HiLo{hi, lo}, invert); }
           ResStep::Wip{v,hi,lo,invert} => {
-            // by the time we get here, the task for this node was already created.
-            self.add_wip(&q_ite, VhlParts{ v, hi:None, lo:None, invert });
+            self.add_wip(q_ite, v, invert);
             for &(xx, part) in &[(hi,HiLoPart::HiPart), (lo,HiLoPart::LoPart)] {
               match xx {
                 Norm::Nid(nid) => self.resolve_part(&q_ite, part, nid, false),
@@ -299,7 +258,7 @@ impl BddSwarm {
                 Norm::Not(ite) => { self.add_sub_task(Dep::new(q_ite, part, true), ite);}}}}}
         R::Ret(n) => { result = Some(n) }
         R::MemoStats{ tests:_, fails:_ }
-          => { panic!("got R::MemoStats before sending Q::Halt"); } }}}
+          => { panic!("got R::MemoStats before sending Q::Stats"); } }}}
     result.unwrap() }
 
   pub fn get_stats(&mut self) {
