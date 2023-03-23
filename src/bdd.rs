@@ -134,6 +134,9 @@ impl BDDBase {
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)->(NID,NID) { self.swarm.tup(n) }
 
+  // clear all data from the cache (mostly for benchmarks)
+  pub fn reset(&mut self) { self.swarm.reset(); }
+
 
   // public node constructors
 

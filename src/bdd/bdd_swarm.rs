@@ -170,10 +170,14 @@ pub struct BddSwarm {
 
 impl BddSwarm {
 
-  pub fn new()->Self {
-    let mut me = Self::default();
-    me.swarm.send_to_all(&Q::Init(me.state.clone(), me.queue.clone()));
-    me }
+  pub fn new()->Self { let mut me = Self::default(); me.reset(); me }
+
+  // reset internal state without the cost of destroying and recreating
+  // all the worker threads.
+  pub fn reset(&mut self) {
+    self.state = Default::default();
+    self.queue = Default::default();
+    self.swarm.send_to_all(&Q::Init(self.state.clone(), self.queue.clone())); }
 
   pub fn tup(&self, n:NID)->(NID,NID) { self.state.tup(n) }
 

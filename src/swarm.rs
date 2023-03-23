@@ -111,7 +111,23 @@ pub struct Swarm<Q,R,W,I=()> where W:Worker<Q,R,I>, Q:Debug+Clone, R:Debug {
   threads: Vec<thread::JoinHandle<()>> }
 
 impl<Q,R,W,I> Default for Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+Debug, W:Worker<Q, R,I> {
-fn default()->Self { let mut me= Self::new(); me.start(4); me }}
+fn default()->Self { let mut me= Self::new(); me.start(8); me }}
+
+impl<Q,R,W,I> Drop for Swarm<Q,R,W,I> where Q:Debug+Clone, R:Debug, W:Worker<Q, R,I> {
+  fn drop(&mut self) { self.kill_swarm() }}
+
+impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:Debug+Clone, R:Debug, W:Worker<Q, R,I> {
+
+  pub fn kill_swarm(&mut self) {
+    while let Some(&w) = self.whs.keys().take(1).next() { self.kill(w); }
+      while !self.threads.is_empty() { self.threads.pop().unwrap().join().unwrap() }}
+
+  pub fn num_workers(&self)->usize { self.whs.len() }
+
+  pub fn kill(&mut self, w:WID) {
+    if let Some(h) = self.whs.remove(&w) {
+      if h.send(None).is_err() { panic!("couldn't kill worker") }}
+    else { panic!("worker was already gone") }}}
 
 impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+Debug, W:Worker<Q, R, I> {
 
@@ -138,13 +154,6 @@ impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+De
     let &wid = self.whs.keys().collect::<Vec<_>>()
        .choose(&mut rand::thread_rng()).unwrap();
     self.send(*wid, q)}
-
-  pub fn num_workers(&self)->usize { self.whs.len() }
-
-  pub fn kill(&mut self, w:WID) {
-    if let Some(h) = self.whs.remove(&w) {
-      if h.send(None).is_err() { panic!("couldn't kill worker") }}
-    else { panic!("worker was already gone") }}
 
   pub fn send(&mut self, wid:WID, q:Q)->QID {
     let qid = QID::STEP(self.nq); self.nq+=1;
@@ -181,6 +190,4 @@ impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+De
         SwarmCmd::Batch(wqs) => for (wid, q) in wqs { self.send(wid, q); },
         SwarmCmd::Panic(msg) => panic!("{}", msg),
         SwarmCmd::Return(v) => { res = Some(v); break } }}
-      while let Some(&w) = self.whs.keys().take(1).next() { self.kill(w); }
-      while !self.threads.is_empty() { self.threads.pop().unwrap().join().unwrap() }
       res}}
