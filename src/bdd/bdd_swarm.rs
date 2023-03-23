@@ -1,9 +1,8 @@
-use std::borrow::BorrowMut;
 use std::{fmt, sync::mpsc::Sender};
 use std::sync::Arc;
-use {wip, wip::{Dep, Work, ResStep, Answer}};
+use {wip, wip::{Dep, ResStep, Answer}};
 use vhl::{HiLoPart};
-use {vid::VID, nid::{NID}, vhl::{HiLo}};
+use nid::NID;
 use bdd::{ITE, NormIteKey, Norm, BddState, COUNT_XMEMO_TEST, COUNT_XMEMO_FAIL};
 use {swarm, swarm::{WID, QID, Swarm, RMsg}};
 use concurrent_queue::{ConcurrentQueue,PopError};
@@ -69,18 +68,57 @@ impl swarm::Worker<Q,R,NormIteKey> for BddWorker {
     if let Some(ref q) = self.queue { q.pop() }
     else { None }}
 
-  fn queue_push(&self, _ite:NormIteKey) {
-    if let Some(ref q) = self.queue { q.push(_ite) }}
+  fn queue_push(&self, ite:NormIteKey) {
+    //if let Some(ref q) = self.queue { q.push(item) }}
+    self.queue.as_ref().unwrap().push(ite) }
 
-  fn work_item(&mut self, _ite:NormIteKey) {
-    // TODO: self.ite_norm(ite)
-  }
+  fn work_item(&mut self, q:NormIteKey) {
+    // println!("work_item({:?})", q);
+    let s = self.state.as_ref().unwrap();
+    let res = match self.ite_norm(q) {
+      ResStep::Nid(n) =>
+        s.work.resolve_nid(&q, n),
+      ResStep::Vhl { v, hi, lo, invert } =>
+        s.work.resolve_vhl(&q, v, hi, lo, invert),
+      ResStep::Wip { v, hi, lo, invert } => {
+        let mut res = None;
+        s.work.add_wip(&q, v, invert);
+        for &(xx, part) in &[(hi,HiLoPart::HiPart), (lo,HiLoPart::LoPart)] {
+          match xx {
+            Norm::Nid(nid) => {
+              if let Some(a) = s.work.resolve_part(&q, part, nid, false) {
+                res = Some(a) }},
+            Norm::Ite(ite) => {
+              let (was_new, answer) = s.work.add_dep(&ite, Dep::new(q, part, false));
+              if was_new { self.queue_push(ite) }
+              if answer.is_some() { res = answer } },
+            Norm::Not(ite) => {
+              let (was_new, answer) = s.work.add_dep(&ite, Dep::new(q, part, true));
+              if was_new { self.queue_push(ite) }
+              if answer.is_some() { res = answer } }}}
+        res }};
+    if let Some(Answer(nid)) = res {
+      // println!("!! final answer: {:?} !!", nid);
+      let tx = self.tx.as_ref().expect("have answer but no tx!");
+      let qid = {
+        let mut mx = s.work.qid.lock().unwrap();
+        let q0 = (*mx).expect("no qid found in the mutex!");
+        *mx = None; // unblock the next query!
+        q0};
+      self.send_msg(tx, qid, Some(R::Ret(nid))) }}
 
-  fn work_step(&mut self, _qid:&QID, q:Q)->Option<R> {
+  fn work_step(&mut self, qid:&QID, q:Q)->Option<R> {
     match q {
       Q::Init(s, q) => { self.state = Some(s); self.queue=Some(q); None }
-      // Q::Ite(ite) => { self.queue_push(ite); None }
-      Q::Ite(ite) => { Some(R::Res(ite, self.ite_norm(ite))) }
+      Q::Ite(ite) => {
+        // println!(">>> new top-level Q: {:?}", q);
+        let s = self.state.as_mut().unwrap();
+        let _ = s.work.cache.entry(ite).or_default();
+        {
+          let mut m = s.work.qid.lock().unwrap();
+          assert!((*m).is_none(), "already working on a top-level query");
+          *m = Some(*qid); }
+        self.queue_push(ite); None }
       Q::Stats => {
         let tests = COUNT_XMEMO_TEST.with(|c| c.replace(0));
         let fails = COUNT_XMEMO_FAIL.with(|c| c.replace(0));
@@ -151,71 +189,14 @@ impl BddSwarm {
 
 impl BddSwarm {
 
-  fn add_query(&mut self, ite:NormIteKey) {
-      let _v = self.state.work.cache.entry(ite).or_default();
-      // TODO: push to queue
-      self.swarm.add_query(Q::Ite(ite)); }
-
-  fn add_wip(&self, q:NormIteKey, vid:VID, invert:bool) {
-    if self.state.work.cache.contains_key(&q) {
-      self.state.work.cache.alter(&q, |_k, v| match v {
-        Work::Todo(wip::Wip{parts,deps}) => {
-          let mut p = parts; p.v = vid; p.invert = invert;
-          Work::Todo(wip::Wip{parts:p,deps})},
-        Work::Done(_) => panic!("got wip for a Work::Done")})}
-      else { panic!("got wip for unknown task");}}
-
-  fn add_sub_task(&mut self, idep:Dep<NormIteKey>, ite:NormIteKey) {
-
-    let mut done_nid = None; let mut was_empty = false;
-    { // -- new way -- add_sub_task
-      // this handles both the occupied and vacant cases:
-      let mut v = self.state.work.cache.entry(ite).or_insert_with(|| {
-        was_empty = true;
-        Work::default()});
-      match v.value_mut() {
-        wip::Work::Todo(w) => w.borrow_mut().deps.push(idep),
-        wip::Work::Done(n) => done_nid=Some(*n) }}
-    if let Some(nid)=done_nid {
-      self.resolve_part(&idep.dep, idep.part, nid, idep.invert); }
-    if was_empty { self.add_query(ite); }}
-
-
-  /// called whenever the wip resolves to a single nid
-  fn resolve_nid(&mut self, q:&NormIteKey, nid:NID) {
-    if let Some(Answer(a)) = self.state.work.resolve_nid(q, nid) {
-      self.swarm.send_to_self(R::Ret(a))}}
-
-  /// called whenever the wip resolves to a new simple (v/hi/lo) node.
-  fn resolve_vhl(&mut self, q:&NormIteKey, v:VID, hilo:HiLo, invert:bool) {
-    if let Some(Answer(a)) = self.state.work.resolve_vhl(q, v, hilo.hi, hilo.lo, invert) {
-      self.swarm.send_to_self(R::Ret(a))}}
-
-  fn resolve_part(&mut self, q:&NormIteKey, part:HiLoPart, nid:NID, invert:bool) {
-    if let Some(Answer(a)) = self.state.work.resolve_part(q, part, nid, invert) {
-      self.swarm.send_to_self(R::Ret(a))}}
-
-
-  fn run_swarm_ite(&mut self, ite0:NormIteKey)->NID {
+  fn run_swarm_ite(&mut self, ite:NormIteKey)->NID {
     let mut result: Option<NID> = None;
-    self.add_query(ite0);
+    self.swarm.add_query(Q::Ite(ite));
     // each response can lead to up to two new ITE queries, and we'll relay those to
     // other workers too, until we get back enough info to solve the original query.
     while result.is_none() {
       let RMsg{wid:_,qid:_,r} = self.swarm.recv().expect("failed to recieve rmsg");
       if let Some(rmsg) = r { match rmsg {
-        R::Res(q_ite, step) => match step {
-          ResStep::Nid(nid) =>  {
-            self.resolve_nid(&q_ite, nid); }
-          ResStep::Vhl{v,hi,lo,invert} => {
-            self.resolve_vhl(&q_ite, v, HiLo{hi, lo}, invert); }
-          ResStep::Wip{v,hi,lo,invert} => {
-            self.add_wip(q_ite, v, invert);
-            for &(xx, part) in &[(hi,HiLoPart::HiPart), (lo,HiLoPart::LoPart)] {
-              match xx {
-                Norm::Nid(nid) => self.resolve_part(&q_ite, part, nid, false),
-                Norm::Ite(ite) => { self.add_sub_task(Dep::new(q_ite, part, false), ite);},
-                Norm::Not(ite) => { self.add_sub_task(Dep::new(q_ite, part, true), ite);}}}}}
         R::Ret(n) => { result = Some(n) }
         R::MemoStats{ tests:_, fails:_ }
           => { panic!("got R::MemoStats before sending Q::Stats"); } }}}

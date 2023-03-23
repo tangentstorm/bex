@@ -5,6 +5,7 @@ use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::{collections::HashMap};
 use std::hash::Hash;
+use std::sync::Mutex;
 use nid::NID;
 use vid::VID;
 use vhl::{HiLo, HiLoPart, VhlParts, HiLoCache};
@@ -62,6 +63,11 @@ pub struct Answer<T>(pub T); // TODO: nopub
 #[derive(Debug, Default)]
 pub struct WorkState<K=NormIteKey, V=NID, P=VhlParts> where K:Eq+Hash+Debug {
   _kvp: PhantomData<(K,V,P)>,
+  /// this is a kludge. it locks entire swarm from taking in new
+  /// queries until an answer is found, because it's the only place
+  /// we currently have to remember the query id. (since there's only
+  /// one slot, we can only have one top level query at a time)
+  pub qid:Mutex<Option<crate::swarm::QID>>, // pub so BddWorker can see it
   /// cache of hi,lo pairs.
   hilos: HiLoCache,
   // TODO: make .cache private
@@ -90,7 +96,7 @@ impl<K:Eq+Hash+Debug,V:Clone> WorkState<K,V> {
   pub fn get_hilo(&self, n:NID)->HiLo { self.hilos.get_hilo(n) }}
 
 // TODO: nopub these methods
-impl<K:Eq+Hash+Debug> WorkState<K,NID> {
+impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID> {
   pub fn resolve_nid(&self, q:&K, nid:NID)->Option<Answer<NID>> {
     let mut ideps = vec![];
     { // update work_cache and extract the ideps
@@ -121,7 +127,6 @@ impl<K:Eq+Hash+Debug> WorkState<K,NID> {
        !self.vhl_to_nid(vv.vid(), hi, lo)};
     self.resolve_nid(q, nid) }
 
-
   pub fn resolve_part(&self, q:&K, part:HiLoPart, nid:NID, invert:bool)->Option<Answer<NID>> {
     let mut parts = VhlParts::default();
     { // -- new way --
@@ -137,9 +142,30 @@ impl<K:Eq+Hash+Debug> WorkState<K,NID> {
       self.resolve_vhl(q, parts.v, hi, lo, parts.invert) }
     else { None}}
 
-  // /// set the branch variable and invert flag on the work in progress value
-  //  fn add_wip(&self, q:&K, v:VID, invert:bool) { }
-  //  fn add_dep(&self, q:&K, dep:Dep<K>) { }
+    /// set the branch variable and invert flag on the work in progress value
+    pub fn add_wip(&self, q:&K, vid:VID, invert:bool) {
+      if self.cache.contains_key(&q) {
+        self.cache.alter(&q, |_k, v| match v {
+          Work::Todo(Wip{parts,deps}) => {
+            let mut p = parts; p.v = vid; p.invert = invert;
+            Work::Todo(Wip{parts:p,deps})},
+          Work::Done(_) => panic!("got wip for a Work::Done")})}
+        else { panic!("got wip for unknown task");}}
+
+    // returns true if the query is new to the system
+    pub fn add_dep(&self, q:&K, idep:Dep<K>)->(bool, Option<Answer<NID>>) {
+      let mut old_done = None; let mut was_empty = false; let mut answer = None;
+      { // -- new way -- add_sub_task
+        // this handles both the occupied and vacant cases:
+        let mut v = self.cache.entry(*q).or_insert_with(|| {
+          was_empty = true;
+          Work::default()});
+        match v.value_mut() {
+          Work::Todo(w) => w.borrow_mut().deps.push(idep),
+          Work::Done(n) => old_done=Some(*n) }}
+      if let Some(nid)=old_done {
+        answer = self.resolve_part(&idep.dep, idep.part, nid, idep.invert); }
+      (was_empty, answer) }
   }
 
 
@@ -167,7 +193,6 @@ impl std::ops::Not for ResStep {
 /// Response message.
 #[derive(PartialEq,Debug)]
 pub enum RMsg {
-  Res(NormIteKey, ResStep),
   /// We've solved the whole problem, so exit the loop and return this nid.
   Ret(NID),
   /// return stats about the memo cache

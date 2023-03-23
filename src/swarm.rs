@@ -27,6 +27,11 @@ pub trait Worker<Q,R,I=()> where R:Debug, Q:Clone {
   // outside of the work_xxx methods.
   fn set_tx(&mut self, _tx:&Sender<RMsg<R>>) {}
 
+  /// send a message from the worker back to the swarm's main thread.
+  /// to call this, you need your own copy of the Sender (which you)
+  /// can obtain by implementing `set_tx` and keeping a reference to
+  /// a clone of the parameter. (You probably also need the qid, which
+  /// you can capture in `work_step`)
   fn send_msg(&self, tx:&Sender<RMsg<R>>, qid:QID, r:Option<R>) {
     // println!("\x1b[32mSENDING msg: qid:{:?} for wid: {:?} -> r:{:?}\x1b[0m", &qid, wid, &r);
     let res = tx.send(RMsg{ wid:self.get_wid(), qid, r });
