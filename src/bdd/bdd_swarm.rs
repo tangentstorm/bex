@@ -216,7 +216,7 @@ impl BddSwarm {
           let n = if invert { !nid } else { nid };
           w.borrow_mut().parts.set_part(part, Some(n));
           parts = w.borrow_mut().parts.clone() }
-        wip::Work::Done(_) => {} }}
+        wip::Work::Done(x) => { warn!("got part for K:{:?} ->Work::Done({:?})", ite, x) } }}
 
     if let Some(hilo) = parts.hilo() {
         self.resolve_vhl(ite, parts.v, hilo, parts.invert); }}
