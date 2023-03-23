@@ -13,12 +13,12 @@ use concurrent_queue::{ConcurrentQueue,PopError};
 // ----------------------------------------------------------------
 
 #[derive(Debug)]
-struct IteQueue{q: ConcurrentQueue<ITE>}
+struct IteQueue{q: ConcurrentQueue<NormIteKey>}
 impl Default for IteQueue {
     fn default() -> Self { IteQueue { q: ConcurrentQueue::unbounded() }}}
 impl IteQueue {
-  fn push(&self, ite:ITE) { self.q.push(ite).unwrap(); }
-  fn pop(&self)->Option<ITE> {
+  fn push(&self, ite:NormIteKey) { self.q.push(ite).unwrap(); }
+  fn pop(&self)->Option<NormIteKey> {
     match self.q.pop() {
       Ok(ite) => Some(ite),
       Err(PopError::Empty) => None,
@@ -54,7 +54,7 @@ struct BddWorker {
   state:Option<Arc<BddState>>,
   queue:Option<Arc<IteQueue>> }
 
-impl swarm::Worker<Q,R,ITE> for BddWorker {
+impl swarm::Worker<Q,R,NormIteKey> for BddWorker {
   fn new(wid:WID)->Self { BddWorker{ wid, ..Default::default() }}
   fn get_wid(&self)->WID { self.wid }
   fn set_tx(&mut self, tx:&Sender<RMsg<R>>) { self.tx = Some(tx.clone()) }
@@ -65,18 +65,21 @@ impl swarm::Worker<Q,R,ITE> for BddWorker {
   // !! Since the work_loop function is now non-blocking, it will
   //    try to pop from this queue even before a Q::Init message
   //    has been sent. So we have to do these dumb existence checks.
-  fn queue_pop(&self)->Option<ITE> {
+  fn queue_pop(&self)->Option<NormIteKey> {
     if let Some(ref q) = self.queue { q.pop() }
     else { None }}
 
-  fn queue_push(&self, item:ITE) {
-    if let Some(ref q) = self.queue { q.push(item) }}
+  fn queue_push(&self, _ite:NormIteKey) {
+    if let Some(ref q) = self.queue { q.push(_ite) }}
 
-  fn work_item(&mut self, _item:ITE) {  }
+  fn work_item(&mut self, _ite:NormIteKey) {
+    // TODO: self.ite_norm(ite)
+  }
 
   fn work_step(&mut self, _qid:&QID, q:Q)->Option<R> {
     match q {
       Q::Init(s, q) => { self.state = Some(s); self.queue=Some(q); None }
+      // Q::Ite(ite) => { self.queue_push(ite); None }
       Q::Ite(ite) => { Some(R::Res(ite, self.ite_norm(ite))) }
       Q::Stats => {
         let tests = COUNT_XMEMO_TEST.with(|c| c.replace(0));
@@ -121,7 +124,7 @@ impl BddWorker {
 // ----------------------------------------------------------------
 #[derive(Debug, Default)]
 pub struct BddSwarm {
-  swarm: Swarm<Q,R,BddWorker,ITE>,
+  swarm: Swarm<Q,R,BddWorker,NormIteKey>,
   /// reference to state shared by all threads.
   state: Arc<BddState>,
   queue: Arc<IteQueue>}
