@@ -135,8 +135,7 @@ impl HiLoCache {
     let ix:usize =
       if let Some(ix) = self.index.get(&hilo) { *ix }
       else {
-        let ix = self.hilos.vec.len();
-        self.hilos.vec.push(hilo);
+        let ix = self.hilos.vec.push(hilo);
         self.index.insert(hilo, ix);
         ix };
     let res = NID::from_vid_idx(v, ix);
