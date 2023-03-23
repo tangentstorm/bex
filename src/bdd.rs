@@ -18,7 +18,7 @@ mod bdd_swarm; use self::bdd_swarm::*;
 
 /// An if/then/else triple. Like VHL, but all three slots are NIDs.
 #[derive(Debug, Default, PartialEq, Eq, Hash, Clone, Copy)]
-pub struct ITE {i:NID, t:NID, e:NID}
+pub struct ITE {pub i:NID, pub t:NID, pub e:NID}  // nopub!! only public for WorkState
 impl ITE {
   /// shorthand constructor
   pub fn new (i:NID, t:NID, e:NID)-> ITE { ITE { i, t, e } }
@@ -45,7 +45,7 @@ impl Norm {
 
 /// a normalized ITE suitable for use as a key in the computed cache
 #[derive(Eq,PartialEq,Hash,Debug,Default,Clone,Copy)]
-pub struct NormIteKey(ITE);
+pub struct NormIteKey(pub ITE); // nopub
 
 
 
@@ -108,11 +108,6 @@ impl BddState {
     if n.is_const() { if n==I { (I, O) } else { (O, I) } }
     else if n.is_vid() { if n.is_inv() { (O, I) } else { (I, O) }}
     else { let hilo = self.work.get_hilo(n); (hilo.hi, hilo.lo) }}
-
-  /// fetch or create a "simple" node, where the hi and lo branches are both
-  /// already fully computed pointers to existing nodes.
-  #[inline] fn simple_node(&self, v:VID, hilo:HiLo)->NID {
-    self.work.vhl_to_nid(v, hilo.hi, hilo.lo)}
 
   /// load the memoized NID if it exists
   #[inline] fn get_memo(&self, key:&NormIteKey) -> Option<NID> {

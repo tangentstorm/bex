@@ -1,14 +1,12 @@
 use std::borrow::BorrowMut;
 use std::{fmt, sync::mpsc::Sender};
 use std::sync::Arc;
-use {wip, wip::{Dep, Work}};
-use vhl::{HiLoPart, VhlParts};
+use {wip, wip::{Dep, Work, ResStep, Answer}};
+use vhl::{HiLoPart};
 use {vid::VID, nid::{NID}, vhl::{HiLo}};
 use bdd::{ITE, NormIteKey, Norm, BddState, COUNT_XMEMO_TEST, COUNT_XMEMO_FAIL};
 use {swarm, swarm::{WID, QID, Swarm, RMsg}};
 use concurrent_queue::{ConcurrentQueue,PopError};
-
-use crate::wip::ResStep;
 
 // ----------------------------------------------------------------
 // BddSwarm Protocol
@@ -181,45 +179,18 @@ impl BddSwarm {
 
 
   /// called whenever the wip resolves to a single nid
-  fn resolve_nid(&mut self, ite:&NormIteKey, nid:NID) {
-    let mut ideps = vec![];
-    { // update work_cache and extract the ideps
-      let mut v = self.state.work.cache.get_mut(ite).unwrap();
-      if let Work::Done(old) = v.value() {
-        warn!("resolving an already resolved nid for {:?}", ite);
-        assert_eq!(*old, nid, "old and new resolutions didn't match!") }
-      else {
-        ideps = std::mem::take(&mut v.value_mut().wip_mut().deps);
-        *v = Work::Done(nid) }}
-    if ideps.is_empty() { self.swarm.send_to_self(R::Ret(nid)) }
-    else { for d in ideps { self.resolve_part(&d.dep, d.part, nid, d.invert); }}}
+  fn resolve_nid(&mut self, q:&NormIteKey, nid:NID) {
+    if let Some(Answer(a)) = self.state.work.resolve_nid(q, nid) {
+      self.swarm.send_to_self(R::Ret(a))}}
 
   /// called whenever the wip resolves to a new simple (v/hi/lo) node.
-  fn resolve_vhl(&mut self, ite:&NormIteKey, v:VID, hilo:HiLo, invert:bool) {
-    let HiLo{hi:h0,lo:l0} = hilo;
-    // we apply invert first so it normalizes correctly.
-    let (h1,l1) = if invert { (!h0, !l0) } else { (h0, l0) };
-    let nid = match ITE::norm(NID::from_vid(v), h1, l1) {
-      Norm::Nid(n) => n,
-      Norm::Ite(NormIteKey(ITE{i:vv,t:hi,e:lo})) =>
-        self.state.simple_node(vv.vid(), HiLo{hi,lo}),
-      Norm::Not(NormIteKey(ITE{i:vv,t:hi,e:lo})) =>
-       !self.state.simple_node(vv.vid(), HiLo{hi,lo})};
-    self.resolve_nid(ite, nid) }
+  fn resolve_vhl(&mut self, q:&NormIteKey, v:VID, hilo:HiLo, invert:bool) {
+    if let Some(Answer(a)) = self.state.work.resolve_vhl(q, v, hilo.hi, hilo.lo, invert) {
+      self.swarm.send_to_self(R::Ret(a))}}
 
-  fn resolve_part(&mut self, ite:&NormIteKey, part:HiLoPart, nid:NID, invert:bool) {
-    let mut parts = VhlParts::default();
-    { // -- new way --
-      let mut v = self.state.work.cache.get_mut(ite).unwrap();
-      match v.value_mut() {
-        wip::Work::Todo(w) => {
-          let n = if invert { !nid } else { nid };
-          w.borrow_mut().parts.set_part(part, Some(n));
-          parts = w.borrow_mut().parts.clone() }
-        wip::Work::Done(x) => { warn!("got part for K:{:?} ->Work::Done({:?})", ite, x) } }}
-
-    if let Some(hilo) = parts.hilo() {
-        self.resolve_vhl(ite, parts.v, hilo, parts.invert); }}
+  fn resolve_part(&mut self, q:&NormIteKey, part:HiLoPart, nid:NID, invert:bool) {
+    if let Some(Answer(a)) = self.state.work.resolve_part(q, part, nid, invert) {
+      self.swarm.send_to_self(R::Ret(a))}}
 
 
   fn run_swarm_ite(&mut self, ite0:NormIteKey)->NID {
