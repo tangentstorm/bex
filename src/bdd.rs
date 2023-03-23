@@ -6,7 +6,7 @@ extern crate num_cpus;
 
 use base::{Base};
 use reg::Reg;
-use {vhl, vhl::{HiLo, Walkable}};
+use vhl::{HiLo, Walkable};
 use nid::{NID,O,I};
 use vid::{VID,VidOrdering,topmost_of3};
 use wip;
@@ -93,9 +93,7 @@ impl ITE {
 
 #[derive(Debug, Default)]
 pub struct BddState {
-  /// cache of hi,lo pairs.
-  hilos: vhl::HiLoCache,
-  work: wip::WorkState}
+  pub work: wip::WorkState} // TODO: Replace BddState entirely with WorkState ?
 
 // cache lookup counters:
 thread_local!{
@@ -109,14 +107,12 @@ impl BddState {
   #[inline] fn tup(&self, n:NID)-> (NID, NID) {
     if n.is_const() { if n==I { (I, O) } else { (O, I) } }
     else if n.is_vid() { if n.is_inv() { (O, I) } else { (I, O) }}
-    else { let hilo = self.hilos.get_hilo(n); (hilo.hi, hilo.lo) }}
+    else { let hilo = self.work.get_hilo(n); (hilo.hi, hilo.lo) }}
 
   /// fetch or create a "simple" node, where the hi and lo branches are both
   /// already fully computed pointers to existing nodes.
   #[inline] fn simple_node(&self, v:VID, hilo:HiLo)->NID {
-    match self.get_simple_node(v, hilo) {
-      Some(n) => n,
-      None => { self.hilos.insert(v, hilo) }}}
+    self.work.vhl_to_nid(v, hilo.hi, hilo.lo)}
 
   /// load the memoized NID if it exists
   #[inline] fn get_memo(&self, key:&NormIteKey) -> Option<NID> {
@@ -124,14 +120,11 @@ impl BddState {
     if ite.i.is_vid() {
       debug_assert!(!ite.i.is_inv()); // because it ought to be normalized by this point.
       let hilo = if ite.i.is_inv() { HiLo::new(ite.e,ite.t) } else { HiLo::new(ite.t,ite.e) };
-      self.get_simple_node(ite.i.vid(), hilo) }
+      self.work.get_cached_nid(ite.i.vid(), hilo.hi, hilo.lo) }
     else {
       COUNT_XMEMO_TEST.with(|c| *c.borrow_mut() += 1 );
       if let Some(n) = self.work.get_done(key) { Some(n) }
-      else { COUNT_XMEMO_FAIL.with(|c| *c.borrow_mut() += 1 ); None }}}
-
-  #[inline] fn get_simple_node(&self, v:VID, hl:HiLo)-> Option<NID> {
-    self.hilos.get_node(v, hl) }}
+      else { COUNT_XMEMO_FAIL.with(|c| *c.borrow_mut() += 1 ); None }}}}
 
 
 /// Finally, we put everything together. This is the top-level type for this crate.

@@ -5,7 +5,7 @@ use std::{collections::HashMap};
 use std::hash::Hash;
 use nid::NID;
 use vid::VID;
-use vhl::{HiLoPart, VhlParts};
+use vhl::{HiLo, HiLoPart, VhlParts, HiLoCache};
 use bdd::{Norm, NormIteKey};
 use dashmap::DashMap;
 
@@ -54,6 +54,9 @@ impl<V,W> Work<V,W> {
 #[derive(Debug, Default)]
 pub struct WorkState<K=NormIteKey, V=NID, P=VhlParts> where K:Eq+Hash {
   _kvp: PhantomData<(K,V,P)>,
+  /// cache of hi,lo pairs.
+  hilos: HiLoCache,
+  // TODO: make .cache private
   pub cache: DashMap<K, Work<V, WipRef<K,P>>> }
 
 impl<K:Eq+Hash,V:Clone> WorkState<K,V> {
@@ -66,7 +69,18 @@ impl<K:Eq+Hash,V:Clone> WorkState<K,V> {
       match w.value() {
         Work::Todo(_) => None,
         Work::Done(v) => Some(v.clone())}}
-    else { None }}}
+    else { None }}
+
+  pub fn get_cached_nid(&self, v:VID, hi:NID, lo:NID)->Option<NID> {
+    self.hilos.get_node(v, HiLo{hi,lo})}
+
+  pub fn vhl_to_nid(&self, v:VID, hi:NID, lo:NID)->NID {
+    match self.hilos.get_node(v, HiLo{hi,lo}) {
+      Some(n) => n,
+      None => { self.hilos.insert(v, HiLo{hi, lo}) }}}
+
+  pub fn get_hilo(&self, n:NID)->HiLo { self.hilos.get_hilo(n) }}
+
 
 
 

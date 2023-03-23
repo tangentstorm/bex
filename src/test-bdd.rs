@@ -138,23 +138,24 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   let expect = vec![0b001, 0b010, 0b101, 0b110 ]; // bits cba
   assert_eq!(actual, expect); }
 
-#[test] fn test_simple_nodes() {
-  let state = BddState::default();
+#[test] fn test_hilocache_simple() {
+  use vhl; // TODO: probably move this to test-vhl.rs?
+  let cache = vhl::HiLoCache::default();
   let hl = HiLo::new(NID::var(5), NID::var(6));
   let x0 = VID::var(0);
   let v0 = VID::vir(0);
   let v1 = VID::vir(1);
-  assert!(state.get_simple_node(v0, hl).is_none());
-  let nv0 = state.hilos.insert(v0, hl);
+  assert!(cache.get_node(v0, hl).is_none());
+  let nv0 = cache.insert(v0, hl);
   assert_eq!(nv0, NID::from_vid_idx(v0, 0));
 
   // I want the following to just work, but it doesn't:
   // let nv1 = state.get_simple_node(v1, hl).expect("nv1");
 
-  let nv1 = state.hilos.insert(v1, hl);
+  let nv1 = cache.insert(v1, hl);
   assert_eq!(nv1, NID::from_vid_idx(v1, 0));
 
   // this node is "malformed" because the lower number is on top,
   // but the concept should still work:
-  let nx0 = state.hilos.insert(x0, hl);
+  let nx0 = cache.insert(x0, hl);
   assert_eq!(nx0, NID::from_vid_idx(x0, 0));}

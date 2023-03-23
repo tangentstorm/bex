@@ -90,9 +90,7 @@ impl BddWorker {
 
   fn vhl_norm(&self, ite:NormIteKey)->ResStep {
     let ITE{i:vv,t:hi,e:lo} = ite.0; let v = vv.vid();
-    if let Some(n) = self.state.as_ref().unwrap().get_simple_node(v, HiLo{hi,lo}) {
-      ResStep::Nid(n) }
-    else { ResStep::Vhl{ v, hi, lo, invert:false } }}
+    ResStep::Nid(self.state.as_ref().unwrap().work.vhl_to_nid(v, hi, lo)) }
 
   fn ite_norm(&self, ite:NormIteKey)->ResStep {
     let ITE { i, t, e } = ite.0;
