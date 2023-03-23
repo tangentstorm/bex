@@ -71,7 +71,7 @@ pub struct WorkState<K=NormIteKey, V=NID, P=VhlParts> where K:Eq+Hash+Debug {
   /// cache of hi,lo pairs.
   hilos: HiLoCache,
   // TODO: make .cache private
-  pub cache: DashMap<K, Work<V, WipRef<K,P>>> }
+  pub cache: DashMap<K, Work<V, WipRef<K,P>>, fxhash::FxBuildHasher> }
 
 impl<K:Eq+Hash+Debug,V:Clone> WorkState<K,V> {
 
