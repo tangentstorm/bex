@@ -2,7 +2,18 @@
 
 A rust library for working with boolean expressions.
 
-## 0.1.6 (in progress)
+## 0.2.0 (in progress)
+
+- `BddBase` (formerly `BDDBase`) is now many, many times faster!
+
+- Extract `wip:WorkState` from `bdd_swarm`, introducing a shared queue
+  and concurrent hashmaps so workers can share work without supervision
+  from the main thread.
+
+- Dropped `hashbrown` crate for non-shared hashmaps, since it is now the
+  implementation that comes with rust standard library.
+
+- Added `fxhash` as the hasher for all hashmaps.
 
 - Cleaned up all compiler warnings
 
@@ -11,6 +22,9 @@ A rust library for working with boolean expressions.
 - Remove `nvars` from all `Base` implementations. This member was
   only really useful when the height of a node wasn't obvious from
   the variable index. `Base::new()` no longer takes an argument.
+
+
+- bdd_base.reset() to avoid respawning threads in benchmark loops.
 
 - Remove obsolete "substitution" concept from `ast.rs`, and replace
   `ast::Op` with the more flexible `ops::Ops`.
