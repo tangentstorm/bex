@@ -111,12 +111,18 @@ impl swarm::Worker<Q,R,NormIteKey> for BddWorker {
       Q::Ite(ite) => {
         // println!(">>> new top-level Q: {:?}", q);
         let s = self.state.as_mut().unwrap();
-        let _ = s.work.cache.entry(ite).or_default();
-        {
-          let mut m = s.work.qid.lock().unwrap();
-          assert!((*m).is_none(), "already working on a top-level query");
-          *m = Some(*qid); }
-        self.queue_push(ite); None }
+        let cached = {
+          let mut was_empty = false;
+          let v = s.work.cache.entry(ite).or_insert_with(|| {
+            was_empty = true;
+            wip::Work::default()});
+          if was_empty { None } else { Some(R::Ret(*v.unwrap())) }};
+        if cached.is_some() { cached }
+        else {
+          { let mut m = s.work.qid.lock().unwrap();
+            assert!((*m).is_none(), "already working on a top-level query");
+            *m = Some(*qid); }
+          self.queue_push(ite); None }}
       Q::Stats => {
         let tests = COUNT_XMEMO_TEST.with(|c| c.replace(0));
         let fails = COUNT_XMEMO_FAIL.with(|c| c.replace(0));
