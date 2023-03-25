@@ -22,8 +22,11 @@ path = "examples/shell/bex-shell.rs"
 name = "bdd-solve"
 path = "examples/solve/bdd-solve.rs"
 
+[[bin]]
+name = "factor-p4"
+path = "examples/solve/factor-p4-bytes.rs"
+
 [features]
-wip = []
 slowtests = []
 
 [workspace]
