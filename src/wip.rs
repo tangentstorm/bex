@@ -177,8 +177,6 @@ impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID> {
 pub enum ResStep {
   /// resolved to a nid
   Nid(NID),
-  /// a simple node needs to be constructed:
-  Vhl{v:VID, hi:NID, lo:NID, invert:bool},
   /// other work in progress
   Wip{v:VID, hi:Norm, lo:Norm, invert:bool}}
 
@@ -187,7 +185,6 @@ impl std::ops::Not for ResStep {
   fn not(self)->ResStep {
     match self {
       ResStep::Nid(n) => ResStep::Nid(!n),
-      ResStep::Vhl{v,hi,lo,invert} => ResStep::Vhl{v,hi,lo,invert:!invert},
       ResStep::Wip{v,hi,lo,invert} => ResStep::Wip{v,hi,lo,invert:!invert} }}}
 
 /// Response message.

@@ -78,8 +78,6 @@ impl swarm::Worker<Q,R,NormIteKey> for BddWorker {
     let res = match self.ite_norm(q) {
       ResStep::Nid(n) =>
         s.work.resolve_nid(&q, n),
-      ResStep::Vhl { v, hi, lo, invert } =>
-        s.work.resolve_vhl(&q, v, hi, lo, invert),
       ResStep::Wip { v, hi, lo, invert } => {
         let mut res = None;
         s.work.add_wip(&q, v, invert);
