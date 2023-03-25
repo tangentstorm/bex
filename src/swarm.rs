@@ -111,7 +111,7 @@ pub struct Swarm<Q,R,W,I=()> where W:Worker<Q,R,I>, Q:Debug+Clone, R:Debug {
   threads: Vec<thread::JoinHandle<()>> }
 
 impl<Q,R,W,I> Default for Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+Debug, W:Worker<Q, R,I> {
-fn default()->Self { let mut me= Self::new(); me.start(8); me }}
+fn default()->Self { let mut me= Self::new(); me.start(4); me }}
 
 impl<Q,R,W,I> Drop for Swarm<Q,R,W,I> where Q:Debug+Clone, R:Debug, W:Worker<Q, R,I> {
   fn drop(&mut self) { self.kill_swarm() }}
