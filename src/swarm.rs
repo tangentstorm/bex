@@ -37,8 +37,10 @@ pub trait Worker<Q,R,I=()> where R:Debug, Q:Clone {
     let res = tx.send(RMsg{ wid:self.get_wid(), qid, r });
     if res.is_err() { self.on_work_send_err(res.err().unwrap()) }}
 
-  fn queue_push(&self, _item:I) { panic!("no queue defined"); }
-  fn queue_pop(&self)->Option<I> { None }
+  /// allow workers to push items into a shared (or private) queue.
+  fn queue_push(&mut self, _item:I) { panic!("no queue defined"); }
+  /// allow workers to pop items from a shared (or private) queue.
+  fn queue_pop(&mut self)->Option<I> { None }
 
   /// Generic worker lifecycle implementation.
   /// Hopefully, you won't need to override this.
@@ -51,7 +53,7 @@ pub trait Worker<Q,R,I=()> where R:Debug, Q:Clone {
     loop {
       if let Some(item) = self.queue_pop() { self.work_item(item) }
       match rx.try_recv() {
-        Ok(None) => { break } // TODO: find right way to kill. remove Otion<> here.
+        Ok(None) => break,
         Ok(Some(QMsg{qid, q})) => {
           if let QID::STEP(_) = qid {
             let msg = self.work_step(&qid, q); self.send_msg(tx, qid, msg); }

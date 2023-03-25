@@ -50,6 +50,7 @@ struct BddWorker {
   wid:WID,
   // channel for sending back to the swarm
   tx:Option<Sender<RMsg<R>>>,
+  next: Option<NormIteKey>,
   state:Option<Arc<BddState>>,
   queue:Option<Arc<IteQueue>> }
 
@@ -64,34 +65,39 @@ impl swarm::Worker<Q,R,NormIteKey> for BddWorker {
   // !! Since the work_loop function is now non-blocking, it will
   //    try to pop from this queue even before a Q::Init message
   //    has been sent. So we have to do these dumb existence checks.
-  fn queue_pop(&self)->Option<NormIteKey> {
-    if let Some(ref q) = self.queue { q.pop() }
+  fn queue_pop(&mut self)->Option<NormIteKey> {
+    if self.next.is_some() { self.next.take() }
+    else if let Some(ref q) = self.queue { q.pop() }
     else { None }}
 
-  fn queue_push(&self, ite:NormIteKey) {
-    //if let Some(ref q) = self.queue { q.push(item) }}
-    self.queue.as_ref().unwrap().push(ite) }
+  fn queue_push(&mut self, ite:NormIteKey) {
+    if self.next.is_none() { self.next = Some(ite) }
+    else { self.queue.as_ref().unwrap().push(ite) }}
 
   fn work_item(&mut self, q:NormIteKey) {
-    // println!("work_item({:?})", q);
-    let s = self.state.as_ref().unwrap();
     let res = match self.ite_norm(q) {
       ResStep::Nid(n) =>
-        s.work.resolve_nid(&q, n),
+      self.state.as_ref().unwrap().work.resolve_nid(&q, n),
       ResStep::Wip { v, hi, lo, invert } => {
         let mut res = None;
-        s.work.add_wip(&q, v, invert);
+        self.state.as_ref().unwrap().work.add_wip(&q, v, invert);
         for &(xx, part) in &[(hi,HiLoPart::HiPart), (lo,HiLoPart::LoPart)] {
           match xx {
             Norm::Nid(nid) => {
-              if let Some(a) = s.work.resolve_part(&q, part, nid, false) {
-                res = Some(a) }},
+              let ans = {
+                let s = self.state.as_ref().unwrap();
+                s.work.resolve_part(&q, part, nid, false)};
+              if let Some(a) = ans { res = Some(a) }},
             Norm::Ite(ite) => {
-              let (was_new, answer) = s.work.add_dep(&ite, Dep::new(q, part, false));
+              let (was_new, answer) = {
+                let s = self.state.as_ref().unwrap();
+                s.work.add_dep(&ite, Dep::new(q, part, false))};
               if was_new { self.queue_push(ite) }
               if answer.is_some() { res = answer } },
             Norm::Not(ite) => {
-              let (was_new, answer) = s.work.add_dep(&ite, Dep::new(q, part, true));
+              let (was_new, answer) = {
+                let s = self.state.as_ref().unwrap();
+                s.work.add_dep(&ite, Dep::new(q, part, true)) };
               if was_new { self.queue_push(ite) }
               if answer.is_some() { res = answer } }}}
         res }};
@@ -99,7 +105,7 @@ impl swarm::Worker<Q,R,NormIteKey> for BddWorker {
       // println!("!! final answer: {:?} !!", nid);
       let tx = self.tx.as_ref().expect("have answer but no tx!");
       let qid = {
-        let mut mx = s.work.qid.lock().unwrap();
+        let mut mx = self.state.as_ref().unwrap().work.qid.lock().unwrap();
         let q0 = (*mx).expect("no qid found in the mutex!");
         *mx = None; // unblock the next query!
         q0};
