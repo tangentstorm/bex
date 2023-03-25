@@ -94,7 +94,7 @@ fn repl(base:&mut ASTBase) {
           // retrieve:
           else if let Some(&val) = scope.get(word) { data.push(val); }
           // parse input variable
-          else { match word.chars().nth(0).unwrap() {
+          else { match word.chars().next().unwrap() {
             'x' => if let Ok(n) = num_suffix!(word) { data.push(NID::var(n as u32)) }
                    else { println!("bad var: {}", word) }
             'v' => if let Ok(n) = num_suffix!(word) { data.push(NID::vir(n as u32)) }

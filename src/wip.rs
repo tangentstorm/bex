@@ -35,14 +35,12 @@ impl<V,W> Default for Work<V, W> where W:Default {
 
 impl<V,W> Work<V,W> {
 
-  pub fn is_todo(&self)->bool {
-    if let Self::Todo(_) = self { true } else { false }}
+  pub fn is_todo(&self)->bool { matches!(self, Self::Todo(_))}
 
-  pub fn is_done(&self)->bool {
-    if let Self::Done(_) = self { true } else { false }}
+  pub fn is_done(&self)->bool { matches!(self, Self::Done(_))}
 
   pub fn unwrap(&self)->&V {
-    if let Self::Done(v) = self { &v } else {
+    if let Self::Done(v) = self { v } else {
       panic!("cannot unwrap() a Work::Todo") }}
 
   pub fn wip_mut(&mut self)->&mut W {
@@ -50,7 +48,7 @@ impl<V,W> Work<V,W> {
       panic!("cannot get wip() from a Work::Done") }}
 
   pub fn wip(&self)->&W {
-    if let Self::Todo(w) = self { &w } else {
+    if let Self::Todo(w) = self { w } else {
       panic!("cannot get wip() from a Work::Done") }}}
 
 
@@ -135,7 +133,7 @@ impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID> {
         Work::Todo(w) => {
           let n = if invert { !nid } else { nid };
           w.borrow_mut().parts.set_part(part, Some(n));
-          parts = w.borrow_mut().parts.clone() }
+          parts = w.borrow_mut().parts }
         Work::Done(x) => { warn!("got part for K:{:?} ->Work::Done({:?})", q, x) } }}
 
     if let Some(HiLo{hi, lo}) = parts.hilo() {
@@ -144,8 +142,8 @@ impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID> {
 
     /// set the branch variable and invert flag on the work in progress value
     pub fn add_wip(&self, q:&K, vid:VID, invert:bool) {
-      if self.cache.contains_key(&q) {
-        self.cache.alter(&q, |_k, v| match v {
+      if self.cache.contains_key(q) {
+        self.cache.alter(q, |_k, v| match v {
           Work::Todo(Wip{parts,deps}) => {
             let mut p = parts; p.v = vid; p.invert = invert;
             Work::Todo(Wip{parts:p,deps})},

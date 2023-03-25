@@ -11,7 +11,7 @@ fn main() {
     let bex_version = env!("CARGO_PKG_VERSION");
     let dest_path = Path::new(&out_dir).join("bex-build-info.rs");
     fs::write(
-        &dest_path,
+        dest_path,
         format!("
         const BEX_VERSION : &str = {bex_version:?};
         const BEX_OPT_LEVEL : &str = {opt_level:?};

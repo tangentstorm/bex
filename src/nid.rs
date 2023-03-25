@@ -52,33 +52,33 @@ pub const I:NID = NID{ n:T|INV };
 // scaffolding for moving ASTBase over to use NIDS
 
 /// bit buffer used for extracting/inserting a VID
-type VIDBITS = usize;
+type VidBits = usize;
 
 /// On which variable does this node branch? (I and O branch on TV)
-#[inline(always)] fn vid_bits(x:NID)->VIDBITS { ((x.n & !(INV|VAR)) >> 32) as VIDBITS}
+#[inline(always)] fn vid_bits(x:NID)->VidBits { ((x.n & !(INV|VAR)) >> 32) as VidBits}
 
 /// Construct the NID for the (virtual) node corresponding to an input variable.
 /// Private since moving to vid::VID, because this didn't set the "real" bit, and
 /// I want the real bit to eventually go away in favor of an unset "virtual" bit.
-#[inline(always)] fn nv(v:VIDBITS)->NID { NID { n:((v as u64) << 32)|VAR }}
+#[inline(always)] fn nv(v:VidBits)->NID { NID { n:((v as u64) << 32)|VAR }}
 
 /// Construct a NID with the given variable and index.
-#[inline(always)] fn nvi(v:VIDBITS,i:usize)->NID { NID{n: ((v as u64) << 32) + i as u64} }
+#[inline(always)] fn nvi(v:VidBits,i:usize)->NID { NID{n: ((v as u64) << 32) + i as u64} }
 
-const NOVAR:VIDBITS = (1<<26) as VIDBITS; // 134_217_728
-const TOP:VIDBITS = (T>>32) as VIDBITS; // 536_870_912, // 1<<29, same as nid::T
+const NOVAR:VidBits = (1<<26) as VidBits; // 134_217_728
+const TOP:VidBits = (T>>32) as VidBits; // 536_870_912, // 1<<29, same as nid::T
 
-fn vid_to_bits(v:vid::VID)->VIDBITS {
+fn vid_to_bits(v:vid::VID)->VidBits {
   if v.is_nov() { NOVAR }
   else if v.is_top() { TOP }
-  else if v.is_var() { v.var_ix() | (RVAR>>32) as VIDBITS }
-  else if v.is_vir() { v.vir_ix() as VIDBITS }
+  else if v.is_var() { v.var_ix() | (RVAR>>32) as VidBits }
+  else if v.is_vir() { v.vir_ix() as VidBits }
   else { panic!("unknown vid::VID {:?}?", v) }}
 
-fn bits_to_vid(o:VIDBITS)->vid::VID {
+fn bits_to_vid(o:VidBits)->vid::VID {
   if o == TOP { vid::VID::top() }
   else if o == NOVAR { vid::VID::nov() }
-  else if o & (RVAR>>32) as VIDBITS > 0 { vid::VID::var((o & !(RVAR>>32) as VIDBITS) as u32) }
+  else if o & (RVAR>>32) as VidBits > 0 { vid::VID::var((o & !(RVAR>>32) as VidBits) as u32) }
   else { vid::VID::vir(o as u32) }}
 
 

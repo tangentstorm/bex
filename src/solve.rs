@@ -85,8 +85,7 @@ pub struct ProgressReport<'a> {
 
 
 impl<'a, S:SubSolver> Progress<S> for ProgressReport<'a> {
-  fn on_step(&mut self, _src:&RawASTBase, _dest: &mut S, _step:usize, _millis:u128, _oldtop:DstNid, _newtop:DstNid) {
-    return }
+  fn on_step(&mut self, _src:&RawASTBase, _dest: &mut S, _step:usize, _millis:u128, _oldtop:DstNid, _newtop:DstNid) { }
     /*
     self.millis += millis;
     let DstNid{ n: new } = newtop;

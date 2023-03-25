@@ -212,9 +212,9 @@ impl XVHLScaffold {
 
       // if we are running this in the middle of a regroup(), we may have deferred refcounts.
       let mut drcd : HashMap::<XID,i64> = HashMap::new();
-      for (_, hm) in &self.drcd {
+      self.drcd.iter().for_each(|(_, hm)| {
         for (xid, drc) in hm {
-          *drcd.entry(xid.raw()).or_insert(0) += drc; }}
+          *drcd.entry(xid.raw()).or_insert(0) += drc; }});
 
       // check internal refcounts vs the ones we just calculated
       for (_v, row) in self.rows.iter() {
@@ -567,7 +567,7 @@ impl XVHLScaffold {
           match r.unwrap() {
 
             R::DRcD{vu} => {
-              SwarmCmd::Send(Q::DRcD(self.drcd.remove(&vu).unwrap_or_else(HashMap::new))) },
+              SwarmCmd::Send(Q::DRcD(self.drcd.remove(&vu).unwrap_or_default())) },
 
             // recycle or allocate xids:
             R::Alloc{needed}  => {
@@ -744,12 +744,12 @@ impl GraphViz for XVHLScaffold {
 /// in the first WIP step, we either work with existing xids
 /// and hilo pairs that may or may not already exist.
 #[derive(Debug, Clone, Copy)]
-enum XWIP0 { XID(XID), HL(XID,XID) }
+enum XWIP0 { Xid(XID), HL(XID,XID) }
 
 /// in the second wip step, the hilo pairs are all resolved to existing
 /// xids or mapped to a new one
 #[derive(Debug, Clone, Copy)]
-enum XWIP1 { XID(XID), NEW(i64) }
+enum XWIP1 { Xid(XID), New(i64) }
 
 // 0: swap the rows. (lift row u above row d)
 //    u was independent before, so we leave it alone except for gc.
@@ -767,7 +767,7 @@ enum XWIP1 { XID(XID), NEW(i64) }
 
 
 #[derive(PartialEq, Debug)]
-enum ROW { U, D }
+enum Row { U, D }
 
 struct SwapWorker {
   // worker id
@@ -827,7 +827,7 @@ impl Worker<Q,R> for SwapWorker {
         let umov = self.umov_mods(wipxid);
         // now return the newly swapped row:
         let rd = std::mem::replace(&mut self.rd, XVHLRow::new());
-        let refs = std::mem::replace(&mut self.refs, HashMap::new());
+        let refs = std::mem::take(&mut self.refs);
         let dels = std::mem::take(&mut self.dels);
         Some(R::PutRD{ vu:self.vu, vd:self.vd, rd, dnew, umov, dels, refs })},
       Q::Stop => {
@@ -848,17 +848,17 @@ impl SwapWorker {
   /// add things to umov that don't need to be there. (otherwise, we'd delete them in the
   /// recycle step but then add them back even though they're not referenced.)
   fn set_rd(&mut self, vd:VID, rd:XVHLRow)->&mut Self {
-    self.vd = vd; self.rd_map = rd.xid_map(); self.rd = rd; self.gc(ROW::D); self }
+    self.vd = vd; self.rd_map = rd.xid_map(); self.rd = rd; self.gc(Row::D); self }
 
   /// set .ru and rebuild .ru_map. We don't garbage collect row U because ... why?
   fn set_ru(&mut self, vu:VID, ru:XVHLRow)->&mut Self {
-    self.vu = vu; self.ru_map = ru.xid_map(); self.ru = ru; self.gc(ROW::U); self }
+    self.vu = vu; self.ru_map = ru.xid_map(); self.ru = ru; self.gc(Row::U); self }
 
   /// garbage collect nodes on one of the rows:
-  fn gc(&mut self, which:ROW) {
+  fn gc(&mut self, which:Row) {
     let mut dels = vec![];
     let mut refs: HashMap::<XID, i64> = HashMap::new();
-    let row = match which { ROW::U => &mut self.ru, ROW::D => &mut self.rd };
+    let row = match which { Row::U => &mut self.ru, Row::D => &mut self.rd };
     row.hm.retain(|hl, ixrc| {
       if ixrc.rc() == 0 {
         *refs.entry(hl.hi.raw()).or_insert(0)-=1;
@@ -866,7 +866,7 @@ impl SwapWorker {
         dels.push(ixrc.ix);
         false }
       else { true }});
-    match which { ROW::U => self.ru_map = self.ru.xid_map(), ROW::D => self.rd_map = self.rd.xid_map() }
+    match which { Row::U => self.ru_map = self.ru.xid_map(), Row::D => self.rd_map = self.rd.xid_map() }
     self.dels.extend(dels);
     for (x, dc) in refs { self.xref(x, dc); }}
 
@@ -926,7 +926,7 @@ impl SwapWorker {
       // the lo branch should never be inverted, since the lo-lo path doesn't change in a swap,
       // and lo branches are always raw in the scaffold.
       // This means we only have to deal with inverted xids the newly-created hi branches.
-      if let XWIP1::NEW(x) = lo { assert!(x >= 0, "unexpected !lo branch");}
+      if let XWIP1::New(x) = lo { assert!(x >= 0, "unexpected !lo branch");}
       // delete the old node from row d. the newly created nodes don't depend on vid u, and
       // the node to delete does depend on vid u, so there's never a conflict here.
       let ixrc = self.rd.hm.remove(&whl).unwrap();
@@ -937,7 +937,7 @@ impl SwapWorker {
   fn resolve(&mut self, xw0:XWIP0)->XWIP1 {
     match xw0 {
       // the new_ref() function would have marked it as a XID if it were already in row d.
-      XWIP0::XID(x) => { XWIP1::XID(self.xref(x,1)) },
+      XWIP0::Xid(x) => { XWIP1::Xid(self.xref(x,1)) },
       XWIP0::HL(hi0,lo0) => {
         // these are the new children on the w level, so we are creating a new node.
         // but: it's possible that multiple new nodes point to the same place.
@@ -952,7 +952,7 @@ impl SwapWorker {
             self.xref(hi, 1); self.xref(lo,1);
             IxRc { ix: self.new_xid(), irc: 1, erc: 0 }}};
         self.dnew.insert((hi,lo), ir);
-        XWIP1::NEW(if inv { !ir.ix.x } else { ir.ix.x }) }}}
+        XWIP1::New(if inv { !ir.ix.x } else { ir.ix.x }) }}}
 
   /// remove garbage from row u. these won't conflict with .unew because we will never
   /// add a *completely* new node on row u - only move existing nodes from row d, and
@@ -961,8 +961,8 @@ impl SwapWorker {
   /// nodes because the rc dropped to 0 (when the node was only referenced by row d).
   fn recycle(&mut self)->usize {
     // garbage collect row d FIRST in case it contains the only references to a node on row u
-    self.gc(ROW::D);
-    self.gc(ROW::U);
+    self.gc(Row::D);
+    self.gc(Row::U);
 
     // remove any ref changes to nodes we've deleted
     for xid in &self.dels { self.refs.remove(&xid.raw()); }
@@ -1015,8 +1015,8 @@ impl SwapWorker {
     let mut res = vec![];
     let w2x = |wip:&XWIP1| {
       match wip {
-        XWIP1::XID(x) => *x,
-        XWIP1::NEW(x) => { if *x<0 { !wipxid[!*x as usize]  } else { wipxid[*x as usize ]}}}};
+        XWIP1::Xid(x) => *x,
+        XWIP1::New(x) => { if *x<0 { !wipxid[!*x as usize]  } else { wipxid[*x as usize ]}}}};
     for (ixrc, wip_hi, wip_lo) in self.umov.iter() {
       let (hi, lo) = (w2x(wip_hi), w2x(wip_lo));
       let key = XHiLo{hi, lo};
@@ -1037,9 +1037,9 @@ impl SwapWorker {
     // this should be a no-op. The "extra" references created by the first swap are
     // balanced we garbage collect extraneous row u nodes on the second swap and
     // decref their children.)
-    if hi == lo { return XWIP0::XID(if inv { !lo } else { lo }); }
+    if hi == lo { return XWIP0::Xid(if inv { !lo } else { lo }); }
     if let Some(ixrc) = self.rd.hm.get(&XHiLo{ hi, lo}) {
-      XWIP0::XID(if inv {!ixrc.ix} else {ixrc.ix}) }
+      XWIP0::Xid(if inv {!ixrc.ix} else {ixrc.ix}) }
     else if inv { XWIP0::HL(!hi, !lo) } else { XWIP0::HL(hi, lo) }}}
 
 // -- debugger ------------------------------------------------------------

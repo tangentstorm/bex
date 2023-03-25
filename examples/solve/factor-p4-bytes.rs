@@ -9,7 +9,7 @@ fn factors()->Vec<(u64,u64)> {
        (6, 35), (7, 30), (10,21), (14,15)]}
 
 extern crate bex;
-use bex::{find_factors,{reg::Reg},bdd::BDDBase, int::{X8,X16}, Base};
+use bex::{find_factors,{reg::Reg},bdd::BDDBase, int::{X8,X16}};
 
 include!(concat!(env!("OUT_DIR"), "/bex-build-info.rs"));
 
