@@ -111,7 +111,7 @@ pub struct Swarm<Q,R,W,I=()> where W:Worker<Q,R,I>, Q:Debug+Clone, R:Debug {
   threads: Vec<thread::JoinHandle<()>> }
 
 impl<Q,R,W,I> Default for Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+Debug, W:Worker<Q, R,I> {
-fn default()->Self { let mut me= Self::new(); me.start(4); me }}
+  fn default()->Self { Self::new_with_threads(4) }}
 
 impl<Q,R,W,I> Drop for Swarm<Q,R,W,I> where Q:Debug+Clone, R:Debug, W:Worker<Q, R,I> {
   fn drop(&mut self) { self.kill_swarm() }}
@@ -131,10 +131,13 @@ impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:Debug+Clone, R:Debug, W:Worker<Q, R,I> {
 
 impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+Debug, W:Worker<Q, R, I> {
 
-  pub fn new()->Self {
-    let (me, rx) = channel();
-    Self { nq: 0, me, rx, whs:HashMap::new(), nw:0,
-       _w:PhantomData, _i:PhantomData, threads:vec![]}}
+  pub fn new()->Self { Self::default() }
+
+  pub fn new_with_threads(n:usize)->Self {
+    let (tx, rx) = channel();
+    let mut me = Self { nq: 0, me:tx, rx, whs:HashMap::new(), nw:0,
+       _w:PhantomData, _i:PhantomData, threads:vec![]};
+    me.start(n); me }
 
   pub fn start(&mut self, num_workers:usize) {
     let n = if num_workers==0 { num_cpus::get() } else { num_workers as usize };

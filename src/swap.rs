@@ -549,7 +549,7 @@ impl XVHLScaffold {
     // (var, ix) pairs, where plan is to lift var to row ix
     let plan = self.plan_regroup(&groups);
     if plan.is_empty() { return }
-    let mut swarm: Swarm<Q,R,SwapWorker> = Swarm::new(); swarm.start(plan.len());
+    let mut swarm: Swarm<Q,R,SwapWorker> = Swarm::new_with_threads(plan.len());
     let mut alarm: HashMap<VID,WID> = HashMap::new();
     let _:Option<()> = swarm.run(|wid,qid,r|->SwarmCmd<Q,()> {
       match qid {
