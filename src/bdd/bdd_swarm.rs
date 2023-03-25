@@ -182,6 +182,12 @@ impl BddSwarm {
 
   pub fn new()->Self { let mut me = Self::default(); me.reset(); me }
 
+  pub fn new_with_threads(n:usize)->Self {
+    let mut me = BddSwarm{
+      swarm: Swarm::new_with_threads(n),
+      ..Default::default()};
+    me.reset(); me }
+
   // reset internal state without the cost of destroying and recreating
   // all the worker threads.
   pub fn reset(&mut self) {

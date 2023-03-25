@@ -131,6 +131,9 @@ pub struct BDDBase {
 
 impl BDDBase {
 
+  pub fn new_with_threads(n:usize)->BDDBase {
+    BDDBase{swarm: BddSwarm::new_with_threads(n), tags:HashMap::new()}}
+
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)->(NID,NID) { self.swarm.tup(n) }
 

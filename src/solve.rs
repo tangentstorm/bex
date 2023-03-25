@@ -237,7 +237,7 @@ pub fn solve<S:SubSolver>(dst:&mut S, src0:&RawASTBase, sn:NID)->DstNid {
 /// BInt types. Generally $T0 would have half as many bits as $T1) $TDEST is destination type.
 #[macro_export]
 macro_rules! find_factors {
-  ($TDEST:ident, $T0:ident, $T1:ident, $k:expr, $expect:expr) => {{
+  ($dest:expr, $T0:ident, $T1:ident, $k:expr, $expect:expr) => {{
     use std::env; use std::collections::HashSet;
     use $crate::{GraphViz, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}, bdd};
     bdd::COUNT_XMEMO_TEST.with(|c| c.replace(0) );
@@ -259,7 +259,7 @@ macro_rules! find_factors {
     let src = gb.raw_ast();
     if show_ast { src.show_named(top.n, "ast"); }
     // --- now we have the ast, so solve ----
-    let mut dest = $TDEST::new();
+    let mut dest = $dest;
     let answer:DstNid = solve(&mut dest, &src, top.n);
     // if show_res { dest.show_named(answer.n, "result") }
     type Factors = (u64,u64);
@@ -281,42 +281,42 @@ macro_rules! find_factors {
 /// nano test case for BDD: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
 #[test] pub fn test_nano_bdd() {
   use {bdd::BDDBase, int::{X2,X4}};
-  find_factors!(BDDBase, X2, X4, 6, vec![(2,3)]); }
+  find_factors!(BDDBase::new(), X2, X4, 6, vec![(2,3)]); }
 
 /// nano test case for ANF: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
 #[test] pub fn test_nano_anf() {
     use {anf::ANFBase, int::{X2,X4}};
-    find_factors!(ANFBase, X2, X4, 6, vec![(2,3)]); }
+    find_factors!(ANFBase::new(), X2, X4, 6, vec![(2,3)]); }
 
 /// nano test case for swap solver: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
 #[test] pub fn test_nano_swap() {
   use {swap::SwapSolver, int::{X2,X4}};
-  find_factors!(SwapSolver, X2, X4, 6, vec![(2,3)]); }
+  find_factors!(SwapSolver::new(), X2, X4, 6, vec![(2,3)]); }
 
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny_bdd() {
   use {bdd::BDDBase, int::{X4,X8}};
-  find_factors!(BDDBase, X4, X8, 210, vec![(14,15)]); }
+  find_factors!(BDDBase::new(), X4, X8, 210, vec![(14,15)]); }
 
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny_anf() {
   use {anf::ANFBase, int::{X4,X8}};
-  find_factors!(ANFBase, X4, X8, 210, vec![(14,15)]); }
+  find_factors!(ANFBase::new(), X4, X8, 210, vec![(14,15)]); }
 
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny_swap() {
   use {swap::SwapSolver, int::{X4,X8}};
-  find_factors!(SwapSolver, X4, X8, 210, vec![(14,15)]); }
+  find_factors!(SwapSolver::new(), X4, X8, 210, vec![(14,15)]); }
 
   /// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
 #[test] pub fn test_multi_bdd() {
   use {bdd::BDDBase, int::{X4,X8}};
-  find_factors!(BDDBase, X4, X8, 30, vec![(2,15), (3,10), (5,6)]); }
+  find_factors!(BDDBase::new(), X4, X8, 30, vec![(2,15), (3,10), (5,6)]); }
 
 /// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
 #[test] pub fn test_multi_anf() {
   use {anf::ANFBase, int::{X4,X8}};
-  find_factors!(ANFBase, X4, X8, 30, vec![(2,15), (3,10), (5,6)]); }
+  find_factors!(ANFBase::new(), X4, X8, 30, vec![(2,15), (3,10), (5,6)]); }
 
 /// same as tiny test, but multiply 2 bytes to get 210. There are 8 distinct answers.
 /// this was intended as a unit test but is *way* too slow.

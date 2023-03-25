@@ -1320,4 +1320,4 @@ use bex::reg::Reg;
 
 /// The real challenge: factor the 64-bit product of the first 15 primes.
 pub fn main() {
-  find_factors!(SwapSolver, X32, X64, K as usize, factors()); }
+  find_factors!(SwapSolver::new(), X32, X64, K as usize, factors()); }

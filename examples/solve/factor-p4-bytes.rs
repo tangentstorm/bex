@@ -16,6 +16,6 @@ include!(concat!(env!("OUT_DIR"), "/bex-build-info.rs"));
 pub fn main() {
   println!("bex {BEX_VERSION} opt-level: {BEX_OPT_LEVEL}");
   let expected = factors();
-  find_factors!(BDDBase,    X8, X16, K, expected);
+  find_factors!(BDDBase::new_with_threads(0), X8, X16, K, expected);
   //  find_factors!(SwapSolver, X8, X16, K, expected);
  }
