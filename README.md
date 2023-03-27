@@ -24,11 +24,11 @@ It covers the large factoring problems in [examples/solve/bdd-solve.rs](https://
 and the smaller tests in [src/solve.rs](https://github.com/tangentstorm/bex/blob/main/src/solve.rs)
 
 
-## Changes in 0.1.6 (2023-03-27)
+## Changes in 0.1.7 (2023-03-27)
 
 Aside from the addition of the `ops` module, this is primarily
-a benchmark release to make it easier to compare the 0.1.5
-algorithms with 0.2.0.
+a benchmark release to make it easier to compare the older
+algorithms with the upcoming 0.2.0 version.
 
 - Rename `BDDBase` to `BddBase`, and add `reset()` method.
 
@@ -47,7 +47,6 @@ algorithms with 0.2.0.
 
 - Remove obsolete "substitution" concept from `ast.rs`, and replace
   `ast::Op` with the more flexible `ops::Ops`.
-
 
 
 For full changelog, see [CHANGELOG.md](https://github.com/tangentstorm/bex/blob/main/CHANGELOG.md).

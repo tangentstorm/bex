@@ -2,7 +2,7 @@
 
 A rust library for working with boolean expressions.
 
-## 0.1.6 (2023-03-27)
+## 0.1.7 (2023-03-27)
 
 Aside from the addition of the `ops` module, this is primarily
 a benchmark release to make it easier to compare the 0.1.5
@@ -25,6 +25,10 @@ algorithms with 0.2.0.
 
 - Remove obsolete "substitution" concept from `ast.rs`, and replace
   `ast::Op` with the more flexible `ops::Ops`.
+
+## 0.1.6 (2023-03-27)
+
+Same as 0.1.7 except I forgot to update the readme. :D
 
 ## 0.1.5 (2020-05-20)
 
