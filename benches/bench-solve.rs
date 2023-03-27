@@ -3,20 +3,22 @@ extern crate bencher;
 use bencher::Bencher;
 
 extern crate bex;
-use bex::{bdd, find_factors, int::GBASE};
-type BDD = bdd::BddBase;
+extern crate hashbrown;
+use hashbrown::HashSet;
+use bex::{find_factors, Base, bdd::BddBase, int::{X8,X16,GBASE}, swap::SwapSolver, reg::Reg};
+
 
 pub fn tiny(b: &mut Bencher) {
   use bex::int::{X4,X8};
   b.iter(|| {
-    find_factors!(BDD, X4, X8, 210, vec![(14,15)]); }); }
+    find_factors!(BddBase, X4, X8, 210, vec![(14,15)]); }); }
 
 pub fn small(b: &mut Bencher) {
   use bex::int::{X8,X16};
   b.iter(|| {
     let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
                         (6, 35), (7, 30), (10,21), (14,15)];
-    find_factors!(BDD, X8, X16, 210, expected);
+    find_factors!(BddBase, X8, X16, 210, expected);
     GBASE.with(|gb| gb.replace(bex::ast::ASTBase::empty()));
   }); }
 
