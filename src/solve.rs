@@ -69,11 +69,12 @@ impl<B:Base> SubSolver for B {
   fn dump(&self, _path:&Path, _note:&str, _step:usize, _old:NID, _vid:VID, _ops:&Ops, _new:NID) {}}
 
 pub trait Progress<S:SubSolver> {
-  fn on_start(&self, ctx:&DstNid) { println!("INITIAL ctx: {:?}", ctx) }
+  fn on_start(&mut self, _ctx:&DstNid) { /*println!("INITIAL ctx: {:?}", ctx)*/ }
   fn on_step(&mut self, src:&RawASTBase, dest: &mut S, step:usize, millis:u128, oldtop:DstNid, newtop:DstNid);
-  fn on_done(&self, src:&RawASTBase, dest: &mut S, newtop:DstNid); }
+  fn on_done(&mut self, src:&RawASTBase, dest: &mut S, newtop:DstNid); }
 
 pub struct ProgressReport<'a> {
+  pub start: std::time::SystemTime,
   pub millis: u128,
   pub save_dot: bool,
   pub save_dest: bool,
@@ -85,38 +86,39 @@ pub struct ProgressReport<'a> {
 
 
 impl<'a, S:SubSolver> Progress<S> for ProgressReport<'a> {
-  fn on_step(&mut self, src:&RawASTBase, dest: &mut S, step:usize, millis:u128, oldtop:DstNid, newtop:DstNid) {
-    self.millis += millis;
-    let DstNid{ n: new } = newtop;
-    println!("{:4}, {:8} ms, {:45?} → {:45?}, {:45?}",
-             step, millis, oldtop.n,
-             if new.vid().is_vir() {
-               format!("{:?}", src.get_ops(nid::ixn(new.vid().vir_ix() as u32))) }
-             else { format!("{:?}", new)},
-             newtop.n);
-    // dest.show_named(newtop.n, format!("step-{}", step).as_str());
-    if step.trailing_zeros() >= 3 { // every so often, save the state
-      // !! TODO: expected number of steps only works if sort_by_cost was called.
-      { let expected_steps = src.len() as f64;
-        let percent_done = 100.0 * (step as f64) / expected_steps as f64;
-        println!("\n# newtop: {:?}  step:{}/{} ({:.2}%)",
-                 newtop.n.vid(), step, src.len(), percent_done); }
-      if self.save_dest {
-        println!("TODO: save_dest for SwapSolver instead of Base")
-        // dest.tag(new, "top".to_string()); dest.tag(NID::var(step as u32), "step".to_string());
-        // TODO: remove the 'bdd' suffix
-        // dest.save(format!("{}-{:04}.bdd", self.prefix, step).as_str()).expect("failed to save");
-       }}
-    if step.trailing_zeros() >= 5 { println!("step, millis, change, newtop"); }
-    if self.save_dot && (step.trailing_zeros() >= 5) || (step==446)
-    { // on really special occasions, output a diagram
-      let note = &dest.status();
-      let path = Path::new("."); // todo
-      let ops = &Ops::RPN(vec![]); // todo
-      dest.dump(path, note, step, oldtop.n, newtop.n.vid(), ops, newtop.n); }}
+  fn on_start(&mut self, _ctx:&DstNid) { self.start = std::time::SystemTime::now(); }
+  fn on_step(&mut self, _src:&RawASTBase, _dest: &mut S, _step:usize, _millis:u128, _oldtop:DstNid, _newtop:DstNid) {}
+    // self.millis += millis;
+    // let DstNid{ n: new } = newtop;
+    // // println!("{:4}, {:8} ms, {:45?} → {:45?}, {:45?}",
+    // //          step, millis, oldtop.n,
+    // //          if new.vid().is_vir() {
+    // //            format!("{:?}", src.get_ops(nid::ixn(new.vid().vir_ix() as u32))) }
+    // //          else { format!("{:?}", new)},
+    // //          newtop.n);
+    // // dest.show_named(newtop.n, format!("step-{}", step).as_str());
+    // if step.trailing_zeros() >= 3 { // every so often, save the state
+    //   // !! TODO: expected number of steps only works if sort_by_cost was called.
+    //   { let expected_steps = src.len() as f64;
+    //     let percent_done = 100.0 * (step as f64) / expected_steps as f64;
+    //     println!("\n# newtop: {:?}  step:{}/{} ({:.2}%)",
+    //              newtop.n.vid(), step, src.len(), percent_done); }
+    //   if self.save_dest {
+    //     println!("TODO: save_dest for SwapSolver instead of Base")
+    //     // dest.tag(new, "top".to_string()); dest.tag(NID::var(step as u32), "step".to_string());
+    //     // TODO: remove the 'bdd' suffix
+    //     // dest.save(format!("{}-{:04}.bdd", self.prefix, step).as_str()).expect("failed to save");
+    //    }}
+    // if step.trailing_zeros() >= 5 { println!("step, millis, change, newtop"); }
+    // if self.save_dot && (step.trailing_zeros() >= 5) || (step==446)
+    // { // on really special occasions, output a diagram
+    //   let note = &dest.status();
+    //   let path = Path::new("."); // todo
+    //   let ops = &Ops::RPN(vec![]); // todo
+    //   dest.dump(path, note, step, oldtop.n, newtop.n.vid(), ops, newtop.n); }}
 
-  fn on_done(&self, _src:&RawASTBase, _dest: &mut S, _newtop:DstNid) {
-    println!("total time: {} ms", self.millis) }}
+  fn on_done(&mut self, _src:&RawASTBase, _dest: &mut S, _newtop:DstNid) {
+      println!("total time: {} ms", self.start.elapsed().unwrap().as_millis() ) }}
 
 
 fn default_bitmask(_src:&RawASTBase, v:VID) -> u64 { v.bitmask() }
@@ -213,8 +215,8 @@ pub fn solve<S:SubSolver>(dst:&mut S, src0:&RawASTBase, sn:NID)->DstNid {
     let mut ctx = DstNid{n: dst.init(v)};
 
     // This just lets us record timing info. TODO: pr probably should be an input parameter.
-    let mut pr = ProgressReport{ save_dot: false, save_dest: false, prefix:"x", millis: 0 };
-    <dyn Progress<S>>::on_start(&pr, &ctx);
+    let mut pr = ProgressReport{ start: std::time::SystemTime::now(), save_dot: false, save_dest: false, prefix:"x", millis: 0 };
+    <dyn Progress<S>>::on_start(&mut pr, &ctx);
 
     // main loop:
     while !(ctx.n.is_var() || ctx.n.is_const()) {

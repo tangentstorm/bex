@@ -657,7 +657,7 @@ impl XVHLScaffold {
     let new_uix = old_uix + 1;
     self.vids.swap(old_uix, new_uix);
 
-    println!("\x1b[36mswapped vu:{} -> vd:{} => {:?}\x1b[0m", vu, vd, self.vids);
+    //println!("\x1b[36mswapped vu:{} -> vd:{} => {:?}\x1b[0m", vu, vd, self.vids);
     //self.validate(format!("after swapping vd:{:?} with vu:{:?}", vd, vu).as_str());
 
     let mut work:Vec<(WID, Q)> = vec![];
@@ -1151,7 +1151,7 @@ impl SwapSolver {
     let vix = self.dst.vix(self.rv).unwrap();
     let mut sg = vec![s.clone()];
     for ni in (vix+1)..self.dst.vids.len() { sg.push(set(vec![self.dst.vids[ni]])) }
-    println!("regrouping src. vids: {:?} groups: {:?}", self.src.vids, sg);
+    //println!("regrouping src. vids: {:?} groups: {:?}", self.src.vids, sg);
     self.src.regroup(sg); // final order: [s,n]
 
     // now whatever order the s group wound up in, we can insert
@@ -1251,8 +1251,8 @@ impl SubSolver for SwapSolver {
 
   fn subst(&mut self, ctx: NID, v: VID, ops: &Ops)->NID {
     let Ops::RPN(mut rpn) = ops.norm();
-    println!("@:sub {:>4} -> {:>24} -> {:>20}",
-      format!("{:?}",v), format!("{:?}", ops), format!("{:?}", rpn));
+    //println!("@:sub {:>4} -> {:>24} -> {:>20}",
+    //  format!("{:?}",v), format!("{:?}", ops), format!("{:?}", rpn));
 
     let f = rpn.pop().unwrap(); // guaranteed by norm() to be a fun-nid
 
