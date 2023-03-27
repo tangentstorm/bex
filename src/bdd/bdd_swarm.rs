@@ -3,9 +3,11 @@ use std::sync::Arc;
 use {wip, wip::{Dep, ResStep, Answer}};
 use vhl::{HiLoPart};
 use nid::NID;
-use bdd::{ITE, NormIteKey, Norm, BddState, COUNT_XMEMO_TEST, COUNT_XMEMO_FAIL};
+use bdd::{ITE, NormIteKey, Norm, BddState};
 use {swarm, swarm::{WID, QID, Swarm, RMsg}};
 use concurrent_queue::{ConcurrentQueue,PopError};
+
+use crate::wip::{COUNT_CACHE_HITS, COUNT_CACHE_TESTS};
 
 // ----------------------------------------------------------------
 // BddSwarm Protocol
@@ -125,9 +127,9 @@ impl swarm::Worker<Q,R,NormIteKey> for BddWorker {
           *m = Some(*qid); }
         self.queue_push(ite); None }
       Q::Stats => {
-        let tests = COUNT_XMEMO_TEST.with(|c| c.replace(0));
-        let fails = COUNT_XMEMO_FAIL.with(|c| c.replace(0));
-        Some(R::MemoStats{ tests, fails }) } }}}
+        let tests = COUNT_CACHE_TESTS.with(|c| c.replace(0));
+        let hits = COUNT_CACHE_HITS.with(|c| c.replace(0));
+        Some(R::CacheStats{ tests, hits }) } }}}
 
 /// Code run by each thread in the swarm. Isolated as a function without channels for testing.
 impl BddWorker {
@@ -213,21 +215,18 @@ impl BddSwarm {
       let RMsg{wid:_,qid:_,r} = self.swarm.recv().expect("failed to recieve rmsg");
       if let Some(rmsg) = r { match rmsg {
         R::Ret(n) => { result = Some(n) }
-        R::MemoStats{ tests:_, fails:_ }
-          => { panic!("got R::MemoStats before sending Q::Stats"); } }}}
+        R::CacheStats{ tests:_, hits:_ }
+          => { panic!("got R::CacheStats before sending Q::Stats"); } }}}
     result.unwrap() }
 
   pub fn get_stats(&mut self) {
     self.swarm.send_to_all(&Q::Stats);
-    let (mut tests, mut fails, mut reports, mut shorts) = (0, 0, 0, 0);
-    // // println!("waiting for MemoStats");
+    let (mut tests, mut hits, mut reports) = (0, 0, 0);
     while reports < self.swarm.num_workers() {
-       let RMsg{wid:_, qid:_, r} = self.swarm.recv().expect("still expecting an Rmsg::MemoCount");
-       if let Some(wip::RMsg::MemoStats{ tests:t, fails: f }) = r { reports += 1; tests+=t; fails += f }
-       else { shorts += 1; println!("extraneous rmsg from swarm: {:?}", r) }}
-    // if tests > 0 { println!("{:?} result: {:?}  tests: {}  fails: {}  hits: {}", ite, result, tests, fails, tests-fails); }
-    if shorts > 0 { println!("----------- shorts: {}", shorts)} // i don't think this actually happens.
-    COUNT_XMEMO_TEST.with(|c| *c.borrow_mut() += tests );
-    COUNT_XMEMO_FAIL.with(|c| *c.borrow_mut() += fails ); }
+       let RMsg{wid:_, qid:_, r} = self.swarm.recv().expect("still expecting an Rmsg::CacheStats");
+       if let Some(wip::RMsg::CacheStats{ tests:t, hits: h }) = r { reports += 1; tests+=t; hits += h }
+       else { println!("extraneous rmsg from swarm after Q::Stats: {:?}", r) }}
+    COUNT_CACHE_TESTS.with(|c| *c.borrow_mut() += tests);
+    COUNT_CACHE_HITS.with(|c| *c.borrow_mut() += hits); }
 
 } // end bddswarm

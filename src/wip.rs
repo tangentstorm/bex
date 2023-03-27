@@ -1,5 +1,6 @@
 //! Generic Work-in-progress support for VHL graphs.
 use std::borrow::BorrowMut;
+use std::cell::RefCell;
 use std::default::Default;
 use std::fmt::Debug;
 use std::marker::PhantomData;
@@ -11,6 +12,11 @@ use vid::VID;
 use vhl::{HiLo, HiLoPart, VhlParts, HiLoCache};
 use bdd::{Norm, NormIteKey};
 use dashmap::DashMap;
+
+// cache lookup counters:
+thread_local!{
+  pub static COUNT_CACHE_TESTS: RefCell<u64> = RefCell::new(0);
+  pub static COUNT_CACHE_HITS: RefCell<u64> = RefCell::new(0); }
 
 
 
@@ -77,10 +83,13 @@ impl<K:Eq+Hash+Debug,V:Clone> WorkState<K,V> {
   /// done, return the completed value, otherwise
   /// return None.
   pub fn get_done(&self, k:&K)->Option<V> {
+    COUNT_CACHE_TESTS.with(|c| *c.borrow_mut() += 1);
     if let Some(w) = self.cache.get(k) {
       match w.value() {
         Work::Todo(_) => None,
-        Work::Done(v) => Some(v.clone())}}
+        Work::Done(v) => {
+          COUNT_CACHE_HITS.with(|c| *c.borrow_mut() += 1);
+          Some(v.clone())}}}
     else { None }}
 
   pub fn get_cached_nid(&self, v:VID, hi:NID, lo:NID)->Option<NID> {
@@ -152,12 +161,14 @@ impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID> {
 
     // returns true if the query is new to the system
     pub fn add_dep(&self, q:&K, idep:Dep<K>)->(bool, Option<Answer<NID>>) {
+      COUNT_CACHE_TESTS.with(|c| *c.borrow_mut() += 1);
       let mut old_done = None; let mut was_empty = false; let mut answer = None;
       { // -- new way -- add_sub_task
         // this handles both the occupied and vacant cases:
         let mut v = self.cache.entry(*q).or_insert_with(|| {
           was_empty = true;
           Work::default()});
+        if !was_empty { COUNT_CACHE_HITS.with(|c| *c.borrow_mut() += 1) }
         match v.value_mut() {
           Work::Todo(w) => w.borrow_mut().deps.push(idep),
           Work::Done(n) => old_done=Some(*n) }}
@@ -191,4 +202,4 @@ pub enum RMsg {
   /// We've solved the whole problem, so exit the loop and return this nid.
   Ret(NID),
   /// return stats about the memo cache
-  MemoStats { tests: u64, fails: u64 }}
+  CacheStats { tests: u64, hits: u64 }}

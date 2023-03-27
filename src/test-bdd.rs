@@ -141,7 +141,7 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 #[test] fn test_hilocache_simple() {
   use vhl; // TODO: probably move this to test-vhl.rs?
   let cache = vhl::HiLoCache::default();
-  let hl = HiLo::new(NID::var(5), NID::var(6));
+  let hl = vhl::HiLo::new(NID::var(5), NID::var(6));
   let x0 = VID::var(0);
   let v0 = VID::vir(0);
   let v1 = VID::vir(1);

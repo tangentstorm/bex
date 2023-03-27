@@ -1,12 +1,9 @@
 //! A module for efficient implementation of binary decision diagrams.
-use std::collections::{HashMap,HashSet};
-use std::cell::RefCell;
-
 extern crate num_cpus;
-
+use std::collections::{HashMap,HashSet};
 use base::{Base};
 use reg::Reg;
-use vhl::{HiLo, Walkable};
+use vhl::{Walkable};
 use nid::{NID,O,I};
 use vid::{VID,VidOrdering,topmost_of3};
 use wip;
@@ -95,11 +92,6 @@ impl ITE {
 pub struct BddState {
   pub work: wip::WorkState} // TODO: Replace BddState entirely with WorkState ?
 
-// cache lookup counters:
-thread_local!{
-  pub static COUNT_XMEMO_TEST: RefCell<u64> = RefCell::new(0);
-  pub static COUNT_XMEMO_FAIL: RefCell<u64> = RefCell::new(0); }
-
 
 impl BddState {
 
@@ -114,12 +106,8 @@ impl BddState {
     let ite = key.0;
     if ite.i.is_vid() {
       debug_assert!(!ite.i.is_inv()); // because it ought to be normalized by this point.
-      let hilo = if ite.i.is_inv() { HiLo::new(ite.e,ite.t) } else { HiLo::new(ite.t,ite.e) };
-      self.work.get_cached_nid(ite.i.vid(), hilo.hi, hilo.lo) }
-    else {
-      COUNT_XMEMO_TEST.with(|c| *c.borrow_mut() += 1 );
-      if let Some(n) = self.work.get_done(key) { Some(n) }
-      else { COUNT_XMEMO_FAIL.with(|c| *c.borrow_mut() += 1 ); None }}}}
+      self.work.get_cached_nid(ite.i.vid(), ite.t, ite.e) }
+    else { self.work.get_done(key) }}}
 
 
 /// Finally, we put everything together. This is the top-level type for this crate.
@@ -195,9 +183,9 @@ impl BddBase {
 
   pub fn get_stats(&mut self)->(u64, u64) {
     self.swarm.get_stats();
-    let tests = COUNT_XMEMO_TEST.with(|c| *c.borrow() );
-    let fails = COUNT_XMEMO_FAIL.with(|c| *c.borrow() );
-    (tests, fails)}
+    let tests = wip::COUNT_CACHE_TESTS.with(|c| *c.borrow());
+    let hits = wip::COUNT_CACHE_HITS.with(|c| *c.borrow());
+    (tests, hits)}
 
 } // end impl BDDBase
 
@@ -271,12 +259,13 @@ impl Base for BddBase {
     w!("}}"); }
 
   fn init_stats(&mut self) {
-    COUNT_XMEMO_TEST.with(|c| c.replace(0) );
-    COUNT_XMEMO_FAIL.with(|c| c.replace(0) ); }
+    wip::COUNT_CACHE_TESTS.with(|c| c.replace(0));
+    wip::COUNT_CACHE_HITS.with(|c| c.replace(0)); }
 
   fn print_stats(&mut self) {
-    let (tests, fails) = self. get_stats();
-    println!("XMEMO: {} cache hits out of {tests} tests. ({fails} misses).", tests-fails);  }
+    let (tests, hits) = self. get_stats();
+    println!("Cache stats: {hits} hits / {tests} tests ({:.1}%).",
+      (hits as f64/tests as f64) * 100.0); }
 
   fn solution_set(&self, n: NID, nvars: usize)->HashSet<Reg> {
     self.solutions_pad(n, nvars).collect() }}
