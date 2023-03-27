@@ -615,6 +615,7 @@ impl XVHLScaffold {
       for (&xid, &drc) in drcd.iter() { self.add_ref_ix_or_defer(xid, drc)} }}
 
   /// called whenever a worker returns a downward-moving row to the scaffold
+  #[allow(clippy::too_many_arguments)] // TODO fix this!
   fn swarm_put_rd(&mut self, plan:&HashMap<VID,usize>, alarm:&mut HashMap<VID,WID>,
     wid:WID, vu:VID, vd:VID, rd:XVHLRow, dnew:Vec<Mod>, umov:Vec<Mod>, dels:Vec<XID>, refs:HashMap<XID,i64>
   )->SwarmCmd<Q,()> {
