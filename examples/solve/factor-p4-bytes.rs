@@ -18,7 +18,7 @@ pub fn main() {
   let mut use_swap = false;
   let mut get_threads = false; let mut num_threads = 0;
   for a in std::env::args() {
-    if get_threads { num_threads = a.parse().expect("bad -t paremeter"); get_threads=false; }
+    if get_threads { num_threads = a.parse().expect("bad -t parameter"); get_threads=false; }
     else { match a.as_str() {
       "-t" => get_threads = true,
       "swap" => use_swap = true,
