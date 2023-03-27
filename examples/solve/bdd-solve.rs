@@ -1315,9 +1315,8 @@ fn factors()->Vec<(u64,u64)> {
     (785341095,782958878), (785147363,783152070) ] }
 
 extern crate bex;
-use bex::{swap::SwapSolver, find_factors, int::{X32, X64}};
-use bex::reg::Reg;
+use bex::{swap::SwapSolver, solve::find_factors, int::{X32, X64}};
 
 /// The real challenge: factor the 64-bit product of the first 15 primes.
 pub fn main() {
-  find_factors!(SwapSolver::new(), X32, X64, K as usize, factors()); }
+  find_factors::<X32,X64,SwapSolver>(&mut SwapSolver::new(), K as usize, factors()); }

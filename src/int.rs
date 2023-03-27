@@ -87,18 +87,21 @@ pub fn gbase_i()->BaseBit { BaseBit{base:gbase_ref(), n:nid::I} }
 
 // TODO: implement iterators on the bits to simplify all these loops!!
 
-pub trait BInt<T:TBit> : Sized {
+pub trait BInt : Sized {
+  fn new(u:usize)->Self;
   /// the number of bits
   fn n() -> u32;
-  fn i(&self) -> T;
-  fn o(&self) -> T;
+  fn i(&self) -> BaseBit;
+  fn o(&self) -> BaseBit;
   fn zero() -> Self;
-  fn get(&self, i:u32) -> T;
-  fn set(&mut self, i:u32, v:T);
+  fn get(&self, i:u32) -> BaseBit;
+  fn set(&mut self, i:u32, v:BaseBit);
   fn rotate_right(&self, y:u32) -> Self {
     let mut res = Self::zero();
     for i in 0..Self::n() { res.set(i, self.get((i+y) % Self::n())) }
     res}
+
+  fn def(s:&str, start:u32)->Self;
 
   // TODO: this doesn't actually wrap! (should it??)
   fn wrapping_add(&self, y:Self) -> Self {
@@ -109,12 +112,15 @@ pub trait BInt<T:TBit> : Sized {
       carry = bitmaj(a, b, c);}
     res}
 
-  fn from<B:BInt<T>>(other:&B) -> Self {
+  fn from<B:BInt>(other:&B) -> Self {
     let mut res = Self::zero();
     for i in 0..min(Self::n(),B::n()) { res.set(i, other.get(i).clone()) }
     res }
 
-  fn times<B:BInt<T>>(&self, y0:&Self) -> B {
+  fn eq(&self, other:&Self)-> BaseBit;
+  fn lt(&self, other:&Self)-> BaseBit;
+
+  fn times<B:BInt>(&self, y0:&Self) -> B {
     let mut sum = B::zero();
     let x = B::from(self);
     let y = B::from(y0);
@@ -136,14 +142,6 @@ macro_rules! xint_type {
     pub struct $T{pub bits:Vec<BaseBit>}
 
     impl $T {
-      pub fn new(u:usize)->$T {
-        $T{bits:(0..$n)
-           .map(|i| if (u&1<<i)==0 { gbase_o() } else { gbase_i() })
-           .collect()}}
-
-      /// define an entire set of variables at once.
-      pub fn def(s:&str, start:u32)->$T {
-        $T::from_vec((0..$n).map(|i|{ gbase_def(s.to_string(), VID::var(start+i)) }).collect()) }
 
       pub fn from_vec(v:Vec<BaseBit>)->$T {
         $T{bits: if v.len() >= $n { v.iter().take($n).map(|x|x.clone()).collect() }
@@ -151,23 +149,6 @@ macro_rules! xint_type {
              let zs = (0..($n-v.len())).map(|_| gbase_o());
              v.iter().map(|x|x.clone()).chain(zs.into_iter()).collect() }}}
 
-      pub fn eq(&self, other:&Self)-> BaseBit {
-        let mut res = gbase_i();
-        for (x, y) in self.bits.iter().zip(other.bits.iter()) {
-          // TODO: implement EQL (XNOR) nodes in base
-          let eq = !(x.clone()^y.clone());
-          // println!("{} eq {} ?  {}", x.n, y.n, eq.n);
-          res = res & eq}
-        res}
-
-      pub fn lt(&self, other:&Self)-> BaseBit {
-        let mut res = gbase_o();
-        for (x, y) in self.bits.iter().zip(other.bits.iter()) {
-          // TODO: implement EQ, LT nodes in base
-          let eq = !(x.clone() ^ y.clone());
-          let lt = (!x.clone()) & y.clone();
-          res = lt | (eq & res); }
-        res}
     }
 
     impl std::fmt::Debug for $T {
@@ -178,13 +159,41 @@ macro_rules! xint_type {
 
 // TODO: just inline BInt here, so people don't have to import it.
 
-    impl BInt<BaseBit> for $T {
+    impl BInt for $T {
+
+      fn new(u:usize)->$T {
+        $T{bits:(0..$n)
+           .map(|i| if (u&1<<i)==0 { gbase_o() } else { gbase_i() })
+           .collect()}}
+
       fn n()->u32 { $n }
       fn zero()->Self { $T::new(0) }
       fn o(&self)->BaseBit { gbase_o() }
       fn i(&self)->BaseBit { gbase_i() }
       fn get(&self, i:u32)->BaseBit { self.bits[i as usize].clone() }
       fn set(&mut self, i:u32, v:BaseBit) { self.bits[i as usize]=v }
+
+      /// define an entire set of variables at once.
+      fn def(s:&str, start:u32)->$T {
+        $T::from_vec((0..$n).map(|i|{ gbase_def(s.to_string(), VID::var(start+i)) }).collect()) }
+
+      fn eq(&self, other:&Self)-> BaseBit {
+        let mut res = gbase_i();
+        for (x, y) in self.bits.iter().zip(other.bits.iter()) {
+          // TODO: implement EQL (XNOR) nodes in base
+          let eq = !(x.clone()^y.clone());
+          // println!("{} eq {} ?  {}", x.n, y.n, eq.n);
+          res = res & eq}
+        res}
+
+      fn lt(&self, other:&Self)-> BaseBit {
+        let mut res = gbase_o();
+        for (x, y) in self.bits.iter().zip(other.bits.iter()) {
+          // TODO: implement EQ, LT nodes in base
+          let eq = !(x.clone() ^ y.clone());
+          let lt = (!x.clone()) & y.clone();
+          res = lt | (eq & res); }
+        res}
 
       fn u(self)->usize {
         let mut u = 0; let mut i = 0;
@@ -269,6 +278,7 @@ xint_type!(64, X64); pub fn x64(u:usize)->X64 { X64::new(u) }
   assert_eq!(x32(10).lt(&x32(10)), gbase_o()); }
 
 #[test] fn test_eq() {
-  assert_eq!(x32(10).eq(&x32(10)), gbase_i());
-  assert_eq!(x32(11).eq(&x32(10)), gbase_o());
-  assert_eq!(x32(10).eq(&x32(11)), gbase_o()); }
+  use int::BInt;
+  assert_eq!(BInt::eq(&x32(10), &x32(10)), gbase_i());
+  assert_eq!(BInt::eq(&x32(11), &x32(10)), gbase_o());
+  assert_eq!(BInt::eq(&x32(10), &x32(11)), gbase_o()); }

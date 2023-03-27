@@ -1,4 +1,5 @@
 //! Solve ast-based expressions by converting to another form.
+use std::env;
 ///
 /// the tests in this module use command line options to show or hide diagrams.
 ///     -a show AST (problem statement)
@@ -17,12 +18,12 @@
 use std::{collections::HashSet, time::SystemTime};
 use std::path::Path;
 use ::{apl, ops};
-use ast::RawASTBase;
 use base::Base;
 use nid::NID;
 use vid::VID;
 use ops::Ops;
 use reg::Reg;
+use ::{GraphViz, ast::{ASTBase, RawASTBase}, int::{GBASE,BInt,BaseBit}};
 
 
 /// protocol used by solve.rs. These allow the base to prepare itself for different steps
@@ -48,7 +49,10 @@ pub trait SubSolver {
   /// The step number, status note, and a copy of the arguments to the
   /// previous subst(), and the result are provided, in case the dump format
   /// can make use of them in some way.
-  fn dump(&self, _path:&Path, _note:&str, _step:usize, _old:NID, _vid:VID, _ops:&Ops, _new:NID); }
+  fn dump(&self, _path:&Path, _note:&str, _step:usize, _old:NID, _vid:VID, _ops:&Ops, _new:NID);
+  // !! these are defined here but never overwritten in the trait (used by solver) [fix this]
+  fn init_stats(&mut self) { }
+  fn print_stats(&mut self) { }}
 
 impl<B:Base> SubSolver for B {
 
@@ -233,22 +237,22 @@ pub fn solve<S:SubSolver>(dst:&mut S, src0:&RawASTBase, sn:NID)->DstNid {
     ctx}}
 
 
-/// This is an example solver used by the bdd-solve example and the bench-solve benchmark.
-/// It finds all pairs of type $T0 that multiply to $k as a $T1. ($T0 and $T1 are
-/// BInt types. Generally $T0 would have half as many bits as $T1) $TDEST is destination type.
-#[macro_export]
-macro_rules! find_factors {
-  ($dest:expr, $T0:ident, $T1:ident, $k:expr, $expect:expr) => {{
-    use std::env; use std::collections::HashSet;
-    use $crate::{GraphViz, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}};
-    GBASE.with(|gb| gb.replace(ASTBase::empty()));   // reset on each test
-    let (y, x) = ($T0::def("y", 0), $T0::def("x", $T0::n())); let lt = x.lt(&y);
-    let xy:$T1 = x.times(&y); let k = $T1::new($k); let eq = xy.eq(&k);
-    let mut show_ast = false; // let mut show_res = false;
-    for arg in env::args() { match arg.as_str() {
-      "-a" => { show_ast = true }
-      "-r" => { /*show_res = true*/ }
-      _ => {} }}
+fn multiplication_bits<T0:BInt, T1:BInt>(k:usize)->(BaseBit, BaseBit) {
+  GBASE.with(|gb| gb.replace(ASTBase::empty()));   // reset on each test
+  let (y, x) = (T0::def("y", 0), T0::def("x", T0::n())); let lt = x.lt(&y);
+  let xy:T1 = x.times(&y); let k = T1::new(k); let eq = xy.eq(&k);
+  (lt,eq) }
+
+/// This is an example solver used by the tests and benchmarks.
+/// It finds all pairs of type T0 that multiply to k as a T1.
+/// dest is the solver that does the work.
+pub fn find_factors<T0:BInt, T1:BInt, S:SubSolver>(dest:&mut S, k:usize, expected:Vec<(u64,u64)>) {
+  let (lt, eq) = multiplication_bits::<T0,T1>(k);
+  let mut show_ast = false; // let mut show_res = false;
+  for arg in env::args() { match arg.as_str() {
+    "-a" => { show_ast = true }
+    "-r" => { /*show_res = true*/ }
+    _ => {} }}
     if show_ast {
       GBASE.with(|gb| { gb.borrow().show_named(lt.clone().n, "lt") });
       GBASE.with(|gb| { gb.borrow().show_named(eq.clone().n, "eq") }); }
@@ -258,63 +262,61 @@ macro_rules! find_factors {
     let src = gb.raw_ast();
     if show_ast { src.show_named(top.n, "ast"); }
     // --- now we have the ast, so solve ----
-    let mut dest = $dest;
     dest.init_stats();
-    let answer:DstNid = solve(&mut dest, &src, top.n);
+    let answer:DstNid = solve(dest, src, top.n);
     // if show_res { dest.show_named(answer.n, "result") }
     type Factors = (u64,u64);
     let to_factors = |r:&Reg|->Factors {
       let t = r.as_usize();
-      let x = t & ((1<<$T0::n())-1);
-      let y = t >> $T0::n();
+      let x = t & ((1<<T0::n())-1);
+      let y = t >> T0::n();
       (y as u64, x as u64) };
-    let actual_regs:HashSet<Reg> = dest.get_all(answer.n, 2*$T0::n() as usize);
+    let actual_regs:HashSet<Reg> = dest.get_all(answer.n, 2*T0::n() as usize);
     let actual:HashSet<Factors> = actual_regs.iter().map(to_factors).collect();
-    let expect:HashSet<Factors> = $expect.iter().map(|&(x,y)| (x as u64, y as u64)).collect();
+    let expect:HashSet<Factors> = expected.iter().map(|&(x,y)| (x, y)).collect();
     assert_eq!(actual, expect);
-    dest.print_stats(); }}
-}
+    dest.print_stats(); }
 
 
 /// nano test case for BDD: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
 #[test] pub fn test_nano_bdd() {
   use {bdd::BddBase, int::{X2,X4}};
-  find_factors!(BddBase::new(), X2, X4, 6, vec![(2,3)]); }
+  find_factors::<X2,X4,BddBase>(&mut BddBase::new(), 6, vec![(2,3)]); }
 
 /// nano test case for ANF: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
 #[test] pub fn test_nano_anf() {
-    use {anf::ANFBase, int::{X2,X4}};
-    find_factors!(ANFBase::new(), X2, X4, 6, vec![(2,3)]); }
+  use {anf::ANFBase, int::{X2,X4}};
+  find_factors::<X2,X4,ANFBase>(&mut ANFBase::new(), 6, vec![(2,3)]); }
 
 /// nano test case for swap solver: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
 #[test] pub fn test_nano_swap() {
   use {swap::SwapSolver, int::{X2,X4}};
-  find_factors!(SwapSolver::new(), X2, X4, 6, vec![(2,3)]); }
+  find_factors::<X2, X4, SwapSolver>(&mut SwapSolver::new(), 6, vec![(2,3)]); }
 
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny_bdd() {
   use {bdd::BddBase, int::{X4,X8}};
-  find_factors!(BddBase::new(), X4, X8, 210, vec![(14,15)]); }
+  find_factors::<X4, X8, BddBase>(&mut BddBase::new(), 210, vec![(14,15)]); }
 
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny_anf() {
   use {anf::ANFBase, int::{X4,X8}};
-  find_factors!(ANFBase::new(), X4, X8, 210, vec![(14,15)]); }
+  find_factors::<X4, X8, ANFBase>(&mut ANFBase::new(), 210, vec![(14,15)]); }
 
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny_swap() {
   use {swap::SwapSolver, int::{X4,X8}};
-  find_factors!(SwapSolver::new(), X4, X8, 210, vec![(14,15)]); }
+  find_factors::<X4, X8, SwapSolver>(&mut SwapSolver::new(), 210, vec![(14,15)]); }
 
-  /// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
+/// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
 #[test] pub fn test_multi_bdd() {
   use {bdd::BddBase, int::{X4,X8}};
-  find_factors!(BddBase::new(), X4, X8, 30, vec![(2,15), (3,10), (5,6)]); }
+  find_factors::<X4, X8, BddBase>(&mut BddBase::new(), 30, vec![(2,15), (3,10), (5,6)]); }
 
 /// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
 #[test] pub fn test_multi_anf() {
   use {anf::ANFBase, int::{X4,X8}};
-  find_factors!(ANFBase::new(), X4, X8, 30, vec![(2,15), (3,10), (5,6)]); }
+  find_factors::<X4, X8, ANFBase>(&mut ANFBase::new(), 30, vec![(2,15), (3,10), (5,6)]); }
 
 /// same as tiny test, but multiply 2 bytes to get 210. There are 8 distinct answers.
 /// this was intended as a unit test but is *way* too slow.
@@ -325,7 +327,7 @@ macro_rules! find_factors {
   use {bdd::BddBase, int::{X8,X16}};
   let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
                       (6, 35), (7, 30), (10,21), (14,15)];
-  find_factors!(BddBase::new(), X8, X16, 210, expected); }
+  find_factors::<X8, X16, BddBase>(&mut BddBase::new(), 210, expected); }
 
 /// same test using the swap solver
 /// `time cargo test --lib --features slowtests test_small_swap`
@@ -336,4 +338,4 @@ macro_rules! find_factors {
   use {swap::SwapSolver, int::{X8,X16}};
   let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
                       (6, 35), (7, 30), (10,21), (14,15)];
-  find_factors!(SwapSolver::new(), X8, X16, 210, expected); }
+  find_factors::<X8, X16, SwapSolver>(&mut SwapSolver::new(), 210, expected); }

@@ -23,7 +23,6 @@ A rust library for working with boolean expressions.
   only really useful when the height of a node wasn't obvious from
   the variable index. `Base::new()` no longer takes an argument.
 
-
 - bdd_base.reset() to avoid respawning threads in benchmark loops.
 
 - Remove obsolete "substitution" concept from `ast.rs`, and replace
@@ -32,6 +31,8 @@ A rust library for working with boolean expressions.
 - Removed top level functions in `nid::`. Use the corresponding `nid::NID::`
   methods instead. (ex: `nid::raw(n)` is now `n.raw()`) In particular,
   `nid::not(n)` should be written `!n`.
+
+- `solve::find_factors` is now a generic function rather than a macro.
 
 ## 0.1.5 (2020-05-20)
 
