@@ -46,6 +46,10 @@ pub trait Base {
   // !! This is a terrible idea, but it's the best I can do right now.
   // TODO: figure out the right way to return an iterator in a trait.
   fn solution_set(&self, _n:NID, _nvars:usize)->HashSet<Reg> { unimplemented!() }
+
+  // !! these are defined here but never overwritten in the trait (used by solver) [fix this]
+  fn init_stats(&mut self) { }
+  fn print_stats(&mut self) { }
 }
 
 

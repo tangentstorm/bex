@@ -14,7 +14,7 @@
 /// (the --nocapture is an optional argument to the test engine. it turns off
 /// capturing of stdout so that you can see debug lines from the solver)
 
-use std::collections::HashSet;
+use std::{collections::HashSet, time::SystemTime};
 use std::path::Path;
 use ::{apl, ops};
 use ast::RawASTBase;
@@ -69,11 +69,12 @@ impl<B:Base> SubSolver for B {
   fn dump(&self, _path:&Path, _note:&str, _step:usize, _old:NID, _vid:VID, _ops:&Ops, _new:NID) {}}
 
 pub trait Progress<S:SubSolver> {
-  fn on_start(&self, _ctx:&DstNid) { } // println!("INITIAL ctx: {:?}", ctx)
+  fn on_start(&mut self, _ctx:&DstNid) { } // println!("INITIAL ctx: {:?}", ctx)
   fn on_step(&mut self, src:&RawASTBase, dest: &mut S, step:usize, millis:u128, oldtop:DstNid, newtop:DstNid);
-  fn on_done(&self, src:&RawASTBase, dest: &mut S, newtop:DstNid); }
+  fn on_done(&mut self, src:&RawASTBase, dest: &mut S, newtop:DstNid); }
 
 pub struct ProgressReport<'a> {
+  pub start: std::time::SystemTime,
   pub millis: u128,
   pub save_dot: bool,
   pub save_dest: bool,
@@ -85,6 +86,7 @@ pub struct ProgressReport<'a> {
 
 
 impl<'a, S:SubSolver> Progress<S> for ProgressReport<'a> {
+  fn on_start(&mut self, _ctx:&DstNid) { self.start = std::time::SystemTime::now(); }
   fn on_step(&mut self, _src:&RawASTBase, _dest: &mut S, _step:usize, _millis:u128, _oldtop:DstNid, _newtop:DstNid) { }
     /*
     self.millis += millis;
@@ -117,8 +119,8 @@ impl<'a, S:SubSolver> Progress<S> for ProgressReport<'a> {
       dest.dump(path, note, step, oldtop.n, newtop.n.vid(), ops, newtop.n); }}
   */
 
-  fn on_done(&self, _src:&RawASTBase, _dest: &mut S, _newtop:DstNid) {
-    println!("total time: {} ms", self.millis) }}
+  fn on_done(&mut self, _src:&RawASTBase, _dest: &mut S, _newtop:DstNid) {
+    println!("total time: {} ms", self.start.elapsed().unwrap().as_millis() ) }}
 
 
 fn default_bitmask(_src:&RawASTBase, v:VID) -> u64 { v.bitmask() }
@@ -217,8 +219,8 @@ pub fn solve<S:SubSolver>(dst:&mut S, src0:&RawASTBase, sn:NID)->DstNid {
     let mut ctx = DstNid{n: dst.init(v)};
 
     // This just lets us record timing info. TODO: pr probably should be an input parameter.
-    let mut pr = ProgressReport{ save_dot: false, save_dest: false, prefix:"x", millis: 0 };
-    <dyn Progress<S>>::on_start(&pr, &ctx);
+    let mut pr = ProgressReport{ start: SystemTime::now(), save_dot: false, save_dest: false, prefix:"x", millis: 0 };
+    <dyn Progress<S>>::on_start(&mut pr, &ctx);
 
     // main loop:
     while !(ctx.n.is_var() || ctx.n.is_const()) {
@@ -238,9 +240,7 @@ pub fn solve<S:SubSolver>(dst:&mut S, src0:&RawASTBase, sn:NID)->DstNid {
 macro_rules! find_factors {
   ($dest:expr, $T0:ident, $T1:ident, $k:expr, $expect:expr) => {{
     use std::env; use std::collections::HashSet;
-    use $crate::{GraphViz, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}, bdd};
-    bdd::COUNT_XMEMO_TEST.with(|c| c.replace(0) );
-    bdd::COUNT_XMEMO_FAIL.with(|c| c.replace(0) ); // TODO: other bases
+    use $crate::{GraphViz, solve::*, ast::ASTBase, int::{GBASE,BInt,BaseBit}};
     GBASE.with(|gb| gb.replace(ASTBase::empty()));   // reset on each test
     let (y, x) = ($T0::def("y", 0), $T0::def("x", $T0::n())); let lt = x.lt(&y);
     let xy:$T1 = x.times(&y); let k = $T1::new($k); let eq = xy.eq(&k);
@@ -259,6 +259,7 @@ macro_rules! find_factors {
     if show_ast { src.show_named(top.n, "ast"); }
     // --- now we have the ast, so solve ----
     let mut dest = $dest;
+    dest.init_stats();
     let answer:DstNid = solve(&mut dest, &src, top.n);
     // if show_res { dest.show_named(answer.n, "result") }
     type Factors = (u64,u64);
@@ -271,9 +272,7 @@ macro_rules! find_factors {
     let actual:HashSet<Factors> = actual_regs.iter().map(to_factors).collect();
     let expect:HashSet<Factors> = $expect.iter().map(|&(x,y)| (x as u64, y as u64)).collect();
     assert_eq!(actual, expect);
-    let tests = bdd::COUNT_XMEMO_TEST.with(|c| *c.borrow() );
-    let fails = bdd::COUNT_XMEMO_FAIL.with(|c| *c.borrow() );
-    println!("XMEMO: tests: {} fails: {} hits: {}", tests, fails, tests-fails); }}
+    dest.print_stats(); }}
 }
 
 
@@ -326,7 +325,7 @@ macro_rules! find_factors {
   use {bdd::BddBase, int::{X8,X16}};
   let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
                       (6, 35), (7, 30), (10,21), (14,15)];
-  find_factors!(BddBase, X8, X16, 210, expected); }
+  find_factors!(BddBase::new(), X8, X16, 210, expected); }
 
 /// same test using the swap solver
 /// `time cargo test --lib --features slowtests test_small_swap`
@@ -337,4 +336,4 @@ macro_rules! find_factors {
   use {swap::SwapSolver, int::{X8,X16}};
   let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
                       (6, 35), (7, 30), (10,21), (14,15)];
-  find_factors!(SwapSolver, X8, X16, 210, expected); }
+  find_factors!(SwapSolver::new(), X8, X16, 210, expected); }

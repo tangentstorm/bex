@@ -1124,6 +1124,9 @@ impl SwapSolver {
     let src = XVHLScaffold::new();
     SwapSolver{ dst, dx:XID_O, rv:NOV, src, sx: XID_O }}
 
+  pub fn init_stats(&mut self) { }
+  pub fn print_stats(&mut self) { println!("[swap solver does not print stats yet]"); }
+
   /// Arrange the two scaffolds so that their variable orders match.
   ///  1. vids shared between src and dst (set n) are above rv
   ///  2. vids that are only in the dst (set d) are below rv
