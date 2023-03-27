@@ -1280,7 +1280,7 @@ impl SubSolver for SwapSolver {
 
     // copy each row over, from bottom to top...
     // vids[i] in the scaffold becomes var(i) in the bdd.
-    let mut bdd = crate::bdd::BDDBase::new();
+    let mut bdd = crate::bdd::BddBase::new();
     for (i,rv) in self.dst.vids.iter().enumerate() {
       let bv = NID::from_vid(VID::var(i as u32));
       for (x, ixrc) in self.dst.rows[rv].hm.iter() {

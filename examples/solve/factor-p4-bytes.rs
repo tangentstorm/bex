@@ -9,13 +9,13 @@ fn factors()->Vec<(u64,u64)> {
        (6, 35), (7, 30), (10,21), (14,15)]}
 
 extern crate bex;
-use bex::{find_factors,{reg::Reg},bdd::BDDBase, int::{X8,X16}};
+use bex::{find_factors,{reg::Reg},bdd::BddBase, int::{X8,X16}};
 
 include!(concat!(env!("OUT_DIR"), "/bex-build-info.rs"));
 
 pub fn main() {
   println!("bex {BEX_VERSION} opt-level: {BEX_OPT_LEVEL}");
   let expected = factors();
-  find_factors!(BDDBase::new_with_threads(0), X8, X16, K, expected);
+  find_factors!(BddBase::new_with_threads(0), X8, X16, K, expected);
   //  find_factors!(SwapSolver, X8, X16, K, expected);
  }

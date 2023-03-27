@@ -1,18 +1,18 @@
-///! Solution iterator for BDDBase
+///! Solution iterator for BddBase
 
 use std::collections::HashSet;
 use {vhl::{HiLo, HiLoBase, Walkable}};
-use crate::{vid::VID, nid::{NID,I,O}, bdd::BDDBase, reg::Reg};
+use crate::{vid::VID, nid::{NID,I,O}, bdd::BddBase, reg::Reg};
 use crate::cur::{Cursor, CursorPlan};
 
 
 /// helpers for solution cursor
-impl HiLoBase for BDDBase {
+impl HiLoBase for BddBase {
   fn get_hilo(&self, n:NID)->Option<HiLo> {
     let (hi, lo) = self.swarm.tup(n);
     Some(HiLo{ hi, lo }) }}
 
-impl Walkable for BDDBase {
+impl Walkable for BddBase {
   /// internal helper: one step in the walk.
   fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>, topdown:bool)
   where F: FnMut(NID,VID,NID,NID) {
@@ -24,11 +24,11 @@ impl Walkable for BDDBase {
       if !topdown { f(n, n.vid(), hi, lo) }}}}
 
 pub struct BDDSolIterator<'a> {
-  bdd: &'a BDDBase,
+  bdd: &'a BddBase,
   next: Option<Cursor>}
 
 impl<'a> BDDSolIterator<'a> {
-  pub fn from_bdd(bdd: &'a BDDBase, n:NID, nvars:usize)->BDDSolIterator<'a> {
+  pub fn from_bdd(bdd: &'a BddBase, n:NID, nvars:usize)->BDDSolIterator<'a> {
     // init scope with all variables assigned to 0
     let next = bdd.first_solution(n, nvars);
     BDDSolIterator{ bdd, next }}}
@@ -43,11 +43,11 @@ impl<'a> Iterator for BDDSolIterator<'a> {
       self.next = self.bdd.next_solution(cur);
       Some(result)}
     else { None }}}
-    impl CursorPlan for BDDBase {}
+    impl CursorPlan for BddBase {}
 
 
 /// Solution iterators.
-impl BDDBase {
+impl BddBase {
   pub fn solutions(&mut self, n:NID)->BDDSolIterator {
     let nvars = if n.is_const() { 1 } else if n.vid().is_var() { n.vid().var_ix() }
     else if n.vid().is_vir() {

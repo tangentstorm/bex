@@ -125,7 +125,7 @@ fn default_bitmask(_src:&RawASTBase, v:VID) -> u64 { v.bitmask() }
 
 /// This function renumbers the NIDs so that nodes with higher IDs "cost" more.
 /// Sorting your AST this way dramatically reduces the cost of converting to
-/// another form. (For example, the test_tiny benchmark drops from 5282 steps to 111 for BDDBase)
+/// another form. (For example, the test_tiny benchmark drops from 5282 steps to 111 for BddBase)
 pub fn sort_by_cost(src:&RawASTBase, top:SrcNid)->(RawASTBase,SrcNid) {
   let (mut src0,kept0) = src.repack(vec![top.n]);
   src0.tag(kept0[0], "-top-".to_string());
@@ -279,8 +279,8 @@ macro_rules! find_factors {
 
 /// nano test case for BDD: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
 #[test] pub fn test_nano_bdd() {
-  use {bdd::BDDBase, int::{X2,X4}};
-  find_factors!(BDDBase::new(), X2, X4, 6, vec![(2,3)]); }
+  use {bdd::BddBase, int::{X2,X4}};
+  find_factors!(BddBase::new(), X2, X4, 6, vec![(2,3)]); }
 
 /// nano test case for ANF: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
 #[test] pub fn test_nano_anf() {
@@ -294,8 +294,8 @@ macro_rules! find_factors {
 
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny_bdd() {
-  use {bdd::BDDBase, int::{X4,X8}};
-  find_factors!(BDDBase::new(), X4, X8, 210, vec![(14,15)]); }
+  use {bdd::BddBase, int::{X4,X8}};
+  find_factors!(BddBase::new(), X4, X8, 210, vec![(14,15)]); }
 
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny_anf() {
@@ -309,8 +309,8 @@ macro_rules! find_factors {
 
   /// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
 #[test] pub fn test_multi_bdd() {
-  use {bdd::BDDBase, int::{X4,X8}};
-  find_factors!(BDDBase::new(), X4, X8, 30, vec![(2,15), (3,10), (5,6)]); }
+  use {bdd::BddBase, int::{X4,X8}};
+  find_factors!(BddBase::new(), X4, X8, 30, vec![(2,15), (3,10), (5,6)]); }
 
 /// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
 #[test] pub fn test_multi_anf() {
@@ -323,10 +323,10 @@ macro_rules! find_factors {
 /// (that's with debug information and no optimizations enabled in rustc)
 #[cfg(feature="slowtests")]
 #[test] pub fn test_small_bdd() {
-  use {bdd::BDDBase, int::{X8,X16}};
+  use {bdd::BddBase, int::{X8,X16}};
   let expected = vec![(1,210), (2,105), ( 3,70), ( 5,42),
                       (6, 35), (7, 30), (10,21), (14,15)];
-  find_factors!(BDDBase, X8, X16, 210, expected); }
+  find_factors!(BddBase, X8, X16, 210, expected); }
 
 /// same test using the swap solver
 /// `time cargo test --lib --features slowtests test_small_swap`

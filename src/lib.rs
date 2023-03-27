@@ -23,7 +23,7 @@ pub mod cur;
 pub mod simp;
 pub mod ast;
 pub mod bdd;
-pub use bdd::BDDBase;
+pub use bdd::BddBase;
 pub mod solve;
 pub mod apl;
 pub mod int;
