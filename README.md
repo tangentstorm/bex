@@ -23,40 +23,31 @@ boolean expressions and solving them with bex.
 It covers the large factoring problems in [examples/solve/bdd-solve.rs](https://github.com/tangentstorm/bex/blob/main/examples/solve/bdd-solve.rs)
 and the smaller tests in [src/solve.rs](https://github.com/tangentstorm/bex/blob/main/src/solve.rs)
 
-## Current work (upcoming for version 0.2.0)
 
-- actually use semantic versioning for releases :)
-- better metrics collection for benchmarking
-- generalize the BDD swarm implementation to work for ANF
-- various solver optimizations
-- better graphviz rendering
-- other general improvements
+## Changes in 0.1.6 (2023-03-27)
 
-For more detail, see [plans.org](https://github.com/tangentstorm/bex/blob/main/plans.org).
+Aside from the addition of the `ops` module, this is primarily
+a benchmark release to make it easier to compare the 0.1.5
+algorithms with 0.2.0.
+
+- Rename `BDDBase` to `BddBase`, and add `reset()` method.
+
+- Add `BddBase::reset(&mut self)` to clear bdd state.
+
+- Cleaned up all compiler warnings.
+
+- Removed all debug output.
+
+- Fixed test failures that appeared with different threading configurations.
+
+- Remove `nvars` from all `Base` implementations. This member was
+  only really useful when the height of a node wasn't obvious from
+  the variable index. Because of this,  `Base::new()` no longer takes
+  a parameter.
+
+- Remove obsolete "substitution" concept from `ast.rs`, and replace
+  `ast::Op` with the more flexible `ops::Ops`.
 
 
-## Changes in 0.1.5 (latest release)
-
-- Added `SwapSolver`, a new substitution solver that (like any `SubSolver`)
-  works by iteratively replacing virtual variables (representing AST nodes)
-  with their definitions inside a BDD. What's new here is that `SwapSolver`
-  continuously re-orders the variables (rows) in the BDD at each step so
-  that the substitution is as efficient as possible.
-
-- Added `XVHLScaffold`, a data structure for decision-diagram-like graphs,
-  that allows accessing each row individually. This structure should be
-  considered extremely experimental, and may change in the future (as it
-  does not currently use `NID` for node references).
-
-- Added `swarm` module that contains a small framework for distributing work
-  across threads. It is used by the `SwapSolver` to swap BDD rows in parallel,
-  and follows the same design as `BddSwarm`, which will likely be ported over
-  to this framework in the future.
-
-- Added `ops` module for representing boolean expressions in something like
-  reverse Polish notation. The `Ops::RPN` constructor will likely replace
-  `ast::Op` as the representation of nodes in `ast::ASTBase` in a future
-  version, since `Ops::RPN` can represent arbitrary boolean functions
-  with any number of inputs.
 
 For full changelog, see [CHANGELOG.md](https://github.com/tangentstorm/bex/blob/main/CHANGELOG.md).
