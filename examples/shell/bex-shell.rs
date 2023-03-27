@@ -8,7 +8,7 @@ use bex::nid::NID;
 use bex::ast::{ASTBase};
 use bex::solve;
 use bex::anf::ANFBase;
-use bex::bdd::BDDBase;
+use bex::bdd::BddBase;
 
 
 // forth-like REPL for the BDD  (helper routines)
@@ -42,7 +42,7 @@ fn pop2<T>(data: &mut Vec<T>)->(T,T){
 fn repl(base:&mut ASTBase) {
   let mut scope = HashMap::new();
   let mut data: Vec<NID> = Vec::new();
-  let mut bdds = BDDBase::new();
+  let mut bdds = BddBase::new();
   let mut anfs = ANFBase::new();
 
   'main: loop {

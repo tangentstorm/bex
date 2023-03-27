@@ -21,7 +21,7 @@ use cur::{Cursor, CursorPlan};
 use reg::Reg;
 use vhl::{VHL, HiLo, HiLoBase, Walkable};
 use hashbrown::HashMap;
-use bdd::{BDDBase}; // for solutions
+use bdd::{BddBase}; // for solutions
 #[cfg(test)] use vid::{topmost, botmost};
 
 /// (v AND hi) XOR lo
@@ -301,13 +301,13 @@ impl<'a> Iterator for ANFTermIterator<'a> {
 
 pub struct ANFSolIterator<'a> {
   _anf: &'a ANFBase,
-  bdd: BDDBase,
+  bdd: BddBase,
   //acur: Option<Cursor>,
   bcur: Option<Cursor>}
 
 impl<'a>  ANFSolIterator<'a> {
   pub fn from_anf_base(anf: &'a ANFBase, nid:NID, nvars:usize)->Self {
-    let mut bdd = BDDBase::new();
+    let mut bdd = BddBase::new();
     // TODO: convert ANF->BDD incrementally, to speed up time to first solution.
     // This will involve copying bcur.scope but changing the actual nids on the stack.
     //let acur = anf.first_term(nvars, nid);
@@ -507,9 +507,9 @@ test_base_when!(ANFBase);
   assert_eq!(t, vec![0b010,0b011,0b101,0b110]); }
 
 #[test] fn test_anf_to_base() {
-  use bdd::BDDBase;
+  use bdd::BddBase;
   let mut anf = ANFBase::new();
-  let mut bdd = BDDBase::new();
+  let mut bdd = BddBase::new();
   let (a,b,c) = (NID::var(0), NID::var(1), NID::var(2));
   let initial = expr![anf, (a & (c^I))];
   let expect  = expr![bdd, (a & (c^I))];

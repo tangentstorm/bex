@@ -4,6 +4,8 @@ A rust library for working with boolean expressions.
 
 ## 0.1.6 (in progress)
 
+- Rename `BDDBase` to `BddBase`
+
 - Cleaned up all compiler warnings
 
 - Fixed test failures that appeared with different threading configurations.

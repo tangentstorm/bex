@@ -135,17 +135,17 @@ impl BddState {
 
 /// Finally, we put everything together. This is the top-level type for this crate.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BDDBase {
+pub struct BddBase {
   /// allows us to give user-friendly names to specific nodes in the base.
   pub tags: HashMap<String, NID>,
   swarm: BddSwarm}
 
-impl BDDBase {
+impl BddBase {
 
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)->(NID,NID) { self.swarm.tup(n) }
 
-  pub fn load(path:&str)->::std::io::Result<BDDBase> {
+  pub fn load(path:&str)->::std::io::Result<BddBase> {
     let s = io::get(path)?;
     Ok(bincode::deserialize(&s).unwrap()) }
 
@@ -201,12 +201,12 @@ impl BDDBase {
     self.tt_aux(&mut res, n0, 0, num_vars);
     res }
 
-} // end impl BDDBase
+} // end impl BddBase
 
 
-impl Base for BDDBase {
+impl Base for BddBase {
 
-  fn new()->BDDBase { BDDBase{swarm: BddSwarm::new(), tags:HashMap::new()}}
+  fn new()->BddBase { BddBase{swarm: BddSwarm::new(), tags:HashMap::new()}}
 
   /// nid of y when x is high
   fn when_hi(&mut self, x:VID, y:NID)->NID {
@@ -231,7 +231,7 @@ impl Base for BDDBase {
         self.ite(NID::from_vid(yv), th, el) }}}
 
   // TODO: these should be moved into seperate struct
-  fn def(&mut self, _s:String, _i:VID)->NID { todo!("BDDBase::def()") }
+  fn def(&mut self, _s:String, _i:VID)->NID { todo!("BddBase::def()") }
   fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
   fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 

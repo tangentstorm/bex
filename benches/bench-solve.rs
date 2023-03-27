@@ -4,7 +4,7 @@ use bencher::Bencher;
 
 extern crate bex;
 use bex::{bdd, find_factors, int::GBASE};
-type BDD = bdd::BDDBase;
+type BDD = bdd::BddBase;
 
 pub fn tiny(b: &mut Bencher) {
   use bex::int::{X4,X8};
