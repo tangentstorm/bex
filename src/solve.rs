@@ -70,7 +70,11 @@ impl<B:Base> SubSolver for B {
 
   fn get_all(&self, ctx:NID, nvars:usize)->HashSet<Reg> { self.solution_set(ctx, nvars) }
 
-  fn dump(&self, _path:&Path, _note:&str, _step:usize, _old:NID, _vid:VID, _ops:&Ops, _new:NID) {}}
+  fn dump(&self, _path:&Path, _note:&str, _step:usize, _old:NID, _vid:VID, _ops:&Ops, _new:NID) {}
+
+  fn init_stats(&mut self) { Base::init_stats(self) }
+  fn print_stats(&mut self) { Base::print_stats(self) }
+}
 
 pub trait Progress<S:SubSolver> {
   fn on_start(&mut self, _ctx:&DstNid) { } // println!("INITIAL ctx: {:?}", ctx)

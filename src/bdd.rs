@@ -193,19 +193,11 @@ impl BddBase {
     self.tt_aux(&mut res, n0, 0, num_vars);
     res }
 
-  pub fn init_stats(&mut self) {
-    COUNT_XMEMO_TEST.with(|c| c.replace(0) );
-    COUNT_XMEMO_FAIL.with(|c| c.replace(0) ); }
-
   pub fn get_stats(&mut self)->(u64, u64) {
     self.swarm.get_stats();
     let tests = COUNT_XMEMO_TEST.with(|c| *c.borrow() );
     let fails = COUNT_XMEMO_FAIL.with(|c| *c.borrow() );
     (tests, fails)}
-
-  pub fn print_stats(&mut self) {
-    let (tests, fails) = self. get_stats();
-    println!("XMEMO: {} cache hits out of {tests} tests. ({fails} misses).", tests-fails);  }
 
 } // end impl BDDBase
 
@@ -278,9 +270,17 @@ impl Base for BddBase {
     self.walk(n, &mut |n,_,_,e| we!(n, e));
     w!("}}"); }
 
+  fn init_stats(&mut self) {
+    COUNT_XMEMO_TEST.with(|c| c.replace(0) );
+    COUNT_XMEMO_FAIL.with(|c| c.replace(0) ); }
+
+  fn print_stats(&mut self) {
+    let (tests, fails) = self. get_stats();
+    println!("XMEMO: {} cache hits out of {tests} tests. ({fails} misses).", tests-fails);  }
+
   fn solution_set(&self, n: NID, nvars: usize)->HashSet<Reg> {
     self.solutions_pad(n, nvars).collect() }}
-
 
+
 
 include!("test-bdd.rs");
