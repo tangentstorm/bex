@@ -2,13 +2,19 @@
 
 A rust library for working with boolean expressions.
 
-## 0.1.6 (in progress)
+## 0.1.6 (2023-03-27)
 
-- Rename `BDDBase` to `BddBase`
+Aside from the addition of the `ops` module, this is primarily
+a benchmark release to make it easier to compare the 0.1.5
+algorithms with 0.2.0.
+
+- Rename `BDDBase` to `BddBase`, and add `reset()` method.
 
 - Add `BddBase::reset(&mut self)` to clear bdd state.
 
-- Cleaned up all compiler warnings
+- Cleaned up all compiler warnings.
+
+- Removed all debug output.
 
 - Fixed test failures that appeared with different threading configurations.
 
