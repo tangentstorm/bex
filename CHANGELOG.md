@@ -6,13 +6,16 @@ A rust library for working with boolean expressions.
 
 - Rename `BDDBase` to `BddBase`
 
+- Add `BddBase::reset(&mut self)` to clear bdd state.
+
 - Cleaned up all compiler warnings
 
 - Fixed test failures that appeared with different threading configurations.
 
 - Remove `nvars` from all `Base` implementations. This member was
   only really useful when the height of a node wasn't obvious from
-  the variable index.
+  the variable index. Because of this,  `Base::new()` no longer takes
+  a parameter.
 
 - Remove obsolete "substitution" concept from `ast.rs`, and replace
   `ast::Op` with the more flexible `ops::Ops`.

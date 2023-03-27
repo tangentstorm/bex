@@ -142,6 +142,8 @@ pub struct BddBase {
 
 impl BddBase {
 
+  pub fn reset(&mut self) { self.swarm = BddSwarm::new(); self.tags = HashMap::new(); }
+
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)->(NID,NID) { self.swarm.tup(n) }
 
