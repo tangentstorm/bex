@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::{fmt, hash::Hash};
 use base::GraphViz;
 use vid::{VID, NOV, TOP};
-use {solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops, std::path::Path, base::Base};
+use {solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops, base::Base};
 use swarm::{Swarm,Worker,QID,SwarmCmd,WID};
 
 /// XID: An index-based unique identifier for nodes.
@@ -1311,9 +1311,7 @@ impl SubSolver for SwapSolver {
     res}
 
   fn status(&self) -> String { "".to_string() } // TODO
-  fn dump(&self, _path: &Path, _note: &str, _step: usize, _old: NID, _vid: VID, _ops: &Ops, _new: NID) {
-    self.dst.save_dot(_new, format!("xvhl-{:04}.dot", _step).as_str());
-  }
+  fn dump(&self, step: usize, new: NID) { self.dst.save_dot(new, format!("xvhl-{:04}.dot", step).as_str()); }
 }
 
 include!("test-swap.rs");

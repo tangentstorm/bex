@@ -16,7 +16,6 @@ use std::env;
 /// capturing of stdout so that you can see debug lines from the solver)
 
 use std::{collections::HashSet, time::SystemTime};
-use std::path::Path;
 use ::{apl, ops};
 use base::Base;
 use nid::NID;
@@ -46,10 +45,7 @@ pub trait SubSolver {
   fn status(&self)->String { "".to_string() }
   /// Dump the current internal state for inspection by some external process.
   /// Generally this means writing to a graphviz (*.dot) file.
-  /// The step number, status note, and a copy of the arguments to the
-  /// previous subst(), and the result are provided, in case the dump format
-  /// can make use of them in some way.
-  fn dump(&self, _path:&Path, _note:&str, _step:usize, _old:NID, _vid:VID, _ops:&Ops, _new:NID);
+  fn dump(&self, _step: usize, _nid: NID) { }
   // !! these are defined here but never overwritten in the trait (used by solver) [fix this]
   fn init_stats(&mut self) { }
   fn print_stats(&mut self) { }}
@@ -69,8 +65,6 @@ impl<B:Base> SubSolver for B {
     self.sub(v, def, ctx)}
 
   fn get_all(&self, ctx:NID, nvars:usize)->HashSet<Reg> { self.solution_set(ctx, nvars) }
-
-  fn dump(&self, _path:&Path, _note:&str, _step:usize, _old:NID, _vid:VID, _ops:&Ops, _new:NID) {}
 
   fn init_stats(&mut self) { Base::init_stats(self) }
   fn print_stats(&mut self) { Base::print_stats(self) }
