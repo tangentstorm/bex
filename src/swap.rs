@@ -650,7 +650,7 @@ impl XVHLScaffold {
     let new_uix = old_uix + 1;
     self.vids.swap(old_uix, new_uix);
 
-    println!("\x1b[36mswapped vu:{} -> vd:{} => {:?}\x1b[0m", vu, vd, self.vids);
+    //println!("\x1b[36mswapped vu:{} -> vd:{} => {:?}\x1b[0m", vu, vd, self.vids);
     //self.validate(format!("after swapping vd:{:?} with vu:{:?}", vd, vu).as_str());
 
     let mut work:Vec<(WID, Q)> = vec![];
@@ -1125,9 +1125,6 @@ impl SwapSolver {
     let src = XVHLScaffold::new();
     SwapSolver{ dst, dx:XID_O, rv:NOV, src, sx: XID_O }}
 
-  pub fn init_stats(&mut self) { }
-  pub fn print_stats(&mut self) { println!("[swap solver does not print stats yet]"); }
-
   /// Arrange the two scaffolds so that their variable orders match.
   ///  1. vids shared between src and dst (set n) are above rv
   ///  2. vids that are only in the dst (set d) are below rv
@@ -1153,7 +1150,7 @@ impl SwapSolver {
     let vix = self.dst.vix(self.rv).unwrap();
     let mut sg = vec![s.clone()];
     for ni in (vix+1)..self.dst.vids.len() { sg.push(set(vec![self.dst.vids[ni]])) }
-    println!("regrouping src. vids: {:?} groups: {:?}", self.src.vids, sg);
+    // println!("regrouping src. vids: {:?} groups: {:?}", self.src.vids, sg);
     self.src.regroup(sg); // final order: [s,n]
 
     // now whatever order the s group wound up in, we can insert
@@ -1253,8 +1250,7 @@ impl SubSolver for SwapSolver {
 
   fn subst(&mut self, ctx: NID, v: VID, ops: &Ops)->NID {
     let Ops::RPN(mut rpn) = ops.norm();
-    println!("@:sub {:>4} -> {:>24} -> {:>20}",
-      format!("{:?}",v), format!("{:?}", ops), format!("{:?}", rpn));
+    // println!("@:sub {:>4} -> {:>24} -> {:>20}", format!("{:?}",v), format!("{:?}", ops), format!("{:?}", rpn));
 
     let f = rpn.pop().unwrap(); // guaranteed by norm() to be a fun-nid
 
@@ -1313,6 +1309,9 @@ impl SubSolver for SwapSolver {
 
   fn status(&self) -> String { "".to_string() } // TODO
   fn dump(&self, step: usize, new: NID) { self.dst.save_dot(new, format!("xvhl-{:04}.dot", step).as_str()); }
+  fn init_stats(&mut self) { }
+  fn print_stats(&mut self) { println!("[swap solver does not print stats yet]"); }
+
 }
 
 include!("test-swap.rs");
