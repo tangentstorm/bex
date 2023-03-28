@@ -1,6 +1,6 @@
 //! Registers -- arbitrarily large arrays of bits.
 use std::fmt;
-use vid::VID;
+use crate::vid::VID;
 
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]

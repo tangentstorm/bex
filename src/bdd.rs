@@ -1,12 +1,12 @@
 //! A module for efficient implementation of binary decision diagrams.
 extern crate num_cpus;
 use std::collections::{HashMap,HashSet};
-use base::{Base};
-use reg::Reg;
-use vhl::{Walkable};
-use nid::{NID,O,I};
-use vid::{VID,VidOrdering,topmost_of3};
-use wip;
+use crate::base::{Base};
+use crate::reg::Reg;
+use crate::vhl::{Walkable};
+use crate::nid::{NID,O,I};
+use crate::vid::{VID,VidOrdering,topmost_of3};
+use crate::wip;
 
 mod bdd_sols;
 mod bdd_swarm; use self::bdd_swarm::*;

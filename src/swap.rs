@@ -6,10 +6,10 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::{fmt, hash::Hash};
-use base::GraphViz;
-use vid::{VID, NOV, TOP};
-use {solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops, base::Base};
-use swarm::{Swarm,Worker,QID,SwarmCmd,WID};
+use crate::base::GraphViz;
+use crate::vid::{VID, NOV, TOP};
+use crate::{solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops, base::Base};
+use crate::swarm::{Swarm,Worker,QID,SwarmCmd,WID};
 
 /// XID: An index-based unique identifier for nodes.
 ///

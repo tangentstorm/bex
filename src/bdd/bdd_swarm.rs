@@ -1,10 +1,10 @@
 use std::{fmt, sync::mpsc::Sender};
 use std::sync::Arc;
-use {wip, wip::{Dep, ResStep, Answer}};
-use vhl::{HiLoPart};
-use nid::NID;
-use bdd::{ITE, NormIteKey, Norm, BddState};
-use {swarm, swarm::{WID, QID, Swarm, RMsg}};
+use crate::{wip, wip::{Dep, ResStep, Answer}};
+use crate::vhl::{HiLoPart};
+use crate::nid::NID;
+use crate::bdd::{ITE, NormIteKey, Norm, BddState};
+use crate::{swarm, swarm::{WID, QID, Swarm, RMsg}};
 use concurrent_queue::{ConcurrentQueue,PopError};
 
 use crate::wip::{COUNT_CACHE_HITS, COUNT_CACHE_TESTS};

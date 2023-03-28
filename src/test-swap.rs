@@ -210,7 +210,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   assert_eq!(xsd.fmt(top), "utu!w? v? ")}
 
 #[test] fn test_fun_tbl() {
-  use ops; let o = XID_O; let i = XID_I;
+  use crate::ops; let o = XID_O; let i = XID_I;
   assert_eq!(fun_tbl(ops::AND), vec![o,o,o,i])}
 
 

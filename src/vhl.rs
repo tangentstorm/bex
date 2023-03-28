@@ -2,8 +2,8 @@
 use std::collections::BinaryHeap;
 use std::collections::HashSet;
 use dashmap::DashMap;
-use nid::NID;
-use vid::VID;
+use crate::nid::NID;
+use crate::vid::VID;
 
 type VhlHashMap<K,V> = DashMap<K,V,fxhash::FxBuildHasher>;
 

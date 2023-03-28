@@ -1,6 +1,6 @@
 //! Node IDs (shared by various Base implementations)
 use std::fmt;
-use vid;
+use crate::vid;
 
 // -- core data types ---
 

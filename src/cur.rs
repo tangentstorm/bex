@@ -1,9 +1,9 @@
 //! Cursors (register + stack and scope) for navigating vhl-graphs (Bdd, Anf, etc)
 
-use reg::Reg;
-use {nid,nid::NID};
-use vid::VID;
-use vhl::{HiLoPart, HiLoBase};
+use crate::reg::Reg;
+use crate::{nid,nid::NID};
+use crate::vid::VID;
+use crate::vhl::{HiLoPart, HiLoBase};
 
 pub trait CursorPlan : HiLoBase {
   /// is the given (leaf) node a solution, given the current inversion state?

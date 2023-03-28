@@ -1,5 +1,5 @@
 //! Tools for constructing boolean expressions using NIDs as logical operations.
-use {nid::NID, vid::VID};
+use crate::{nid::NID, vid::VID};
 use std::slice::Iter;
 
 ///! A sequence of operations.

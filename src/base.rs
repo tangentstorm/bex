@@ -4,9 +4,9 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::Write;
 use std::process::Command;      // for creating and viewing digarams
-use {simp, nid::{NID}};
-use vid::VID;
-use reg::Reg;
+use crate::{simp, nid::{NID}};
+use crate::vid::VID;
+use crate::reg::Reg;
 
 /// Functions common to all expression databases.
 pub trait Base {
@@ -162,14 +162,14 @@ macro_rules! base_test {
     macro_rules! $name {
       ($BaseType:ident) => {
         #[test] fn $name() {
-          use base::Base;
+          use crate::base::Base;
           let mut $basename = <$BaseType as Base>::new();
           $tt }}}}}
 
 
 // Test operations on constants.
 base_test!(test_base_consts, b, {
-  use nid;
+  use crate::nid;
   let (o, i) = (nid::O, nid::I);
 
   assert!(o<i, "expect o<i");
@@ -185,7 +185,7 @@ base_test!(test_base_consts, b, {
 
 // Test when_lo and when_hi for the simple cases.
 base_test!(test_base_when, b, {
-  use nid::{O,I,NID};
+  use crate::nid::{O,I,NID};
   let (o, i, n0, n1) = (O, I, NID::var(0), NID::var(1));
   let (x0, x1) = (n0.vid(), n1.vid());
 

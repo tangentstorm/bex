@@ -7,10 +7,10 @@ use std::marker::PhantomData;
 use std::{collections::HashMap};
 use std::hash::Hash;
 use std::sync::Mutex;
-use nid::NID;
-use vid::VID;
-use vhl::{HiLo, HiLoPart, VhlParts, HiLoCache};
-use bdd::{Norm, NormIteKey};
+use crate::nid::NID;
+use crate::vid::VID;
+use crate::vhl::{HiLo, HiLoPart, VhlParts, HiLoCache};
+use crate::bdd::{Norm, NormIteKey};
 use dashmap::DashMap;
 
 // cache lookup counters:

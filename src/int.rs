@@ -3,10 +3,10 @@ extern crate std;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::cmp::min;
-use ast::ASTBase;
-use base::{Base};
-use {nid, nid::NID};
-use {vid::VID};
+use crate::ast::ASTBase;
+use crate::base::{Base};
+use crate::{nid, nid::NID};
+use crate::{vid::VID};
 
 
 // TBit : for use outside the Base, by types such as X32, below.
@@ -278,7 +278,7 @@ xint_type!(64, X64); pub fn x64(u:usize)->X64 { X64::new(u) }
   assert_eq!(x32(10).lt(&x32(10)), gbase_o()); }
 
 #[test] fn test_eq() {
-  use int::BInt;
+  use crate::int::BInt;
   assert_eq!(BInt::eq(&x32(10), &x32(10)), gbase_i());
   assert_eq!(BInt::eq(&x32(11), &x32(10)), gbase_o());
   assert_eq!(BInt::eq(&x32(10), &x32(11)), gbase_o()); }

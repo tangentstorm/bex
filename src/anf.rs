@@ -13,15 +13,15 @@
 //! ```
 //! In addition, identical suffixes after factoring always refer to the same node.
 use std::collections::{HashMap, HashSet};
-use base::{Base};
-use simp;
-use {nid, nid::{NID,I,O}};
-use vid::{VID,VidOrdering};
-use cur::{Cursor, CursorPlan};
-use reg::Reg;
-use vhl::{Vhl, HiLo, HiLoBase, Walkable};
-use bdd::{BddBase}; // for solutions
-#[cfg(test)] use vid::{topmost, botmost};
+use crate::base::{Base};
+use crate::simp;
+use crate::{nid, nid::{NID,I,O}};
+use crate::vid::{VID,VidOrdering};
+use crate::cur::{Cursor, CursorPlan};
+use crate::reg::Reg;
+use crate::vhl::{Vhl, HiLo, HiLoBase, Walkable};
+use crate::bdd::{BddBase}; // for solutions
+#[cfg(test)] use crate::vid::{topmost, botmost};
 
 /// (v AND hi) XOR lo
 // TODO /// (ALL(v0..v1) AND hi) XOR lo
@@ -502,7 +502,7 @@ test_base_when!(ANFBase);
   assert_eq!(t, vec![0b010,0b011,0b101,0b110]); }
 
 #[test] fn test_anf_to_base() {
-  use bdd::BddBase;
+  use crate::bdd::BddBase;
   let mut anf = ANFBase::new();
   let mut bdd = BddBase::new();
   let (a,b,c) = (NID::var(0), NID::var(1), NID::var(2));

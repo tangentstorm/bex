@@ -2,11 +2,11 @@
 
 use std::collections::{HashMap,HashSet};
 
-use base::*;
-use {nid, nid::NID};
-use {vid, vid::VID};
-use {ops, ops::Ops};
-use simp;
+use crate::base::*;
+use crate::{nid, nid::NID};
+use crate::{vid, vid::VID};
+use crate::{ops, ops::Ops};
+use crate::simp;
 
 
 #[derive(Debug)]
