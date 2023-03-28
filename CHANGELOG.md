@@ -1,38 +1,58 @@
 # bex changelog
 
-A rust library for working with boolean expressions.
+Bex is a rust crate for working with binary expressions.
 
 ## 0.2.0 (in progress)
 
-- `BddBase` (formerly `BDDBase`) is now many, many times faster!
+`BddBase` is now 100 times faster (or more, depending on your CPU count!)
+
+- worker threads are no longer killed and respawned for each top-level query.
 
 - Extract `wip:WorkState` from `bdd_swarm`, introducing a shared queue
   and concurrent hashmaps so workers can share work without supervision
   from the main thread.
+
+- the workers now use concurrent queues and hashmaps (thanks to `boxcar`
+  and `dashmap`) to share the cache state.
 
 - Dropped `hashbrown` crate for non-shared hashmaps, since it is now the
   implementation that comes with rust standard library.
 
 - Added `fxhash` as the hasher for all hashmaps.
 
-- Cleaned up all compiler warnings
-
-- Fixed test failures that appeared with different threading configurations.
-
-- Remove `nvars` from all `Base` implementations. This member was
-  only really useful when the height of a node wasn't obvious from
-  the variable index. `Base::new()` no longer takes an argument.
-
-- bdd_base.reset() to avoid respawning threads in benchmark loops.
-
-- Remove obsolete "substitution" concept from `ast.rs`, and replace
-  `ast::Op` with the more flexible `ops::Ops`.
-
 - Removed top level functions in `nid::`. Use the corresponding `nid::NID::`
   methods instead. (ex: `nid::raw(n)` is now `n.raw()`) In particular,
   `nid::not(n)` should be written `!n`.
 
 - `solve::find_factors` is now a generic function rather than a macro.
+
+## 0.1.7 (2023-03-27)
+
+Aside from the addition of the `ops` module, this is primarily
+a benchmark release to make it easier to compare the 0.1.5
+algorithms with 0.2.0.
+
+- Rename `BDDBase` to `BddBase`, and add `reset()` method.
+
+- Add `BddBase::reset(&mut self)` to clear bdd state.
+
+- Cleaned up all compiler warnings.
+
+- Removed all debug output.
+
+- Fixed test failures that appeared with different threading configurations.
+
+- Remove `nvars` from all `Base` implementations. This member was
+  only really useful when the height of a node wasn't obvious from
+  the variable index. Because of this,  `Base::new()` no longer takes
+  a parameter.
+
+- Remove obsolete "substitution" concept from `ast.rs`, and replace
+  `ast::Op` with the more flexible `ops::Ops`.
+
+## 0.1.6 (2023-03-27)
+
+Same as 0.1.7 except I forgot to update the readme. :D
 
 ## 0.1.5 (2020-05-20)
 
