@@ -160,7 +160,8 @@ impl RawASTBase {
       NID::ixn(new[i.idx()].expect("?!"))).collect()) }
 
   pub fn get_ops(&self, n:NID)->&Ops {
-    if n.is_ixn() { &self.bits[n.idx()] } else { panic!("don't know how to op({:?})", n) }}
+    if n.is_ixn() { &self.bits[n.idx()] }
+    else { panic!("nid {n} is not an ixn...") }}
 
 
   // apply a function nid to a list of arguments
@@ -184,7 +185,7 @@ impl RawASTBase {
           if let Some(&ix) = matches.get(&arg.raw()) {
             if arg == args1[ix as usize] { f = f.when_same(ix, i)}
             else { f = f.when_diff(ix, i)} }
-          else { i+=1; matches.insert(arg.raw(), i); }}
+          else { matches.insert(arg.raw(), i); i+=1; }}
         (f.to_nid(), args1) }
       else { (n, args0) };
     let env:HashMap<NID,NID> = args.iter().enumerate()
@@ -197,6 +198,17 @@ impl RawASTBase {
     let res =
       if let Some(&vn) = kvs.get(&raw) { vn }
       else if n.is_lit() { raw }
+      else if n.is_fun() {
+        let mut f = n.to_fun().unwrap();
+        let res:NID;
+        loop {
+          let i = f.arity();
+          if i == 0 { res = if f.tbl()==0 { nid::O } else { nid::I}; break; }
+          else {
+            let &arg = cache.get(&NID::var((i as u32)-1))
+              .expect("don't have enough args to fully evaluate! supply x0..x5");
+            f = f.when(i-1, arg==nid::I); }};
+        res }
       else if let Some(&vn) = cache.get(&raw) { vn }
       else {
         let (f, args0) = self.get_ops(raw).to_app();
@@ -295,7 +307,8 @@ impl Base for ASTBase {
 
 impl ASTBase {
   pub fn empty()->Self { ASTBase { base: Simplify{ base: RawASTBase::empty() }}}
-  pub fn raw_ast(&self)->&RawASTBase { &self.base.base }}
+  pub fn raw_ast(&self)->&RawASTBase { &self.base.base }
+  pub fn raw_ast_mut(&mut self)->&mut RawASTBase { &mut self.base.base }}
 
 test_base_consts!(ASTBase);
 test_base_when!(ASTBase);
