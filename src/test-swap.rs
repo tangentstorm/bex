@@ -211,7 +211,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
 
 #[test] fn test_fun_tbl() {
   use crate::ops; let o = XID_O; let i = XID_I;
-  assert_eq!(fun_tbl(ops::AND), vec![o,o,o,i])}
+  assert_eq!(fun_tbl(ops::AND.to_nid()), vec![o,o,o,i])}
 
 
 // -- SwapSolver regroup tests ------------------------------------------------

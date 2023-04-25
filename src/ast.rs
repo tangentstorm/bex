@@ -3,7 +3,7 @@
 use std::collections::{HashMap,HashSet};
 
 use crate::base::*;
-use crate::{nid, nid::NID};
+use crate::{nid, NID, Fun};
 use crate::{vid, vid::VID};
 use crate::{ops, ops::Ops};
 use crate::simp;
@@ -12,7 +12,8 @@ use crate::simp;
 #[derive(Debug)]
 pub struct RawASTBase {
   bits: Vec<Ops>,                   // all known bits (simplified)
-  tags: HashMap<String, NID>,       // support for naming/tagging bits.
+  // TODO: redesign tags. (only used externally)
+  pub tags: HashMap<String, NID>,   // support for naming/tagging bits.
   hash: HashMap<Ops, NID>,          // expression cache (simple+complex)
 }
 
@@ -96,21 +97,17 @@ impl RawASTBase {
       masks.push(mask);
       costs.push(cost)}
     (masks, costs)}
-
+
   /// this returns a ragged 2d vector of direct references for each bit in the base
   pub fn reftable(&self) -> Vec<Vec<NID>> {
-    todo!("test case for reftable!"); /*
+    //todo!("test case for reftable!");
     let bits = &self.bits;
     let mut res:Vec<Vec<NID>> = vec![vec![]; bits.len()];
-    for (n, &bit) in bits.iter().enumerate() {
-      let mut f = |x:NID| res[nid::idx(x)].push(n);
-      match bit {
-        Op::And(x,y)  => { f(x); f(y); }
-        Op::Xor(x,y)  => { f(x); f(y); }
-        Op::Or(x,y)   => { f(x); f(y); }
-        Op::Ch(x,y,z) => { f(x); f(y); f(z); }
-        Op::Mj(x,y,z) => { f(x); f(y); f(z); } } }
-    res*/ }
+    bits.iter().enumerate().for_each(|(i, bit)| {
+      let n = NID::ixn(i);
+      let f = |x:&NID| res[x.idx()].push(n);
+      bit.to_rpn().rev().skip(1).for_each(f); });
+    res }
 
   /// this is part of the garbage collection system. keep is the top level nid to keep.
   /// seen gets marked true for every nid that is a dependency of keep.
@@ -146,7 +143,7 @@ impl RawASTBase {
     let mut newtags = HashMap::new();
     for (key, &val) in &self.tags { newtags.insert(key.clone(), nn(val)); }
     RawASTBase{ bits:newbits, tags:newtags, hash:HashMap::new() }}
-
+
   /// Construct a new RawASTBase with only the nodes necessary to define the given nodes.
   /// The relative order of the bits is preserved.
   pub fn repack(&self, keep:Vec<NID>) -> (RawASTBase, Vec<NID>) {
@@ -164,6 +161,58 @@ impl RawASTBase {
 
   pub fn get_ops(&self, n:NID)->&Ops {
     if n.is_ixn() { &self.bits[n.idx()] } else { panic!("don't know how to op({:?})", n) }}
+
+
+  // apply a function nid to a list of arguments
+  pub fn apply(&mut self, n:NID, args0:Vec<NID>)->NID {
+    // for table nids:
+    //   - make sure #args == arity
+    //   - handle constant inputs.
+    let (f, args) =
+      if let Some(mut f) = n.to_fun() {
+        // !! TODO: move this to NidFun
+        assert_eq!(f.arity() as usize, args0.len());
+        // first pass: handle constant inputs
+        let mut i = 0; let mut args1 = vec![];
+        for &arg in args0.iter() {
+          if arg.is_const() { f=f.when(i, arg==nid::I); }
+          else { args1.push(arg); i+=1 }}
+        // second pass: merge similar inputs
+        let mut matches : HashMap<NID,u8> = HashMap::new();
+        let mut i = 0;
+        for &arg in args1.iter() {
+          if let Some(&ix) = matches.get(&arg.raw()) {
+            if arg == args1[ix as usize] { f = f.when_same(ix, i)}
+            else { f = f.when_diff(ix, i)} }
+          else { i+=1; matches.insert(arg.raw(), i); }}
+        (f.to_nid(), args1) }
+      else { (n, args0) };
+    let env:HashMap<NID,NID> = args.iter().enumerate()
+      .map(|(i,&x)|(NID::var(i as u32), x)).collect();
+    self.eval(f, &env) }
+
+  /// recursively evaluate an AST, caching shared sub-expressions
+  fn eval_aux(&mut self, n:NID, kvs:&HashMap<NID, NID>, cache:&mut HashMap<NID,NID>)->NID {
+    let raw = n.raw();
+    let res =
+      if let Some(&vn) = kvs.get(&raw) { vn }
+      else if n.is_lit() { raw }
+      else if let Some(&vn) = cache.get(&raw) { vn }
+      else {
+        let (f, args0) = self.get_ops(raw).to_app();
+        let args:Vec<NID> = args0.iter().map(|&x| self.eval_aux(x, kvs, cache)).collect();
+        let t = self.apply(f, args); cache.insert(n, t); t };
+    if n.is_inv() { !res } else { res }}
+
+  /// evaluate a list of nids (substituting in the given values)
+  pub fn eval_all(&mut self, nids:&[NID], kvs:&HashMap<NID, NID>)->Vec<NID> {
+    let mut cache = HashMap::new();
+    nids.iter().map(|&n| self.eval_aux(n, kvs, &mut cache)).collect() }
+
+  /// evaluate a single nid (substituting in the given values)
+  pub fn eval(&mut self, nid:NID, kvs:&HashMap<NID, NID>)->NID {
+    self.eval_all(&[nid], kvs)[0] }
+
 } // impl RawASTBase
 
 impl Base for RawASTBase {
@@ -227,10 +276,10 @@ impl Base for RawASTBase {
         _ if n.is_vid() => w!("\"{}\"[fillcolor=\"#bbbbbb\",label=\"{}\"];", n.raw(), n.vid()),
         _ => {
           let rpn: Vec<NID> = self.get_ops(n).to_rpn().cloned().collect();
-          let fun = rpn.last().unwrap();
-          if let Some(2) = fun.arity() {
+          let fun = rpn.last().unwrap().to_fun().unwrap();
+          if 2 == fun.arity() {
             let (x, y) = (rpn[0], rpn[1]);
-            match *fun {
+            match fun {
               ops::AND => dotop!("∧",n,x,y),
               ops::XOR => dotop!("≠",n,x,y),
               ops::VEL => dotop!("∨",n,x,y),

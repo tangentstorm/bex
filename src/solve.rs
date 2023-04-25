@@ -55,7 +55,7 @@ impl<B:Base> SubSolver for B {
   fn subst(&mut self, ctx:NID, v:VID, ops:&Ops) ->NID {
     let def = match ops {
       Ops::RPN(x) => if x.len() == 3 {
-        match x[2] {
+        match x[2].to_fun().unwrap() {
           ops::AND => self.and(x[0], x[1]),
           ops::XOR => self.xor(x[0], x[1]),
           ops::VEL => self.or(x[0], x[1]),

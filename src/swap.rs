@@ -10,6 +10,7 @@ use crate::base::GraphViz;
 use crate::vid::{VID, NOV, TOP};
 use crate::{solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops, base::Base};
 use crate::swarm::{Swarm,Worker,QID,SwarmCmd,WID};
+use crate::Fun;
 
 /// XID: An index-based unique identifier for nodes.
 ///
@@ -1231,10 +1232,10 @@ impl SwapSolver {
     self.dx }} // sub, SwapSolver
 
 
-fn fun_tbl(f:NID)->Vec<XID> {
-  assert!(f.is_fun(), "can't convert non-fun nid to table");
-  let ar = f.arity().unwrap();
-  let ft = f.tbl().unwrap();
+fn fun_tbl(n:NID)->Vec<XID> {
+  let f = n.to_fun().unwrap();
+  let ar = f.arity();
+  let ft = f.tbl();
   let mut tbl = vec![XID_O;(1<<ar) as usize];
   let end = (1<<ar)-1;
   for i in 0..=end { if ft & (1<<i) != 0 { tbl[end-i] = XID_I; }}
