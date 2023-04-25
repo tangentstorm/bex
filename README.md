@@ -23,6 +23,12 @@ It covers the large factoring problems in [examples/solve/bdd-solve.rs](https://
 and the smaller tests in [src/solve.rs](https://github.com/tangentstorm/bex/blob/main/src/solve.rs)
 
 
+## Changes in main branch (upcoming version 0.3.0)
+
+- Added new `Fun` trait and `NidFun` struct, refining the idea of storing truth tables of up to 5 inputs in a NID.
+- Added `ASTBase::{apply,eval}`
+
+
 ## Changes in 0.2.0
 
 The main change here is that `BddBase` is now 100 times faster, or more, depending on your CPU count.
