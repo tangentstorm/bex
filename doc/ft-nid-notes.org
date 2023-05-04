@@ -1,0 +1,196 @@
+#+title: notes on function and table nids
+
+* goals for 'T' and 'F' nids
+** implement apply() for both AST and BDD nodes
+** save space by storing bdds directly in the nid as truth tables
+** automatically generate simplification rules for arbitrary functions
+** apply functions on truth tables themselves using bitwise operators
+For this case, we want to store things as a 32-bit signal. (This is the 'T' flag)
+So the truth table for x0 is 0x55555555 but the truth table for x1 is 0x33333333.
+** store functions for evaluation with 'AST::apply' in a compact format
+Functions are not consts (arity 0) or variables (arity 1) but have arity 2,3,4, or 5.
+
+If the function is applied to <5 variables, all with vids < xMAX (whatever we decide that is, but <24)
+then we can specify the arguments as a bitmask, so it would NOT be an 'F' nid but rather a 'T' nid.
+
+* The 'T' and 'F' bits represent two orthogonal concepts.
+- 'T' indicates a table + set of input bits
+- 'F' indicates a function to be applied to arbitrary inputs (nids)
+  Without the 'T' bit, it just means "use this node in the database as a function".
+- 'T' and 'F' are /not/ mutually exclusive
+- 'FT' nids (in an Ops list) indicate that the truth table should be applied as input to a list of nids.
+- 'FT' nids should normalize their bitmask to one of {00011,00111,01111,11111}
+
+* format of the nid
+** 8-bit header
+*** bit flags
+- _1 N? (Inv) -> indicates "invert"
+- _2 V? (Var) -> indicates "is vid"
+- _3 T -> indicates "table" (maybe should be K for const). table nids are 32 bit binary signals
+- _4 R -> (Rvar) -> indicates "is var" rather than "is vir" (real vs virtual)
+- _5 F -> indicates "function", meant to be applied to arbitrary arguments
+** vid/mask/arity field
+*** TODO const xMASK: max variable that can be stored in the bitmask field (x20? x16?)
+*** for 'T' (including F<T) nids, the field is a bitmask
+'T' nids indicate a constant truth table or signal.
+The truth table's corresponding function has at least 2 and no more than 5 inputs.
+The bitmask tells us *which* 2 to 5 input variables are considered, and thus how to "scale" the 32-bit table to the "full" table.
+
+*** when F>T, this field stores arity as a number
+The bitmask is be any subset of [x0..xMASK] (with cardinality/bitpop < 5)
+'F' indicates that the nid is to be used as a function (usually in a list of Ops).
+An 'F' nid may or may not also be a 'T' nid.
+'F' alone would indicate that the function is too big to fit in one nid and is instead described by a graph (an AST, BDD, ANF, etc)
+*** for 'FT', it's always one of 4 bitmaps
+- must be some prefix of [x0..x4] with length of at least 2
+- length 1 = arity 1 -> just a variable, so no need for a function
+- length 0 = arity 0 -> the constants O or I, so no need for a function
+
+*** for 'FT' nids, the arity is derived from one of 4 specific bitmasks
+(consts and vars are never fnids, so arity ∈ {2,3,4,5} and thus mask is {00011,00111,01111,11111})
+https://doc.rust-lang.org/stable/std/primitive.u64.html#method.count_ones ??
+
+*** for 'V' nids, the field holds the vid
+*** TODO for '-. +./F,V,T,X', it should contain either (highest used input vid, bitmask)
+- currently for BDD, it contains the VID on which the BDD node branches (good)
+- currently for AST, it contains NOVAR (bad)
+*** TODO add 'X' to consolidate XID and NID (indicating nothing is in the vid field)
+maybe (V|F)<R indicates novar, and just treat it as an index-only node?
+With no variable stored in the nid, we could increase the size of the index field.
+
+** other data that might be worth storing
+*** 1 bit : src/dst nid?
+*** alternatively: to what base does this node belong? (AST, BDD, scaffold) - this could allow dropping ~BaseBit~
+  (though we could drop basebit anyway, and just keep GBASE.)
+  (the bit would indicate a slot for the particular app, and that slot would be filled by some arbitrary Base...)
+*** 'I' always matches lowest slot in truth table, so we could re-use that bit
+*** Since V and F are mutually exclusive, F and R could use same position
+*** 'solid' bit: a bit indicating that ALL variables under the top one are used (as with FT nids).
+This could help with normalization.
+*** bit to swap the then/else halves similar to 'inv' bit. (not sure this buys anything...?)
+* design choices
+** should constants and vars ever be fnids? (no)
+Therefore arity must be in {2,3,4,5}
+** should consts and vars <x5 be tnids? (yes)
+ O:0x00000000
+x0:0x55555555
+x1:0x33333333
+x2:0x0f0f0f0f
+x3:0x00ff00ff
+x4:0x0000ffff
+
+** Do we ever care about truth tables without regard to the input bitmask? (only for 'FT' case)
+*** Clarifying the question
+The original idea was that truth tables for 5 speciifc inputs (x0,x1,x2,x3,x4) could be stored in a 32-bit table directly in the nid.
+But what about applying those same 5-bit functions to arbitrary variables? (You could store the input list in a bitmask).
+So, now we have a truth table + input bitmask.
+The question is whether it ever makes sense to NOT use the bitmask, and just assume it's the original, simpler case?
+The answer is not really, except that when both the 'F' bit is also set, we should just assume the bitmask is the 'solid' one for that arity.
+Solid means every variable from Var(0)=x0 to Var(arity-1) is used.
+*** What about for direct manipulation of truth tables?
+If two 'T' nids have the same input variables, then binary ops are easy.  ('x and y' = 'x.tbl & y.tbl')
+So, if we only cared about x0..x4 then binary ops are always easy, and that could be a reason to not look at the mask.
+But there are (xMASK.var_ix() choose 5) ways all the inputs could be the same. The 'solid' masks are just one case.  
+So, the rule should be to always compare the masks before directly operating on the truth tables.
+*** 'FT' nids should be normalized to use one of four bitmasks: [00011, 00111, 01111, 1111]
+- an 'F' nid must have an arity
+- a 'T' nid must have a bitmask.
+- but these two things go in the same field  
+- but the arity is always observable from the bitmask (using intel POPCNT or rust's ~count_ones~)
+- the arity of an 'FT' nid is always in {2,3,4,5}
+  - arity = 0 is a constant, and thus never applied to arguments
+  - arity = 1 is a variable, and we already have the 'V' bit for that
+- therefore, the bitmask must be in {00011, 00111, 01111, 1111}
+*** 'F>T' nids ('F' but not 'T') don't need a bitmask, just an arity
+The arity can be arbitrarily high, /and/ functions are meant to be solid, so the 'highest variable'
+and the 'arity' are just integers and differ only by 1, and we can just pick one to store in the field.
+
+** TODO what do nids look like for truth tables with more than 5 inputs? (RegBase)
+
+If we're going to use truth tables for faster bitwise calculations, there's no reason to limit ourselves to 5 input bits.
+We probably want to experiment to figure out the right size limits.
+
+So I think for bitwise processing, we should store the truth tables in Regs rather than NIDs.
+
+Then the "standard format" for nids will not be 32-bit truth tables, but rather 32-bit "signals" with an arity. 
+(A signal is a truth table repeated indefinitely, but here they are trimmed to 32 bits).
+
+* [0/1] canonical form (for T nids)
+** The concept of "canonical form"
+- HiLoCache structures (used in BDD, ANF, ZDD, etc) rely on canonical representations
+- Canonical means there's only one way to represent a function.
+- Example: a specific (hi,lo) pair appears only once in a HiLoCache
+  - As long as nids are canonical, the pairs are canonical.
+  - But: introducing the 'INV' bit means there's two ways to represent the same function:
+    : if V then H else L
+    : not(if V then (not H) else (not L))
+  - So we always choose the HiLo version where H does NOT have the invert bit set.
+    : (~H,L) -> ~(H,~L)
+  - Enforcing this rule eliminates the redundant representation and thus restores canonicity
+** TODO [0/2] Redundant representations made possible by 'T' nodes
+*** 'INV' bit vs lowest bit in truth table
+Resolution: lowest bit in truth table is always 0
+*** arity = 0 (same as const)
+Resolution: T bit is always set, truth table is always 0 (O).
+*** arity = 1 (same as any variable)
+**** var_ix < 5
+Resolution:
+- T is set
+- vam field (vidix/arity/mask) contains mask with 1 bit
+- truth table stored in low 32 bits (see [[test cases]])
+**** var_ix >= 5 
+Resolution:
+- T is 0
+- vid field contains the var_ix
+  
+*** 'FT' vs 'F<T'
+If 'T' is set, the F bit indicates that the truth table is to be applied to other arguments.
+The 'F' bit only makes sense in the context of Ops (which are a non-canonical form), and therefore should never be used in a canonical form.
+
+*** arity in [2,3,4]
+The truth tables here could be of size 4,8,16 and respectively, rather than 32, so we could zero out the remaining bits.
+Resolution: instead, we will treat the truth table as a repeating signal until it fills 32 bits.
+
+*** TODO T + mask vs BDD
+*** TODO "degenerate" truth tables that ignore one or more inputs
+Consider a function of the following form:
+
+:   [a XOR f(b,c,d,e)] XOR [a XOR g(b,c,d,e)]
+: = a XOR f(b,c,d,e) XOR a XOR g(b,c,d,e)
+: = a XOR a XOR f(b,c,d,e) XOR g(b,c,d,e)
+: = f(b,c,d,e) XOR g(b,c,d,e)
+
+Both the left and right hand side have arity 5 and presumably use all the bits.
+So we can safely xor the truth tables together, but the resulting function is no longer dependent on a, because they cancel out.
+The normalization procedure needs to detect this case.
+
+
+* test cases
+| name     | flags | vidix/arity/mask | table     | notes                                 |
+|----------+-------+------------------+-----------+---------------------------------------|
+| O        | T     | $000000          | $00000000 | constant T                            |
+| I        | IT    | $000000          | $00000000 |                                       |
+| x0       | TVR   | 0                | $55555555 | vars have vid ix, not mask/arity      |
+| x1       | TVR   | 1                | $33333333 |                                       |
+| x2       | TVR   | 2                | $0f0f0f0f |                                       |
+| x3       | TVR   | 3                | $00ff00ff |                                       |
+| x4       | TVR   | 4                | $0000ffff |                                       |
+| x5       | VR    | -                | -         | too big for T, and V prevents F       |
+| ~x0      | ITVR  | -                | $55555555 |                                       |
+| v1       | V     | -                | -         | virtual variables never used in T     |
+| x0 *. x1 | T     | $000011          | $11111111 |                                       |
+| x0 +. x1 | T     | $000011          | $77777777 |                                       |
+| x4 +. x5 | T     | $110000          | $77777777 | because it involves bit above x4      |
+| a +. b   | FT    | $000011          | $77777777 | same as x0 +. x1 but with F bit set   |
+|          |       |                  |           |                                       |
+|----------+-------+------------------+-----------+---------------------------------------|
+| x1 +. x2 | T     | $000110          | $77777777 | is this right? (justify/rethink this) |
+| x1 +. x2 | T     | $000110          | $3f3f3f3f | (the other option)                    |
+
+* ---- 
+* TODO consolidate XID/NID
+- HiLoCache and VHL could take type parameters
+
+* TODO implement RegBase
+* TODO algorithm for normalizing degenerate truth tables
+* TODO for BDD, maximize cache hits by including top level var in Norm and using min possible var
