@@ -94,55 +94,48 @@ impl<T:Base> GraphViz for T {
 ///   inherit![ new, when_hi, when_lo, and, xor, or, def, tag, get, sub, dot ]; }
 /// ```
 #[macro_export] macro_rules! inherit {
-  ( $($i:ident),* ) => { $( inherit_fn!($i); )* }
-}
+  ( $($i:ident),* ) => { $( inherit!(@fn $i); )* };
+  (@fn new) =>      { #[inline] fn new()->Self where Self:Sized { Self { base: T::new() }} };
+  (@fn when_hi) =>  { #[inline] fn when_hi(&mut self, v:VID, n:NID)->NID { self.base.when_hi(v, n) }};
+  (@fn when_lo) =>  { #[inline] fn when_lo(&mut self, v:VID, n:NID)->NID { self.base.when_lo(v, n) }};
+  (@fn and) =>      { #[inline] fn and(&mut self, x:NID, y:NID)->NID { self.base.and(x, y) }};
+  (@fn xor) =>      { #[inline] fn xor(&mut self, x:NID, y:NID)->NID { self.base.xor(x, y) }};
+  (@fn or) =>       { #[inline] fn or(&mut self, x:NID, y:NID)->NID  { self.base.or(x, y) }};
+  (@fn def) =>      { #[inline] fn def(&mut self, s:String, i:VID)->NID { self.base.def(s, i) }};
+  (@fn tag) =>      { #[inline] fn tag(&mut self, n:NID, s:String)->NID { self.base.tag(n, s) }};
+  (@fn get) =>      { #[inline] fn get(&self, s:&str)->Option<NID> { self.base.get(s) }};
+  (@fn sub) =>      { #[inline] fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID { self.base.sub(v, n, ctx) }};
+  (@fn dot) =>      { #[inline] fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) { self.base.dot(n, wr) }}; }
 
-/// This helper macro provides actual implementations for the names passed to `inherit!`
-#[macro_export] macro_rules! inherit_fn {
-  (new) =>      { #[inline] fn new()->Self where Self:Sized { Self { base: T::new() }} };
-  (when_hi) =>  { #[inline] fn when_hi(&mut self, v:VID, n:NID)->NID { self.base.when_hi(v, n) }};
-  (when_lo) =>  { #[inline] fn when_lo(&mut self, v:VID, n:NID)->NID { self.base.when_lo(v, n) }};
-  (and) =>      { #[inline] fn and(&mut self, x:NID, y:NID)->NID { self.base.and(x, y) }};
-  (xor) =>      { #[inline] fn xor(&mut self, x:NID, y:NID)->NID { self.base.xor(x, y) }};
-  (or) =>       { #[inline] fn or(&mut self, x:NID, y:NID)->NID  { self.base.or(x, y) }};
-  (def) =>      { #[inline] fn def(&mut self, s:String, i:VID)->NID { self.base.def(s, i) }};
-  (tag) =>      { #[inline] fn tag(&mut self, n:NID, s:String)->NID { self.base.tag(n, s) }};
-  (get) =>      { #[inline] fn get(&self, s:&str)->Option<NID> { self.base.get(s) }};
-  (sub) =>      { #[inline] fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID { self.base.sub(v, n, ctx) }};
-  (dot) =>      { #[inline] fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) { self.base.dot(n, wr) }};
-}
 
 
 // !! start on isolating simplification rules (for use in AST, ANF)
 pub struct Simplify<T:Base> { pub base: T }
+
 impl<T:Base> Base for Simplify<T> {
   inherit![ new, when_hi, when_lo, xor, or, def, tag, get, sub, dot ];
   fn and(&mut self, x:NID, y:NID)->NID {
     if let Some(nid) = simp::and(x,y) { nid }
     else {
       let (a, b) = if x < y { (x,y) } else { (y,x) };
-      self.base.and(a, b) }}
-}
+      self.base.and(a, b) }}}
 
 
-// macros for building expressions
-
-/// This is a helper macro used by `expr!`
-///
-/// ex: `op![base, (x & y) and (y ^ z)]`
-#[macro_export] macro_rules! expr_op {
-  ($b:ident, $x:tt $op:ident $y:tt) => {{
-    let x = expr![$b, $x];
-    let y = expr![$b, $y];
-    $b.$op(x,y) }}}
+// macros for building and testing expressions
 
 /// Macro for building complex expressions in a `Base`.
 /// example: `expr![base, (x & y) | (y ^ z)]`
 #[macro_export] macro_rules! expr {
+  (@op $b:ident, $x:tt $op:ident $y:tt) => {{
+    let x = expr![$b, $x];
+    let y = expr![$b, $y];
+    $b.$op(x,y) }};
   ($_:ident, $id:ident) => { $id };
-  ($b:ident, ($x:tt ^ $y:tt)) => { expr_op![$b, $x xor $y] };
-  ($b:ident, ($x:tt & $y:tt)) => { expr_op![$b, $x and $y] };}
+  ($b:ident, ($x:tt ^ $y:tt)) => { expr![@op $b, $x xor $y] };
+  ($b:ident, ($x:tt & $y:tt)) => { expr![@op $b, $x and $y] };}
 
+/// Macro to declare local rust variables for bex input variable nids.
+/// example: `nid_vars![x0, x1]`
 #[macro_export] macro_rules! nid_vars {
   // Capture a list of identifiers and use the internal macro to assign values
   ($($ident:ident),+ $(,)?) => { use $crate::NID; nid_vars!(@internal 0; $($ident),+); };
