@@ -148,6 +148,12 @@ impl<T:Base> Base for Simplify<T> {
   // Base case for the internal helper macro (when only one identifier is left)
   (@internal $val:expr; $head:ident) => { let $head: NID = NID::var($val); }; }
 
+/// Macro to make a substitution map for eval.
+/// example: `nid_vars![x0,x1]; nid_map![x0:I, x1:O]`
+#[macro_export] macro_rules! nid_map {
+  ($($x:ident : $y:expr),*) => {
+     vec![$(($x, $y)),*].iter().copied().collect::<HashMap<NID,NID>>() }}
+
 
 /*
 /// TODO: Generic tagging support for any base type.
