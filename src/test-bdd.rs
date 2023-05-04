@@ -11,66 +11,65 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 // basic test suite
 
 #[test] fn test_base() {
+  nid_vars![x0, x1, x2];
   let mut base = BddBase::new();
-  let (v1, v2, v3) = (NID::var(1), NID::var(2), NID::var(3));
   assert_eq!((I,O), base.tup(I));
   assert_eq!((O,I), base.tup(O));
-  assert_eq!((I,O), base.tup(v1));
-  assert_eq!((I,O), base.tup(v2));
-  assert_eq!((I,O), base.tup(v3));
-  assert_eq!(I, base.when_hi(VID::var(3),v3));
-  assert_eq!(O, base.when_lo(VID::var(3),v3))}
+  assert_eq!((I,O), base.tup(x0));
+  assert_eq!((I,O), base.tup(x1));
+  assert_eq!((I,O), base.tup(x2));
+  assert_eq!(I, base.when_hi(VID::var(2),x2));
+  assert_eq!(O, base.when_lo(VID::var(2),x2))}
 
 #[test] fn test_and() {
+  nid_vars![x0,x1,x2];
   let mut base = BddBase::new();
-  let (v1, v2) = (NID::var(1), NID::var(2));
-  let a = base.and(v1, v2);
-  assert_eq!(O,  base.when_lo(VID::var(1),a));
-  assert_eq!(v2, base.when_hi(VID::var(1),a));
-  assert_eq!(O,  base.when_lo(VID::var(2),a));
-  assert_eq!(v1, base.when_hi(VID::var(2),a));
-  assert_eq!(a,  base.when_hi(VID::var(3),a));
-  assert_eq!(a,  base.when_lo(VID::var(3),a))}
+  let a = base.and(x1, x2);
+  assert_eq!(O,  base.when_lo(x1.vid(),a));
+  assert_eq!(x2, base.when_hi(x1.vid(),a));
+  assert_eq!(O,  base.when_lo(x2.vid(),a));
+  assert_eq!(x1, base.when_hi(x2.vid(),a));
+  assert_eq!(a,  base.when_hi(x0.vid(),a));
+  assert_eq!(a,  base.when_lo(x0.vid(),a))}
 
 #[test] fn test_xor() {
+  nid_vars![x0,x1];
   let mut base = BddBase::new();
-  let (v1, v2) = (NID::var(1), NID::var(2));
-  let x = base.xor(v1, v2);
-  assert_eq!(v2,  base.when_lo(VID::var(1),x));
-  assert_eq!(!v2, base.when_hi(VID::var(1),x));
-  assert_eq!(v1,  base.when_lo(VID::var(2),x));
-  assert_eq!(!v1, base.when_hi(VID::var(2),x));
-  assert_eq!(x,   base.when_lo(VID::var(3),x));
-  assert_eq!(x,   base.when_hi(VID::var(3),x))}
+  let x = base.xor(x0, x1);
+  assert_eq!(x1,  base.when_lo(x0.vid(),x));
+  assert_eq!(!x1, base.when_hi(x0.vid(),x));
+  assert_eq!(x0,  base.when_lo(x1.vid(),x));
+  assert_eq!(!x0, base.when_hi(x1.vid(),x));
+  assert_eq!(x,   base.when_lo(VID::var(2),x));
+  assert_eq!(x,   base.when_hi(VID::var(2),x))}
 
 // swarm test suite
 #[test] fn test_swarm_xor() {
+  nid_vars![x0,x1];
   let mut base = BddBase::new();
-  let (x0, x1) = (NID::var(0), NID::var(1));
   let x = base.xor(x0, x1);
-  assert_eq!(x1,  base.when_lo(VID::var(0),x));
-  assert_eq!(!x1, base.when_hi(VID::var(0),x));
-  assert_eq!(x0,  base.when_lo(VID::var(1),x));
-  assert_eq!(!x0, base.when_hi(VID::var(1),x));
+  assert_eq!(x1,  base.when_lo(x0.vid(),x));
+  assert_eq!(!x1, base.when_hi(x0.vid(),x));
+  assert_eq!(x0,  base.when_lo(x1.vid(),x));
+  assert_eq!(!x0, base.when_hi(x1.vid(),x));
   assert_eq!(x,   base.when_lo(VID::var(2),x));
   assert_eq!(x,   base.when_hi(VID::var(2),x))}
 
 #[test] fn test_swarm_and() {
+  nid_vars![x0,x1];
   let mut base = BddBase::new();
-  let (x0, x1) = (NID::var(0), NID::var(1));
   let a = base.and(x0, x1);
-  assert_eq!(O,  base.when_lo(VID::var(0),a));
-  assert_eq!(x1, base.when_hi(VID::var(0),a));
-  assert_eq!(O,  base.when_lo(VID::var(1),a));
-  assert_eq!(x0, base.when_hi(VID::var(1),a));
+  assert_eq!(O,  base.when_lo(x0.vid(),a));
+  assert_eq!(x1, base.when_hi(x0.vid(),a));
+  assert_eq!(O,  base.when_lo(x1.vid(),a));
+  assert_eq!(x0, base.when_hi(x1.vid(),a));
   assert_eq!(a,  base.when_hi(VID::var(2),a));
   assert_eq!(a,  base.when_lo(VID::var(2),a))}
 
 /// slightly harder test case that requires ite() to recurse
 #[test] fn test_swarm_ite() {
-  //use simplelog::*;  TermLogger::init(LevelFilter::Trace, Config::default()).unwrap();
+  nid_vars![x0, x1, x2];
   let mut base = BddBase::new();
-  let (x0,x1,x2) = (NID::var(0), NID::var(1), NID::var(2));
   assert_eq!(vec![0,0,0,0,1,1,1,1], base.tt(x2, 3));
   assert_eq!(vec![0,0,1,1,0,0,1,1], base.tt(x1, 3));
   assert_eq!(vec![0,1,0,1,0,1,0,1], base.tt(x0, 3));
@@ -84,9 +83,8 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 
 /// slightly harder test case that requires ite() to recurse
 #[test] fn test_swarm_another() {
-  use simplelog::*;  TermLogger::init(LevelFilter::Trace, Config::default()).unwrap();
+  nid_vars![_x0, _x1, b, a];
   let mut base = BddBase::new();
-  let (a,b) = (NID::var(3), NID::var(2));
   let anb = base.and(a,!b);
   assert_eq!(vec![0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0], base.tt(anb, 4));
 

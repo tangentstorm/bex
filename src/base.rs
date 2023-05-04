@@ -143,6 +143,18 @@ impl<T:Base> Base for Simplify<T> {
   ($b:ident, ($x:tt ^ $y:tt)) => { expr_op![$b, $x xor $y] };
   ($b:ident, ($x:tt & $y:tt)) => { expr_op![$b, $x and $y] };}
 
+#[macro_export] macro_rules! nid_vars {
+  // Capture a list of identifiers and use the internal macro to assign values
+  ($($ident:ident),+ $(,)?) => { use $crate::NID; nid_vars!(@internal 0; $($ident),+); };
+
+  // Internal helper macro for assigning values to identifiers
+  (@internal $val:expr; $head:ident, $($tail:ident),+ $(,)?) => {
+      let $head: NID = NID::var($val);
+      nid_vars!(@internal $val + 1; $($tail),+);  };
+
+  // Base case for the internal helper macro (when only one identifier is left)
+  (@internal $val:expr; $head:ident) => { let $head: NID = NID::var($val); }; }
+
 
 /*
 /// TODO: Generic tagging support for any base type.
@@ -169,42 +181,41 @@ macro_rules! base_test {
 
 // Test operations on constants.
 base_test!(test_base_consts, b, {
-  use crate::nid;
-  let (o, i) = (nid::O, nid::I);
+  use crate::{O,I};
 
-  assert!(o<i, "expect o<i");
+  assert!(O<I, "expect O<I");
 
   // and
-  assert!(o==b.and(o,o), "o∧o");  assert!(o==b.and(i,o), "i∧o");
-  assert!(o==b.and(o,i), "o∧i");  assert!(i==b.and(i,i), "i∧i");
+  assert!(O==b.and(O,O), "O∧O");  assert!(O==b.and(I,O), "I∧O");
+  assert!(O==b.and(O,I), "O∧I");  assert!(I==b.and(I,I), "I∧I");
 
   // xor
-  assert!(o==b.xor(o,o), "o≠o");  assert!(i==b.xor(i,o), "i≠o");
-  assert!(i==b.xor(o,i), "o≠i");  assert!(o==b.xor(i,i), "i≠i"); });
+  assert!(O==b.xor(O,O), "O≠O");  assert!(I==b.xor(I,O), "I≠O");
+  assert!(I==b.xor(O,I), "O≠I");  assert!(O==b.xor(I,I), "I≠I"); });
 
 
 // Test when_lo and when_hi for the simple cases.
 base_test!(test_base_when, b, {
-  use crate::nid::{O,I,NID};
-  let (o, i, n0, n1) = (O, I, NID::var(0), NID::var(1));
-  let (x0, x1) = (n0.vid(), n1.vid());
+  use crate::nid::{O,I};
+  nid_vars![x0, x1];
+  let (vx0, vx1) = (x0.vid(), x1.vid());
 
-  assert_eq!(b.when_lo(x0, o), o, "x0=O should not affect O");
-  assert_eq!(b.when_hi(x0, o), o, "x0=I should not affect O");
-  assert_eq!(b.when_lo(x0, i), i, "x0=O should not affect I");
-  assert_eq!(b.when_hi(x0, i), i, "x0=I should not affect I");
+  assert_eq!(b.when_lo(vx0, O), O, "vx0=O should not affect O");
+  assert_eq!(b.when_hi(vx0, O), O, "vx0=I should not affect O");
+  assert_eq!(b.when_lo(vx0, I), I, "vx0=O should not affect I");
+  assert_eq!(b.when_hi(vx0, I), I, "vx0=I should not affect I");
 
-  assert_eq!(b.when_lo(x0, n0), o, "when_lo(0,n0) should be O");
-  assert_eq!(b.when_hi(x0, n0), i, "when_hi(0,n0) should be I");
+  assert_eq!(b.when_lo(vx0, x0), O, "when_lo(vx0, x0) should be O");
+  assert_eq!(b.when_hi(vx0, x0), I, "when_hi(vx0, x0) should be I");
 
-  assert_eq!(b.when_lo(x0, n1), n1, "x0=O should not affect n1");
-  assert_eq!(b.when_hi(x0, n1), n1, "x0=I should not affect n1");
+  assert_eq!(b.when_lo(vx0, x1), x1, "vx0=O should not affect x1");
+  assert_eq!(b.when_hi(vx0, x1), x1, "vx0=I should not affect x1");
 
-  assert_eq!(b.when_lo(x1, n0), n0, "x1=O should not affect n0");
-  assert_eq!(b.when_hi(x1, n0), n0, "x1=I should not affect n0");
+  assert_eq!(b.when_lo(vx1, x0), x0, "vx1=O should not affect x0");
+  assert_eq!(b.when_hi(vx1, x0), x0, "vx1=I should not affect x0");
 
-  assert_eq!(b.when_lo(x1, n1), o, "when_lo(1,n1) should be O");
-  assert_eq!(b.when_hi(x1, n1), i, "when_hi(1,n1) should be I");
+  assert_eq!(b.when_lo(vx1, x1), O, "when_lo(vx1, x1) should be O");
+  assert_eq!(b.when_hi(vx1, x1), I, "when_hi(vx1, x1) should be I");
 });
 
 
