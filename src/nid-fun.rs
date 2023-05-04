@@ -1,13 +1,24 @@
 use crate::Fun;
 
 /// helper for 'fun' (function table) nids
-/// u32 x contains the bits to permute.
+/// u32 x contains the bits to select (or permute).
 /// pv is generally a permutation vector (the bytes 0..=31 in some order)
 /// but could also be any vector of bits to select from x.
-// b=pv[i] means to grab bit b from x and move to position i in the result.
+///
+/// NOTE: tables are stored in reversed order, so that the number "0"
+/// in the pv indicates the most significant bit of x, and "31" the least.
+/// This is just so the table looks "correct" when printed or typed as
+/// a rust constant.
+///
+/// If len(pv)<32, then the remaining bits of the result are set to 0.
+///
+/// In other words, if b=pv[i], we will grab bit (31-b) from x and move to
+/// position (31-i) in the result.
 fn select_bits(x:u32, pv:&[u8])->u32 {
+  // println!(">> select_bits({:032b}, {:?})", x, pv);
   let mut r:u32 = 0;
-  for (i,b) in pv.iter().enumerate() { r |= ((x & (1<<b)) >> b) << i; }
+  for (i,b) in pv.iter().enumerate() { r |= (1&(x>>(31-b))) << (31-i); }
+  // println!("==============>{:032b}", r); //^(r<<16));
   r }
 
 impl NidFun {

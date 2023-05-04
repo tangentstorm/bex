@@ -205,8 +205,8 @@ impl RawASTBase {
           let i = f.arity();
           if i == 0 { res = if f.tbl()==0 { nid::O } else { nid::I}; break; }
           else {
-            let &arg = cache.get(&NID::var((i as u32)-1))
-              .expect("don't have enough args to fully evaluate! supply x0..x5");
+            let &arg = kvs.get(&NID::var((i as u32)-1))
+              .expect("don't have enough args to fully evaluate!");
             f = f.when(i-1, arg==nid::I); }};
         res }
       else if let Some(&vn) = cache.get(&raw) { vn }
@@ -313,10 +313,29 @@ impl ASTBase {
 test_base_consts!(ASTBase);
 test_base_when!(ASTBase);
 
-#[test]
-fn ast_and(){
+#[test] fn ast_and(){
   let mut b = ASTBase::empty();
   let x0 = NID::var(0); let x1 = NID::var(1);
   let x01 = b.and(x0,x1);
   let x10 = b.and(x1,x0);
   assert_eq!(x01, x10, "expect $0 & $1 == $1 & $0"); }
+
+
+#[test] fn ast_eval_full(){
+  nid_vars![x0, x1]; use crate::{I,O};
+  let mut b = RawASTBase::empty();
+  let and = expr![b, (x0 & x1)];
+  assert_eq!(b.eval(and, &nid_map![x0: O, x1: O]), O, "O and O => O");
+  assert_eq!(b.eval(and, &nid_map![x0: O, x1: I]), O, "O and I => O");
+  assert_eq!(b.eval(and, &nid_map![x0: I, x1: O]), O, "I and O => O");
+  assert_eq!(b.eval(and, &nid_map![x0: I, x1: I]), I, "I and I => I"); }
+
+// TODO: #[test] fn ast_eval_partial(){
+// (for now you have to assign all variables)
+//   nid_vars![x0, x1]; use crate::{I,O};
+//   let mut b = RawASTBase::empty();
+//   let and = expr![b, (x0 & x1)];
+//   assert_eq!(b.eval(and, &nid_map![x1: O]), O, "expect  x0 & O == O");
+//   assert_eq!(b.eval(and, &nid_map![x1: !x0]), O, "expect  x0 & ~x0 == O");
+//   assert_eq!(b.eval(and, &nid_map![x1: I]), x0, "expect x0 & I == x0");
+//   assert_eq!(b.eval(and, &nid_map![x1: x0]), x0, "expect  x0 & x0 == x0"); }
