@@ -50,15 +50,15 @@ impl fmt::Debug for XID {
 const XID_O:XID = XID { x: 0 };
 const XID_I:XID = XID { x: !0 };
 impl XID {
-  fn ix(&self)->usize { self.raw().x as usize }
+  pub fn ix(&self)->usize { self.raw().x as usize }
   fn raw(&self)->XID { if self.x >= 0 { *self } else { !*self }}
   fn is_inv(&self)->bool { self.x<0 }
   fn is_const(&self)->bool { *self == XID_O || *self == XID_I }
-  fn from_nid(x:NID)->Self {
+  pub fn from_nid(x:NID)->Self {
     if x.is_lit() { panic!("don't know how to convert lit nid -> xid")}
     if x.vid()!=NOV { panic!("don't know how to convert nid.var(v!=NOV) -> xid")}
     if x.is_inv() { !XID{ x: x.idx() as i64 }} else { XID{ x: x.idx() as i64 } }}
-  fn to_nid(self)->NID {
+  pub fn to_nid(self)->NID {
     if self.is_inv() { !NID::from_vid_idx(NOV, !self.x as usize)}
     else { NID::from_vid_idx(NOV, self.x as usize) }}
   fn to_bool(self)->bool {
