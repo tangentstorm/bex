@@ -142,6 +142,9 @@ impl fmt::Debug for NID { // for test suite output
 impl NID {
   #[inline(always)] pub fn o()->Self { O }
   #[inline(always)] pub fn i()->Self { I }
+  #[inline(always)] pub fn from_bit(b:bool)->Self { if b { I } else { O } }
+  #[inline(always)] pub fn to_bit(&self)->bool { self != &O }
+
   #[inline(always)] pub fn var(v:u32)->Self { Self::from_vid(vid::VID::var(v)) }
   #[inline(always)] pub fn vir(v:u32)->Self { Self::from_vid(vid::VID::vir(v)) }
   #[inline(always)] pub fn from_var(v:vid::VID)->Self { Self::var(v.var_ix() as u32)}
