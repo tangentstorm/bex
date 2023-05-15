@@ -11,7 +11,7 @@ use crate::simp;
 
 #[derive(Debug)]
 pub struct RawASTBase {
-  bits: Vec<Ops>,                   // all known bits (simplified)
+  pub bits: Vec<Ops>,               // all known bits (simplified)
   // TODO: redesign tags. (only used externally)
   pub tags: HashMap<String, NID>,   // support for naming/tagging bits.
   hash: HashMap<Ops, NID>,          // expression cache (simple+complex)
