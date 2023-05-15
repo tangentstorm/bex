@@ -25,6 +25,16 @@ impl NidFun {
   pub fn tbl(&self)->u32 { self.nid.tbl().unwrap() }
   pub fn to_nid(&self)->NID { self.nid }}
 
+use std::fmt::{Formatter,Debug,Error};
+impl Debug for NidFun {
+  fn fmt(&self, f:&mut Formatter<'_>)->Result<(), Error> {
+    let mut s = String::new();
+    s.push_str("NidFun{");
+    s.push_str(&format!("arity:{}, ", self.arity()));
+    s.push_str(&format!("tbl:{:032b}", self.tbl()));
+    s.push_str("}");
+    write!(f, "{}", s) }}
+
 
 
 impl Fun for NidFun {
@@ -62,7 +72,7 @@ impl Fun for NidFun {
     if bit >= a { panic!("fun_when: arity is {a} but bit index is {bit}") };
     let tt0 = self.tbl();
     // select the parts of the table where the input bit matches the given value
-    macro_rules! s { ($x:expr)=> { { let t=select_bits(tt0, $x); t^(t<<16) }}}
+    macro_rules! s { ($x:expr)=> { { let t=select_bits(tt0, $x); t^(t>>16) }}}
     // tables generated in j with:   ;"1(',',~":)&.>"0 I.|.|:#:i.2^5
     let tt = if val { match bit {
       0 => s!(&[ 1, 3, 5, 7, 9,11,13,15,17,19,21,23,25,27,29,31]),
@@ -87,7 +97,7 @@ impl Fun for NidFun {
     let a = self.arity();
     assert!(bit0 < a && bit1 < a, "fun_when_same: bits must be < arity");
     macro_rules! s { ($x:expr)=> {
-      { let t=select_bits(self.tbl(), $x); NID::fun(a-1, t^(t<<16)) }}}
+      { let t=select_bits(self.tbl(), $x); NID::fun(a-1, t^(t>>16)) }}}
     if bit0>bit1 { self.when_same(bit1, bit0)}
     else { match (bit1, bit0) {
       // J: xy ,. _ ,. I. =/"2 (xy=.4-5 5#: I.,(>/~) y=.i._5) { |.|:#:i.2^5
@@ -108,7 +118,7 @@ impl Fun for NidFun {
     let a = self.arity();
     assert!(bit0 < a && bit1 < a, "fun_when_diff: bits must be < arity");
     macro_rules! s { ($x:expr)=> {
-      { let t=select_bits(self.tbl(), $x); NID::fun(a-1, t^(t<<16)) }}}
+      { let t=select_bits(self.tbl(), $x); NID::fun(a-1, t^(t>>16)) }}}
     if bit0>bit1 { self.when_diff(bit1, bit0)}
     else { match (bit1, bit0) {
       // J: xy ,. _ ,. I. ~:/"2 (xy=.4-5 5#: I.,(>/~) y=.i._5) { |.|:#:i.2^5
@@ -129,3 +139,32 @@ impl Fun for NidFun {
   assert!(!NID::var(1).is_fun(), "var(1) should not be fun.");
   assert!(!NID::vir(1).is_fun(), "vir(1) should not be fun.");
   assert!(!NID::from_vid_idx(vid::NOV, 0).is_fun(), "idx var should not be fun");}
+
+#[test] fn test_fun_consts() {
+  let x0  = NID::fun(1, 0x55555555);
+  let nx0 = NID::fun(1, 0xaaaaaaaa);
+  let dk0  = NID::fun(1, 0x00000000);  // degenerate constant 0 (takes an arg but ignores it)
+  let a_xor_b = NID::fun(2, 0x66666666);  // x0 xor x1
+  let a_and_b = NID::fun(2, 0x11111111);  // x0 and x1
+  // TODO: separate out the concepts of t-nid vs f-nid.
+  // f-nids should always densely pack the arguments,
+  // whereas t-nids are always functions of 5 inputs, some of which may be ignored.
+  // in this case, we're dealing with an f-nid, so we start with a=x0,b=x1
+  // and then when we set a=true, we're left with b, but b is now x0.
+  // (a^b).when(a,1)->!b, so result should be !x0, or 0xaaaaaaaa
+  assert_eq!(a_xor_b.when(1, true), nx0);  // obvious
+  assert_eq!(a_xor_b.when(1, false), x0);
+
+  assert_eq!(a_xor_b.when(0, true), nx0); // because of renumbering
+  assert_eq!(a_xor_b.when(0, false), x0);
+
+  assert_eq!(a_and_b.when(0, true), x0); // obvious
+  // TODO: the following is the current behavior, but it probably should not be this way.
+  // somehow, we need to express the idea that the function is degenerate.
+  assert_eq!(a_and_b.when(0, false), dk0);
+  assert_eq!(a_and_b.when(0, true), x0); // because of renumbering
+  assert_eq!(a_and_b.when(0, false), dk0);
+
+  // TODO: O and I should allow .to_fun() and have arity 0
+  // assert_eq!(NID::o().to_fun().unwrap(), dk0);
+}
