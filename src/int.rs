@@ -62,7 +62,7 @@ impl std::ops::BitOr<BaseBit> for BaseBit {
 
 impl std::fmt::Debug for BaseBit {
   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-    write!(f, "[#{}]", self.n) }}
+    write!(f, "{:?}", self.n) }}
 
 // -- thread - global base --
 
