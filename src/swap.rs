@@ -52,7 +52,7 @@ const XID_I:XID = XID { x: !0 };
 impl XID {
   pub fn ix(&self)->usize { self.raw().x as usize }
   fn raw(&self)->XID { if self.x >= 0 { *self } else { !*self }}
-  fn is_inv(&self)->bool { self.x<0 }
+  pub fn is_inv(&self)->bool { self.x<0 }
   fn is_const(&self)->bool { *self == XID_O || *self == XID_I }
   pub fn from_nid(x:NID)->Self {
     if x.is_lit() { panic!("don't know how to convert lit nid -> xid")}
