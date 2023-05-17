@@ -100,7 +100,7 @@ impl fmt::Display for NID {
       let ar:u8 = fnid.arity();
       let ft:u32 = fnid.tbl() & ((2<<ar as u32)-1);
       if ar == 2 { write!(f, "<{:04b}>", ft)} // TODO: dynamically format to a length
-      else {  write!(f, "<{:b}>", ft) }}
+      else {  write!(f, "<{}/{:08x}>", ar,ft) }}
     else { if self.is_inv() { write!(f, "¬")?; }
            if self.is_vid() { write!(f, "{}", self.vid()) }
            else if self.is_ixn() { write!(f, "#{}", self.idx()) }
