@@ -301,9 +301,12 @@ impl Base for RawASTBase {
 } // impl Base for RawASTBase
 
 pub struct ASTBase { base: Simplify<RawASTBase> }
+impl ASTBase {
+  pub fn from_raw(raw:RawASTBase)->Self { ASTBase{ base: Simplify{ base: raw } }}
+  pub fn new()->Self { ASTBase::from_raw(RawASTBase::new()) }}
 impl Base for ASTBase {
   inherit![when_hi, when_lo, and, xor, or, def, tag, get, sub, dot ];
-  fn new()->Self { ASTBase{ base: Simplify{ base: <RawASTBase as Base>::new() }}}}
+  fn new()->Self { ASTBase::new() }}
 
 impl ASTBase {
   pub fn empty()->Self { ASTBase { base: Simplify{ base: RawASTBase::empty() }}}
