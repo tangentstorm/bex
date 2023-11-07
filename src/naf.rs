@@ -1,10 +1,10 @@
 
-use crate::NID;
-use crate::ast::ASTBase;
+use crate::{NID, I, O, vid::VID};
+use crate::ast::RawASTBase;
 
 #[derive(Debug)]
-pub struct NAF {}
+pub enum NAF {
+  Vhl { v: VID, hi:NID, lo:NID }}
 
-
-pub fn from_ast(_ast: &ASTBase, _goal:NID)->NAF {
-  NAF {}}
+pub fn from_packed_ast(ast: &RawASTBase)->NAF {
+  NAF::Vhl { v: VID::vir(ast.len() as u32), hi:I, lo:O}}
