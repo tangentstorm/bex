@@ -38,7 +38,8 @@ impl NAFBase {
     assert!(!n.is_inv(), "can't fetch inverted nids");
     if n.is_ixn() { self.nodes.get(n.idx()).cloned() }
     else if n.is_var() {
-      Some(NAF::Vhl { v: n.vid(), hi:I, lo: NID::from_bit(n.is_inv()) })}
+      // !! lo could be NID::from_bit(n.is_inv()) but we know !n.is_inv()
+      Some(NAF::Vhl { v: n.vid(), hi:I, lo: O })}
     else { None }}
 
   fn vhl(&mut self, v:VID, hi0:NID, lo0:NID)->NID {
