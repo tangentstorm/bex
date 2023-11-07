@@ -37,7 +37,8 @@ impl NAFBase {
   pub fn get(&self, n:NID)->Option<NAF> {
     assert!(!n.is_inv(), "can't fetch inverted nids");
     if n.is_ixn() { self.nodes.get(n.idx()).cloned() }
-    else if n.is_var() {Some(NAF::Vhl { v: n.vid(), hi:I, lo: O}) }
+    else if n.is_var() {
+      Some(NAF::Vhl { v: n.vid(), hi:I, lo: NID::from_bit(n.is_inv()) })}
     else { None }}
 
   fn vhl(&mut self, v:VID, hi0:NID, lo0:NID)->NID {
@@ -71,7 +72,7 @@ impl NAFBase {
           (false, true) => { // case 2: x:a & y:~b ==> ab ^ a
             expr![ self, ((a & b) ^ a)] },
           (false, false) => // case 3: x:a & y:b ==> ab
-            self.calc_and(xi, yi)}}}
+            self.calc_and(a, b)}}}
     self.push(NAF::And{ x:xi, y:yi }) }
 
   pub fn fetch(&mut self, n:NID)->Vhl {
