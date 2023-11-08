@@ -104,7 +104,7 @@ impl fmt::Display for NID {
     else { if self.is_inv() { write!(f, "¬")?; }
            if self.is_vid() { write!(f, "{}", self.vid()) }
            else if self.is_ixn() { write!(f, "#{}", self.idx()) }
-           else { write!(f, "@[v{}:{}]", self.vid(), self.idx()) }}}}
+           else { write!(f, "@[{}:{}]", self.vid(), self.idx()) }}}}
 
 /// Same as fmt::Display. Mostly so it's easier to see the problem when an assertion fails.
 impl fmt::Debug for NID { // for test suite output
