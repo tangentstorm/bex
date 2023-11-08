@@ -209,7 +209,7 @@ impl NafBase {
 
   fn find_vhls(&mut self, ixn:NID)->Vec<NAF> {
     let naf = self.get(ixn).unwrap();
-    println!("{ixn:?} -> {naf:?}");
+    // println!("{ixn:?} -> {naf:?}");
     match naf {
         NAF::Vhl(_) => vec![naf],
         NAF::And { inv:_, x, y } => {
@@ -266,6 +266,19 @@ impl NafBase {
     let top: Vhl = self.get_vhl(ixn).unwrap();
     let term:NafTerm = (0..=top.v.var_ix()).rev().map(|x|VID::var(x as u32)).collect();
     self.coeff(term, ixn) }
+
+  pub fn print_stats(&self) {
+    let (mut num_vhls, mut num_sums, mut num_ands) = (0,0,0);
+    for naf in &self.nodes {
+      match naf {
+        NAF::Vhl(_) => { num_vhls+=1; },
+        NAF::And { inv:_, x:_, y:_ } => { num_ands+=1; },
+        NAF::Sum { inv:_, xs:_ } => { num_sums+=1; }}}
+    let total = num_vhls + num_sums + num_ands;
+    println!("{total:7} total nodes:");
+    println!("{num_vhls:7} Vhls ({:0.2}%), ", num_vhls as f64 / total as f64 * 100.0);
+    println!("{num_sums:7} Sums ({:0.2}%), ", num_sums as f64 / total as f64 * 100.0);
+    println!("{num_ands:7} Ands ({:0.2}%), ", num_ands as f64 / total as f64 * 100.0);}
 
   /// return a nid referring to the most recently defined node
   pub  fn top_nid(&self)->NID {
