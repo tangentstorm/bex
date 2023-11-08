@@ -32,7 +32,7 @@ impl Debug for NidFun {
     s.push_str("NidFun{");
     s.push_str(&format!("arity:{}, ", self.arity()));
     s.push_str(&format!("tbl:{:032b}", self.tbl()));
-    s.push_str("}");
+    s.push('}');
     write!(f, "{}", s) }}
 
 

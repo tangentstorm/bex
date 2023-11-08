@@ -1,4 +1,4 @@
-///! test suite generated from doc/scaffold.ipynb
+// test suite generated from doc/scaffold.ipynb
 
 #[cfg(test)] use std::iter::FromIterator;
 
@@ -483,6 +483,3 @@
   assert_eq!(xs.get_refcount(n1).unwrap(), 1, "bad refcount for node n1 ({:?})!", n1);
 
 }
-
-
-

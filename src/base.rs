@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::Write;
 use std::process::Command;      // for creating and viewing digarams
-use crate::{simp, nid::{NID}};
+use crate::{simp, nid::NID};
 use crate::vid::VID;
 use crate::reg::Reg;
 

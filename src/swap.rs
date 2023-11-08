@@ -302,7 +302,7 @@ impl XVHLScaffold {
     if ix.is_const() { return }
     let vhl = self.vhls[ix.raw().x as usize];
     if let Some(row) = self.rows.get_mut(&vhl.v) {
-      if let Some(mut ixrc) = row.hm.get_mut(&vhl.hilo()) {
+      if let Some(ixrc) = row.hm.get_mut(&vhl.hilo()) {
         if dirc < 0 && (dirc + ixrc.irc as i64 ) < 0 { panic!("dirc would result in negative refcount")}
         else { ixrc.irc = (ixrc.irc as i64 + dirc) as usize; }
         if derc < 0 && (derc + ixrc.erc as i64 ) < 0 { panic!("derc would result in negative refcount")}

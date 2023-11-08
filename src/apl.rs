@@ -9,7 +9,7 @@ where T: std::hash::Hash, T: std::cmp::Eq {
   let mut map:HashMap<&T,Vec<usize>> = HashMap::new();
   let mut nub = vec![]; // unique xs, in the order in which they appeared
   for (i,k) in xs.iter().enumerate() {
-    let kxs = map.entry(k).or_insert_with(Vec::new);
+    let kxs = map.entry(k).or_default();
     nub.push(k); kxs.push(i) }
   (nub, map) }
 

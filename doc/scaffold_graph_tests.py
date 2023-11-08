@@ -18,7 +18,7 @@ RUST_TESTS = []  # [{setup:str, check:str, label:str}]
 
 def write_tests():
     with open('../src/test-swap-scaffold.rs','w',newline='\n') as o:
-        o.write('///! test suite generated from doc/scaffold.ipynb\n\n')
+        o.write('// test suite generated from doc/scaffold.ipynb\n\n')
         o.write('#[cfg(test)] use std::iter::FromIterator;\n\n')
         for i, item in enumerate(RUST_TESTS):
             o.write('\n'.join([

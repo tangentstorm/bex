@@ -1,4 +1,4 @@
-///! wrap bex as a python module
+//! wrap bex as a python module
 extern crate bex;
 use pyo3::prelude::*;
 use pyo3::PyObjectProtocol;

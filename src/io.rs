@@ -10,9 +10,7 @@ use std::{collections::HashMap, hash::BuildHasher};
 
 // adapted from the above, to deal with a slice:
 unsafe fn slice_to_u8s<T: Sized>(p: &[T]) -> &[u8] {
-  ::std::slice::from_raw_parts(
-    (p.as_ptr()) as *const u8,
-    ::std::mem::size_of::<T>() * p.len()) }
+  ::std::slice::from_raw_parts((p.as_ptr()) as *const u8, std::mem::size_of_val(p)) }
 
 unsafe fn u8s_to_slice<T: Sized>(p: &[u8]) -> &[T] {
   ::std::slice::from_raw_parts(

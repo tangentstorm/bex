@@ -239,7 +239,6 @@ impl Base for RawASTBase {
     self.tag(nid, format!("{}{:?}", s, v)) }
 
   fn tag(&mut self, n:NID, s:String)->NID {
-    let n = n;
     self.tags.insert(s, n); n }
 
   fn and(&mut self, x:NID, y:NID)->NID {
@@ -304,6 +303,10 @@ pub struct ASTBase { base: Simplify<RawASTBase> }
 impl ASTBase {
   pub fn from_raw(raw:RawASTBase)->Self { ASTBase{ base: Simplify{ base: raw } }}
   pub fn new()->Self { ASTBase::from_raw(RawASTBase::new()) }}
+
+impl Default for ASTBase {
+    fn default() -> Self {Self::new()}}
+
 impl Base for ASTBase {
   inherit![when_hi, when_lo, and, xor, or, def, tag, get, sub, dot ];
   fn new()->Self { ASTBase::new() }}
