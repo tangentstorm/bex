@@ -10,6 +10,11 @@ use crate::ast::RawASTBase;
 use crate::vid::{VidOrdering, topmost};
 use dashmap::DashMap;
 
+// constant term (coefficient)
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum K { I, O }
+
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum NAF {
   Vhl ( Vhl ),
@@ -222,50 +227,54 @@ impl NafBase {
           for x in xs { res.append(&mut self.find_vhls(x)) }
           res}}}
 
+  fn coeff_vhl(&mut self, term:&NafTerm, vhl:Vhl)->K {
+    println!("vhl: {vhl:?}");
+    let goal = term[0];
+    return match vhl.v.cmp_depth(&goal) {
+      VidOrdering::Below => { println!("terms are below goal {goal:?}. search failed."); K::O },
+      VidOrdering::Level => {
+        println!("vhl.v is goal {goal:?}. descending hi branch with new term");
+        let next:NafTerm = term.iter().skip(1).cloned().collect();
+        self.coeff(&next, vhl.hi)},
+      VidOrdering::Above => {
+        println!("vhl.v > goal {goal:?}. descending lo branch with same term");
+        self.coeff(term, vhl.lo) }}}
+
+  fn coeff_and(&mut self, term:&NafTerm, inv:bool, x:NID, y:NID)->K { K::O } // TODO
+
+  fn coeff_sum(&mut self, term:&NafTerm, inv:bool, xs:Vec<NID>)->K {
+    //println!("not a vhl: {:?}", self.get(nid));
+    println!("coeff[sum]");
+    // let vhls = self.find_vhls(nid);
+    //println!("-- end of walk --");
+    // self.walk_vhls(nid, 0);
+    //println!("sub-items to search: {vhls:?}");
+    K::O}
+
   /// return the coefficient for the given term of the polynomial referred to by `nid`
-  pub fn coeff(&mut self, term:NafTerm, nid:NID)->u8 {
-    if nid == O { return 0 }
+  pub fn coeff(&mut self, term:&NafTerm, nid:NID)->K {
+    if nid == O { return K::O }
     if term.is_empty() {
       // !! not 100% sure what to do here.
       println!("[fyi] coeff([], {:?}). !!! does this make sense?", nid);
-      return 1 }
+      return K::I }
     if nid.is_var() {
-      return if term.len() == 1 { if nid.vid() == term[0] { 1 } else { 0 }}
-      else { 0 }}
-    if nid == I { return 1 }
+      return if term.len() == 1 { if nid.vid() == term[0] { K::I } else { K::O }}
+      else { K::O }}
+    if nid == I { return K::I }
     println!("coeff(term: {term:?}, nid: {nid:?})");
     let naf= self.get(nid).unwrap();
     match naf {
-      NAF::Vhl(vhl) => {
-        println!("vhl: {vhl:?}");
-        let goal = term[0];
-        return match vhl.v.cmp_depth(&goal) {
-          VidOrdering::Below => { println!("terms are below goal {goal:?}. search failed."); 0 },
-          VidOrdering::Level => {
-            println!("vhl.v is goal {goal:?}. descending hi branch with new term");
-            let next:NafTerm = term.iter().skip(1).cloned().collect();
-            self.coeff(next, vhl.hi)},
-          VidOrdering::Above => {
-            println!("vhl.v > goal {goal:?}. descending lo branch with same term");
-            self.coeff(term, vhl.lo) }}}
-      //NAF::And { inv, x, y } => {  todo!("coeff for {naf:?}") }
-      //NAF::Sum { inv, xs } => {
-      _ => {
-        println!("not a vhl: {:?}", self.get(nid));
-        println!("-- walking tree to find vhls --");
-        let vhls = self.find_vhls(nid);
-        println!("-- end of walk --");
-        self.walk_vhls(nid, 0);
-        println!("sub-items to search: {vhls:?}");
-       }}
-    return 0 }
+      NAF::Vhl(vhl) => self.coeff_vhl(term, vhl),
+      NAF::And { inv, x, y } => self.coeff_and(term, inv, x, y),
+      NAF::Sum { inv, xs } => self.coeff_sum(term, inv, xs) }}
 
   /// return the final coefficient of the ANF polynomial
   /// (that is, the coefficient of the term that has every input variable in it)
-  pub fn last_coeff(&mut self, ixn:NID)->u8 {
+  pub fn last_coeff(&mut self, ixn:NID)->K {
     let top: Vhl = self.get_vhl(ixn).unwrap();
     let term:NafTerm = (0..=top.v.var_ix()).rev().map(|x|VID::var(x as u32)).collect();
-    self.coeff(term, ixn) }
+    self.coeff(&term, ixn) }
 
   pub fn print_stats(&self) {
     let (mut num_vhls, mut num_sums, mut num_ands) = (0,0,0);
