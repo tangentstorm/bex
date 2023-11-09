@@ -242,14 +242,28 @@ impl NafBase {
 
   fn coeff_and(&mut self, term:&NafTerm, inv:bool, x:NID, y:NID)->K { K::O } // TODO
 
+  fn gather_terms(&mut self, xs:Vec<NID>)->(Vec<NAF>, Vec<NAF>) {
+    let mut vhls = vec![];
+    let mut ands = vec![];
+    for xi in xs {
+      if let Some(x) = self.get(xi) {
+        match x {
+          NAF::Vhl(_) => vhls.push(x),
+          NAF::And { inv:_, x:_, y:_ } => ands.push(x),
+          NAF::Sum { inv:_, xs } => {
+            // TODO: handle inv
+            let (mut new_vhls, mut new_ands) = self.gather_terms(xs);
+            vhls.append(&mut new_vhls);
+            ands.append(&mut new_ands); }}}
+      else { }} // TODO: handle consts
+    (vhls, ands)}
+
   fn coeff_sum(&mut self, term:&NafTerm, inv:bool, xs:Vec<NID>)->K {
-    //println!("not a vhl: {:?}", self.get(nid));
-    println!("coeff[sum]");
-    // let vhls = self.find_vhls(nid);
-    //println!("-- end of walk --");
-    // self.walk_vhls(nid, 0);
-    //println!("sub-items to search: {vhls:?}");
-    K::O}
+    let (vhls, ands) = self.gather_terms(xs);
+    println!("found {} nafs in the sum:", vhls.len() + ands.len());
+    for naf in vhls { println!("  {naf:?}")}
+    for naf in ands { println!("  {naf:?}")}
+    K::O} // TODO
 
   /// return the coefficient for the given term of the polynomial referred to by `nid`
   pub fn coeff(&mut self, term:&NafTerm, nid:NID)->K {
