@@ -292,16 +292,30 @@ impl NafBase {
 
   pub fn print_stats(&self) {
     let (mut num_vhls, mut num_sums, mut num_ands) = (0,0,0);
+    let mut by_var = vec![0;32];  // 32 vars to start
+    let mut ands_by_var = vec![0;32];
+    let mut sums_by_var = vec![0;32];
+    let mut vhls_by_var = vec![0;32];
     for naf in &self.nodes {
+      let vix = naf.var().vid_ix();
+      by_var[vix]+= 1;
       match naf {
-        NAF::Vhl(_) => { num_vhls+=1; },
-        NAF::And { inv:_, x:_, y:_ } => { num_ands+=1; },
-        NAF::Sum { inv:_, xs:_ } => { num_sums+=1; }}}
+        NAF::Vhl(_) => { num_vhls+=1; vhls_by_var[vix]+=1; },
+        NAF::And { inv:_, x:_, y:_ } => { num_ands+=1; ands_by_var[vix]+=1; },
+        NAF::Sum { inv:_, xs:_ } => { num_sums+=1; sums_by_var[vix]+=1
+         }}}
     let total = num_vhls + num_sums + num_ands;
     println!("{total:7} total nodes:");
-    println!("{num_vhls:7} Vhls ({:0.2}%), ", num_vhls as f64 / total as f64 * 100.0);
-    println!("{num_sums:7} Sums ({:0.2}%), ", num_sums as f64 / total as f64 * 100.0);
-    println!("{num_ands:7} Ands ({:0.2}%), ", num_ands as f64 / total as f64 * 100.0);}
+    print!  ("  vhls: {num_vhls:7} ({:5.2}%) ", num_vhls as f64 / total as f64 * 100.0);
+    print!  ("| ands: {num_ands:7} ({:5.2}%) ", num_ands as f64 / total as f64 * 100.0);
+    println!("| sums: {num_sums:7} ({:5.2}%) ", num_sums as f64 / total as f64 * 100.0);
+    println!("-- breakdown by topmost variable --");
+    for (i,n) in by_var.iter().enumerate().rev() {
+      print!("{:-3}: {n:7}  ({:5.2})%", VID::var(i as u32).to_string(), *n as f64 / total as f64 * 100.0);
+      let n = vhls_by_var[i]; print!(" | vhls: {n:7} ({:5.2})%", n as f64 / total as f64 * 100.0);
+      let n = ands_by_var[i]; print!(" | ands: {n:7} ({:5.2})%", n as f64 / total as f64 * 100.0);
+      let n = sums_by_var[i]; print!(" | sums: {n:7} ({:5.2})%", n as f64 / total as f64 * 100.0);
+      println!(""); }}
 
   /// return a nid referring to the most recently defined node
   pub  fn top_nid(&self)->NID {
