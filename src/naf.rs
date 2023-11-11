@@ -3,6 +3,7 @@
  * The main difference between this and anf.rs is that this
  * version allows deferred evaluation.
  */
+use std::collections::HashSet;
 use crate::simp;
 use crate::vhl::Vhl;
 use crate::{NID, I, O, vid::VID};
@@ -198,6 +199,26 @@ impl NafBase {
     if xs.is_empty() { NID::from_bit(inv) }
     else { self.push(NAF::Sum{ inv, xs })}}
 
+
+  pub fn walk<F>(&self, n:NID, f:&mut F) where F:FnMut(NID) {
+    let mut seen = HashSet::new();
+    self.step(n,f,&mut seen)}
+
+  fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>) where F:FnMut(NID) {
+    if !seen.contains(&n.raw()) {
+      seen.insert(n.raw());
+      f(n);
+      if !n.is_lit() {
+        match self.get(n).unwrap() {
+          NAF::Vhl(vhl) => {
+            self.step(vhl.hi, f, seen);
+            self.step(vhl.lo, f, seen)},
+          NAF::And { inv:_, x, y } => {
+            self.step(x, f, seen);
+            self.step(y, f, seen)},
+          NAF::Sum { inv:_, xs } => {
+            for x in xs {  self.step(x, f, seen); }}}}}}
+
   /// this prints a tree of subnodes for the given nid, ending
   /// in a leaf whenever a VHL is found
   fn walk_vhls(&self, ixn:NID, depth:u32) {
@@ -289,6 +310,37 @@ impl NafBase {
     let top: Vhl = self.get_vhl(ixn).unwrap();
     let term:NafTerm = (0..=top.v.var_ix()).rev().map(|x|VID::var(x as u32)).collect();
     self.coeff(&term, ixn) }
+
+  /// return a vector classifying how each node in the graph is connected to `nid`.
+  /// 0:not connected. 1:lo branch. 1.hi branch. 3:both
+  fn color_by_usage(&self, nid:NID)->Vec<u8> {
+    let mut res = vec![0u8; self.nodes.len()];
+    let vhl = self.get_vhl(nid).expect("can only color_terms on a vhl node");
+    let mut paint = |n0:NID, bit:u8| {
+      self.walk(n0, &mut |n:NID|{
+        if !n.is_lit() { res[n.idx()] |= bit }})};
+    paint(vhl.lo, 1);
+    paint(vhl.hi, 2);
+    res}
+
+  pub fn print_usage(&self, ix:NID) {
+    let (mut no, mut lo, mut hi, mut bo) = (0,0,0,0);
+    for x in self.color_by_usage(ix) {
+      match x {
+        0 => no+=1,
+        1 => lo+=1,
+        2 => hi+=1,
+        3 => bo+=1,
+        _ => panic!("encountered unexpected usage color {x}!")}}
+    let total = self.nodes.len();
+    assert_eq!(no+lo+hi+bo, total);
+    println!("Usage: ");
+    println!("| {no:7} ({:5.2}%) can be discarded", (100 * no) as f64 / total as f64);
+    println!("| {lo:7} ({:5.2}%) owned by lo branch", (100 * lo) as f64 / total as f64);
+    println!("| {hi:7} ({:5.2}%) owned by hi branch", (100 * hi) as f64 / total as f64);
+    println!("| {bo:7} ({:5.2}%) shared by both", (100 * bo) as f64 / total as f64);
+    let nr = hi+bo;
+    println!("| {nr:7} ({:5.2}%) used in next round (hi+both)", (100 * nr) as f64/total as f64)}
 
   pub fn print_stats(&self) {
     let (mut num_vhls, mut num_sums, mut num_ands) = (0,0,0);
