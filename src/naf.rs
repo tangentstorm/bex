@@ -305,16 +305,17 @@ impl NafBase {
         NAF::Sum { inv:_, xs:_ } => { num_sums+=1; sums_by_var[vix]+=1
          }}}
     let total = num_vhls + num_sums + num_ands;
-    println!("{total:7} total nodes:");
-    print!  ("  vhls: {num_vhls:7} ({:5.2}%) ", num_vhls as f64 / total as f64 * 100.0);
-    print!  ("| ands: {num_ands:7} ({:5.2}%) ", num_ands as f64 / total as f64 * 100.0);
-    println!("| sums: {num_sums:7} ({:5.2}%) ", num_sums as f64 / total as f64 * 100.0);
-    println!("-- breakdown by topmost variable --");
+    print!("     {total:7} nodes.    ");
+    print!("| vhls: {num_vhls:7} ({:5.2}%) ", num_vhls as f64 / total as f64 * 100.0);
+    print!("| ands: {num_ands:7} ({:5.2}%) ", num_ands as f64 / total as f64 * 100.0);
+    print!("| sums: {num_sums:7} ({:5.2}%) ", num_sums as f64 / total as f64 * 100.0);
+    println!();
+    println!("{:-<97}","");
     for (i,n) in by_var.iter().enumerate().rev() {
-      print!("{:-3}: {n:7}  ({:5.2})%", VID::var(i as u32).to_string(), *n as f64 / total as f64 * 100.0);
-      let n = vhls_by_var[i]; print!(" | vhls: {n:7} ({:5.2})%", n as f64 / total as f64 * 100.0);
-      let n = ands_by_var[i]; print!(" | ands: {n:7} ({:5.2})%", n as f64 / total as f64 * 100.0);
-      let n = sums_by_var[i]; print!(" | sums: {n:7} ({:5.2})%", n as f64 / total as f64 * 100.0);
+      print!("{:>3}: {n:7}  ({:5.2})%", VID::var(i as u32).to_string(), *n as f64 / total as f64 * 100.0);
+      let n = vhls_by_var[i]; print!(" | vhls: {n:7} ({:5.2}%)", n as f64 / total as f64 * 100.0);
+      let n = ands_by_var[i]; print!(" | ands: {n:7} ({:5.2}%)", n as f64 / total as f64 * 100.0);
+      let n = sums_by_var[i]; print!(" | sums: {n:7} ({:5.2}%)", n as f64 / total as f64 * 100.0);
       println!(""); }}
 
   /// return a nid referring to the most recently defined node
