@@ -21,7 +21,7 @@ pub enum NAF {
   Vhl ( Vhl ),
   And { inv:bool, x: NID, y: NID },
   Sum { inv:bool, xs: Vec<NID> }}
-
+
 impl NAF {
   pub fn var(&self)->VID {
     match self {
@@ -62,7 +62,7 @@ fn inv_vhl_if(vhl:Vhl, inv:bool)->Vhl {
   if inv { let Vhl{ v, hi, lo } = vhl;
     Vhl{v, hi, lo:!lo}}
   else { vhl }}
-
+
 impl NafBase {
   fn new()->Self { NafBase{ nodes:vec![], cache: NafMap::default() } }
 
@@ -73,15 +73,17 @@ impl NafBase {
     self.nodes.push(naf);
     nid }
 
-  fn get(&self, n:NID)->Option<NAF> {
+  pub fn get(&self, n:NID)->Option<NAF> {
     if n.is_var() {
       Some(NAF::Vhl(Vhl { v: n.vid(), hi:I, lo: NID::from_bit(n.is_inv()) }))}
     else if n.is_const() { None }
     else { self.nodes.get(n.idx()).cloned().map(|x|x.inv_if(n.is_inv())) }}
 
-  fn get_vhl(&self, xi:NID)->Option<Vhl> {
+  /// get vhl if it's already a vhl (to convert, see .vhl())
+  pub fn get_vhl(&self, xi:NID)->Option<Vhl> {
     if xi.is_var() { Some(Vhl{ v:xi.vid(),  hi:I, lo:NID::from_bit(xi.is_inv()) }) }
-    else if let Some(NAF::Vhl(vhl)) = self.get(xi.raw()) { Some(inv_vhl_if(vhl, xi.is_inv())) }
+    else if let Some(NAF::Vhl(vhl)) = self.get(xi.raw()) {
+      Some(inv_vhl_if(vhl, xi.is_inv())) }
     else { None }}
 
   fn get_vhls(&self, xi:NID, yi:NID)->Option<(Vhl,Vhl)> {
@@ -91,7 +93,7 @@ impl NafBase {
   fn get_vhl_nids(&self, xi:NID, yi:NID)->Option<(VhlNid, VhlNid)> {
     if self.get_vhls(xi,yi).is_some() { Some((VhlNid{nid:xi}, VhlNid{nid:yi})) }
     else { None }}
-
+
   fn vhl(&mut self, v:VID, hi0:NID, lo0:NID)->VhlNid {
     // !! exactly the same logic as anf::vhl(), but different hashmap/vhl
     // this is technically an xor operation, so if we want to call it directly,
@@ -110,7 +112,7 @@ impl NafBase {
         self.nodes.push(NAF::Vhl(vhl));
         nid };
     if lo.is_inv() { VhlNid{nid: !res} } else { VhlNid{nid: res} }}
-
+
   fn and_vhls(&mut self, xi:VhlNid, yi:VhlNid)->VhlNid {
       let x = self.get_vhl(xi.nid).unwrap();
       let y = self.get_vhl(yi.nid).unwrap();
@@ -146,7 +148,7 @@ impl NafBase {
         else { self.xor_vhls(res, yi.raw()) }}
       else if yi.is_inv() { self.xor_vhls(res, xi.raw()) }
       else { res }}
-
+
   fn xor_vhls(&mut self, xi:VhlNid, yi:VhlNid)->VhlNid {
     let x = self.get_vhl(xi.nid).unwrap();
     let y = self.get_vhl(yi.nid).unwrap();
@@ -162,7 +164,7 @@ impl NafBase {
         self.vhl(x.v, hi, lo)}};
     // handle the constant term:
     if xi.is_inv() == yi.is_inv() { res } else { !res }}
-
+
   // these are for sub-expressions. they're named this way so expr![] works.
   pub fn xor(&mut self, xi: NID, yi:NID)->NID {
     if let Some(res) = simp::xor(xi, yi) { res }
@@ -198,8 +200,7 @@ impl NafBase {
       xs.push(nid.raw())}
     if xs.is_empty() { NID::from_bit(inv) }
     else { self.push(NAF::Sum{ inv, xs })}}
-
-
+
   pub fn walk<F>(&self, n:NID, f:&mut F) where F:FnMut(NID) {
     let mut seen = HashSet::new();
     self.step(n,f,&mut seen)}
@@ -232,7 +233,7 @@ impl NafBase {
           self.walk_vhls(y, depth+1);},
         NAF::Sum { inv:_, xs} => {
           for x in xs { self.walk_vhls(x, depth+1)  }}}}
-
+
   fn find_vhls(&mut self, ixn:NID)->Vec<NAF> {
     let naf = self.get(ixn).unwrap();
     // println!("{ixn:?} -> {naf:?}");
@@ -247,7 +248,7 @@ impl NafBase {
           let mut res = vec![];
           for x in xs { res.append(&mut self.find_vhls(x)) }
           res}}}
-
+
   fn coeff_vhl(&mut self, term:&NafTerm, vhl:Vhl)->K {
     println!("vhl: {vhl:?}");
     let goal = term[0];
@@ -278,7 +279,7 @@ impl NafBase {
             ands.append(&mut new_ands); }}}
       else { }} // TODO: handle consts
     (vhls, ands)}
-
+
   fn coeff_sum(&mut self, term:&NafTerm, inv:bool, xs:Vec<NID>)->K {
     let (vhls, ands) = self.gather_terms(xs);
     println!("found {} nafs in the sum:", vhls.len() + ands.len());
@@ -310,7 +311,7 @@ impl NafBase {
     let top: Vhl = self.get_vhl(ixn).unwrap();
     let term:NafTerm = (0..=top.v.var_ix()).rev().map(|x|VID::var(x as u32)).collect();
     self.coeff(&term, ixn) }
-
+
   /// return a vector classifying how each node in the graph is connected to `nid`.
   /// 0:not connected. 1:lo branch. 1.hi branch. 3:both
   fn color_by_usage(&self, nid:NID)->Vec<u8> {
@@ -341,7 +342,7 @@ impl NafBase {
     println!("| {bo:7} ({:5.2}%) shared by both", (100 * bo) as f64 / total as f64);
     let nr = hi+bo;
     println!("| {nr:7} ({:5.2}%) used in next round (hi+both)", (100 * nr) as f64/total as f64)}
-
+
   pub fn print_stats(&self) {
     let (mut num_vhls, mut num_sums, mut num_ands) = (0,0,0);
     let mut by_var = vec![0;32];  // 32 vars to start
@@ -369,7 +370,7 @@ impl NafBase {
       let n = ands_by_var[i]; print!(" | ands: {n:7} ({:5.2}%)", n as f64 / total as f64 * 100.0);
       let n = sums_by_var[i]; print!(" | sums: {n:7} ({:5.2}%)", n as f64 / total as f64 * 100.0);
       println!(""); }}
-
+
   /// return a nid referring to the most recently defined node
   pub  fn top_nid(&self)->NID {
     let naf = self.nodes.last().unwrap();
