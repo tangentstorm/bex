@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::default::Default;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::{collections::HashMap};
+use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Mutex;
 use crate::nid::NID;
@@ -15,8 +15,8 @@ use dashmap::DashMap;
 
 // cache lookup counters:
 thread_local!{
-  pub static COUNT_CACHE_TESTS: RefCell<u64> = RefCell::new(0);
-  pub static COUNT_CACHE_HITS: RefCell<u64> = RefCell::new(0); }
+  pub static COUNT_CACHE_TESTS: RefCell<u64> = const { RefCell::new(0) };
+  pub static COUNT_CACHE_HITS: RefCell<u64> = const { RefCell::new(0) }; }
 
 
 
@@ -123,7 +123,7 @@ impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID> {
       res }}
 
   pub fn resolve_vhl(&self, q:&K, v:VID, h0:NID, l0:NID, invert:bool)->Option<Answer<NID>> {
-    use crate::bdd::{ITE}; // TODO: normalization strategy might need to be generic
+    use crate::bdd::ITE; // TODO: normalization strategy might need to be generic
     // we apply invert first so it normalizes correctly.
     let (h1,l1) = if invert { (!h0, !l0) } else { (h0, l0) };
     let nid = match ITE::norm(NID::from_vid(v), h1, l1) {

@@ -13,14 +13,14 @@
 //! ```
 //! In addition, identical suffixes after factoring always refer to the same node.
 use std::collections::{HashMap, HashSet};
-use crate::base::{Base};
+use crate::base::Base;
 use crate::simp;
 use crate::{nid, nid::{NID,I,O}};
 use crate::vid::{VID,VidOrdering};
 use crate::cur::{Cursor, CursorPlan};
 use crate::reg::Reg;
 use crate::vhl::{Vhl, HiLo, HiLoBase, Walkable};
-use crate::bdd::{BddBase}; // for solutions
+use crate::bdd::BddBase; // for solutions
 #[cfg(test)] use crate::vid::{topmost, botmost};
 
 /// (v AND hi) XOR lo
@@ -281,7 +281,7 @@ impl<'a> ANFTermIterator<'a> {
     else {
       ANFTermIterator{ base, next:None }}}}
 
-impl<'a> Iterator for ANFTermIterator<'a> {
+impl Iterator for ANFTermIterator<'_> {
   type Item = Reg;
   fn next(&mut self)->Option<Self::Item> {
     if let Some(cur) = self.next.take() {
@@ -293,7 +293,6 @@ impl<'a> Iterator for ANFTermIterator<'a> {
 
 /// iterator for actual solutions.
 /// this works by converting to a bdd.
-
 pub struct ANFSolIterator<'a> {
   _anf: &'a ANFBase,
   bdd: BddBase,
@@ -310,7 +309,7 @@ impl<'a>  ANFSolIterator<'a> {
     let bcur = bdd.first_solution(bnid, nvars);
     ANFSolIterator{ _anf:anf, bdd, bcur } }}
 
-impl<'a> Iterator for ANFSolIterator<'a> {
+impl Iterator for ANFSolIterator<'_> {
   type Item = Reg;
   fn next(&mut self)->Option<Self::Item> {
     if let Some(cur) = self.bcur.take() {

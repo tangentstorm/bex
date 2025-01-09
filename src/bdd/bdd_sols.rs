@@ -34,7 +34,7 @@ impl<'a> BDDSolIterator<'a> {
     BDDSolIterator{ bdd, next }}}
 
 
-impl<'a> Iterator for BDDSolIterator<'a> {
+impl Iterator for BDDSolIterator<'_> {
   type Item = Reg;
   fn next(&mut self)->Option<Self::Item> {
     if let Some(cur) = self.next.take() {

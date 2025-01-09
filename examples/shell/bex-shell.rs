@@ -5,7 +5,7 @@ use std::collections::HashMap;
 extern crate bex;
 use bex::*;
 use bex::nid::NID;
-use bex::ast::{ASTBase};
+use bex::ast::ASTBase;
 use bex::solve;
 use bex::anf::ANFBase;
 use bex::bdd::BddBase;
@@ -20,7 +20,7 @@ fn readln()->String {
   io::stdin().read_line(&mut buf)      .expect("failed to read line.");
   buf}
 
-fn swap(data: &mut Vec<NID>) {
+fn swap(data: &mut [NID]) {
   let p = data.len()-1;
   if p > 0 { data.swap(p-1,p) }}
 

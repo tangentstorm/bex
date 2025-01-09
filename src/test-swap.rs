@@ -120,7 +120,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
 
   dst.xs = ss.dst; // move result back to the debugger for inspection.
   // all vars should now be in dst.xs, but we copy the names so fmt knows what to call them.
-  for (&c, &i) in cv.iter() { if dst.cv.get(&c).is_none() { dst.name_var(VID::var(i as u32), c) }}
+  for (&c, &i) in cv.iter() { if !dst.cv.contains_key(&c) { dst.name_var(VID::var(i as u32), c) }}
   assert_eq!(dst.vids(), expected_order, "unexpected vid ordering at end");
   assert_eq!(dst.fmt(xid), dst.run(goal));}
 
@@ -230,21 +230,21 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   let x4:VID = VID::var(4);
 
   // here these are all in place already, so we can remove them from the plan.
-  assert_eq!(d!{ }, plan_regroup(&vec![x0,x1,x2], &vec![s![x0], s![x1], s![x2]]));
+  assert_eq!(d!{ }, plan_regroup(&[x0,x1,x2], &[s![x0], s![x1], s![x2]]));
 
   // here x2 stays in place, so we don't have to include it in the plan.
-  assert_eq!(d!{ x1:1 }, plan_regroup(&vec![x1,x0,x2], &vec![s![x0], s![x1], s![x2]]));
+  assert_eq!(d!{ x1:1 }, plan_regroup(&[x1,x0,x2], &[s![x0], s![x1], s![x2]]));
 
   // here we find 4 before 3 moving right to left (top down in the scaffold)
-  assert_eq!(d!{ x4:4, x3:3 }, plan_regroup(&vec![x3,x2,x4,x0,x1], &vec![s![x2,x0,x1],s![],s![x4,x3]]));
+  assert_eq!(d!{ x4:4, x3:3 }, plan_regroup(&[x3,x2,x4,x0,x1], &[s![x2,x0,x1],s![],s![x4,x3]]));
 
   // but here we find them in the opposite order, and we want to preserve that order. (one less swap to do)
-  assert_eq!(d!{ x4:3, x3:4 }, plan_regroup(&vec![x4,x2,x3,x0,x1], &vec![s![x2,x0,x1],s![],s![x4,x3]]));
+  assert_eq!(d!{ x4:3, x3:4 }, plan_regroup(&[x4,x2,x3,x0,x1], &[s![x2,x0,x1],s![],s![x4,x3]]));
 
   // here x4 starts out in the right area, but dragging x3 up past x0 will push x4 down. so x4 must be in
   // the plan so that the plan can ensure it *stays* in the right place.
-  assert_eq!(d!{ x4:4, x3:3 }, plan_regroup(&vec![x3,x1,x2,x4,x0], &vec![s![x2,x0,x1],s![],s![x4,x3]]));
+  assert_eq!(d!{ x4:4, x3:3 }, plan_regroup(&[x3,x1,x2,x4,x0], &[s![x2,x0,x1],s![],s![x4,x3]]));
 println!("----------");
   // but here, x4 is at the end, and nothing will ever swap with it, so we can drop it from the plan.
-  assert_eq!(d!{ x3:3 }, plan_regroup(&vec![x3,x1,x2,x0,x4], &vec![s![x2,x0,x1],s![],s![x4,x3]]));
+  assert_eq!(d!{ x3:3 }, plan_regroup(&[x3,x1,x2,x0,x4], &[s![x2,x0,x1],s![],s![x4,x3]]));
 }

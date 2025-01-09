@@ -464,7 +464,7 @@ impl XVHLScaffold {
 
 
 
-fn plan_regroup(vids:&Vec<VID>, groups:&Vec<HashSet<VID>>)->HashMap<VID,usize> {
+fn plan_regroup(vids:&[VID], groups:&[HashSet<VID>])->HashMap<VID,usize> {
   // vids are arranged from bottom to top
   let mut plan = HashMap::new();
 
@@ -509,7 +509,7 @@ fn plan_regroup(vids:&Vec<VID>, groups:&Vec<HashSet<VID>>)->HashMap<VID,usize> {
 // functions for performing the distributed regroup()
 impl XVHLScaffold {
 
-  fn plan_regroup(&self, groups:&Vec<HashSet<VID>>)->HashMap<VID,usize> {
+  fn plan_regroup(&self, groups:&[HashSet<VID>])->HashMap<VID,usize> {
     plan_regroup(&self.vids, groups) }
 
   fn take_row(&mut self, v:&VID)->Option<XVHLRow> {
@@ -1002,7 +1002,7 @@ impl SwapWorker {
       let wipix = ixrc0.ix.x as usize;
       ixrc.ix = xids[wipix];  // map the temp xid -> true xid
       wipxid[wipix] = ixrc.ix; // remember for w2x, below.
-      assert!(self.rd.hm.get(&(XHiLo{hi:*hi, lo:*lo})).is_none());
+      assert!(!self.rd.hm.contains_key(&(XHiLo{hi:*hi, lo:*lo})));
       let key = XHiLo{hi:*hi, lo:*lo};
       self.rd.hm.insert(key, ixrc);  // refcount chages are done so no need for rd_map
       // and now update the master store:
@@ -1130,6 +1130,7 @@ impl SwapSolver {
   ///  1. vids shared between src and dst (set n) are above rv
   ///  2. vids that are only in the dst (set d) are below rv
   ///  3. new vids from src (set s) are directly above rv.
+  ///
   /// so from bottom to top: ( d, v, s, n )
   /// (the d vars are not actually copied to the src, but otherwise the
   /// orders should match exactly when we're done.)

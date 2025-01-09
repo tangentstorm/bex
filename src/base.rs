@@ -69,8 +69,8 @@ pub trait GraphViz {
       .output().expect("failed to run 'dot' command");
     let mut svg = File::create(format!("{}.svg",s).as_str()).expect("couldn't create svg");
     svg.write_all(&out.stdout).expect("couldn't write svg");
-    Command::new("firefox").args([format!("{}.svg",s).as_str()])
-      .spawn().expect("failed to launch firefox"); }
+    let _ = Command::new("firefox").args([format!("{}.svg",s).as_str()])
+      .spawn().expect("failed to launch firefox").wait(); }
 
   fn show(&self, n:NID) { self.show_named(n, "+bdd") }
 }
@@ -220,8 +220,8 @@ base_test!(test_base_when, b, {
 
 
 // TODO: put these elsewhere.
-#[cfg(todo)] pub fn order<T:PartialOrd>(x:T, y:T)->(T,T) { if x < y { (x,y) } else { (y,x) }}
-#[cfg(todo)] pub fn order3<T:Ord+Clone>(x:T, y:T, z:T)->(T,T,T) {
-  let mut res = [x,y,z];
-  res.sort();
-  (res[0].clone(), res[1].clone(), res[2].clone())}
+// pub fn order<T:PartialOrd>(x:T, y:T)->(T,T) { if x < y { (x,y) } else { (y,x) }}
+// pub fn order3<T:Ord+Clone>(x:T, y:T, z:T)->(T,T,T) {
+//  let mut res = [x,y,z];
+//  res.sort();
+//  (res[0].clone(), res[1].clone(), res[2].clone())}

@@ -87,7 +87,7 @@ pub struct ProgressReport<'a> {
 #[derive(Clone, Copy, Debug, PartialEq)] pub struct DstNid { pub n: NID }
 
 
-impl<'a, S:SubSolver> Progress<S> for ProgressReport<'a> {
+impl<S:SubSolver> Progress<S> for ProgressReport<'_> {
   fn on_start(&mut self, _ctx:&DstNid) { self.start = std::time::SystemTime::now(); }
   fn on_step(&mut self, _src:&RawASTBase, _dest: &mut S, _step:usize, _millis:u128, _oldtop:DstNid, _newtop:DstNid) { }
     /*

@@ -8,12 +8,12 @@ use std::slice::Iter;
 #[derive(PartialOrd, PartialEq, Eq, Hash, Debug, Clone)]
 pub enum Ops { RPN(Vec<NID>) }
 impl Ops {
-  ///! Again, just for future proofing.
+  /// Again, just for future proofing.
   pub fn to_rpn(&self)->Iter<'_, NID> {
     match self {
       Ops::RPN(vec) => vec.iter() }}
 
-  // return as a function application, where the first item is the function
+  /// return as a function application, where the first item is the function
   pub fn to_app(&self)->(NID, Vec<NID>) {
     match self {
       Ops::RPN(vec) => {

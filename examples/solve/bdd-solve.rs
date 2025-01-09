@@ -1,33 +1,31 @@
-// note: i temporarily replaced '//!' with '///'
-// until i get benchmarks cleanly factored out.
-/// example for bdd-based general solver with bex:
-///
-/// ```text
-///     NB. k =: 614889782588491410
-///     k =: */2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
-/// ```
-///
-/// That is, k is the product of the first 15 primes. This is the value with the
-/// largest number of unique prime factors that still fits into a u64.
-///
-/// Now, we want to find all pairs (x,y) of 32 bit numbers such that x>y and x*y=k.
-/// (The first condition strips out duplicates, but also just makes our BDD
-/// a little more interesting.)
-///
-/// There are 2^15=32,768 ways to group the factors into two products that multiply to k.
-/// But since we only care about one ordering, this brings us down to 2^14 = 16,384.
-/// However, many of these (for example, 307,444,891,294,245,705 * 2) involve an x
-/// that's too big to fit in a u32. Once we eliminate these numbers, we wind up with
-/// 3827 possible solutions.
-///
-/// The list was generated with the following J program:
-///
-/// ```text
-///     xy0 =: */L:0 (0,"1#:i.2^n-1) </."1 |.p:i.n=:15
-///     xys =: ({~[:I.([:*./(2^32)>])"1) \:~\:~@;"1 xy0
-///     txt =: ,('    ',LF,~}:)"1 ] _4 ;\ ([: < ','10}  3|.'), (', ": )"1 xys
-///     txt 1!:2 <'nums.txt'
-/// ```
+//! example for bdd-based general solver with bex:
+//!
+//! ```text
+//!     NB. k =: 614889782588491410
+//!     k =: */2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
+//! ```
+//!
+//! That is, k is the product of the first 15 primes. This is the value with the
+//! largest number of unique prime factors that still fits into a u64.
+//!
+//! Now, we want to find all pairs (x,y) of 32 bit numbers such that x>y and x*y=k.
+//! (The first condition strips out duplicates, but also just makes our BDD
+//! a little more interesting.)
+//!
+//! There are 2^15=32,768 ways to group the factors into two products that multiply to k.
+//! But since we only care about one ordering, this brings us down to 2^14 = 16,384.
+//! However, many of these (for example, 307,444,891,294,245,705 * 2) involve an x
+//! that's too big to fit in a u32. Once we eliminate these numbers, we wind up with
+//! 3827 possible solutions.
+//!
+//! The list was generated with the following J program:
+//!
+//! ```text
+//!     xy0 =: */L:0 (0,"1#:i.2^n-1) </."1 |.p:i.n=:15
+//!     xys =: ({~[:I.([:*./(2^32)>])"1) \:~\:~@;"1 xy0
+//!     txt =: ,('    ',LF,~}:)"1 ] _4 ;\ ([: < ','10}  3|.'), (', ": )"1 xys
+//!     txt 1!:2 <'nums.txt'
+//! ```
 
 
 /// Product of the first 15 primes: 2 3 5 7 11 13 17 19 23 29 31 37 41 43 47
