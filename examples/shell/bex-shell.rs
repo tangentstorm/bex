@@ -1,6 +1,7 @@
 use std::io;
 use std::io::Write;
 use std::collections::HashMap;
+use std::str::FromStr;
 
 extern crate bex;
 use bex::*;
@@ -10,7 +11,6 @@ use bex::solve;
 use bex::anf::ANFBase;
 use bex::bdd::BddBase;
 
-
 // forth-like REPL for the BDD  (helper routines)
 
 fn readln()->String {
@@ -48,14 +48,9 @@ fn repl(base:&mut ASTBase) {
   'main: loop {
     print!("[ "); for x in &data { print!("{} ", *x); } println!("]");
     let line = readln();
-    macro_rules! num_suffix { ($word:expr) => {
-      $word.to_string().split_off(1).parse::<usize>() }}
     for word in line.split_whitespace() {
       match word {
-        // bdd commands
-        "i"|"I" => data.push(nid::I),
-        "o"|"O" => data.push(nid::O),
-        "~"|"not" => { let x = pop(&mut data); data.push(!x) }
+        "~"|"not"|"!" => { let x = pop(&mut data); data.push(!x) }
         "and" => { let (x,y)=pop2(&mut data); data.push(base.and(x,y)) }
         "xor" => { let (x,y)=pop2(&mut data); data.push(base.xor(x,y)) }
         "or"  => { let (x,y)=pop2(&mut data); data.push(base.or(x,y)) }
@@ -88,26 +83,21 @@ fn repl(base:&mut ASTBase) {
         "reset" => data = Vec::new(),
         //todo "save" => base.save("saved.bdd").expect("failed to save bdd"),
         //todo "load" => base.load("saved.bdd").expect("failed to load bdd"),
+        // bdd commands
+        "i"|"I" => data.push(nid::I),
+        "o"|"O" => data.push(nid::O),
         _ => {
-          // parse number:
-          if let Ok(w)=word.parse::<usize>() { data.push(NID::ixn(w)); }
-          // retrieve:
+          // define a new binding
+          if word.starts_with(':') {
+            let var = word.to_string().split_off(1);
+            let val = pop(&mut data);
+            scope.insert(var,val); }
+          // recall definition
           else if let Some(&val) = scope.get(word) { data.push(val); }
-          // parse input variable
-          else { match word.chars().next().unwrap() {
-            'x' => if let Ok(n) = num_suffix!(word) { data.push(NID::var(n as u32)) }
-                   else { println!("bad var: {}", word) }
-            'v' => if let Ok(n) = num_suffix!(word) { data.push(NID::vir(n as u32)) }
-                   else { println!("bad vir: {}", word) }
-            '#' => if let Ok(n) = num_suffix!(word) { data.push(NID::ixn(n)) }
-                   else { println!("bad ixn: {}", word) }
-            ':' => // define:
-              if word.starts_with(':') {
-                let var = word.to_string().split_off(1);
-                let val = pop(&mut data);
-                scope.insert(var,val); }
-            _ => { println!("{}?", word) }}}}}}}}
-
+          // attempt to parse nid
+          else { match NID::from_str(word) {
+            Ok(nid) => data.push(nid),
+            Err(err) => println!("{}", err)}}}}}}}
 
 fn main() {
   let mut base = ASTBase::empty();

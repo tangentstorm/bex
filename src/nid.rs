@@ -1,5 +1,6 @@
 //! Node IDs (shared by various Base implementations)
 use std::fmt;
+use std::str::FromStr;
 use crate::vid;
 
 // -- core data types ---
@@ -97,18 +98,71 @@ impl fmt::Display for NID {
     if self.is_const() { if self.is_inv() { write!(f, "I") } else { write!(f, "O") } }
     else if self.is_fun() {
       let fnid = self.to_fun().unwrap();
-      let ar:u8 = fnid.arity();
-      let ft:u32 = fnid.tbl() & ((2<<ar as u32)-1);
-      if ar == 2 { write!(f, "<{:04b}>", ft)} // TODO: dynamically format to a length
-      else {  write!(f, "<{}/{:08x}>", ar,ft) }}
-    else { if self.is_inv() { write!(f, "¬")?; }
-           if self.is_vid() { write!(f, "{}", self.vid()) }
-           else if self.is_ixn() { write!(f, "#{}", self.idx()) }
-           else { write!(f, "@[{}:{}]", self.vid(), self.idx()) }}}}
+      let ar:u8 = fnid.arity(); // 2..5 inclusive
+      // !! arity of 1 would just be ID or NOT, which are redundant because of the INV bit
+      let ft:u32 = fnid.tbl();
+      if ar == 2 { write!(f, "t{:04b}", ft) }
+      else { write!(f, "f{}.{:X}", ar, ft) }}
+    else {
+      if self.is_inv() { write!(f, "!")?; }
+      if self.is_vid() { write!(f, "{}", self.vid()) }
+      else if self.is_ixn() { write!(f, "#{:X}", self.idx()) }
+      else { write!(f, "{}.{:X}", self.vid(), self.idx()) }}}}
 
 /// Same as fmt::Display. Mostly so it's easier to see the problem when an assertion fails.
 impl fmt::Debug for NID { // for test suite output
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self) }}
+
+
+impl FromStr for NID {
+  type Err = String;
+
+  fn from_str(word: &str) -> Result<Self, Self::Err> {
+    match word {
+    "O" => Ok(O),
+    "I" => Ok(I),
+    _ => {
+      let (a, b) = if let Some(ix) = word.find('.') { word.split_at(ix) } else { (word, "") };
+      let mut ch = a.chars().peekable();
+      let mut inv: bool = false;
+      if ch.peek().unwrap() == &'!' { ch.next(); inv = true }
+      macro_rules! num_suffix {
+        ($radix:expr, $ch:expr) => { usize::from_str_radix(&$ch.collect::<String>(), $radix) }}
+      let c = ch.next().unwrap();
+      // literals or VHL NIDS:
+      if c == 'x' || 'c'=='v'  {
+        if let Ok(n) = num_suffix!(16, ch) {
+          let v = if c == 'x' { vid::VID::var(n as u32) } else { vid::VID::vir(n as u32) };
+          if b.is_empty() { Ok(NID::from_vid(v).inv_if(inv)) }
+          else if let Ok(ix) = usize::from_str_radix(&b[1..], 16) {
+            Ok(NID::from_vid_idx(v, ix).inv_if(inv) )}
+          else { Err(format!("bad index after '.': {}", word)) }}
+        else { Err(format!("malformed variable: {}", word)) }}
+      else { match c {
+        '#' => if let Ok(n) = num_suffix!(16, ch) { Ok(NID::ixn(n).inv_if(inv)) }
+              else { Err(format!("bad ixn: {}", word)) }
+        'f' =>
+          if let Some(i) = word.find('.') {
+            let (a, b) = word.split_at(i);
+            if let Ok(ar) = num_suffix!(16, a.chars().skip(1)) {
+              if let Ok(tb) = num_suffix!(16, b.chars().skip(1)) {
+                Ok(NID::fun(ar as u8, tb as u32).to_nid().inv_if(inv))}
+              else { Err(format!("bad fun arity: {}", word)) }}
+            else { Err(format!("bad fun code: {}", word)) }}
+          else if let Ok(n) = num_suffix!(16, ch) {
+            let ar: u8 = if n >= 2 << 16 { 5 }
+              else if n > 2 << 8 { 4 }
+              else if n > 2 << 4 { 3 }
+              else { 2 };
+            Ok(NID::fun(ar, n as u32).to_nid().inv_if(inv))}
+          else { Err(format!("bad fun: {}", word)) }
+        't' =>
+            if ch.clone().count() == 4 {
+              if let Ok(tb) = num_suffix!(2, ch) {
+                Ok(NID::fun(2, tb as u32).to_nid().inv_if(inv))}
+              else { Err(format!("bad table (expect 4 bits): {}", word)) }}
+            else { Err(format!("bad length for table (expect 4 bits): {}", word)) }
+        _ => Err(format!("{}?", word))}}}}}}
 
 
 #[test] fn test_nids() {
@@ -174,6 +228,10 @@ impl NID {
   /// Is the NID inverted? That is, does it represent `!(some other nid)`?
   #[inline(always)] pub fn is_inv(&self)->bool { (self.n & INV) != 0 }
 
+  /// Invert if the condition is true
+  #[inline(always)] pub fn inv_if(&self, cond:bool)->NID {
+    if cond { NID { n: self.n ^ INV }} else { *self }}
+
   /// is this NID just an indexed node with no variable?
   #[inline(always)] pub fn is_ixn(self)->bool { vid_bits(self)==NOVAR }
 
@@ -201,5 +259,9 @@ impl NID {
     if self.is_const() { false }
     else if self.is_vid() { self.vid() == v }
     else { let sv = self.vid(); sv == v || sv.is_above(&v) }}}
+
+#[test] fn test_tbl_fmt() {
+  assert_eq!("t1110", format!("{}", NID::fun(2, 0b1110).to_nid()));
+  assert_eq!("f3.FC", format!("{}", NID::fun(3, 0xFC).to_nid()));}
 
 include!("nid-fun.rs");
