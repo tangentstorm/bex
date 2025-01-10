@@ -8,7 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::{fmt, hash::Hash};
 use crate::base::GraphViz;
 use crate::vid::{VID, NOV, TOP};
-use crate::{solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops, base::Base};
+use crate::{solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops};
 use crate::swarm::{Swarm,Worker,QID,SwarmCmd,WID};
 use crate::Fun;
 

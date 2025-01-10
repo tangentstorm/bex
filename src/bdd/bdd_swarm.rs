@@ -1,7 +1,7 @@
 use std::{fmt, sync::mpsc::Sender};
 use std::sync::Arc;
 use crate::{wip, wip::{Dep, ResStep, Answer}};
-use crate::vhl::{HiLoPart};
+use crate::vhl::HiLoPart;
 use crate::nid::NID;
 use crate::bdd::{ITE, NormIteKey, Norm, BddState};
 use crate::{swarm, swarm::{WID, QID, Swarm, RMsg}};

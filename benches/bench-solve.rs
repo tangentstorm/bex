@@ -3,7 +3,7 @@ extern crate bencher;
 use bencher::Bencher;
 
 extern crate bex;
-use bex::{BddBase, Base, solve::find_factors, int::GBASE};
+use bex::{BddBase, solve::find_factors, int::GBASE};
 
 pub fn tiny(b: &mut Bencher) {
   use bex::int::{X4,X8};
