@@ -1,0 +1,14 @@
+[package]
+name = "bex-api"
+version = "0.1.0"
+edition = "2021"
+authors = ["tangentstorm <michal.wallace@gmail.com>"]
+description = "A web server for the bex library"
+license = "MIT"
+
+[dependencies]
+warp = "0.3"
+tokio = { version = "1", features = ["full"] }
+dotenv = "0.15"
+lazy_static = "1.5.0"
+bex = { version = "0.2.0", path = ".." }

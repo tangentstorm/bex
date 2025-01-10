@@ -119,11 +119,16 @@ pub struct BddBase {
 
 impl BddBase {
 
+  pub fn new()->BddBase { BddBase{swarm: BddSwarm::new(), tags:HashMap::new()}}
+
   pub fn new_with_threads(n:usize)->BddBase {
     BddBase{swarm: BddSwarm::new_with_threads(n), tags:HashMap::new()}}
 
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)->(NID,NID) { self.swarm.tup(n) }
+
+  pub fn get_vhl(&self, n:NID)->(VID,NID,NID) {
+    let (hi, lo) = self.tup(n); (n.vid(), hi, lo) }
 
   // clear all data from the cache (mostly for benchmarks)
   pub fn reset(&mut self) { self.swarm.reset(); }
@@ -187,7 +192,9 @@ impl BddBase {
     let hits = wip::COUNT_CACHE_HITS.with(|c| *c.borrow());
     (tests, hits)}
 
-} // end impl BDDBase
+}
+
+impl Default for BddBase { fn default() -> Self { Self::new() }}
 
 
 impl Base for BddBase {
