@@ -82,8 +82,10 @@ impl swarm::Worker<Q,R,NormIteKey> for BddWorker {
       self.state.as_ref().unwrap().work.resolve_nid(&q, n),
       ResStep::Wip { v, hi, lo, invert } => {
         let mut res = None;
-        self.state.as_ref().unwrap().work.add_wip(&q, v, invert);
-        for &(xx, part) in &[(hi,HiLoPart::HiPart), (lo,HiLoPart::LoPart)] {
+        let state = self.state.as_ref().unwrap();
+        if let Some(answer) = state.work.add_wip(&q, v, invert) {
+          res = Some(answer) }
+        else { for &(xx, part) in &[(hi,HiLoPart::HiPart), (lo,HiLoPart::LoPart)] {
           match xx {
             Norm::Nid(nid) => {
               let ans = {
@@ -101,7 +103,7 @@ impl swarm::Worker<Q,R,NormIteKey> for BddWorker {
                 let s = self.state.as_ref().unwrap();
                 s.work.add_dep(&ite, Dep::new(q, part, true)) };
               if was_new { self.queue_push(ite) }
-              if answer.is_some() { res = answer } }}}
+              if answer.is_some() { res = answer } }}}}
         res }};
     if let Some(Answer(nid)) = res {
       // println!("!! final answer: {:?} !!", nid);
@@ -230,3 +232,12 @@ impl BddSwarm {
     COUNT_CACHE_HITS.with(|c| *c.borrow_mut() += hits); }
 
 } // end bddswarm
+
+
+#[test] fn test_swarm_cache() {
+  // run a query for ite(x1,x2,x3) twice and make sure it retrieves the cached value without crashing
+  let mut swarm = BddSwarm::new_with_threads(2);
+  let ite = NormIteKey(ITE{i:NID::var(1), t:NID::var(2), e:NID::var(3)});
+  let n1 = swarm.ite(ite.0.i, ite.0.t, ite.0.e);
+  let n2 = swarm.ite(ite.0.i, ite.0.t, ite.0.e);
+  assert_eq!(n1, n2); }

@@ -150,14 +150,18 @@ impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID> {
     else { None}}
 
     /// set the branch variable and invert flag on the work in progress value
-    pub fn add_wip(&self, q:&K, vid:VID, invert:bool) {
+    pub fn add_wip(&self, q:&K, vid:VID, invert:bool)->Option<Answer<NID>> {
+      let mut res = None;
       if self.cache.contains_key(q) {
         self.cache.alter(q, |_k, v| match v {
           Work::Todo(Wip{parts,deps}) => {
             let mut p = parts; p.v = vid; p.invert = invert;
             Work::Todo(Wip{parts:p,deps})},
-          Work::Done(_) => panic!("got wip for a Work::Done")})}
-        else { panic!("got wip for unknown task");}}
+          Work::Done(nid) => {
+            res = Some(Answer(nid));
+            Work::Done(nid) }});}
+        else { panic!("got wip for unknown task");}
+      res }
 
     // returns true if the query is new to the system
     pub fn add_dep(&self, q:&K, idep:Dep<K>)->(bool, Option<Answer<NID>>) {
