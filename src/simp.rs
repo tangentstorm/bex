@@ -1,5 +1,5 @@
 //! Simplification rules for simple boolean operations.
-use crate::{nid::{NID, I, O}};
+use crate::nid::{NID, I, O};
 
 pub fn xor(x:NID, y:NID)->Option<NID> {
   if x == y { Some(O) }

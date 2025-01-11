@@ -4,9 +4,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::cmp::min;
 use crate::ast::ASTBase;
-use crate::base::{Base};
+use crate::base::Base;
 use crate::{nid, nid::NID};
-use crate::{vid::VID};
+use crate::vid::VID;
 
 
 // TBit : for use outside the Base, by types such as X32, below.
