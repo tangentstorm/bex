@@ -2,6 +2,7 @@
  * Nested algebraic form. Represents an ANF polynomial.
  * The main difference between this and anf.rs is that this
  * version allows deferred evaluation.
+ * (Note: this module is experimental and far from stable.)
  */
 use std::collections::HashSet;
 use crate::simp;
@@ -108,7 +109,7 @@ impl NafBase {
       else {
         let vhl = Vhl { v, hi, lo };
         let nid = NID::from_vid_idx(v, self.nodes.len());
-        self.cache.insert(vhl.clone(), nid);
+        self.cache.insert(vhl, nid);
         self.nodes.push(NAF::Vhl(vhl));
         nid };
     if lo.is_inv() { VhlNid{nid: !res} } else { VhlNid{nid: res} }}
@@ -222,19 +223,19 @@ impl NafBase {
 
   /// this prints a tree of subnodes for the given nid, ending
   /// in a leaf whenever a VHL is found
-  fn walk_vhls(&self, ixn:NID, depth:u32) {
+  pub fn walk_vhls(&self, ixn:NID, depth:u32) {
     let naf = self.get(ixn.raw()).unwrap();
     for _ in 0..depth { print!(" ") }
     println!("{ixn:?} -> {naf:?}");
     match naf {
-        NAF::Vhl(_) => return,
+        NAF::Vhl(_) => (),
         NAF::And { inv:_, x, y } => {
           self.walk_vhls(x, depth+1);
           self.walk_vhls(y, depth+1);},
         NAF::Sum { inv:_, xs} => {
           for x in xs { self.walk_vhls(x, depth+1)  }}}}
 
-  fn find_vhls(&mut self, ixn:NID)->Vec<NAF> {
+  pub fn find_vhls(&mut self, ixn:NID)->Vec<NAF> {
     let naf = self.get(ixn).unwrap();
     // println!("{ixn:?} -> {naf:?}");
     match naf {
@@ -252,7 +253,7 @@ impl NafBase {
   fn coeff_vhl(&mut self, term:&NafTerm, vhl:Vhl)->K {
     println!("vhl: {vhl:?}");
     let goal = term[0];
-    return match vhl.v.cmp_depth(&goal) {
+    match vhl.v.cmp_depth(&goal) {
       VidOrdering::Below => { println!("terms are below goal {goal:?}. search failed."); K::O },
       VidOrdering::Level => {
         println!("vhl.v is goal {goal:?}. descending hi branch with new term");
@@ -262,7 +263,7 @@ impl NafBase {
         println!("vhl.v > goal {goal:?}. descending lo branch with same term");
         self.coeff(term, vhl.lo) }}}
 
-  fn coeff_and(&mut self, term:&NafTerm, inv:bool, x:NID, y:NID)->K { K::O } // TODO
+  fn coeff_and(&mut self, _term:&NafTerm, _inv:bool, _x:NID, _y:NID)->K { todo!("coeff_and"); } // TODO
 
   fn gather_terms(&mut self, xs:Vec<NID>)->(Vec<NAF>, Vec<NAF>) {
     let mut vhls = vec![];
@@ -277,15 +278,15 @@ impl NafBase {
             let (mut new_vhls, mut new_ands) = self.gather_terms(xs);
             vhls.append(&mut new_vhls);
             ands.append(&mut new_ands); }}}
-      else { }} // TODO: handle consts
+      else { todo!("consts in gather_terms") }}
     (vhls, ands)}
 
-  fn coeff_sum(&mut self, term:&NafTerm, inv:bool, xs:Vec<NID>)->K {
+  fn coeff_sum(&mut self, _term:&NafTerm, _inv:bool, xs:Vec<NID>)->K {
     let (vhls, ands) = self.gather_terms(xs);
     println!("found {} nafs in the sum:", vhls.len() + ands.len());
     for naf in vhls { println!("  {naf:?}")}
     for naf in ands { println!("  {naf:?}")}
-    K::O} // TODO
+    todo!("coeff_sum not implemented yet")}
 
   /// return the coefficient for the given term of the polynomial referred to by `nid`
   pub fn coeff(&mut self, term:&NafTerm, nid:NID)->K {
@@ -345,10 +346,10 @@ impl NafBase {
 
   pub fn print_stats(&self) {
     let (mut num_vhls, mut num_sums, mut num_ands) = (0,0,0);
-    let mut by_var = vec![0;32];  // 32 vars to start
-    let mut ands_by_var = vec![0;32];
-    let mut sums_by_var = vec![0;32];
-    let mut vhls_by_var = vec![0;32];
+    let mut by_var = [0;32];  // 32 vars to start
+    let mut ands_by_var = [0;32];
+    let mut sums_by_var = [0;32];
+    let mut vhls_by_var = [0;32];
     for naf in &self.nodes {
       let vix = naf.var().vid_ix();
       by_var[vix]+= 1;
@@ -369,7 +370,7 @@ impl NafBase {
       let n = vhls_by_var[i]; print!(" | vhls: {n:7} ({:5.2}%)", n as f64 / total as f64 * 100.0);
       let n = ands_by_var[i]; print!(" | ands: {n:7} ({:5.2}%)", n as f64 / total as f64 * 100.0);
       let n = sums_by_var[i]; print!(" | sums: {n:7} ({:5.2}%)", n as f64 / total as f64 * 100.0);
-      println!(""); }}
+      println!(); }}
 
   /// return a nid referring to the most recently defined node
   pub  fn top_nid(&self)->NID {
@@ -378,7 +379,7 @@ impl NafBase {
     NID::from_vid_idx(v, self.nodes.len()-1) }
 
   /// return the definition of the topmost node in the translated AST
-  pub fn top(&self)->Option<&NAF> { self.nodes.last().clone() }}
+  pub fn top(&self)->Option<&NAF> { self.nodes.last() }}
 
 
 // a packed AST is arranged so that we can do a bottom-up computation
