@@ -113,12 +113,9 @@ impl RawASTBase {
   /// seen gets marked true for every nid that is a dependency of keep.
   /// TODO:: use a HashSet for 'seen' in markdeps()
   fn markdeps(&self, keep:NID, seen:&mut Vec<bool>) {
-    if keep.is_lit() { return }
-    if !keep.is_ixn() { todo!("markdeps({:?})", keep) }
-    if !seen[keep.idx()] {
+    if keep.is_ixn() && !seen[keep.idx()] {
       seen[keep.idx()] = true;
-      let mut f = |x:&NID| { self.markdeps(*x, seen) };
-      for op in self.bits[keep.idx()].to_rpn() { if !op.is_fun() { f(op) }}}}
+      for &op in self.bits[keep.idx()].to_rpn() { self.markdeps(op, seen) }}}
 
 
   /// Construct a copy of the base, with the nodes reordered according to
