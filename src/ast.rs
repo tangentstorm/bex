@@ -345,3 +345,14 @@ test_base_when!(ASTBase);
 //   assert_eq!(b.eval(and, &nid_map![x1: !x0]), O, "expect  x0 & ~x0 == O");
 //   assert_eq!(b.eval(and, &nid_map![x1: I]), x0, "expect x0 & I == x0");
 //   assert_eq!(b.eval(and, &nid_map![x1: x0]), x0, "expect  x0 & x0 == x0"); }
+
+#[test] fn test_repack() {
+  let mut b = RawASTBase::empty();
+  nid_vars![x0, x1, x2, x3, x4];
+  let and = b.and(x0, x1);
+  let _or = b.or(x2, x3);
+  let xor = b.xor(x4, and);
+  let (b2, keep) = b.repack(vec![xor]);
+  assert_eq!(b2.len(), 2);
+  assert_eq!(keep, vec![NID::ixn(1)]);
+  assert_eq!(b2.get_ops(keep[0]), b.get_ops(xor)); }
