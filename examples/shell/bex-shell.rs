@@ -10,6 +10,7 @@ use bex::ast::ASTBase;
 use bex::solve;
 use bex::anf::ANFBase;
 use bex::bdd::BddBase;
+use bex::ops;
 
 // forth-like REPL for the BDD  (helper routines)
 
@@ -54,6 +55,12 @@ fn repl(base:&mut ASTBase) {
         "and" => { let (x,y)=pop2(&mut data); data.push(base.and(x,y)) }
         "xor" => { let (x,y)=pop2(&mut data); data.push(base.xor(x,y)) }
         "or"  => { let (x,y)=pop2(&mut data); data.push(base.or(x,y)) }
+        "'and" => { data.push(ops::AND.to_nid()) }
+        "'or" |
+        "'vel" => { data.push(ops::VEL.to_nid()) }
+        "'xor" => { data.push(ops::XOR.to_nid()) }
+        "'imp" => { data.push(ops::IMP.to_nid()) }
+        "'nor" => { data.push(ops::NOR.to_nid()) }
         //"lt"  => { let (x,y)=pop2(&mut data); data.push(base.lt(x,y)) }
         // "gt"  => { let (x,y)=pop2(&mut data); data.push(base.gt(x,y)) }
         //todo "lo" => { let (x,y)=pop2(&mut data); data.push(base.when_lo(y,x)) }

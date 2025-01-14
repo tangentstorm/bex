@@ -244,7 +244,7 @@ impl NID {
 
   /// construct a NID holding a truth table for up to 5 input bits.
   #[inline(always)] pub const fn fun(arity:u8, tbl:u32)->NidFun {
-    NidFun { nid: NID { n:F+(tbl as u64)+((arity as u64)<< 32)}} }
+    NidFun { nid: NID { n:F+(((1<<(1<<arity)) -1) & tbl as u64)+((arity as u64)<< 32)}} }
 
   /// is this NID a function (truth table)?
   #[inline(always)] pub fn is_fun(&self)->bool { self.n & F == F }

@@ -53,14 +53,18 @@ pub mod sig {
 
   signals! {
     // constant signals
-    K0:0x00000000, K1:0xffffffff,
+    K0:0b00000000000000000000000000000000,
+    K1:0b11111111111111111111111111111111,
 
     // input bit signals (raw and inverted)
-    A:0x55555555, RX0:A, NX0:!A,
-    B:0x33333333, RX1:B, NX1:!B,
-    C:0x0f0f0f0f, RX2:C, NX2:!C,
-    D:0x00ff00ff, RX3:D, NX3:!D,
-    E:0x0000ffff, RX4:E, NX4:!E,
+    // note that these are oriented for printing aesthetics, so that
+    // the least significant bit in the signal is actually the high
+    // bit on the left
+    A:0b01010101010101010101010101010101, RX0:A, NX0:!A,
+    B:0b00110011001100110011001100110011, RX1:B, NX1:!B,
+    C:0b00001111000011110000111100001111, RX2:C, NX2:!C,
+    D:0b00000000111111110000000011111111, RX3:D, NX3:!D,
+    E:0b00000000000000001111111111111111, RX4:E, NX4:!E,
 
     // NB. all possible 5-bit anf terms (except the singleton terms above)
     // ] (,': ',([,'&',])/,','"_)S:0 terms=:(#~1<#S:0)/:~'ABCDE'{~L:0<@I.#:i.32
