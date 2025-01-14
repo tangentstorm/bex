@@ -99,11 +99,9 @@ fn repl(base:&mut ASTBase) {
             Ok(nid) => data.push(nid),
             Err(err) => println!("{}", err)}}}}}}}
 
+include!(concat!(env!("OUT_DIR"), "/bex-build-info.rs"));
 fn main() {
+  println!("bex {BEX_VERSION} | compile flags: -O{BEX_OPT_LEVEL} | type 'q' to quit");
   let mut base = ASTBase::empty();
-  let args = ::std::env::args().skip(1);
-  if args.count() == 0 { repl(&mut base) }
-  else { for arg in ::std::env::args().skip(1) { match arg.as_str() {
-    // "norms" => { gen_norms(); },
-    "repl"  => { repl(&mut base); },
-    _ => repl(&mut base) }}}}
+  // for arg in ::std::env::args().skip(1) { load(arg.as_str()) }
+  repl(&mut base) }
