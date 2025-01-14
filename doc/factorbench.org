@@ -2,7 +2,29 @@
 
 * Overview
 
-=find_factors= is a macro in [[../src/solve.rs][solve.rs]] that defines a generic benchmark, in which we try and find all factorings of a particular anti-prime (product of many primes) where the factors fit into a certain sized type.
+=find_factors= is a function in [[../src/solve.rs][solve.rs]] that defines a generic benchmark, in which we try to factor a
+primorial into an ordered pair of factors with certain size constraints.
+
+A primorial is the product of the first n primes: 2, 6=(2*3), 30=(6*5), 210=(30*7), etc.
+
+For a given primorial /p/, we want to find two numbers, /x/ and /y/, such that /x/ < /y/.
+Additionally, both /x/ and /y/ must be expressible in a fixed number of bits.
+
+For example, the number 30 (2*3*5) can be factored in the following ways:
+
+| x |  y |
+|---+----|
+| 1 | 30 |
+| 2 | 15 |
+| 3 | 10 |
+| 5 |  6 |
+
+If we further specify that x and y can only be 3-bit values, then there is only one valid answer:
+
+| x |  y |
+|---+----|
+| 5 |  6 |
+
 
 There are several instances of this test in [[../examples/solve/bdd-solve.rs][bdd-solve.rs]], ranging from =test_nano_bdd=, which tries to find all 2-bit factorings of the number 6 (one answer: 2 * 3 = 6), to the =main= test, which attempts to factor the 64-bit product of the first 15 primes into two 32-bit numbers.
 
