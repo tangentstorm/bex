@@ -233,7 +233,7 @@ impl NID {
     if cond { NID { n: self.n ^ INV }} else { *self }}
 
   /// is this NID just an indexed node with no variable?
-  #[inline(always)] pub fn is_ixn(self)->bool { vid_bits(self)==NOVAR }
+  #[inline(always)] pub fn is_ixn(self)->bool { (self.n & (F|T|VAR) == 0) && vid_bits(self)==NOVAR }
 
   /// Map the NID to an index. (I.e., if n=idx(x), then x is the nth node branching on var(x))
   #[inline(always)] pub fn idx(self)->usize { (self.n & IDX_MASK) as usize }

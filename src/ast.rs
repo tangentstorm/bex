@@ -127,19 +127,26 @@ impl RawASTBase {
     // map each kept node in self.bits to Some(new position)
     let new:Vec<Option<usize>> = {
       let mut res = vec![None; self.bits.len()];
-      for (i,&n) in pv.iter().enumerate() { res[n] = Some(i) }
+      for (ix,&old) in pv.iter().enumerate() { res[old] = Some(ix) }
       res };
     let nn = |x:NID|{
-      if x.is_lit() { x }
-      else {
-        let r = NID::ixn(new[x.idx()].expect("bad index in AST::permute"));
-        if x.is_inv() { !r } else { r }}};
-    let newbits = pv.iter().map(|&old| {
-      let new:Vec<NID> = self.bits[old].to_rpn().map(|&x| { if x.is_fun() { x } else { nn(x) }}).collect();
-      ops::rpn(&new) }).collect();
-    let mut newtags = HashMap::new();
-    for (key, &val) in &self.tags { newtags.insert(key.clone(), nn(val)); }
-    RawASTBase{ bits:newbits, tags:newtags, hash:HashMap::new() }}
+      assert!(x.is_ixn());
+      let r = NID::ixn(new[x.idx()].unwrap_or_else(|| {
+        println!("trying to find index from: {x}. index: {} (hex: {:X})", x.idx(), x.idx());
+        println!("new.len() = {} (hex {:X})", new.len(), new.len());
+        let rt = self.reftable();
+        for r in rt[x.idx()].clone() { println!("  ref: {r:?} -> {:?} ({:?})", self.get_ops(r), new[r.idx()]); }
+        panic!("?! {x}"); }));
+      if x.is_inv() { !r } else { r }};
+    let nnix = |x:NID| { if x.is_ixn() { nn(x) } else { x }};
+    let bits = pv.iter().map(|&old| {
+      let res:Vec<NID> = self.bits[old].to_rpn().map(|&x|nnix(x)).collect();
+      ops::rpn(&res) }).collect();
+    let mut tags = HashMap::new();
+    for (key, &nid) in &self.tags {
+      if nid.is_ixn() && new[nid.idx()].is_none() { continue }
+      else { tags.insert(key.clone(), nnix(nid)); }}
+    RawASTBase{ bits, tags, hash:HashMap::new() }}
 
   /// Construct a new RawASTBase with only the nodes necessary to define the given nodes.
   /// The relative order of the bits is preserved.
@@ -149,11 +156,11 @@ impl RawASTBase {
     for &nid in keep.iter() { self.markdeps(nid, &mut deps) }
 
     let mut new:Vec<Option<usize>> = vec![None; self.bits.len()];
-    let mut old:Vec<usize> = vec![];
+    let mut kept:Vec<usize> = vec![];
     for i in 0..self.bits.len() {
-      if deps[i] { new[i]=Some(old.len()); old.push(i); }}
+      if deps[i] { new[i]=Some(kept.len()); kept.push(i); }}
 
-    (self.permute(&old), keep.iter().map(|&i|
+    (self.permute(&kept), keep.iter().map(|&i|
       NID::ixn(new[i.idx()].expect("?!"))).collect()) }
 
   pub fn get_ops(&self, n:NID)->&Ops {
@@ -347,7 +354,8 @@ test_base_when!(ASTBase);
   let mut b = RawASTBase::empty();
   nid_vars![x0, x1, x2, x3, x4];
   let and = b.and(x0, x1);
-  let _or = b.or(x2, x3);
+  let or = b.or(x2, x3);
+  b.tag(or, "or".to_string());
   let xor = b.xor(x4, and);
   let (b2, keep) = b.repack(vec![xor]);
   assert_eq!(b2.len(), 2);
