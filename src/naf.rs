@@ -345,19 +345,21 @@ impl NafBase {
     println!("| {nr:7} ({:5.2}%) used in next round (hi+both)", (100 * nr) as f64/total as f64)}
 
   pub fn print_stats(&self) {
-    let (mut num_vhls, mut num_sums, mut num_ands) = (0,0,0);
-    let mut by_var = [0;32];  // 32 vars to start
-    let mut ands_by_var = [0;32];
-    let mut sums_by_var = [0;32];
-    let mut vhls_by_var = [0;32];
+    let (mut num_vhls, mut num_sums, mut num_ands) = (0, 0, 0);
+    let size = self.nodes.iter().map(|naf| naf.var().vid_ix()).max().unwrap_or(0) + 1;
+    let mut by_var = vec![0; size];
+    let mut ands_by_var = vec![0; size];
+    let mut sums_by_var = vec![0; size];
+    let mut vhls_by_var = vec![0; size];
+
     for naf in &self.nodes {
       let vix = naf.var().vid_ix();
-      by_var[vix]+= 1;
+      by_var[vix] += 1;
       match naf {
-        NAF::Vhl(_) => { num_vhls+=1; vhls_by_var[vix]+=1; },
-        NAF::And { inv:_, x:_, y:_ } => { num_ands+=1; ands_by_var[vix]+=1; },
-        NAF::Sum { inv:_, xs:_ } => { num_sums+=1; sums_by_var[vix]+=1
-         }}}
+        NAF::Vhl(_) => { num_vhls += 1; vhls_by_var[vix] += 1; },
+        NAF::And { inv: _, x: _, y: _ } => { num_ands += 1; ands_by_var[vix] += 1; },
+        NAF::Sum { inv: _, xs: _ } => { num_sums += 1; sums_by_var[vix] += 1; }}}
+
     let total = num_vhls + num_sums + num_ands;
     print!("     {total:7} nodes.    ");
     print!("| vhls: {num_vhls:7} ({:5.2}%) ", num_vhls as f64 / total as f64 * 100.0);
