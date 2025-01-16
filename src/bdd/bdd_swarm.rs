@@ -13,6 +13,8 @@ use crate::wip::{WorkState, COUNT_CACHE_HITS, COUNT_CACHE_TESTS};
 // BddSwarm Protocol
 // ----------------------------------------------------------------
 
+/// wrapper struct for concurrent queues. This is mostly so we
+/// can implement Default for it.
 #[derive(Debug)]
 struct IteQueue{q: ConcurrentQueue<NormIteKey>}
 impl Default for IteQueue {
@@ -92,16 +94,11 @@ impl swarm::Worker<Q,R,NormIteKey> for BddWorker {
                 let s = self.state.as_ref().unwrap();
                 s.resolve_part(&q, part, nid, false)};
               if let Some(a) = ans { res = Some(a) }},
-            Norm::Ite(ite) => {
-              let (was_new, answer) = {
-                let s = self.state.as_ref().unwrap();
-                s.add_dep(&ite, Dep::new(q, part, false))};
-              if was_new { self.queue_push(ite) }
-              if answer.is_some() { res = answer } },
+            Norm::Ite(ite) |
             Norm::Not(ite) => {
               let (was_new, answer) = {
                 let s = self.state.as_ref().unwrap();
-                s.add_dep(&ite, Dep::new(q, part, true)) };
+                s.add_dep(&ite, Dep::new(q, part, xx.is_inv()))};
               if was_new { self.queue_push(ite) }
               if answer.is_some() { res = answer } }}}}
         res }};

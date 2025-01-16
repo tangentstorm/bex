@@ -38,7 +38,12 @@ impl Norm {
     match self {
       Norm::Nid(_) => panic!("Norm::Nid cannot be a key!"),
       Norm::Not(_) => panic!("Norm::Not cannot be a key!"),
-      Norm::Ite(ite) => *ite}}}
+      Norm::Ite(ite) => *ite}}
+  pub fn is_inv(&self)->bool {
+    match self {
+      Norm::Nid(x) => x.is_inv(),
+      Norm::Not(_) => true,
+      Norm::Ite(_) => false}}}
 
 /// a normalized ITE suitable for use as a key in the computed cache
 #[derive(Eq,PartialEq,Hash,Debug,Default,Clone,Copy)]
