@@ -16,16 +16,19 @@ use crate::wip::{WorkState, COUNT_CACHE_HITS, COUNT_CACHE_TESTS};
 /// wrapper struct for concurrent queues. This is mostly so we
 /// can implement Default for it.
 #[derive(Debug)]
-struct IteQueue{q: ConcurrentQueue<NormIteKey>}
-impl Default for IteQueue {
-    fn default() -> Self { IteQueue { q: ConcurrentQueue::unbounded() }}}
-impl IteQueue {
-  fn push(&self, ite:NormIteKey) { self.q.push(ite).unwrap(); }
-  fn pop(&self)->Option<NormIteKey> {
+struct KQueue<K> { q: ConcurrentQueue<K> }
+impl<K> Default for KQueue<K> {
+  fn default()->Self { KQueue{ q: ConcurrentQueue::unbounded() }}}
+impl<K> KQueue<K> where K:std::fmt::Debug {
+  fn push(&self, k:K) { self.q.push(k).unwrap() }
+  fn pop(&self)->Option<K> {
     match self.q.pop() {
-      Ok(ite) => Some(ite),
+      Ok(k) => Some(k),
       Err(PopError::Empty) => None,
-      Err(PopError::Closed) => panic!("IteQueue was closed!") }}}
+      Err(PopError::Closed) => panic!("KQueue was closed!") }}}
+
+type IteQueue = KQueue<NormIteKey>;
+
 
 /// Query message for BddSwarm.
 #[derive(Clone)]
