@@ -100,7 +100,14 @@ impl<K:Eq+Hash+Debug,V:Clone> WorkState<K,V> {
       Some(n) => n,
       None => { self.hilos.insert(v, HiLo{hi, lo}) }}}
 
-  pub fn get_hilo(&self, n:NID)->HiLo { self.hilos.get_hilo(n) }}
+  pub fn get_hilo(&self, n:NID)->HiLo { self.hilos.get_hilo(n) }
+
+  /// return (hi, lo) pair for the given nid. used internally
+  #[inline] pub fn tup(&self, n:NID)-> (NID, NID) {
+    use crate::nid::{I,O};
+    if n.is_const() { if n==I { (I, O) } else { (O, I) } }
+    else if n.is_vid() { if n.is_inv() { (O, I) } else { (I, O) }}
+    else { let hilo = self.get_hilo(n); (hilo.hi, hilo.lo) }} }
 
 // TODO: nopub these methods
 impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID> {

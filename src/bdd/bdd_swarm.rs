@@ -3,11 +3,11 @@ use std::sync::Arc;
 use crate::{wip, wip::{Dep, ResStep, Answer}};
 use crate::vhl::HiLoPart;
 use crate::nid::NID;
-use crate::bdd::{ITE, NormIteKey, Norm, BddState};
+use crate::bdd::{ITE, NormIteKey, Norm};
 use crate::{swarm, swarm::{WID, QID, Swarm, RMsg}};
 use concurrent_queue::{ConcurrentQueue,PopError};
 
-use crate::wip::{COUNT_CACHE_HITS, COUNT_CACHE_TESTS};
+use crate::wip::{WorkState, COUNT_CACHE_HITS, COUNT_CACHE_TESTS};
 
 // ----------------------------------------------------------------
 // BddSwarm Protocol
@@ -31,7 +31,7 @@ impl IteQueue {
   /// The main recursive operation: convert ITE triple to a BDD.
   Ite(NormIteKey),
   /// Initialize worker with its "hive mind".
-  Init(Arc<BddState>, Arc<IteQueue>),
+  Init(Arc<WorkState>, Arc<IteQueue>),
   /// ask for stats about cache
   Stats }
 
@@ -53,7 +53,7 @@ struct BddWorker {
   // channel for sending back to the swarm
   tx:Option<Sender<RMsg<R>>>,
   next: Option<NormIteKey>,
-  state:Option<Arc<BddState>>,
+  state:Option<Arc<WorkState>>,
   queue:Option<Arc<IteQueue>> }
 
 impl swarm::Worker<Q,R,NormIteKey> for BddWorker {
@@ -79,29 +79,29 @@ impl swarm::Worker<Q,R,NormIteKey> for BddWorker {
   fn work_item(&mut self, q:NormIteKey) {
     let res = match self.ite_norm(q) {
       ResStep::Nid(n) =>
-      self.state.as_ref().unwrap().work.resolve_nid(&q, n),
+      self.state.as_ref().unwrap().resolve_nid(&q, n),
       ResStep::Wip { v, hi, lo, invert } => {
         let mut res = None;
         let state = self.state.as_ref().unwrap();
-        if let Some(answer) = state.work.add_wip(&q, v, invert) {
+        if let Some(answer) = state.add_wip(&q, v, invert) {
           res = Some(answer) }
         else { for &(xx, part) in &[(hi,HiLoPart::HiPart), (lo,HiLoPart::LoPart)] {
           match xx {
             Norm::Nid(nid) => {
               let ans = {
                 let s = self.state.as_ref().unwrap();
-                s.work.resolve_part(&q, part, nid, false)};
+                s.resolve_part(&q, part, nid, false)};
               if let Some(a) = ans { res = Some(a) }},
             Norm::Ite(ite) => {
               let (was_new, answer) = {
                 let s = self.state.as_ref().unwrap();
-                s.work.add_dep(&ite, Dep::new(q, part, false))};
+                s.add_dep(&ite, Dep::new(q, part, false))};
               if was_new { self.queue_push(ite) }
               if answer.is_some() { res = answer } },
             Norm::Not(ite) => {
               let (was_new, answer) = {
                 let s = self.state.as_ref().unwrap();
-                s.work.add_dep(&ite, Dep::new(q, part, true)) };
+                s.add_dep(&ite, Dep::new(q, part, true)) };
               if was_new { self.queue_push(ite) }
               if answer.is_some() { res = answer } }}}}
         res }};
@@ -109,7 +109,7 @@ impl swarm::Worker<Q,R,NormIteKey> for BddWorker {
       // println!("!! final answer: {:?} !!", nid);
       let tx = self.tx.as_ref().expect("have answer but no tx!");
       let qid = {
-        let mut mx = self.state.as_ref().unwrap().work.qid.lock().unwrap();
+        let mut mx = self.state.as_ref().unwrap().qid.lock().unwrap();
         let q0 = (*mx).expect("no qid found in the mutex!");
         *mx = None; // unblock the next query!
         q0};
@@ -121,10 +121,10 @@ impl swarm::Worker<Q,R,NormIteKey> for BddWorker {
       Q::Ite(ite) => {
         // println!(">>> new top-level Q: {:?}", q);
         let s = self.state.as_mut().unwrap();
-        if let Some(cached) = s.get_memo(&ite) { return Some(R::Ret(cached)) }
+        if let Some(cached) = s.get_done(&ite) { return Some(R::Ret(cached)) }
         // still here, so add new entry:
-        s.work.cache.entry(ite).or_default();
-        { let mut m = s.work.qid.lock().unwrap();
+        s.cache.entry(ite).or_default();
+        { let mut m = s.qid.lock().unwrap();
           assert!((*m).is_none(), "already working on a top-level query");
           *m = Some(*qid); }
         self.queue_push(ite); None }
@@ -138,13 +138,13 @@ impl BddWorker {
 
   fn vhl_norm(&self, ite:NormIteKey)->ResStep {
     let ITE{i:vv,t:hi,e:lo} = ite.0; let v = vv.vid();
-    ResStep::Nid(self.state.as_ref().unwrap().work.vhl_to_nid(v, hi, lo)) }
+    ResStep::Nid(self.state.as_ref().unwrap().vhl_to_nid(v, hi, lo)) }
 
   fn ite_norm(&self, ite:NormIteKey)->ResStep {
     let ITE { i, t, e } = ite.0;
     let (vi, vt, ve) = (i.vid(), t.vid(), e.vid());
     let v = ite.0.top_vid(); let state = self.state.as_ref().unwrap();
-    match state.get_memo(&ite) {
+    match state.get_done(&ite) {
       Some(n) => ResStep::Nid(n),
       None => {
         let (hi_i, lo_i) = if v == vi {state.tup(i)} else {(i,i)};
@@ -173,7 +173,7 @@ impl BddWorker {
 pub struct BddSwarm {
   swarm: Swarm<Q,R,BddWorker,NormIteKey>,
   /// reference to state shared by all threads.
-  state: Arc<BddState>,
+  state: Arc<WorkState>,
   queue: Arc<IteQueue>}
 
 

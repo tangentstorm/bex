@@ -88,28 +88,6 @@ impl ITE {
             else { return Norm::Ite(NormIteKey(ITE::new(f,g,h))) }}}}}} }
 
 
-#[derive(Debug, Default)]
-pub struct BddState {
-  pub work: wip::WorkState} // TODO: Replace BddState entirely with WorkState ?
-
-
-impl BddState {
-
-  /// return (hi, lo) pair for the given nid. used internally
-  #[inline] fn tup(&self, n:NID)-> (NID, NID) {
-    if n.is_const() { if n==I { (I, O) } else { (O, I) } }
-    else if n.is_vid() { if n.is_inv() { (O, I) } else { (I, O) }}
-    else { let hilo = self.work.get_hilo(n); (hilo.hi, hilo.lo) }}
-
-  /// load the memoized NID if it exists
-  #[inline] fn get_memo(&self, key:&NormIteKey) -> Option<NID> {
-    let ite = key.0;
-    if ite.i.is_vid() {
-      debug_assert!(!ite.i.is_inv()); // because it ought to be normalized by this point.
-      self.work.get_cached_nid(ite.i.vid(), ite.t, ite.e) }
-    else { self.work.get_done(key) }}}
-
-
 /// Finally, we put everything together. This is the top-level type for this crate.
 #[derive(Debug)]
 pub struct BddBase {
