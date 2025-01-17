@@ -27,6 +27,10 @@ and the smaller tests in [src/solve.rs](https://github.com/tangentstorm/bex/blob
 
 - Added new `Fun` trait and `NidFun` struct, refining the idea of storing truth tables of up to 5 inputs in a NID.
 - Added `ASTBase::{apply,eval}`
+- `naf.rs` (a variation of ANF)
+- VhlSwarm (extracted a generic VHL swarm framework from BddSwarm, to re-use on other VHL-based mods)
+- Added rudiementary web server for accepting requests from outside rust
+- Began to standardize the formatting/parsing of NIDs.
 
 
 ## Changes in 0.2.0
