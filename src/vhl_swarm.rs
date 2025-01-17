@@ -122,13 +122,16 @@ impl<J,H> Worker<VhlQ<J>, R, J> for VhlWorker<J,H> where J:JobKey, H:VhlJobHandl
     let mut h = std::mem::take(&mut self.handler);
     h.work_job(self, job);
     self.handler = h; }
-  fn work_step(&mut self, _qid:&QID, q:VhlQ<J>)->Option<R> {
+  fn work_step(&mut self, qid:&QID, q:VhlQ<J>)->Option<R> {
     match q {
       VhlQ::Init(s, q) => { self.state = Some(s); self.queue=Some(q); None }
       VhlQ::Job(job) => {
         let s = self.state.as_mut().unwrap();
         if let Some(cached) = s.get_done(&job) { return Some(R::Ret(cached)) }
         s.cache.entry(job).or_default();
+        { let mut m = s.qid.lock().unwrap();
+          assert!((*m).is_none(), "already working on a top-level query");
+          *m = Some(*qid); }
         self.queue_push(job); None }
       VhlQ::Stats => {
         let tests = COUNT_CACHE_TESTS.with(|c| c.replace(0));
