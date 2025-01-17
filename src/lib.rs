@@ -29,4 +29,5 @@ pub mod io;
 pub mod anf;
 pub mod swap;
 pub mod swarm;
+pub mod vhl_swarm;
 pub mod naf;
