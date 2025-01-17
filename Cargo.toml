@@ -21,6 +21,10 @@ name = "bex-shell"
 path = "examples/shell/bex-shell.rs"
 
 [[bin]]
+name = "swarm-shell"
+path = "examples/shell/swarm-shell.rs"
+
+[[bin]]
 name = "bdd-solve"
 path = "examples/solve/bdd-solve.rs"
 

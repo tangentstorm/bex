@@ -99,6 +99,9 @@ pub struct Swarm<Q,R,W,I=()> where W:Worker<Q,R,I>, Q:Debug+Clone, R:Debug {
   me: Sender<RMsg<R>>,
   /// receives result (and other intermediate) messages from the workers.
   rx: Receiver<RMsg<R>>,
+  /// sender for queries. clone with self.q_sender()
+  qtx: Sender<Q>,
+  qrx: Receiver<Q>,
   // /// worker queue. workers queue up to handle the queries.
   // wq: VecDeque<usize>,
   /// handles for sending messages to the workers
@@ -137,7 +140,8 @@ impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+De
 
   pub fn new_with_threads(n:usize)->Self {
     let (tx, rx) = channel();
-    let mut me = Self { nq: 0, me:tx, rx, whs:HashMap::new(), nw:0,
+    let (qtx, qrx) = channel();
+    let mut me = Self { nq: 0, me:tx, rx, qtx, qrx, whs:HashMap::new(), nw:0,
        _w:PhantomData, _i:PhantomData, threads:vec![]};
     me.start(n); me }
 
@@ -174,6 +178,10 @@ impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+De
     let wids: Vec<WID> = self.whs.keys().cloned().collect();
     for wid in wids { self.send(wid, q.clone()); }}
 
+  /// returns a channel to which you can send a Q, rather than calling
+  /// add_query. (useful when the swarm is running in a separate thread)
+  pub fn q_sender(&self)->Sender<Q> { self.qtx.clone() }
+
   pub fn send_to_self(&self, r:R) {
     self.me.send(RMsg{ wid:WID::default(), qid:QID::default(), r:Some(r)})
       .expect("failed to sent_self"); }
@@ -183,16 +191,16 @@ impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+De
     where V:Debug, F:FnMut(WID, &QID, Option<R>)->SwarmCmd<Q,V> {
     let mut res = None;
     loop {
-      let RMsg { wid, qid, r } = self.recv().expect("failed to read RMsg from queue!");
-      // println!("Received RMSG:: wid:{:?}, qid:{:?}, r:{:?}", wid, qid, &r );
-      let cmd = on_msg(wid, &qid, r);
-      // println!("-> cmd: {:?}", cmd);
-      match cmd {
-        SwarmCmd::Pass => {},
-        SwarmCmd::Halt => break,
-        SwarmCmd::Kill(w) => { self.kill(w); if self.whs.is_empty() { break }},
-        SwarmCmd::Send(q) => { self.send(wid, q); },
-        SwarmCmd::Batch(wqs) => for (wid, q) in wqs { self.send(wid, q); },
-        SwarmCmd::Panic(msg) => panic!("{}", msg),
-        SwarmCmd::Return(v) => { res = Some(v); break } }}
+      if let Ok(q) = self.qrx.try_recv() { self.add_query(q); }
+      if let Ok(rmsg) = self.rx.try_recv() {
+        let RMsg { wid, qid, r } = rmsg;
+        let cmd = on_msg(wid, &qid, r);
+        match cmd {
+          SwarmCmd::Pass => {},
+          SwarmCmd::Halt => break,
+          SwarmCmd::Kill(w) => { self.kill(w); if self.whs.is_empty() { break }},
+          SwarmCmd::Send(q) => { self.send(wid, q); },
+          SwarmCmd::Batch(wqs) => for (wid, q) in wqs { self.send(wid, q); },
+          SwarmCmd::Panic(msg) => panic!("{}", msg),
+          SwarmCmd::Return(v) => { res = Some(v); break }}}}
       res}}
