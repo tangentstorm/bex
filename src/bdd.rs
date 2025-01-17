@@ -98,7 +98,7 @@ impl ITE {
 pub struct BddBase {
   /// allows us to give user-friendly names to specific nodes in the base.
   pub tags: HashMap<String, NID>,
-  swarm: BddSwarm}
+  pub swarm: BddSwarm} // TODO: nopub
 
 impl BddBase {
 

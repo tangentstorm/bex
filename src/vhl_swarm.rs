@@ -13,7 +13,7 @@ use crate::vid::VID;
 use crate::wip::Answer;
 use crate::NID;
 use crate::{wip, wip::{WorkState, COUNT_CACHE_HITS, COUNT_CACHE_TESTS}};
-use crate::swarm::{RMsg, Swarm, Worker, QID, WID};
+use crate::swarm::{RMsg, Swarm, SwarmCmd, Worker, QID, WID};
 
 type R = wip::RMsg;
 
@@ -154,6 +154,12 @@ impl<J,H> VhlSwarm<J,H> where J:JobKey, H:VhlJobHandler<J,W=VhlWorker<J,H>> {
       swarm: Swarm::new_with_threads(n),
       ..Default::default()};
     me.reset(); me }
+
+  pub fn run<F,V>(&mut self, on_msg:F)->Option<V>
+  where V:fmt::Debug, F:FnMut(WID, &QID, Option<R>)->SwarmCmd<VhlQ<J>, V> {
+    self.swarm.run(on_msg)}
+
+  pub fn q_sender(&self)->Sender<VhlQ<J>> { self.swarm.q_sender() }
 
   // reset internal state without the cost of destroying and recreating
   // all the worker threads.
