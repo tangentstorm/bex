@@ -1,8 +1,11 @@
-//! VHL Swarm
-//! A swarm of workers for WIP VHL Graphs.
+//! # VHL Swarm
 //!
-//! The swarm workers share a common VhlCache and can delegate work to each
+//! Combines notions from the [`swarm`](crate::swarm), [`wip`], and [`vhl`](crate::vhl)
+//! modules to create a distributed system for solving VHL queries. The main idea is
+//! the swarm workers share a common [`WorkState`] and can delegate tasks to each
 //! other by pushing new jobs onto a shared queue.
+//!
+//! For a complete example, see [`bdd_swarm`](crate::bdd::bdd_swarm).
 
 use std::sync::mpsc::Sender;
 use std::{fmt, hash::Hash};
@@ -55,7 +58,6 @@ impl<J> fmt::Debug for VhlQ<J> where J:JobKey {
       VhlQ::Job(j) => { write!(f, "Q::Job({:?})", j) }
       VhlQ::Init(_cache, _queue) => { write!(f, "Q::Init(...)") }
       VhlQ::Stats => { write!(f, "Q::Stats")} } }}
-
 
 pub trait VhlJobHandler<J> : Default where J: JobKey {
   type W : Worker<VhlQ<J>, R, J>;

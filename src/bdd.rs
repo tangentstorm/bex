@@ -9,7 +9,7 @@ use crate::vid::{VID,VidOrdering,topmost_of3};
 use crate::wip;
 
 mod bdd_sols;
-mod bdd_swarm; use self::bdd_swarm::*;
+pub mod bdd_swarm; use self::bdd_swarm::*;
 
 
 

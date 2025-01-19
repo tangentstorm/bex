@@ -1,4 +1,25 @@
-//! Generic Work-in-progress support for VHL graphs.
+//! Generic Work-in-progress support, used by e.g. [`VhlSwarm`].
+//!
+//! In this module, the main structure is [`WorkState<K,V,P>`].
+//!
+//! - `K` is the hashable key for some query issued to the system.
+//! - `V` is the type of values produced by the system.
+//! - `P` is the type of parts that are being assembled to produce the final value.
+//!
+//! Inside the `WorkState`, each `K` is mapped to a `Work<V, WipRef<K,P>>`.
+//! - [`Work`] is either `Todo(WipRef<K,P>)` or `Done(V)`.
+//! - [`WipRef`] is really just `Wip<K,P>`.
+//! - [`Wip<K,P>`] has `parts: P` and `deps: Vec<Dep<K>>`.
+//! - [`Dep<K>`] tracks which other queries are dependent on this one. It has
+//!     a `HiLoPart` and an `invert` flag. (TODO: explicit use of invert and
+//!     HiloPart should probably be in a `VhlDep` struct.)
+//!
+//! With this framework, we can track the progress of a distributed computation.
+//!
+//! The main change I forsee making here is making `Dep` an enum, that also
+//! includes an option to return a top-level result for a numbered query, as
+//! currently only one query is allowed.
+//!
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::default::Default;
@@ -185,8 +206,7 @@ impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID> {
           Work::Done(n) => old_done=Some(*n) }}
       if let Some(nid)=old_done {
         answer = self.resolve_part(&idep.dep, idep.part, nid, idep.invert); }
-      (was_empty, answer) }
-  }
+      (was_empty, answer) }}
 
 
 
