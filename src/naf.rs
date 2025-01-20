@@ -12,11 +12,6 @@ use crate::ast::RawASTBase;
 use crate::vid::{VidOrdering, topmost};
 use dashmap::DashMap;
 
-// constant term (coefficient)
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum K { I, O }
-
-
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum NAF {
   Vhl ( Vhl ),
@@ -250,11 +245,11 @@ impl NafBase {
           for x in xs { res.append(&mut self.find_vhls(x)) }
           res}}}
 
-  fn coeff_vhl(&mut self, term:&NafTerm, vhl:Vhl)->K {
+  fn coeff_vhl(&mut self, term:&NafTerm, vhl:Vhl)->NID {
     println!("vhl: {vhl:?}");
     let goal = term[0];
     match vhl.v.cmp_depth(&goal) {
-      VidOrdering::Below => { println!("terms are below goal {goal:?}. search failed."); K::O },
+      VidOrdering::Below => { println!("terms are below goal {goal:?}. search failed."); O },
       VidOrdering::Level => {
         println!("vhl.v is goal {goal:?}. descending hi branch with new term");
         let next:NafTerm = term.iter().skip(1).cloned().collect();
@@ -263,7 +258,7 @@ impl NafBase {
         println!("vhl.v > goal {goal:?}. descending lo branch with same term");
         self.coeff(term, vhl.lo) }}}
 
-  fn coeff_and(&mut self, _term:&NafTerm, _inv:bool, _x:NID, _y:NID)->K { todo!("coeff_and"); } // TODO
+  fn coeff_and(&mut self, _term:&NafTerm, _inv:bool, _x:NID, _y:NID)->NID { todo!("coeff_and"); } // TODO
 
   fn gather_terms(&mut self, xs:Vec<NID>)->(Vec<NAF>, Vec<NAF>) {
     let mut vhls = vec![];
@@ -281,7 +276,7 @@ impl NafBase {
       else { todo!("consts in gather_terms") }}
     (vhls, ands)}
 
-  fn coeff_sum(&mut self, _term:&NafTerm, _inv:bool, xs:Vec<NID>)->K {
+  fn coeff_sum(&mut self, _term:&NafTerm, _inv:bool, xs:Vec<NID>)->NID {
     let (vhls, ands) = self.gather_terms(xs);
     println!("found {} nafs in the sum:", vhls.len() + ands.len());
     for naf in vhls { println!("  {naf:?}")}
@@ -289,16 +284,11 @@ impl NafBase {
     todo!("coeff_sum not implemented yet")}
 
   /// return the coefficient for the given term of the polynomial referred to by `nid`
-  pub fn coeff(&mut self, term:&NafTerm, nid:NID)->K {
-    if nid == O { return K::O }
-    if term.is_empty() {
-      // !! not 100% sure what to do here.
-      println!("[fyi] coeff([], {:?}). !!! does this make sense?", nid);
-      return K::I }
+  pub fn coeff(&mut self, term:&NafTerm, nid:NID)->NID {
+    if nid.is_const() || term.is_empty() { return nid }
     if nid.is_var() {
-      return if term.len() == 1 { if nid.vid() == term[0] { K::I } else { K::O }}
-      else { K::O }}
-    if nid == I { return K::I }
+      return if term.len() == 1 { if nid.vid() == term[0] { I } else { O }}
+      else { O }}
     println!("coeff(term: {term:?}, nid: {nid:?})");
     let naf= self.get(nid).unwrap();
     match naf {
@@ -308,7 +298,7 @@ impl NafBase {
 
   /// return the final coefficient of the ANF polynomial
   /// (that is, the coefficient of the term that has every input variable in it)
-  pub fn last_coeff(&mut self, ixn:NID)->K {
+  pub fn last_coeff(&mut self, ixn:NID)->NID {
     let top: Vhl = self.get_vhl(ixn).unwrap();
     let term:NafTerm = (0..=top.v.var_ix()).rev().map(|x|VID::var(x as u32)).collect();
     self.coeff(&term, ixn) }
@@ -388,17 +378,17 @@ impl NafBase {
 // by iterating through the bits.
 pub fn from_packed_ast(ast: &RawASTBase)->NafBase {
   let mut res = NafBase::new();
-  // the NafBase will have multiple nodes for each incoming AST node,
-  // so keep a map of AST index -> NAF index
-  let map = |n:NID, map:&Vec<NID>|->NID {
+  // the NafBase will have multiple references to each incoming AST node.
+  // keep a map so we always point to the same translation.
+  let new_nid = |n:NID, map:&Vec<NID>|->NID {
     if n.is_ixn() { let r = map[n.idx()]; if n.is_inv() { !r } else { r } }
     else { n }};
   let mut new_nids : Vec<NID> = vec![];
   for (i, bit) in ast.bits.iter().enumerate() {
     let (f, args) = bit.to_app();
     assert_eq!(2, args.len());
-    let x = map(args[0], &new_nids);
-    let y = map(args[1], &new_nids);
+    let x = new_nid(args[0], &new_nids);
+    let y = new_nid(args[1], &new_nids);
     let new = match f.to_fun().unwrap() {
       crate::ops::AND => res.and(x, y),
       crate::ops::XOR => res.xor(x, y),
