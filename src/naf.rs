@@ -5,12 +5,12 @@
  * (Note: this module is experimental and far from stable.)
  */
 use std::collections::HashSet;
-use crate::simp;
-use crate::vhl::Vhl;
-use crate::{NID, I, O, vid::VID};
-use crate::ast::RawASTBase;
-use crate::vid::{VidOrdering, topmost};
 use dashmap::DashMap;
+use crate::ops::Ops;
+use crate::{ops, simp, vhl::Vhl};
+use crate::{NID, I, O, vid::VID};
+use crate::{ast::RawASTBase, vid::{topmost, VidOrdering}};
+
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum NAF {
@@ -370,13 +370,30 @@ pub fn from_packed_ast(ast: &RawASTBase)->NafBase {
   let mut new_nids : Vec<NID> = vec![];
   for (i, bit) in ast.bits.iter().enumerate() {
     let (f, args) = bit.to_app();
-    assert_eq!(2, args.len());
     let x = new_nid(args[0], &new_nids);
     let y = new_nid(args[1], &new_nids);
+    let z = if args.len() == 3 { new_nid(args[2], &new_nids) } else { O };
     let new = match f.to_fun().unwrap() {
-      crate::ops::AND => res.and(x, y),
-      crate::ops::XOR => res.xor(x, y),
+      ops::ANF => res.vhl(x.vid(), y, z).nid,
+      ops::AND => res.and(x, y),
+      ops::XOR => res.xor(x, y),
+      ops::NXOR => !res.xor(x, y),
+      ops::NAND => !res.and(x, y),
       _ => panic!("no rule to translate bit #{:?} ({:?})", i, bit)};
-    // println!("map[{:3}] {:?} -> {:?}", i, bit, new);
     new_nids.push(new)}
   res }
+
+impl NafBase {
+  pub fn to_packed_ast(&self)->RawASTBase {
+    let mut res = RawASTBase::empty();
+    for naf in &self.nodes {
+      res.bits.push(Ops::RPN(match naf {
+        NAF::Vhl(Vhl{ v, hi, lo }) => {
+          vec![NID::from_vid(*v), *hi, *lo, ops::ANF.to_nid()]},
+        NAF::And { inv, x, y } => {
+          vec![*x, *y, (if *inv { ops::NAND } else { ops::AND }).to_nid()]},
+        NAF::Xor { inv, x, y } => {
+          vec![*x, *y, (if *inv { ops::NXOR } else { ops::XOR }).to_nid()]} })); }
+    let top = NID::ixn(res.bits.len()-1);
+    let (ast, _new_top) = res.repack(vec![top]);
+    ast }}
