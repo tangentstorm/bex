@@ -20,6 +20,11 @@
 //! includes an option to return a top-level result for a numbered query, as
 //! currently only one query is allowed.
 //!
+//! It would also be quite nice if dependencies could be "released" when a query
+//! "short circuits". Ex: if a constant 0 bubbles up to one side of an "AND" expression,
+//! we ought to be able to cancel the other side recursively (without necessarily throwing
+//! away the work that's been done so far).
+//!
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::default::Default;
