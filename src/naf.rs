@@ -132,7 +132,9 @@ impl NafBase {
           let br = self.sub_and(&b, &r);
           let cq = self.sub_and(&c, &q);
           let cr = self.sub_and(&c, &r);
-          let hi = self.sub_sum(vec![bq, br, cq]);
+          let bq_br = self.sub_xor(&bq, &br);
+          let hi = self.sub_xor(&bq_br, &cq);
+          // let hi = self.sub_sum(vec![bq, br, cq]);
           Vhl{ v:x.v, hi, lo:cr }}};
       let res = self.vhl(vhl.v, vhl.hi, vhl.lo);
       // case 0:  x: a & y: b ==> ab
@@ -187,7 +189,7 @@ impl NafBase {
 
   fn sub_xor(&mut self, xi:&NID, yi:&NID)->NID {
     if let Some(res) = simp::xor(*xi, *yi) { res }
-    else { self.sub_sum(vec![*xi, *yi]) }}
+    else { self.push(NAF::Xor{ inv:(xi.is_inv() ^ yi.is_inv()), x:xi.raw(), y:yi.raw() })}}
 
   fn sub_sum(&mut self, nids: Vec<NID>)->NID {
     let mut xs = vec![]; let mut inv = false;
