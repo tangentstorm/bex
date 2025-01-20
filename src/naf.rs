@@ -16,6 +16,7 @@ use dashmap::DashMap;
 pub enum NAF {
   Vhl ( Vhl ),
   And { inv:bool, x: NID, y: NID },
+  Xor { inv:bool, x: NID, y: NID },
   Sum { inv:bool, xs: Vec<NID> }}
 
 impl NAF {
@@ -23,6 +24,7 @@ impl NAF {
     match self {
       NAF::Vhl(vhl) => vhl.v,
       NAF::And { inv:_, x, y} => topmost(x.vid(), y.vid()),
+      NAF::Xor { inv:_, x, y} => topmost(x.vid(), y.vid()),
       NAF::Sum { inv:_, xs } => {
         let mut v = xs[0].vid();
         for x in xs { v = topmost(v, x.vid())}
@@ -32,6 +34,7 @@ impl NAF {
     if cond { match self {
       NAF::Vhl(vhl) => NAF::Vhl(inv_vhl_if(vhl, true)),
       NAF::And { inv, x, y } => NAF::And { inv:!inv, x, y },
+      NAF::Xor { inv, x, y } => NAF::Xor { inv:!inv, x, y },
       NAF::Sum { inv, xs } => NAF::Sum { inv:!inv, xs }}}
     else { self }}}
 
@@ -213,6 +216,9 @@ impl NafBase {
           NAF::And { inv:_, x, y } => {
             self.step(x, f, seen);
             self.step(y, f, seen)},
+          NAF::Xor { inv:_, x, y } => {
+            self.step(x, f, seen);
+            self.step(y, f, seen)},
           NAF::Sum { inv:_, xs } => {
             for x in xs {  self.step(x, f, seen); }}}}}}
 
@@ -227,6 +233,9 @@ impl NafBase {
         NAF::And { inv:_, x, y } => {
           self.walk_vhls(x, depth+1);
           self.walk_vhls(y, depth+1);},
+        NAF::Xor { inv:_, x, y } => {
+          self.walk_vhls(x, depth+1);
+          self.walk_vhls(y, depth+1);},
         NAF::Sum { inv:_, xs} => {
           for x in xs { self.walk_vhls(x, depth+1)  }}}}
 
@@ -236,6 +245,11 @@ impl NafBase {
     match naf {
         NAF::Vhl(_) => vec![naf],
         NAF::And { inv:_, x, y } => {
+          let mut res = vec![];
+          res.append(&mut self.find_vhls(x));
+          res.append(&mut self.find_vhls(y));
+          res},
+        NAF::Xor { inv:_, x, y } => {
           let mut res = vec![];
           res.append(&mut self.find_vhls(x));
           res.append(&mut self.find_vhls(y));
@@ -259,28 +273,33 @@ impl NafBase {
         self.coeff(term, vhl.lo) }}}
 
   fn coeff_and(&mut self, _term:&NafTerm, _inv:bool, _x:NID, _y:NID)->NID { todo!("coeff_and"); } // TODO
+  fn coeff_xor(&mut self, _term:&NafTerm, _inv:bool, _x:NID, _y:NID)->NID { todo!("coeff_xor"); } // TODO
 
-  fn gather_terms(&mut self, xs:Vec<NID>)->(Vec<NAF>, Vec<NAF>) {
+  fn gather_terms(&mut self, xs:Vec<NID>)->(Vec<NAF>, Vec<NAF>, Vec<NAF>) {
     let mut vhls = vec![];
     let mut ands = vec![];
+    let mut xors = vec![];
     for xi in xs {
       if let Some(x) = self.get(xi) {
         match x {
           NAF::Vhl(_) => vhls.push(x),
           NAF::And { inv:_, x:_, y:_ } => ands.push(x),
+          NAF::Xor { inv:_, x:_, y:_ } => xors.push(x),
           NAF::Sum { inv:_, xs } => {
             // TODO: handle inv
-            let (mut new_vhls, mut new_ands) = self.gather_terms(xs);
+            let (mut new_vhls, mut new_ands, mut new_xors) = self.gather_terms(xs);
             vhls.append(&mut new_vhls);
-            ands.append(&mut new_ands); }}}
+            ands.append(&mut new_ands);
+            xors.append(&mut new_xors); }}}
       else { todo!("consts in gather_terms") }}
-    (vhls, ands)}
+    (vhls, ands, xors)}
 
   fn coeff_sum(&mut self, _term:&NafTerm, _inv:bool, xs:Vec<NID>)->NID {
-    let (vhls, ands) = self.gather_terms(xs);
-    println!("found {} nafs in the sum:", vhls.len() + ands.len());
+    let (vhls, ands, xors) = self.gather_terms(xs);
+    println!("found {} nafs in the sum:", vhls.len() + ands.len() + xors.len());
     for naf in vhls { println!("  {naf:?}")}
     for naf in ands { println!("  {naf:?}")}
+    for naf in xors { println!("  {naf:?}")}
     todo!("coeff_sum not implemented yet")}
 
   /// return the coefficient for the given term of the polynomial referred to by `nid`
@@ -294,6 +313,7 @@ impl NafBase {
     match naf {
       NAF::Vhl(vhl) => self.coeff_vhl(term, vhl),
       NAF::And { inv, x, y } => self.coeff_and(term, inv, x, y),
+      NAF::Xor { inv, x, y } => self.coeff_xor(term, inv, x, y),
       NAF::Sum { inv, xs } => self.coeff_sum(term, inv, xs) }}
 
   /// return the final coefficient of the ANF polynomial
@@ -335,10 +355,11 @@ impl NafBase {
     println!("| {nr:7} ({:5.2}%) used in next round (hi+both)", (100 * nr) as f64/total as f64)}
 
   pub fn print_stats(&self) {
-    let (mut num_vhls, mut num_sums, mut num_ands) = (0, 0, 0);
+    let (mut num_vhls, mut num_sums, mut num_ands, mut num_xors) = (0, 0, 0, 0);
     let size = self.nodes.iter().map(|naf| naf.var().vid_ix()).max().unwrap_or(0) + 1;
     let mut by_var = vec![0; size];
     let mut ands_by_var = vec![0; size];
+    let mut xors_by_var = vec![0; size];
     let mut sums_by_var = vec![0; size];
     let mut vhls_by_var = vec![0; size];
 
@@ -348,19 +369,22 @@ impl NafBase {
       match naf {
         NAF::Vhl(_) => { num_vhls += 1; vhls_by_var[vix] += 1; },
         NAF::And { inv: _, x: _, y: _ } => { num_ands += 1; ands_by_var[vix] += 1; },
+        NAF::Xor { inv: _, x: _, y: _ } => { num_xors += 1; xors_by_var[vix] += 1; },
         NAF::Sum { inv: _, xs: _ } => { num_sums += 1; sums_by_var[vix] += 1; }}}
 
-    let total = num_vhls + num_sums + num_ands;
-    print!("     {total:7} nodes.    ");
+    let total = num_vhls + num_sums + num_ands + num_xors;
+    print!("     {total:8} nodes.    ");
     print!("| vhls: {num_vhls:7} ({:5.2}%) ", num_vhls as f64 / total as f64 * 100.0);
     print!("| ands: {num_ands:7} ({:5.2}%) ", num_ands as f64 / total as f64 * 100.0);
+    print!("| xors: {num_xors:7} ({:5.2}%) ", num_xors as f64 / total as f64 * 100.0);
     print!("| sums: {num_sums:7} ({:5.2}%) ", num_sums as f64 / total as f64 * 100.0);
     println!();
     println!("{:-<97}","");
     for (i,n) in by_var.iter().enumerate().rev() {
-      print!("{:>3}: {n:7}  ({:5.2})%", VID::var(i as u32).to_string(), *n as f64 / total as f64 * 100.0);
+      print!("{:>4}: {n:7}  ({:5.2})%", VID::var(i as u32).to_string(), *n as f64 / total as f64 * 100.0);
       let n = vhls_by_var[i]; print!(" | vhls: {n:7} ({:5.2}%)", n as f64 / total as f64 * 100.0);
       let n = ands_by_var[i]; print!(" | ands: {n:7} ({:5.2}%)", n as f64 / total as f64 * 100.0);
+      let n = xors_by_var[i]; print!(" | xors: {n:7} ({:5.2}%)", n as f64 / total as f64 * 100.0);
       let n = sums_by_var[i]; print!(" | sums: {n:7} ({:5.2}%)", n as f64 / total as f64 * 100.0);
       println!(); }}
 
