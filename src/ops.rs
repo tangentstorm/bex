@@ -93,6 +93,12 @@ pub mod sig {
     LT: !A&B,    GT: A&!B,
     LTE: !GT,    GTE: !LT,
 
+    // some triadic functions
+    ITE: A&B|!A&C,
+    ANF: (A&B)^C,
+    XOR3: A^B^C,
+    MAJ: (A&B)|(A&C)|(B&C),
+
     // and some aliases:
     VEL:OR,     IMP: LTE,
     NE: XOR,    EQ: IFF }}
@@ -103,6 +109,10 @@ pub const AND:NidFun = NID::fun(2,sig::AND);
 /// x0 ^ x1
 pub const XOR:NidFun = NID::fun(2,sig::XOR);
 
+pub const EQL:NidFun = NID::fun(2,sig::EQ);
+pub const NXOR:NidFun = EQL;
+pub const NAND:NidFun = NID::fun(2,sig::NAND);
+
 /// x0 | x1   (vel is the latin word for 'inclusive or', and the origin of the "∨" symbol in logic)
 pub const VEL:NidFun = NID::fun(2,sig::VEL);
 
@@ -111,6 +121,9 @@ pub const NOR:NidFun = NID::fun(2,sig::NOR);
 
 /// x0 implies x1  (x0 <= x1)
 pub const IMP:NidFun = NID::fun(2,sig::IMP);
+
+pub const ITE:NidFun = NID::fun(3,sig::ITE);
+pub const ANF:NidFun = NID::fun(3,sig::ANF);
 
 /// convenience trait that allows us to mix vids and nids
 /// freely when constructing expressions.
