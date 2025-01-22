@@ -58,7 +58,7 @@ fn inv_vhl_if(vhl:Vhl, inv:bool)->Vhl {
   else { vhl }}
 
 impl NafBase {
-  fn new()->Self { NafBase{ nodes:vec![], cache: NafMap::default() } }
+  pub fn new()->Self { NafBase{ nodes:vec![], cache: NafMap::default() } }
 
   /// insert a new node and and return a NID with its index.
   pub fn push(&mut self, naf:NAF)->NID {
@@ -374,7 +374,7 @@ pub fn from_packed_ast(ast: &RawASTBase)->NafBase {
     let y = new_nid(args[1], &new_nids);
     let z = if args.len() == 3 { new_nid(args[2], &new_nids) } else { O };
     let new = match f.to_fun().unwrap() {
-      ops::ANF => res.vhl(x.vid(), y, z).nid,
+      ops::ANF => res.vhl(x.vid(), y, z).nid, // !! do I need a NANF version?
       ops::AND => res.and(x, y),
       ops::XOR => res.xor(x, y),
       ops::NXOR => !res.xor(x, y),
@@ -386,14 +386,20 @@ pub fn from_packed_ast(ast: &RawASTBase)->NafBase {
 impl NafBase {
   pub fn to_packed_ast(&self)->RawASTBase {
     let mut res = RawASTBase::empty();
+    let ix = |n:NID|->NID { if n.is_const() || n.is_lit() { n } else { NID::ixn(n.idx()) }};
     for naf in &self.nodes {
       res.bits.push(Ops::RPN(match naf {
         NAF::Vhl(Vhl{ v, hi, lo }) => {
-          vec![NID::from_vid(*v), *hi, *lo, ops::ANF.to_nid()]},
+          vec![NID::from_vid(*v), ix(*hi), ix(*lo), ops::ANF.to_nid()]},
         NAF::And { inv, x, y } => {
-          vec![*x, *y, (if *inv { ops::NAND } else { ops::AND }).to_nid()]},
+          vec![ix(*x), ix(*y), (if *inv { ops::NAND } else { ops::AND }).to_nid()]},
         NAF::Xor { inv, x, y } => {
-          vec![*x, *y, (if *inv { ops::NXOR } else { ops::XOR }).to_nid()]} })); }
+          vec![ix(*x), ix(*y), (if *inv { ops::NXOR } else { ops::XOR }).to_nid()]} })); }
+    for i in (self.nodes.len()-16)..self.nodes.len()  {
+      let row = &res.bits[i];
+      let (f, args) = row.to_app();
+      println!("#{i:04X} {f:?}({args:?})")}
     let top = NID::ixn(res.bits.len()-1);
     let (ast, _new_top) = res.repack(vec![top]);
+    println!("ast has {} bits. old top: {top:?} new top: {_new_top:?}", ast.bits.len());
     ast }}
