@@ -68,14 +68,14 @@ impl NafBase {
     nid }
 
   pub fn get(&self, n:NID)->Option<NAF> {
-    if n.is_var() {
+    if n.is_vid() {
       Some(NAF::Vhl(Vhl { v: n.vid(), hi:I, lo: NID::from_bit(n.is_inv()) }))}
     else if n.is_const() { None }
     else { self.nodes.get(n.idx()).cloned().map(|x|x.inv_if(n.is_inv())) }}
 
   /// get vhl if it's already a vhl (to convert, see .vhl())
   pub fn get_vhl(&self, xi:NID)->Option<Vhl> {
-    if xi.is_var() { Some(Vhl{ v:xi.vid(),  hi:I, lo:NID::from_bit(xi.is_inv()) }) }
+    if xi.is_vid() { Some(Vhl{ v:xi.vid(),  hi:I, lo:NID::from_bit(xi.is_inv()) }) }
     else if let Some(NAF::Vhl(vhl)) = self.get(xi.raw()) {
       Some(inv_vhl_if(vhl, xi.is_inv())) }
     else { None }}
@@ -270,7 +270,7 @@ impl NafBase {
   /// return the coefficient for the given term of the polynomial referred to by `nid`
   pub fn coeff(&mut self, term:&NafTerm, nid:NID)->NID {
     if nid.is_const() || term.is_empty() { return nid }
-    if nid.is_var() {
+    if nid.is_vid() {
       return if term.len() == 1 { if nid.vid() == term[0] { I } else { O }}
       else { O }}
     println!("coeff(term: {term:?}, nid: {nid:?})");
@@ -314,9 +314,8 @@ impl NafBase {
     println!("| {no:7} ({:5.2}%) can be discarded", (100 * no) as f64 / total as f64);
     println!("| {lo:7} ({:5.2}%) owned by lo branch", (100 * lo) as f64 / total as f64);
     println!("| {hi:7} ({:5.2}%) owned by hi branch", (100 * hi) as f64 / total as f64);
-    println!("| {bo:7} ({:5.2}%) shared by both", (100 * bo) as f64 / total as f64);
-    let nr = hi+bo;
-    println!("| {nr:7} ({:5.2}%) used in next round (hi+both)", (100 * nr) as f64/total as f64)}
+    println!("| {bo:7} ({:5.2}%) shared by both", (100 * bo) as f64 / total as f64);}
+
 
   pub fn print_stats(&self) {
     let (mut num_vhls, mut num_ands, mut num_xors) = (0, 0, 0);
@@ -341,7 +340,7 @@ impl NafBase {
     print!("| xors: {num_xors:7} ({:5.2}%) ", num_xors as f64 / total as f64 * 100.0);
     println!();
     println!("{:-<97}","");
-    for (i,n) in by_var.iter().enumerate().rev() {
+    for (i,n) in by_var.iter().enumerate().rev().take(8) {
       print!("{:>4}: {n:7}  ({:5.2})%", VID::var(i as u32).to_string(), *n as f64 / total as f64 * 100.0);
       let n = vhls_by_var[i]; print!(" | vhls: {n:7} ({:5.2}%)", n as f64 / total as f64 * 100.0);
       let n = ands_by_var[i]; print!(" | ands: {n:7} ({:5.2}%)", n as f64 / total as f64 * 100.0);
@@ -384,7 +383,7 @@ pub fn from_packed_ast(ast: &RawASTBase)->NafBase {
   res }
 
 impl NafBase {
-  pub fn to_packed_ast(&self)->RawASTBase {
+  pub fn to_packed_ast(&self, top0:NID)->RawASTBase {
     let mut res = RawASTBase::empty();
     let ix = |n:NID|->NID { if n.is_const() || n.is_lit() { n } else { NID::ixn(n.idx()) }};
     for naf in &self.nodes {
@@ -399,7 +398,7 @@ impl NafBase {
       let row = &res.bits[i];
       let (f, args) = row.to_app();
       println!("#{i:04X} {f:?}({args:?})")}
-    let top = NID::ixn(res.bits.len()-1);
+    let top:NID = if top0 == O { NID::ixn(res.bits.len()-1) } else { top0 };
     let (ast, _new_top) = res.repack(vec![top]);
     println!("ast has {} bits. old top: {top:?} new top: {_new_top:?}", ast.bits.len());
     ast }}
