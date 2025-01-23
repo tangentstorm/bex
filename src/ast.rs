@@ -113,6 +113,7 @@ impl RawASTBase {
   /// seen gets marked true for every nid that is a dependency of keep.
   /// TODO:: use a HashSet for 'seen' in markdeps()
   fn markdeps(&self, keep:NID, seen:&mut Vec<bool>) {
+    // TODO: there should be a 'has_ixn'
     if keep.is_ixn() && !seen[keep.idx()] {
       seen[keep.idx()] = true;
       for &op in self.bits[keep.idx()].to_rpn() { self.markdeps(op, seen) }}}
@@ -160,8 +161,9 @@ impl RawASTBase {
     for i in 0..self.bits.len() {
       if deps[i] { new[i]=Some(kept.len()); kept.push(i); }}
 
-    (self.permute(&kept), keep.iter().map(|&i|
-      NID::ixn(new[i.idx()].expect("?!"))).collect()) }
+    (self.permute(&kept), keep.iter().map(|&i| {
+      if let Some(ix) = new[i.idx()] { NID::ixn(ix) }
+      else { panic!("repack(): failed to find new index for kept nid: {i:?}."); }}).collect())}
 
   pub fn get_ops(&self, n:NID)->&Ops {
     if n.is_ixn() { &self.bits[n.idx()] }
