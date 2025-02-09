@@ -148,22 +148,8 @@ impl<T:Base> Base for Simplify<T> {
   ($b:ident, ($x:tt ^ $y:tt)) => { expr![@op $b, $x xor $y] };
   ($b:ident, ($x:tt & $y:tt)) => { expr![@op $b, $x and $y] };}
 
-/// Macro to declare local rust variables for bex input variable nids.
-/// example: `nid_vars![x0, x1]`
-#[macro_export] macro_rules! nid_vars {
-  // Capture a list of identifiers and use the internal macro to assign values
-  ($($ident:ident),+ $(,)?) => { use $crate::NID; nid_vars!(@internal 0; $($ident),+); };
-
-  // Internal helper macro for assigning values to identifiers
-  (@internal $val:expr; $head:ident, $($tail:ident),+ $(,)?) => {
-      let $head: NID = NID::var($val);
-      nid_vars!(@internal $val + 1; $($tail),+);  };
-
-  // Base case for the internal helper macro (when only one identifier is left)
-  (@internal $val:expr; $head:ident) => { let $head: NID = NID::var($val); }; }
-
 /// Macro to make a substitution map for eval.
-/// example: `nid_vars![x0,x1]; nid_map![x0:I, x1:O]`
+/// example: `use vid::named::{x0, x1}; nid_map![x0:I, x1:O]`
 #[macro_export] macro_rules! nid_map {
   ($($x:ident : $y:expr),*) => {
      vec![$(($x, $y)),*].iter().copied().collect::<HashMap<NID,NID>>() }}
@@ -209,8 +195,7 @@ base_test!(test_base_consts, b, {
 
 // Test when_lo and when_hi for the simple cases.
 base_test!(test_base_when, b, {
-  use crate::nid::{O,I};
-  nid_vars![x0, x1];
+  use crate::nid::{O,I, named::{x0, x1}};
   let (vx0, vx1) = (x0.vid(), x1.vid());
 
   assert_eq!(b.when_lo(vx0, O), O, "vx0=O should not affect O");

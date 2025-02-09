@@ -325,7 +325,7 @@ test_base_when!(ASTBase);
 
 
 #[test] fn ast_eval_full(){
-  nid_vars![x0, x1]; use crate::{I,O};
+  use crate::{I, O, nid::named::{x0, x1}};
   let mut b = RawASTBase::empty();
   let and = expr![b, (x0 & x1)];
   assert_eq!(b.eval(and, &nid_map![x0: O, x1: O]), O, "O and O => O");
@@ -335,7 +335,7 @@ test_base_when!(ASTBase);
 
 // TODO: #[test] fn ast_eval_partial(){
 // (for now you have to assign all variables)
-//   nid_vars![x0, x1]; use crate::{I,O};
+//   use crate::{I, O, vid::named::{x0, x1}};
 //   let mut b = RawASTBase::empty();
 //   let and = expr![b, (x0 & x1)];
 //   assert_eq!(b.eval(and, &nid_map![x1: O]), O, "expect  x0 & O == O");
@@ -345,7 +345,7 @@ test_base_when!(ASTBase);
 
 #[test] fn test_repack() {
   let mut b = RawASTBase::empty();
-  nid_vars![x0, x1, x2, x3, x4];
+  use crate::nid::named::{x0, x1, x2, x3, x4};
   let and = b.and(x0, x1);
   let or = b.or(x2, x3);
   b.tag(or, "or".to_string());

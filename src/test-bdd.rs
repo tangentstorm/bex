@@ -3,7 +3,7 @@ test_base_consts!(BddBase);
 test_base_when!(BddBase);
 
 #[cfg(test)]
-use  std::iter::FromIterator; use std::hash::Hash;
+use std::{iter::FromIterator, hash::Hash};
 
 #[cfg(test)]
 fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
@@ -11,7 +11,7 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 // basic test suite
 
 #[test] fn test_base() {
-  nid_vars![x0, x1, x2];
+  use crate::nid::named::{x0, x1, x2};
   let mut base = BddBase::new();
   assert_eq!((I,O), base.tup(I));
   assert_eq!((O,I), base.tup(O));
@@ -22,7 +22,7 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   assert_eq!(O, base.when_lo(VID::var(2),x2))}
 
 #[test] fn test_and() {
-  nid_vars![x0,x1,x2];
+  use crate::nid::named::{x0, x1, x2};
   let mut base = BddBase::new();
   let a = base.and(x1, x2);
   assert_eq!(O,  base.when_lo(x1.vid(),a));
@@ -33,7 +33,7 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   assert_eq!(a,  base.when_lo(x0.vid(),a))}
 
 #[test] fn test_xor() {
-  nid_vars![x0,x1];
+  use crate::nid::named::{x0, x1};
   let mut base = BddBase::new();
   let x = base.xor(x0, x1);
   assert_eq!(x1,  base.when_lo(x0.vid(),x));
@@ -45,7 +45,7 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 
 // swarm test suite
 #[test] fn test_swarm_xor() {
-  nid_vars![x0,x1];
+  use crate::nid::named::{x0, x1};
   let mut base = BddBase::new();
   let x = base.xor(x0, x1);
   assert_eq!(x1,  base.when_lo(x0.vid(),x));
@@ -56,7 +56,7 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   assert_eq!(x,   base.when_hi(VID::var(2),x))}
 
 #[test] fn test_swarm_and() {
-  nid_vars![x0,x1];
+  use crate::nid::named::{x0, x1};
   let mut base = BddBase::new();
   let a = base.and(x0, x1);
   assert_eq!(O,  base.when_lo(x0.vid(),a));
@@ -68,7 +68,7 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 
 /// slightly harder test case that requires ite() to recurse
 #[test] fn test_swarm_ite() {
-  nid_vars![x0, x1, x2];
+  use crate::nid::named::{x0, x1, x2};
   let mut base = BddBase::new();
   assert_eq!(vec![0,0,0,0,1,1,1,1], base.tt(x2, 3));
   assert_eq!(vec![0,0,1,1,0,0,1,1], base.tt(x1, 3));
@@ -83,7 +83,7 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 
 /// slightly harder test case that requires ite() to recurse
 #[test] fn test_swarm_another() {
-  nid_vars![_x0, _x1, b, a];
+  let (b, a) = (NID::var(2), NID::var(3));
   let mut base = BddBase::new();
   let anb = base.and(a,!b);
   assert_eq!(vec![0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0], base.tt(anb, 4));
