@@ -12,7 +12,7 @@ name = "bex"
 crate-type = ["cdylib"]
 
 [dependencies]
-bex = "0.2.0"
+bex = { path = ".." }
 
 [dependencies.pyo3]
 version = "0.23.4"
