@@ -1,6 +1,6 @@
 #![macro_use]
 //! Standard trait for databases of boolean expressions.
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::fs::File;
 use std::io::Write;
 use std::process::Command;      // for creating and viewing digarams
@@ -38,6 +38,20 @@ pub trait Base {
 
   /// substitute node for variable in context.
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID;
+
+  /// recursively evaluate a nid, substituting in the given values
+  /// (internal helper function for eval, eval_all)
+  fn _eval_aux(&mut self, _n:NID, _kv: &HashMap<NID,NID>, _cache:&mut HashMap<NID,NID>)->NID {
+    todo!("_eval_aux not yet implemented for this type") }
+
+  /// evaluate a list of nids, substituting in the given values.
+  fn eval_all(&mut self, nids: &[NID], kv: &HashMap<NID,NID>)->Vec<NID> {
+    let mut cache = HashMap::new();
+    nids.iter().map(|&n| self._eval_aux(n, kv, &mut cache)).collect() }
+
+  /// evaluate a single nid (substituting in the given values)
+  fn eval(&mut self, nid:NID, kv:&HashMap<NID, NID>)->NID {
+    self.eval_all(&[nid], kv)[0] }
 
   /// Render node `n` (and its descendents) in graphviz *.dot format.
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write);

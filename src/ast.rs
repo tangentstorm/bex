@@ -197,40 +197,6 @@ impl RawASTBase {
     let env:HashMap<NID,NID> = args.iter().enumerate()
       .map(|(i,&x)|(NID::var(i as u32), x)).collect();
     self.eval(f, &env) }
-
-  /// recursively evaluate an AST, caching shared sub-expressions
-  fn eval_aux(&mut self, n:NID, kvs:&HashMap<NID, NID>, cache:&mut HashMap<NID,NID>)->NID {
-    let raw = n.raw();
-    let res =
-      if let Some(&vn) = kvs.get(&raw) { vn }
-      else if n.is_lit() { raw }
-      else if n.is_fun() {
-        let mut f = n.to_fun().unwrap();
-        let res:NID;
-        loop {
-          let i = f.arity();
-          if i == 0 { res = if f.tbl()==0 { nid::O } else { nid::I}; break; }
-          else {
-            let &arg = kvs.get(&NID::var((i as u32)-1))
-              .expect("don't have enough args to fully evaluate!");
-            f = f.when(i-1, arg==nid::I); }};
-        res }
-      else if let Some(&vn) = cache.get(&raw) { vn }
-      else {
-        let (f, args0) = self.get_ops(raw).to_app();
-        let args:Vec<NID> = args0.iter().map(|&x| self.eval_aux(x, kvs, cache)).collect();
-        let t = self.apply(f, args); cache.insert(n, t); t };
-    if n.is_inv() { !res } else { res }}
-
-  /// evaluate a list of nids (substituting in the given values)
-  pub fn eval_all(&mut self, nids:&[NID], kvs:&HashMap<NID, NID>)->Vec<NID> {
-    let mut cache = HashMap::new();
-    nids.iter().map(|&n| self.eval_aux(n, kvs, &mut cache)).collect() }
-
-  /// evaluate a single nid (substituting in the given values)
-  pub fn eval(&mut self, nid:NID, kvs:&HashMap<NID, NID>)->NID {
-    self.eval_all(&[nid], kvs)[0] }
-
 } // impl RawASTBase
 
 impl Base for RawASTBase {
@@ -303,6 +269,31 @@ impl Base for RawASTBase {
               _ => panic!("unexpected op in dot(): {:?}", n) }}
           else { panic!("can't dot arbitrary ops yet: {:?}", rpn) }}}});
     w!("}}"); }
+
+  /// recursively evaluate an AST, caching shared sub-expressions
+  fn _eval_aux(&mut self, n:NID, kvs:&HashMap<NID, NID>, cache:&mut HashMap<NID,NID>)->NID {
+    let raw = n.raw();
+    let res =
+      if let Some(&vn) = kvs.get(&raw) { vn }
+      else if n.is_lit() { raw }
+      else if n.is_fun() {
+        let mut f = n.to_fun().unwrap();
+        let res:NID;
+        loop {
+          let i = f.arity();
+          if i == 0 { res = if f.tbl()==0 { nid::O } else { nid::I}; break; }
+          else {
+            let &arg = kvs.get(&NID::var((i as u32)-1))
+              .expect("don't have enough args to fully evaluate!");
+            f = f.when(i-1, arg==nid::I); }};
+        res }
+      else if let Some(&vn) = cache.get(&raw) { vn }
+      else {
+        let (f, args0) = self.get_ops(raw).to_app();
+        let args:Vec<NID> = args0.iter().map(|&x| self._eval_aux(x, kvs, cache)).collect();
+        let t = self.apply(f, args); cache.insert(n, t); t };
+    if n.is_inv() { !res } else { res }}
+
 } // impl Base for RawASTBase
 
 pub struct ASTBase { base: Simplify<RawASTBase> }
