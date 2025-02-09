@@ -1,9 +1,8 @@
 //! wrap bex as a python module
-extern crate bex;
+extern crate bex as bex_rs;
 use pyo3::prelude::*;
-use pyo3::PyObjectProtocol;
 use pyo3::exceptions::PyException;
-use bex::{Base, GraphViz, ast::ASTBase, nid::{I,O,NID}, vid::VID};
+use bex_rs::{Base, GraphViz, ast::ASTBase, nid::{I,O,NID}, vid::VID};
 
 #[pyclass(name="NID")] struct PyNID{ nid:NID }
 #[pyclass(name="VID")] struct PyVID{ vid:VID }
@@ -21,15 +20,12 @@ impl PyNID {
   #[staticmethod]
   fn var(i:i32)->PyResult<Self> { if i<0 { Err(BexErr::NegVar.into()) } else { Ok(PyNID{ nid:NID::var(i as u32)}) }}
   #[staticmethod]
-  fn vir(i:i32)->PyResult<Self> { if i<0 { Err(BexErr::NegVir.into()) } else { Ok(PyNID{ nid:NID::vir(i as u32)}) }}}
-
-#[pyproto]
-impl PyObjectProtocol for PyNID {
+  fn vir(i:i32)->PyResult<Self> { if i<0 { Err(BexErr::NegVir.into()) } else { Ok(PyNID{ nid:NID::vir(i as u32)}) }}
   fn __str__(&self) -> String { self.nid.to_string() }
   fn __repr__(&self) -> String { format!("<NID({:?})>", self.nid) }}
 
-#[pyproto]
-impl PyObjectProtocol for PyVID {
+#[pymethods]
+impl PyVID {
   fn __str__(&self) -> String { self.vid.to_string() }
   fn __repr__(&self) -> String { format!("<VID({:?})>", self.vid) }}
 
@@ -41,15 +37,21 @@ impl PyAST {
   fn op_or(&mut self, x:&PyNID, y:&PyNID)->PyNID  { PyNID{ nid:self.base.or(x.nid, y.nid) }}
   fn to_dot(&self, x:&PyNID)->String { let mut s = String::new(); self.base.write_dot(x.nid, &mut s); s }}
 
+#[pyfunction]
+fn var(i:i32)->PyResult<PyNID> { PyNID::var(i) }
+
+#[pyfunction]
+fn vir(i:i32)->PyResult<PyNID> { PyNID::vir(i) }
+
 #[pymodule]
-fn bex(py:Python, m:&PyModule)->PyResult<()> {
+fn bex(m: &Bound<'_, PyModule>)->PyResult<()> {
   m.add_class::<PyVID>()?;
   m.add_class::<PyNID>()?;
   m.add_class::<PyAST>()?;
-  m.setattr("O", PyNID{nid:O}.into_py(py))?;
-  m.setattr("I", PyNID{nid:I}.into_py(py))?;
+  m.add("O", PyNID{nid:O})?;
+  m.add("I", PyNID{nid:I})?;
 
-  #[pyfn(m, "var")] fn var(_py:Python, i:i32)->PyResult<PyNID> { PyNID::var(i) }
-  #[pyfn(m, "vir")] fn vir(_py:Python, i:i32)->PyResult<PyNID> { PyNID::vir(i) }
+  m.add_function(wrap_pyfunction!(var, m)?)?;
+  m.add_function(wrap_pyfunction!(vir, m)?)?;
 
   Ok(())}

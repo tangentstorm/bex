@@ -1,8 +1,8 @@
 [package]
 name = "pybex"
-version = "0.1.5"
+version = "0.2.0"
 authors = ["tangentstorm <michal.wallace@gmail.com>"]
-edition = "2018"
+edition = "2021"
 license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -12,8 +12,8 @@ name = "bex"
 crate-type = ["cdylib"]
 
 [dependencies]
-bex = "0.1.5"
+bex = "0.2.0"
 
 [dependencies.pyo3]
-version = "0.13"
+version = "0.23.4"
 features = ["extension-module"]
