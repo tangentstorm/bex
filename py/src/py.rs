@@ -27,6 +27,7 @@ impl PyNID {
 
 #[pymethods]
 impl PyVID {
+  #[getter] fn ix(&self)->usize { self.0.vid_ix() }
   fn __str__(&self) -> String { self.0.to_string() }
   fn __repr__(&self) -> String { format!("<VID({:?})>", self.0) }}
 

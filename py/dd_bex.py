@@ -11,16 +11,43 @@ class BDD:
     def __init__(self) -> None:
         """Initialize the BDD manager."""
         self.base = _bex.BddBase()
+        self.vars = {}
+        self.var_count = 0
 
     @property
-    def false(self) -> 'BDDFunction':
+    def false(self) -> 'BDDNode':
         """Return the false constant (O)."""
-        return BDDFunction(self, _bex.O)
+        return BDDNode(self, _bex.O)
 
     @property
-    def true(self) -> 'BDDFunction':
+    def true(self) -> 'BDDNode':
         """Return the true constant."""
-        return BDDFunction(self, _bex.I)
+        return BDDNode(self, _bex.I)
+
+    def add_var(self, name: str) -> None:
+        """Add a new variable to the BDD."""
+        if name in self.vars:
+            raise ValueError(f"Variable {name} already declared")
+        self.vars[name] = _bex.var(self.var_count)
+        self.var_count += 1
+
+    def declare(self, *names:str) -> None:
+        """Declare new variables in the BDD."""
+        for name in names:
+            self.add_var(name)
+
+    def var(self, name: str) -> 'BDDNode':
+        """Return the node corresponding to a variable name."""
+        return BDDNode(self, self.vars[name])
+
+    def _vhl(self, nid) -> Tuple[_bex.VID, _bex.NID, _bex.NID]:
+        """Return the variable, high, and low nodes of a node."""
+        return self.base.get_vhl(nid)
+
+    def succ(self, u: 'BDDNode') -> Tuple[int, 'BDDNode', 'BDDNode']:
+        """Return the successors of a node. (level, low, high)"""
+        v,h,l = self._vhl(u.nid)
+        return v.ix, BDDNode(self, l), BDDNode(self, h)
 
     def __eq__(self, other: Any) -> bool:
         """Check if two BDD managers are equal."""
@@ -45,18 +72,6 @@ class BDD:
     def statistics(self) -> Dict[str, Any]:
         """Return statistics of the BDD manager."""
         raise NotImplementedError("BDD.statistics")
-
-    def succ(self, u: Any) -> Tuple[int, Optional[Any], Optional[Any]]:
-        """Return the successors of a node."""
-        raise NotImplementedError("BDD.succ")
-
-    def declare(self, *variables: str) -> None:
-        """Declare new variables in the BDD."""
-        raise NotImplementedError("BDD.declare")
-
-    def var(self, var: str) -> Any:
-        """Return the node corresponding to a variable."""
-        raise NotImplementedError("BDD.var")
 
     def var_at_level(self, level: int) -> str:
         """Return the variable at a given level."""
@@ -136,10 +151,10 @@ class BDD:
         raise NotImplementedError("BDD.load")
 
 
-class BDDFunction:
+class BDDNode:
     """Pairs a NID with a reference to its BDD."""
     def __init__(self, bdd: BDD, nid: _bex.NID) -> None:
-        """Initialize the BDDFunction with a BDD and a node ID."""
+        """Initialize the BDDNode with a BDD and a node ID."""
         self.bdd = bdd
         self.nid = nid
 
@@ -156,38 +171,38 @@ class BDDFunction:
         return None if self.nid.is_const() else self.vhl[2]
 
     def __eq__(self, other: Any) -> bool:
-        """Check if two BDDFunctions are equal."""
-        return isinstance(other, BDDFunction) and self.bdd == other.bdd and self.nid == other.nid
+        """Check if two BDDNodes are equal."""
+        return isinstance(other, BDDNode) and self.bdd == other.bdd and self.nid == other.nid
 
-    def __invert__(self) -> 'BDDFunction':
-        """Return the negation of the BDDFunction."""
-        return BDDFunction(self.bdd, ~self.nid)
+    def __invert__(self) -> 'BDDNode':
+        """Return the negation of the BDDNode."""
+        return BDDNode(self.bdd, ~self.nid)
 
-    def __and__(self, other: Any) -> 'BDDFunction':
-        """Return the conjunction of two BDDFunctions."""
-        return BDDFunction(self.bdd, self.bdd.base.op_and(self.nid, other.nid))
+    def __and__(self, other: Any) -> 'BDDNode':
+        """Return the conjunction of two BDDNodes."""
+        return BDDNode(self.bdd, self.bdd.base.op_and(self.nid, other.nid))
 
-    def __or__(self, other: Any) -> 'BDDFunction':
-        """Return the disjunction of two BDDFunctions."""
-        return BDDFunction(self.bdd, self.bdd.base.op_or(self.nid, other.nid))
+    def __or__(self, other: Any) -> 'BDDNode':
+        """Return the disjunction of two BDDNodes."""
+        return BDDNode(self.bdd, self.bdd.base.op_or(self.nid, other.nid))
 
     # ---- todo ------------------------------------------------------
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Call the BDD function with given arguments."""
-        raise NotImplementedError("BDDFunction.__call__")
+        raise NotImplementedError("BDDNode.__call__")
 
     def __hash__(self) -> int:
-        """Return the hash of the BDDFunction."""
-        raise NotImplementedError("BDDFunction.__hash__")
+        """Return the hash of the BDDNode."""
+        raise NotImplementedError("BDDNode.__hash__")
 
     def __str__(self) -> str:
-        """Return a string representation of the BDDFunction."""
-        raise NotImplementedError("BDDFunction.__str__")
+        """Return a string representation of the BDDNode."""
+        raise NotImplementedError("BDDNode.__str__")
 
     def __repr__(self) -> str:
-        """Return a string representation of the BDDFunction for debugging."""
-        raise NotImplementedError("BDDFunction.__repr__")
+        """Return a string representation of the BDDNode for debugging."""
+        raise NotImplementedError("BDDNode.__repr__")
 
 
 def reorder(bdd: BDD, order: Optional[Dict[str, int]] = None) -> None:
