@@ -65,7 +65,7 @@ type VidBits = usize;
 /// Construct the NID for the (virtual) node corresponding to an input variable.
 /// Private since moving to vid::VID, because this didn't set the "real" bit, and
 /// I want the real bit to eventually go away in favor of an unset "virtual" bit.
-#[inline(always)] fn nv(v:VidBits)->NID { NID { n:((v as u64) << 32)|VAR }}
+#[inline(always)] const fn nv(v:VidBits)->NID { NID { n:((v as u64) << 32)|VAR }}
 
 /// Construct a NID with the given variable and index.
 #[inline(always)] fn nvi(v:VidBits,i:usize)->NID { NID{n: ((v as u64) << 32) + i as u64} }
@@ -199,8 +199,8 @@ impl NID {
   #[inline(always)] pub fn from_bit(b:bool)->Self { if b { I } else { O } }
   #[inline(always)] pub fn to_bit(&self)->bool { self != &O }
 
-  #[inline(always)] pub fn var(v:u32)->Self { Self::from_vid(vid::VID::var(v)) }
-  #[inline(always)] pub fn vir(v:u32)->Self { Self::from_vid(vid::VID::vir(v)) }
+  #[inline(always)] pub const fn var(v:u32)->Self { nv((v | (RVAR>>32) as u32) as VidBits) }
+  #[inline(always)] pub const fn vir(v:u32)->Self { nv(v as VidBits) }
   #[inline(always)] pub fn from_var(v:vid::VID)->Self { Self::var(v.var_ix() as u32)}
   #[inline(always)] pub fn from_vir(v:vid::VID)->Self { Self::vir(v.vir_ix() as u32)}
 
@@ -265,3 +265,19 @@ impl NID {
   assert_eq!("f3.FC", format!("{}", NID::fun(3, 0xFC).to_nid()));}
 
 include!("nid-fun.rs");
+
+/// predefined consts for VIDS (mostly for tests)
+#[allow(non_upper_case_globals)]
+pub mod named {
+  use super::NID;
+  pub const x0:NID = NID::var(0);
+  pub const x1:NID = NID::var(1);
+  pub const x2:NID = NID::var(2);
+  pub const x3:NID = NID::var(3);
+  pub const x4:NID = NID::var(4);
+  pub const v0:NID = NID::vir(0);
+  pub const v1:NID = NID::vir(1);
+  pub const v2:NID = NID::vir(2);
+  pub const v3:NID = NID::vir(3);
+  pub const v4:NID = NID::vir(4);
+}

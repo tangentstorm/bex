@@ -127,3 +127,19 @@ impl Ord for VID {
 impl PartialOrd for VID {
   fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
       Some(self.cmp(other))}}
+
+/// predefined consts for VIDS (mostly for tests)
+#[allow(non_upper_case_globals)]
+pub mod named {
+  use super::VID;
+  pub const x0:VID = VID::var(0);
+  pub const x1:VID = VID::var(1);
+  pub const x2:VID = VID::var(2);
+  pub const x3:VID = VID::var(3);
+  pub const x4:VID = VID::var(4);
+  pub const v0:VID = VID::vir(0);
+  pub const v1:VID = VID::vir(1);
+  pub const v2:VID = VID::vir(2);
+  pub const v3:VID = VID::vir(3);
+  pub const v4:VID = VID::vir(4);
+}
