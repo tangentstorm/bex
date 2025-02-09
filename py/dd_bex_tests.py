@@ -17,6 +17,10 @@ class Tests(common.Tests):
     def setup_method(self):
         self.DD = _bdd.BDD
 
+    @pytest.mark.skip(reason="not implemented")
+    def test_configure_reordering(self):
+        pass
+
 
 class BDDTests(common_bdd.Tests):
     def setup_method(self):

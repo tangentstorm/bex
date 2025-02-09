@@ -6,13 +6,25 @@ import bex as _bex
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 class BDD:
+    """dd-style python interface for bex::BddBase"""
+
     def __init__(self) -> None:
         """Initialize the BDD manager."""
-        raise NotImplementedError("BDD.__init__")
+        self.base = _bex.BddBase()
+
+    @property
+    def false(self) -> 'BDDFunction':
+        """Return the false constant (O)."""
+        return BDDFunction(self, _bex.O)
+
+    @property
+    def true(self) -> 'BDDFunction':
+        """Return the true constant."""
+        return BDDFunction(self, _bex.I)
 
     def __eq__(self, other: Any) -> bool:
         """Check if two BDD managers are equal."""
-        raise NotImplementedError("BDD.__eq__")
+        return isinstance(other, BDD) and self.base is other.base
 
     def __len__(self) -> int:
         """Return the number of nodes in the BDD."""
@@ -123,15 +135,60 @@ class BDD:
         """Load a BDD from a file."""
         raise NotImplementedError("BDD.load")
 
-    @property
-    def false(self) -> Any:
-        """Return the false constant."""
-        raise NotImplementedError("BDD.false")
+
+class BDDFunction:
+    """Pairs a NID with a reference to its BDD."""
+    def __init__(self, bdd: BDD, nid: _bex.NID) -> None:
+        """Initialize the BDDFunction with a BDD and a node ID."""
+        self.bdd = bdd
+        self.nid = nid
 
     @property
-    def true(self) -> Any:
-        """Return the true constant."""
-        raise NotImplementedError("BDD.true")
+    def vhl(self) -> Optional[Tuple[_bex.NID, _bex.NID]]:
+        return self.bdd.base.get_vhl(self.nid)
+
+    @property
+    def high(self) -> Optional[_bex.NID]:
+        return None if self.nid.is_const() else self.vhl[1]
+
+    @property
+    def low(self) -> Optional[_bex.NID]:
+        return None if self.nid.is_const() else self.vhl[2]
+
+    def __eq__(self, other: Any) -> bool:
+        """Check if two BDDFunctions are equal."""
+        return isinstance(other, BDDFunction) and self.bdd == other.bdd and self.nid == other.nid
+
+    def __invert__(self) -> 'BDDFunction':
+        """Return the negation of the BDDFunction."""
+        return BDDFunction(self.bdd, ~self.nid)
+
+    def __and__(self, other: Any) -> 'BDDFunction':
+        """Return the conjunction of two BDDFunctions."""
+        return BDDFunction(self.bdd, self.bdd.base.op_and(self.nid, other.nid))
+
+    def __or__(self, other: Any) -> 'BDDFunction':
+        """Return the disjunction of two BDDFunctions."""
+        return BDDFunction(self.bdd, self.bdd.base.op_or(self.nid, other.nid))
+
+    # ---- todo ------------------------------------------------------
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Call the BDD function with given arguments."""
+        raise NotImplementedError("BDDFunction.__call__")
+
+    def __hash__(self) -> int:
+        """Return the hash of the BDDFunction."""
+        raise NotImplementedError("BDDFunction.__hash__")
+
+    def __str__(self) -> str:
+        """Return a string representation of the BDDFunction."""
+        raise NotImplementedError("BDDFunction.__str__")
+
+    def __repr__(self) -> str:
+        """Return a string representation of the BDDFunction for debugging."""
+        raise NotImplementedError("BDDFunction.__repr__")
+
 
 def reorder(bdd: BDD, order: Optional[Dict[str, int]] = None) -> None:
     """Reorder the variables in the BDD."""
