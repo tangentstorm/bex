@@ -38,7 +38,7 @@ class BDD:
 
     def var(self, name: str) -> 'BDDNode':
         """Return the node corresponding to a variable name."""
-        return BDDNode(self, self.vars[name])
+        return BDDNode(self, self.vars[name].to_nid())
 
     def _vhl(self, nid) -> Tuple[_bex.VID, _bex.NID, _bex.NID]:
         """Return the variable, high, and low nodes of a node."""
@@ -52,6 +52,35 @@ class BDD:
     def __eq__(self, other: Any) -> bool:
         """Check if two BDD managers are equal."""
         return isinstance(other, BDD) and self.base is other.base
+
+    def _eval(self, nid: _bex.NID, assignment: Dict[_bex.VID, _bex.NID]) -> bool:
+        return BDDNode(self, self.base.eval(nid, assignment))
+
+    def _to_nid(self, x: Any) -> _bex.NID:
+        if isinstance(x, bool):
+            return _bex.I if x else _bex.O
+        elif isinstance(x, str):
+            return self.vars[x].to_nid()
+        elif isinstance(x, BDDNode):
+            return x.nid
+        else:
+            raise TypeError(f"Unsupported type: {type(x)}")
+
+    def _to_vid(self, x: Any) -> _bex.VID:
+        if isinstance(x, str):
+            return self.vars[x]
+        elif isinstance(x, BDDNode):
+            return self._vhl(x.nid)[0]
+        else:
+            raise TypeError(f"Unsupported type: {type(x)}")
+
+    def let(self, definitions: Union[Dict[str, str], Dict[str, bool], Dict[str, 'BDDNode']], u: 'BDDNode') -> 'BDDNode':
+        """Substitute variables in a node."""
+        if isinstance(definitions, dict):
+            definitions = {self._to_vid(k): self._to_nid(v) for k, v in definitions.items()}
+            return self._eval(u.nid, definitions)
+        else:
+            raise TypeError(f"Unsupported type for definitions: {type(definitions)}")
 
     def __len__(self) -> int:
         """Return the number of nodes in the BDD."""
@@ -93,10 +122,6 @@ class BDD:
     def support(self, u: Any, as_levels: bool = False) -> Union[Set[str], Set[int]]:
         """Return the support of a node."""
         raise NotImplementedError("BDD.support")
-
-    def let(self, definitions: Union[Dict[str, str], Dict[str, bool], Dict[str, Any]], u: Any) -> Any:
-        """Substitute variables in a node."""
-        raise NotImplementedError("BDD.let")
 
     def forall(self, variables: Iterable[str], u: Any) -> Any:
         """Perform universal quantification on a node."""
