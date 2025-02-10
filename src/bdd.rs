@@ -230,14 +230,15 @@ impl Base for BddBase {
   fn _eval_aux(&mut self, n:NID, kv:&HashMap<VID, NID>, cache:&mut HashMap<NID,NID>)->NID {
     if n.is_const() { n }
     else if n.is_vid() { if let Some(&nid) = kv.get(&n.vid()) { nid } else { n } }
-    else if let Some(&nid) = cache.get(&n) { nid }
+    else if let Some(&nid) = cache.get(&n.raw()) { nid.inv_if(n.is_inv()) }
     else {
-      // TODO: do we need to check is_inv? if not, why not?
-      let (v, hi, lo) = self.get_vhl(n);
+      let (v, hi, lo) = self.get_vhl(n.raw());
       let hi_val = self._eval_aux(hi, kv, cache);
       let lo_val = self._eval_aux(lo, kv, cache);
-      let result = self.ite(NID::from_vid(v), hi_val, lo_val);
-      cache.insert(n, result);
+      let branch = if let Some(&nid) = kv.get(&v) { nid } else { NID::from_vid(v) };
+      let mut result = self.ite(branch, hi_val, lo_val);
+      cache.insert(n.raw(), result);
+      if n.is_inv() { result = !result }
       result }}
 
   // generate dot file (graphviz)
