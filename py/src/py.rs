@@ -1,5 +1,6 @@
 //! wrap bex as a python module
 extern crate bex as bex_rs;
+extern crate fxhash;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3::exceptions::PyException;
@@ -22,15 +23,20 @@ impl std::convert::From<BexErr> for PyErr {
 #[pymethods]
 impl PyNID {
   fn is_const(&self)->bool { self.0.is_const() }
+  fn is_lit(&self)->bool { self.0.is_lit() }
+  fn is_vid(&self)->bool { self.0.is_vid() }
   fn __eq__(&self, other:&PyNID)->bool { self.0 == other.0 }
   fn __invert__(&self)->PyNID { PyNID(!self.0) }
   fn __str__(&self) -> String { self.0.to_string() }
+  fn __hash__(&self) -> u64 { fxhash::hash64(&self.0) }
   fn __repr__(&self) -> String { format!("<NID({:?})>", self.0) }}
 
 #[pymethods]
 impl PyVID {
   #[getter] fn ix(&self)->usize { self.0.vid_ix() }
   fn to_nid(&self)->PyNID { PyNID(NID::from_vid(self.0)) }
+  fn __eq__(&self, other:&PyVID)->bool { self.0 == other.0 }
+  fn __hash__(&self) -> u64 { fxhash::hash64(&self.0) }
   fn __str__(&self) -> String { self.0.to_string() }
   fn __repr__(&self) -> String { format!("<VID({:?})>", self.0) }}
 
@@ -48,6 +54,9 @@ impl PyBddBase {
   fn op_and(&mut self, x:&PyNID, y:&PyNID)->PyNID { let mut base = self.0.lock().unwrap(); PyNID(base.and(x.0, y.0)) }
   fn op_xor(&mut self, x:&PyNID, y:&PyNID)->PyNID { let mut base = self.0.lock().unwrap(); PyNID(base.xor(x.0, y.0)) }
   fn op_or(&mut self, x:&PyNID, y:&PyNID)->PyNID  { let mut base = self.0.lock().unwrap(); PyNID(base.or(x.0, y.0)) }
+  fn ite(&mut self, i:&PyNID, t:&PyNID, e:&PyNID)->PyNID {
+    let mut base = self.0.lock().unwrap();
+    PyNID(base.ite(i.0, t.0, e.0)) }
   fn eval(&mut self, x: &PyNID, kv: &Bound<'_, PyDict>) -> PyResult<PyNID> {
     let mut base = self.0.lock().unwrap();
     let mut rust_kv = HashMap::new();

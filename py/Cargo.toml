@@ -13,6 +13,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 bex = { path = ".." }
+fxhash = "0.2.1"
 
 [dependencies.pyo3]
 version = "0.23.4"

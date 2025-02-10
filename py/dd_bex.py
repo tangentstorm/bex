@@ -4,12 +4,14 @@ https://github.com/tulip-control/dd/
 """
 import bex as _bex
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
+from dd import _parser
 
 class BDD:
     """dd-style python interface for bex::BddBase"""
 
-    def __init__(self) -> None:
+    def __init__(self, name=None) -> None:
         """Initialize the BDD manager."""
+        self.name = None  # for __str__
         self.base = _bex.BddBase()
         self.vars = {}
         self.var_count = 0
@@ -86,14 +88,81 @@ class BDD:
         """Return the number of nodes in the BDD."""
         return len(self.base)
 
-    # -------------------------------------------------------------------------
-    def __contains__(self, u: Any) -> bool:
+    def __contains__(self, u: 'BDDNode') -> bool:
         """Check if a node is in the BDD."""
-        raise NotImplementedError("BDD.__contains__")
+        if not isinstance(u, BDDNode):
+            raise TypeError()
+        if u.bdd != self:
+            # !! not sure why this should raise a value error, but that's what the tests ask for.
+            raise ValueError
+        return True
+
+    def level_of_var(self, var: str) -> Optional[int]:
+        """Return the level of a given variable."""
+        return self._to_vid(var).ix
+
+    def var_at_level(self, level: int) -> str:
+        """Return the variable at a given level."""
+        for var, vid in self.vars.items():
+            if vid.ix == level:
+                return var
+        else: raise LookupError(f"No variable found at level {level}")
+
+    @property
+    def var_levels(self) -> Dict[str, int]:
+        """Return the levels of all variables."""
+        return {var: vid.ix for var, vid in self.vars.items()}
+
+    def add_expr(self, expr: str) -> Any:
+        """Add a Boolean expression to the BDD."""
+        return _parser.add_expr(expr, self)
+
+    def apply(self, op: str, u: Any, v: Optional[Any] = None, w: Optional[Any] = None) -> Any:
+        """Apply a binary or ternary operator to nodes."""
+        match op:
+            case "!": return ~u
+            case "and" | "/\\" | "&" | "&&": return u & v
+            case "or" | "\\/" | "|" | "||": return u | v
+            case "xor" | "#" | "^": return u ^ v
+        raise NotImplementedError(f"BDD.apply({op})")
+
+    def _walk_df(self, nid: _bex.NID) -> Iterable[Tuple[_bex.NID, _bex.VID, _bex.NID, _bex.NID]]:
+        """Walk through the BDD (depth-first and left to right), yielding tuples of (nid, v, h, l)."""
+        seen = set()
+        stack = [None]
+        this = nid
+        while this:
+            v, h, l = self.base.get_vhl(this)
+            todo = [n for n in [l, h] if not (n.is_lit() or n in seen)]
+            if todo:
+                stack.push(this)
+                stack.extend(todo)
+            else:
+                yield (this, v, h, l)
+            this = stack.pop()
+
+    def ite(self, g: 'BDDNode', u: 'BDDNode', v: 'BDDNode') -> 'BDDNode':
+        """Perform the if-then-else operation on nodes."""
+        nid = self.base.ite(g.nid, u.nid, v.nid)
+        return BDDNode(self, nid)
+
+    def copy(self, u: 'BDDNode', other: 'BDD') -> 'BDDNode':
+        """Copy a node from one BDD manager to another."""
+        nid_map = {}
+        for nid, v0, h0, l0 in self._walk_df(u.nid):
+            v = BDDNode(other, v0.to_nid())
+            # h and l should either be in nid_map or be literals
+            h = nid_map.get(h0) or BDDNode(other, h0)
+            l = nid_map.get(l0) or BDDNode(other, l0)
+            print(v,h,l)
+            nid_map[nid] = last = other.ite(v, h, l)
+        return last
 
     def __str__(self) -> str:
         """Return a string representation of the BDD."""
-        raise NotImplementedError("BDD.__str__")
+        return f"BDD(name={self.name})" if self.name else repr(self)
+
+    # -------------------------------------------------------------------------
 
     def configure(self, **kw: Any) -> Dict[str, Any]:
         """Configure the BDD manager with given parameters."""
@@ -102,23 +171,6 @@ class BDD:
     def statistics(self) -> Dict[str, Any]:
         """Return statistics of the BDD manager."""
         raise NotImplementedError("BDD.statistics")
-
-    def var_at_level(self, level: int) -> str:
-        """Return the variable at a given level."""
-        raise NotImplementedError("BDD.var_at_level")
-
-    def level_of_var(self, var: str) -> Optional[int]:
-        """Return the level of a given variable."""
-        raise NotImplementedError("BDD.level_of_var")
-
-    @property
-    def var_levels(self) -> Dict[str, int]:
-        """Return the levels of all variables."""
-        raise NotImplementedError("BDD.var_levels")
-
-    def copy(self, u: Any, other: 'BDD') -> Any:
-        """Copy a node from one BDD manager to another."""
-        raise NotImplementedError("BDD.copy")
 
     def support(self, u: Any, as_levels: bool = False) -> Union[Set[str], Set[int]]:
         """Return the support of a node."""
@@ -144,21 +196,9 @@ class BDD:
         """Return an iterator over satisfying assignments for a node."""
         raise NotImplementedError("BDD.pick_iter")
 
-    def add_expr(self, expr: str) -> Any:
-        """Add a Boolean expression to the BDD."""
-        raise NotImplementedError("BDD.add_expr")
-
     def to_expr(self, u: Any) -> str:
         """Convert a node to a Boolean expression."""
         raise NotImplementedError("BDD.to_expr")
-
-    def ite(self, g: Any, u: Any, v: Any) -> Any:
-        """Perform the if-then-else operation on nodes."""
-        raise NotImplementedError("BDD.ite")
-
-    def apply(self, op: str, u: Any, v: Optional[Any] = None, w: Optional[Any] = None) -> Any:
-        """Apply a binary or ternary operator to nodes."""
-        raise NotImplementedError("BDD.apply")
 
     def _add_int(self, i: int) -> Any:
         """Add an integer to the BDD."""
@@ -212,6 +252,14 @@ class BDDNode:
         """Return the disjunction of two BDDNodes."""
         return BDDNode(self.bdd, self.bdd.base.op_or(self.nid, other.nid))
 
+    def __xor__(self, other: Any) -> 'BDDNode':
+        """Return the XOR of two BDDNodes."""
+        return BDDNode(self.bdd, self.bdd.base.op_xor(self.nid, other.nid))
+
+    def __str__(self) -> str:
+        """Return a string representation of the BDDNode."""
+        return f"BDDNode({self.bdd}, {self.nid})"
+
     # -------------------------------------------------------------------------
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
@@ -221,10 +269,6 @@ class BDDNode:
     def __hash__(self) -> int:
         """Return the hash of the BDDNode."""
         raise NotImplementedError("BDDNode.__hash__")
-
-    def __str__(self) -> str:
-        """Return a string representation of the BDDNode."""
-        raise NotImplementedError("BDDNode.__str__")
 
     def __repr__(self) -> str:
         """Return a string representation of the BDDNode for debugging."""
