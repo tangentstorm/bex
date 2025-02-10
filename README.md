@@ -25,6 +25,8 @@ and the smaller tests in [src/solve.rs](https://github.com/tangentstorm/bex/blob
 
 ## Changes in main branch (upcoming version 0.3.0)
 
+- Greatly expanded and fleshed out the python integration, including partial support for [@tulip-control/dd](https://github.com/tulip-control/dd)
+- Added a simple [HTTP API](https://github.com/tangentstorm/bex/tree/main/api) for integrating with other languages.
 - Added new `Fun` trait and `NidFun` struct, refining the idea of storing truth tables of up to 5 inputs in a NID.
 - Added `ASTBase::{apply,eval}`
 - `naf.rs` (a variation of ANF)
