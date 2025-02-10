@@ -41,16 +41,16 @@ pub trait Base {
 
   /// recursively evaluate a nid, substituting in the given values
   /// (internal helper function for eval, eval_all)
-  fn _eval_aux(&mut self, _n:NID, _kv: &HashMap<NID,NID>, _cache:&mut HashMap<NID,NID>)->NID {
+  fn _eval_aux(&mut self, _n:NID, _kv: &HashMap<VID,NID>, _cache:&mut HashMap<NID,NID>)->NID {
     todo!("_eval_aux not yet implemented for this type") }
 
   /// evaluate a list of nids, substituting in the given values.
-  fn eval_all(&mut self, nids: &[NID], kv: &HashMap<NID,NID>)->Vec<NID> {
+  fn eval_all(&mut self, nids: &[NID], kv: &HashMap<VID,NID>)->Vec<NID> {
     let mut cache = HashMap::new();
     nids.iter().map(|&n| self._eval_aux(n, kv, &mut cache)).collect() }
 
   /// evaluate a single nid (substituting in the given values)
-  fn eval(&mut self, nid:NID, kv:&HashMap<NID, NID>)->NID {
+  fn eval(&mut self, nid:NID, kv:&HashMap<VID, NID>)->NID {
     self.eval_all(&[nid], kv)[0] }
 
   /// Render node `n` (and its descendents) in graphviz *.dot format.
@@ -149,10 +149,10 @@ impl<T:Base> Base for Simplify<T> {
   ($b:ident, ($x:tt & $y:tt)) => { expr![@op $b, $x and $y] };}
 
 /// Macro to make a substitution map for eval.
-/// example: `use vid::named::{x0, x1}; nid_map![x0:I, x1:O]`
-#[macro_export] macro_rules! nid_map {
+/// example: `use vid::named::{x0, x1}; vid_map![x0:I, x1:O]`
+#[macro_export] macro_rules! vid_map {
   ($($x:ident : $y:expr),*) => {
-     vec![$(($x, $y)),*].iter().copied().collect::<HashMap<NID,NID>>() }}
+     vec![$(($x, $y)),*].iter().copied().collect::<HashMap<VID,NID>>() }}
 
 
 /*

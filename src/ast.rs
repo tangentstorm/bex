@@ -194,8 +194,8 @@ impl RawASTBase {
           else { matches.insert(arg.raw(), i); i+=1; }}
         (f.to_nid(), args1) }
       else { (n, args0) };
-    let env:HashMap<NID,NID> = args.iter().enumerate()
-      .map(|(i,&x)|(NID::var(i as u32), x)).collect();
+    let env:HashMap<VID,NID> = args.iter().enumerate()
+      .map(|(i,&x)|(VID::var(i as u32), x)).collect();
     self.eval(f, &env) }
 } // impl RawASTBase
 
@@ -271,10 +271,12 @@ impl Base for RawASTBase {
     w!("}}"); }
 
   /// recursively evaluate an AST, caching shared sub-expressions
-  fn _eval_aux(&mut self, n:NID, kvs:&HashMap<NID, NID>, cache:&mut HashMap<NID,NID>)->NID {
+  fn _eval_aux(&mut self, n:NID, kvs:&HashMap<VID, NID>, cache:&mut HashMap<NID,NID>)->NID {
     let raw = n.raw();
     let res =
-      if let Some(&vn) = kvs.get(&raw) { vn }
+      if n.is_vid() {
+        if let Some(&nid) = kvs.get(&n.vid()) { nid }
+        else { n }}
       else if n.is_lit() { raw }
       else if n.is_fun() {
         let mut f = n.to_fun().unwrap();
@@ -283,7 +285,7 @@ impl Base for RawASTBase {
           let i = f.arity();
           if i == 0 { res = if f.tbl()==0 { nid::O } else { nid::I}; break; }
           else {
-            let &arg = kvs.get(&NID::var((i as u32)-1))
+            let &arg = kvs.get(&VID::var((i as u32)-1))
               .expect("don't have enough args to fully evaluate!");
             f = f.when(i-1, arg==nid::I); }};
         res }
@@ -325,23 +327,23 @@ test_base_when!(ASTBase);
 
 
 #[test] fn ast_eval_full(){
-  use crate::{I, O, nid::named::{x0, x1}};
+  use crate::{I, O, vid::named::{x0, x1}, nid::named::{x0 as nx0, x1 as nx1}};
   let mut b = RawASTBase::empty();
-  let and = expr![b, (x0 & x1)];
-  assert_eq!(b.eval(and, &nid_map![x0: O, x1: O]), O, "O and O => O");
-  assert_eq!(b.eval(and, &nid_map![x0: O, x1: I]), O, "O and I => O");
-  assert_eq!(b.eval(and, &nid_map![x0: I, x1: O]), O, "I and O => O");
-  assert_eq!(b.eval(and, &nid_map![x0: I, x1: I]), I, "I and I => I"); }
+  let and = expr![b, (nx0 & nx1)];
+  assert_eq!(b.eval(and, &vid_map![x0: O, x1: O]), O, "O and O => O");
+  assert_eq!(b.eval(and, &vid_map![x0: O, x1: I]), O, "O and I => O");
+  assert_eq!(b.eval(and, &vid_map![x0: I, x1: O]), O, "I and O => O");
+  assert_eq!(b.eval(and, &vid_map![x0: I, x1: I]), I, "I and I => I"); }
 
 // TODO: #[test] fn ast_eval_partial(){
 // (for now you have to assign all variables)
 //   use crate::{I, O, vid::named::{x0, x1}};
 //   let mut b = RawASTBase::empty();
 //   let and = expr![b, (x0 & x1)];
-//   assert_eq!(b.eval(and, &nid_map![x1: O]), O, "expect  x0 & O == O");
-//   assert_eq!(b.eval(and, &nid_map![x1: !x0]), O, "expect  x0 & ~x0 == O");
-//   assert_eq!(b.eval(and, &nid_map![x1: I]), x0, "expect x0 & I == x0");
-//   assert_eq!(b.eval(and, &nid_map![x1: x0]), x0, "expect  x0 & x0 == x0"); }
+//   assert_eq!(b.eval(and, &vid_map![x1: O]), O, "expect  x0 & O == O");
+//   assert_eq!(b.eval(and, &vid_map![x1: !x0]), O, "expect  x0 & ~x0 == O");
+//   assert_eq!(b.eval(and, &vid_map![x1: I]), x0, "expect x0 & I == x0");
+//   assert_eq!(b.eval(and, &vid_map![x1: x0]), x0, "expect  x0 & x0 == x0"); }
 
 #[test] fn test_repack() {
   let mut b = RawASTBase::empty();
