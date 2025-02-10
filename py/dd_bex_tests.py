@@ -21,6 +21,11 @@ class Tests(common.Tests):
     def test_configure_reordering(self):
         pass
 
+    def test_len(self):
+        """bex does not allocate nodes for constants or literals"""
+        bdd = self.DD()
+        u = bdd.true
+        assert len(bdd) == 0, len(bdd)
 
 class BDDTests(common_bdd.Tests):
     def setup_method(self):

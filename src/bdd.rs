@@ -116,6 +116,8 @@ impl BddBase {
   // clear all data from the cache (mostly for benchmarks)
   pub fn reset(&mut self) { self.swarm.reset(); }
 
+  pub fn len(&self)->usize { self.swarm.len() }
+
 
   // public node constructors
 
@@ -174,7 +176,6 @@ impl BddBase {
     let tests = wip::COUNT_CACHE_TESTS.with(|c| *c.borrow());
     let hits = wip::COUNT_CACHE_HITS.with(|c| *c.borrow());
     (tests, hits)}
-
 }
 
 impl Default for BddBase { fn default() -> Self { Self::new() }}

@@ -172,6 +172,8 @@ impl<J,H> VhlSwarm<J,H> where J:JobKey, H:VhlJobHandler<J,W=VhlWorker<J,H>> {
 
   pub fn tup(&self, n:NID)->(NID,NID) { self.state.tup(n) }
 
+  pub fn len(&self)->usize { self.state.len() }
+
   pub fn run_swarm_job(&mut self, job:J)->NID {
     let mut result: Option<NID> = None;
     self.swarm.add_query(VhlQ::Job(job));

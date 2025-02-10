@@ -84,8 +84,9 @@ class BDD:
 
     def __len__(self) -> int:
         """Return the number of nodes in the BDD."""
-        raise NotImplementedError("BDD.__len__")
+        return len(self.base)
 
+    # -------------------------------------------------------------------------
     def __contains__(self, u: Any) -> bool:
         """Check if a node is in the BDD."""
         raise NotImplementedError("BDD.__contains__")
@@ -211,7 +212,7 @@ class BDDNode:
         """Return the disjunction of two BDDNodes."""
         return BDDNode(self.bdd, self.bdd.base.op_or(self.nid, other.nid))
 
-    # ---- todo ------------------------------------------------------
+    # -------------------------------------------------------------------------
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Call the BDD function with given arguments."""

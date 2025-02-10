@@ -105,6 +105,8 @@ pub struct WorkState<K=NormIteKey, V=NID, P=VhlParts> where K:Eq+Hash+Debug {
 
 impl<K:Eq+Hash+Debug,V:Clone> WorkState<K,V> {
 
+  pub fn len(&self)->usize { self.hilos.len() }
+
   /// If the key exists in the cache AND the work is
   /// done, return the completed value, otherwise
   /// return None.
