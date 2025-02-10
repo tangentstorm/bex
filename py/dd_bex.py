@@ -120,9 +120,9 @@ class BDD:
     def apply(self, op: str, u: Any, v: Optional[Any] = None, w: Optional[Any] = None) -> Any:
         """Apply a binary or ternary operator to nodes."""
         match op:
-            case "!": return ~u
+            case "not" | "!": return ~u
             case "and" | "/\\" | "&" | "&&": return u & v
-            case "or" | "\\/" | "|" | "||": return u | v
+            case "or"  | "\\/" | "|" | "||": return u | v
             case "xor" | "#" | "^": return u ^ v
         raise NotImplementedError(f"BDD.apply({op})")
 
