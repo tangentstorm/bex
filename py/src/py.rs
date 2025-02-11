@@ -25,6 +25,7 @@ impl PyNID {
   fn is_const(&self)->bool { self.0.is_const() }
   fn is_lit(&self)->bool { self.0.is_lit() }
   fn is_vid(&self)->bool { self.0.is_vid() }
+  fn _vid(&self)->PyVID { PyVID(self.0.vid()) }
   fn __eq__(&self, other:&PyNID)->bool { self.0 == other.0 }
   fn __invert__(&self)->PyNID { PyNID(!self.0) }
   fn __str__(&self) -> String { self.0.to_string() }
@@ -71,7 +72,11 @@ impl PyBddBase {
     let (v, hi, lo) = base.get_vhl(n.0); (PyVID(v), PyNID(hi), PyNID(lo))}
   fn to_dot(&self, x:&PyNID)->String {
     let base = self.0.lock().unwrap();
-    let mut s = String::new(); base.write_dot(x.0, &mut s);  s }}
+    let mut s = String::new(); base.write_dot(x.0, &mut s);  s }
+  fn solution_count(&mut self, x: &PyNID) -> u64 {
+    let mut base = self.0.lock().unwrap();
+    base.solution_count(x.0) }
+}
 
 #[pyfunction]
 fn var(i:i32)->PyResult<PyVID> { if i<0 { Err(BexErr::NegVar.into()) } else { Ok(PyVID(VID::var(i as u32))) }}

@@ -162,6 +162,16 @@ class BDD:
         """Return a string representation of the BDD."""
         return f"BDD(name={self.name})" if self.name else repr(self)
 
+    def count(self, u: 'BDDNode', nvars: Optional[int] = None) -> int:
+        """Count the number of satisfying assignments for a node."""
+        shift = 0
+        if nvars is not None:
+            if nvars == 0 and not u.nid.is_const(): raise ValueError("nvars must be > 0")
+            if u.nid.is_const(): return int(u.nid==_bex.I) << nvars
+            shift = nvars - (u._vid().ix + 1)
+            print("shift", shift, " nvars:", nvars, "vid:", u._vid())
+        return self.base.solution_count(u.nid) << shift
+
     # -------------------------------------------------------------------------
 
     def configure(self, **kw: Any) -> Dict[str, Any]:
@@ -183,10 +193,6 @@ class BDD:
     def exist(self, variables: Iterable[str], u: Any) -> Any:
         """Perform existential quantification on a node."""
         raise NotImplementedError("BDD.exist")
-
-    def count(self, u: Any, nvars: Optional[int] = None) -> int:
-        """Count the number of satisfying assignments for a node."""
-        raise NotImplementedError("BDD.count")
 
     def pick(self, u: Any, care_vars: Optional[Set[str]] = None) -> Optional[Dict[str, bool]]:
         """Pick a satisfying assignment for a node."""
@@ -259,6 +265,10 @@ class BDDNode:
     def __str__(self) -> str:
         """Return a string representation of the BDDNode."""
         return f"BDDNode({self.bdd}, {self.nid})"
+    
+    def _vid(self) -> Optional[_bex.VID]:
+        """Return the level of the BDDNode."""
+        return None if self.nid.is_const() else self.nid._vid()
 
     # -------------------------------------------------------------------------
 
