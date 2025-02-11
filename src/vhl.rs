@@ -72,6 +72,7 @@ pub trait Walkable {
   fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>, topdown:bool)
   where F: FnMut(NID,VID,NID,NID);
 
+  /// iterate through (nid, vid, hi:nid, lo:nid) tuples in the graph
   fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
     let mut seen = HashSet::new();
     self.step(n, f, &mut seen, true)}

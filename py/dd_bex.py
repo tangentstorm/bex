@@ -23,7 +23,7 @@ class BDD:
 
     @property
     def true(self) -> 'BDDNode':
-        """Return the true constant."""
+        """Return the true constant (I)."""
         return BDDNode(self, _bex.I)
 
     def add_var(self, name: str) -> None:
