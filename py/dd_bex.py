@@ -172,6 +172,21 @@ class BDD:
             print("shift", shift, " nvars:", nvars, "vid:", u._vid())
         return self.base.solution_count(u.nid) << shift
 
+    def pick_iter(self, u: 'BDDNode', care_vars:Set[str]=set()) -> Iterable[Dict[str, bool]]:
+        """Iterate over all solutions of the BDD."""
+        # TODO: support dont_care situations
+        if u.nid == _bex.I:
+            yield {} # dd uses this to indicate al vars are "don't care"
+        elif u.nid == _bex.O:
+            return
+        else:
+            nvars = u.nid._vid().ix + 1
+            cursor = self.base.first_solution(u.nid, nvars)
+            while not cursor.at_end:
+                ones = set(cursor.scope.hi_bits())
+                yield {k: v.ix in ones for k, v in self.vars.items() if v.ix < nvars}
+                cursor._advance(self.base)
+
     # -------------------------------------------------------------------------
 
     def configure(self, **kw: Any) -> Dict[str, Any]:
@@ -197,10 +212,6 @@ class BDD:
     def pick(self, u: Any, care_vars: Optional[Set[str]] = None) -> Optional[Dict[str, bool]]:
         """Pick a satisfying assignment for a node."""
         raise NotImplementedError("BDD.pick")
-
-    def pick_iter(self, u: Any, care_vars: Optional[Set[str]] = None) -> Iterable[Dict[str, bool]]:
-        """Return an iterator over satisfying assignments for a node."""
-        raise NotImplementedError("BDD.pick_iter")
 
     def to_expr(self, u: Any) -> str:
         """Convert a node to a Boolean expression."""

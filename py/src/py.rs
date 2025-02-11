@@ -4,7 +4,7 @@ extern crate fxhash;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3::exceptions::PyException;
-use bex_rs::{Base, GraphViz, ast::ASTBase, BddBase, nid::{I,O,NID}, vid::VID};
+use bex_rs::{Base, GraphViz, ast::ASTBase, BddBase, nid::{I,O,NID}, vid::VID, cur::Cursor, Reg};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
@@ -12,6 +12,8 @@ use std::collections::HashMap;
 #[pyclass(name="VID")] struct PyVID(VID);
 #[pyclass(name="ASTBase")] struct PyASTBase(ASTBase);
 #[pyclass(name="BddBase")] struct PyBddBase(Arc<Mutex<BddBase>>);
+#[pyclass(name="Reg")] struct PyReg(Reg);
+#[pyclass(name="Cursor")] struct PyCursor(Option<Cursor>);
 
 enum BexErr { NegVar, NegVir }
 impl std::convert::From<BexErr> for PyErr {
@@ -76,7 +78,28 @@ impl PyBddBase {
   fn solution_count(&mut self, x: &PyNID) -> u64 {
     let mut base = self.0.lock().unwrap();
     base.solution_count(x.0) }
-}
+  fn first_solution(&self, n: &PyNID, nvars: usize) -> PyCursor {
+    let base = self.0.lock().unwrap();
+    PyCursor(base.first_solution(n.0, nvars)) }}
+
+#[pymethods]
+impl PyReg {
+  #[getter]
+  fn len(&self) -> usize { self.0.len() }
+  fn as_usize(&self) -> usize { self.0.as_usize() }
+  fn as_usize_rev(&self) -> usize { self.0.as_usize_rev() }
+  fn hi_bits(&self) -> Vec<usize> { self.0.hi_bits() }}
+
+#[pymethods]
+impl PyCursor {
+  #[getter] fn scope(&self) -> Option<PyReg> { self.0.as_ref().map(|c| PyReg(c.scope.clone())) }
+  #[getter] fn at_end(&self) -> bool { self.0.is_none() }
+  fn _advance(&mut self, base:&PyBddBase) {
+    let base = base.0.lock().unwrap();
+    if self.0.is_some() {
+      let cur = self.0.take().unwrap();
+      self.0 = base.next_solution(cur) }}}
+
 
 #[pyfunction]
 fn var(i:i32)->PyResult<PyVID> { if i<0 { Err(BexErr::NegVar.into()) } else { Ok(PyVID(VID::var(i as u32))) }}
@@ -93,6 +116,8 @@ fn bex(m: &Bound<'_, PyModule>)->PyResult<()> {
   m.add_class::<PyNID>()?;
   m.add_class::<PyASTBase>()?;
   m.add_class::<PyBddBase>()?;
+  m.add_class::<PyReg>()?;
+  m.add_class::<PyCursor>()?;
   m.add("O", PyNID(O))?;
   m.add("I", PyNID(I))?;
 
