@@ -47,7 +47,7 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 #[test] fn test_swarm_xor() {
   use crate::nid::named::{x0, x1};
   let mut base = BddBase::new();
-  let x = base.xor(x0, x1);
+  let x = expr![base, (x0 ^ x1)];
   assert_eq!(x1,  base.when_lo(x0.vid(),x));
   assert_eq!(!x1, base.when_hi(x0.vid(),x));
   assert_eq!(x0,  base.when_lo(x1.vid(),x));
@@ -58,7 +58,7 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
 #[test] fn test_swarm_and() {
   use crate::nid::named::{x0, x1};
   let mut base = BddBase::new();
-  let a = base.and(x0, x1);
+  let a = expr![base, (x0 & x1)];
   assert_eq!(O,  base.when_lo(x0.vid(),a));
   assert_eq!(x1, base.when_hi(x0.vid(),a));
   assert_eq!(O,  base.when_lo(x1.vid(),a));
@@ -73,9 +73,9 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   assert_eq!(vec![0,0,0,0,1,1,1,1], base.tt(x2, 3));
   assert_eq!(vec![0,0,1,1,0,0,1,1], base.tt(x1, 3));
   assert_eq!(vec![0,1,0,1,0,1,0,1], base.tt(x0, 3));
-  let x = base.xor(x2, x1);
+  let x = expr![base, (x2 ^ x1)];
   assert_eq!(vec![0,0,1,1,1,1,0,0], base.tt(x, 3));
-  let a = base.and(x1, x0);
+  let a = expr![base, (x1 & x0)];
   assert_eq!(vec![0,0,0,1,0,0,0,1], base.tt(a, 3));
   let i = base.ite(x, a, !a);
   assert_eq!(vec![1,1,0,1,0,0,1,0], base.tt(i, 3))}
@@ -106,7 +106,8 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
      "const true should yield all solutions"); }
 
 #[test] fn test_bdd_solutions_simple() {
-  let base = BddBase::new(); let a = NID::var(0);
+  use crate::nid::named::x0 as a;
+  let base = BddBase::new();
   let mut it = base.solutions_pad(a, 1);
   // it should be sitting on first solution, which is a=1
   assert_eq!(it.next().expect("expected solution!").as_usize(), 0b1);
@@ -128,9 +129,10 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
                           0b11010, 0b11011, 0b11110, 0b11111])}
 
 #[test] fn test_bdd_solutions_xor() {
+  use crate::nid::named::{x0, x1};
   let mut base = BddBase::new();
-  let (a, b) = (NID::var(0), NID::var(1));
-  let n = base.xor(a, b);
+  let (a, b) = (x0, x1);
+  let n = expr![base, (a ^ b)];
   // base.show(n);
   let actual:Vec<usize> = base.solutions_pad(n, 3).map(|x|x.as_usize()).collect();
   let expect = vec![0b001, 0b010, 0b101, 0b110 ]; // bits cba
@@ -157,3 +159,15 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   // but the concept should still work:
   let nx0 = cache.insert(x0, hl);
   assert_eq!(nx0, NID::from_vid_idx(x0, 0));}
+
+#[test] fn test_solution_count_simple() {
+  use crate::nid::named::{x0, x1, x2};
+  let mut base = BddBase::new();
+  let n = expr![base, (x0 & (x1 | x2))];
+  assert_eq!(base.solution_count(n), 3);}
+
+#[test] fn test_solution_count_complex() {
+  use crate::nid::named::{x0, x1, x2};
+  let mut base = BddBase::new();
+  let n = expr![base, ((x0 & x1) ^ x2)];
+  assert_eq!(base.solution_count(n), 4);}

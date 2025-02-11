@@ -146,6 +146,7 @@ impl<T:Base> Base for Simplify<T> {
     $b.$op(x,y) }};
   ($_:ident, $id:ident) => { $id };
   ($b:ident, ($x:tt ^ $y:tt)) => { expr![@op $b, $x xor $y] };
+  ($b:ident, ($x:tt | $y:tt)) => { expr![@op $b, $x or $y] };
   ($b:ident, ($x:tt & $y:tt)) => { expr![@op $b, $x and $y] };}
 
 /// Macro to make a substitution map for eval.

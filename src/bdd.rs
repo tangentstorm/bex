@@ -147,6 +147,29 @@ impl BddBase {
 
   pub fn node_count(&self, n:NID)->usize {
     let mut c = 0; self.walk_dn(n, &mut |_,_,_,_| c+=1); c }
+
+  // Add solution_count method
+  pub fn solution_count(&mut self, n: NID) -> u64 {
+    let mut counts = std::collections::HashMap::new();
+    self.walk_up(n, &mut |nid, vid, hi, lo| {
+      let level = vid.var_ix();
+      let hi_count = if hi.is_const() {
+        if hi == I { 1 << level } else { 0 }
+      } else {
+        let hi_level = hi.vid().var_ix();
+        counts[&hi] << ((level-1) - hi_level)
+      };
+      let lo_count = if lo.is_const() {
+        if lo == I { 1 << level } else { 0 }
+      } else {
+        let lo_level = lo.vid().var_ix();
+        counts[&lo] << ((level-1) - lo_level)
+      };
+      counts.insert(nid, hi_count + lo_count);
+    });
+    counts[&n]
+  }
+
 
   /// helper for truth table builder
   fn tt_aux(&mut self, res:&mut Vec<u8>, n:NID, i:usize, level:u32) {
