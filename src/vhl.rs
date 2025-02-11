@@ -73,11 +73,12 @@ pub trait Walkable {
   where F: FnMut(NID,VID,NID,NID);
 
   /// iterate through (nid, vid, hi:nid, lo:nid) tuples in the graph
-  fn walk<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
+  /// visit the parent before visiting the children.
+  fn walk_dn<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
     let mut seen = HashSet::new();
     self.step(n, f, &mut seen, true)}
 
-  /// same as walk, but visit children before firing the function.
+  /// same as walk_dn, but visit children before firing the function.
   /// note that this walks from "left to right" ("lo' to "hi")
   /// and bottom to top, starting from the leftmost node.
   /// if you want the bottommost nodes to come first, use self.as_heap(n)

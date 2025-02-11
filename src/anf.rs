@@ -58,11 +58,11 @@ impl Base for ANFBase {
     w!("  I[label=⊤, shape=square, fillcolor=white]");
     w!("  O[label=⊥, shape=square, fontcolor=white, fillcolor=\"#333333\"]");
     w!("{{rank = same; I; O;}}");
-    self.walk(n, &mut |n,_,_h,_l| w!("  \"{}\"[label=\"{:?}\"];", n, n.vid()));
+    self.walk_dn(n, &mut |n,_,_h,_l| w!("  \"{}\"[label=\"{:?}\"];", n, n.vid()));
     w!("edge[style=solid];");
-    self.walk(n, &mut |n,_,hi,_l| w!("  \"{:?}\"->\"{:?}\";", n, hi));
+    self.walk_dn(n, &mut |n,_,hi,_l| w!("  \"{:?}\"->\"{:?}\";", n, hi));
     w!("edge[style=dashed];");
-    self.walk(n, &mut |n,_,__,lo| w!("  \"{:?}\"->\"{:?}\";", n, lo));
+    self.walk_dn(n, &mut |n,_,__,lo| w!("  \"{:?}\"->\"{:?}\";", n, lo));
     w!("}}"); }
 
   fn def(&mut self, _s:String, _v:VID)->NID { todo!("anf::def"); }

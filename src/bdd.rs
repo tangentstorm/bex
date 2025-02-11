@@ -146,7 +146,7 @@ impl BddBase {
     self.ite(NID::from_vid(x), lo, hi) }
 
   pub fn node_count(&self, n:NID)->usize {
-    let mut c = 0; self.walk(n, &mut |_,_,_,_| c+=1); c }
+    let mut c = 0; self.walk_dn(n, &mut |_,_,_,_| c+=1); c }
 
   /// helper for truth table builder
   fn tt_aux(&mut self, res:&mut Vec<u8>, n:NID, i:usize, level:u32) {
@@ -256,11 +256,11 @@ impl Base for BddBase {
     w!("  O[label=⊥, shape=square, fontcolor=white, fillcolor=\"#333333\"]");
     if n.is_inv() {
       w!("hook[label=\"\",shape=plain,style=invis]; hook->{}:n[arrowhead=dot,penwidth=0,minlen=0,constraint=false]", n); }
-    self.walk(n, &mut |n,_,_,_| w!("  \"{}\"[label=\"{}\"];", n, n.vid()));
+    self.walk_dn(n, &mut |n,_,_,_| w!("  \"{}\"[label=\"{}\"];", n, n.vid()));
     w!("edge[style=solid];");
-    self.walk(n, &mut |n,_,t,_| we!(n, t));
+    self.walk_dn(n, &mut |n,_,t,_| we!(n, t));
     w!("edge[style=dashed];");
-    self.walk(n, &mut |n,_,_,e| we!(n, e));
+    self.walk_dn(n, &mut |n,_,_,e| we!(n, e));
     w!("}}"); }
 
   fn init_stats(&mut self) {
