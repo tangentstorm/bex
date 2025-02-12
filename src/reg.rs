@@ -117,42 +117,43 @@ impl Reg {
     let mask = if rem == 0 { !0 } else { (1 << rem) - 1 };
     if let Some(last) = self.data.last_mut() { *last &= mask; }}}
 
-impl BitAnd for Reg {
-  type Output = Self;
-  fn bitand(self, rhs: Self) -> Self::Output {
+impl<'a, 'b> BitAnd<&'b Reg> for &'a Reg {
+  type Output = Reg;
+  fn bitand(self, rhs: &'b Reg) -> Self::Output {
     let mut res = self.clone();
     for (i, &val) in rhs.data.iter().enumerate() {
       if i < res.data.len() { res.data[i] &= val; }
-      else { res.data.push(0); }}
+      else { res.data.push(val); }}
     res.mask_last_cell();
     res }}
 
-impl BitOr for Reg {
-  type Output = Self;
-  fn bitor(self, rhs: Self) -> Self::Output {
+impl<'a, 'b> BitOr<&'b Reg> for &'a Reg {
+  type Output = Reg;
+  fn bitor(self, rhs: &'b Reg) -> Self::Output {
     let mut res = self.clone();
     for (i, &val) in rhs.data.iter().enumerate() {
       if i < res.data.len() { res.data[i] |= val; }
       else { res.data.push(val); }}
     res.mask_last_cell();
-    res }}
+    res}}
 
-impl BitXor for Reg {
-  type Output = Self;
-  fn bitxor(self, rhs: Self) -> Self::Output {
+impl<'a, 'b> BitXor<&'b Reg> for &'a Reg {
+  type Output = Reg;
+  fn bitxor(self, rhs: &'b Reg) -> Self::Output {
     let mut res = self.clone();
     for (i, &val) in rhs.data.iter().enumerate() {
-      if i < res.data.len() { res.data[i] ^= val; }
-      else { res.data.push(val); }}
+        if i < res.data.len() { res.data[i] ^= val; }
+        else { res.data.push(val); }}
     res.mask_last_cell();
     res }}
 
-impl Not for Reg {
-  type Output = Self;
-  fn not(mut self) -> Self::Output {
-    for val in &mut self.data { *val = !*val; }
-    self.mask_last_cell();
-    self }}
+impl<'a> Not for &'a Reg {
+  type Output = Reg;
+  fn not(self) -> Self::Output {
+    let mut res = self.clone();
+    for val in &mut res.data { *val = !*val; }
+    res.mask_last_cell();
+    res }}
 
 
 /// display the bits of the register and the usize
@@ -208,26 +209,26 @@ fn test_reg_mut() {
 fn test_reg_and() {
   let reg1 = Reg::from_bits(70, &[0, 1, 2, 3, 64, 65]);
   let reg2 = Reg::from_bits(70, &[1, 2, 66, 67]);
-  let and_result = reg1 & reg2;
+  let and_result = &reg1 & &reg2;
   assert_eq!(and_result.hi_bits(), vec![1, 2]);}
 
 #[test]
 fn test_reg_or() {
   let reg1 = Reg::from_bits(70, &[0, 1, 2, 3, 64, 65]);
   let reg2 = Reg::from_bits(70, &[1, 2, 66, 67]);
-  let or_result = reg1 | reg2;
+  let or_result = &reg1 | &reg2;
   assert_eq!(or_result.hi_bits(), vec![0, 1, 2, 3, 64, 65, 66, 67]);}
 
 #[test]
 fn test_reg_xor() {
-  let reg1 = Reg::from_bits(70, &[0, 1, 2, 3, 64, 65]);
-  let reg2 = Reg::from_bits(70, &[1, 2, 66, 67]);
-  let xor_result = reg1 ^ reg2;
+  let reg1 = Reg::from_bits(70, &[0, 1, 2, 3, 64, 65, 68]);
+  let reg2 = Reg::from_bits(70, &[1, 2, 66, 67, 68]);
+  let xor_result = &reg1 ^ &reg2;
   assert_eq!(xor_result.hi_bits(), vec![0, 3, 64, 65, 66, 67]);}
 
 #[test]
 fn test_reg_not() {
   let reg1 = Reg::from_bits(70, &[0, 1, 2, 3, 64, 65]);
-  let not_result = !reg1;
+  let not_result = !&reg1;
   let expected_not_bits: Vec<usize> = (0..70).filter(|&i| ![0, 1, 2, 3, 64, 65].contains(&i)).collect();
   assert_eq!(not_result.hi_bits(), expected_not_bits);}
