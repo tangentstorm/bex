@@ -124,7 +124,6 @@ impl<'a, 'b> BitAnd<&'b Reg> for &'a Reg {
     for (i, &val) in rhs.data.iter().enumerate() {
       if i < res.data.len() { res.data[i] &= val; }
       else { res.data.push(val); }}
-    res.mask_last_cell();
     res }}
 
 impl<'a, 'b> BitOr<&'b Reg> for &'a Reg {
@@ -134,7 +133,6 @@ impl<'a, 'b> BitOr<&'b Reg> for &'a Reg {
     for (i, &val) in rhs.data.iter().enumerate() {
       if i < res.data.len() { res.data[i] |= val; }
       else { res.data.push(val); }}
-    res.mask_last_cell();
     res}}
 
 impl<'a, 'b> BitXor<&'b Reg> for &'a Reg {
@@ -144,7 +142,6 @@ impl<'a, 'b> BitXor<&'b Reg> for &'a Reg {
     for (i, &val) in rhs.data.iter().enumerate() {
         if i < res.data.len() { res.data[i] ^= val; }
         else { res.data.push(val); }}
-    res.mask_last_cell();
     res }}
 
 impl<'a> Not for &'a Reg {
