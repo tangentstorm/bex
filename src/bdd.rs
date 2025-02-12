@@ -117,6 +117,7 @@ impl BddBase {
   pub fn reset(&mut self) { self.swarm.reset(); }
 
   pub fn len(&self)->usize { self.swarm.len() }
+  #[must_use] pub fn is_empty(&self) -> bool { self.len() == 0 }
 
 
   // public node constructors

@@ -117,7 +117,7 @@ impl Reg {
     let mask = if rem == 0 { !0 } else { (1 << rem) - 1 };
     if let Some(last) = self.data.last_mut() { *last &= mask; }}}
 
-impl<'a, 'b> BitAnd<&'b Reg> for &'a Reg {
+impl<'b> BitAnd<&'b Reg> for &Reg {
   type Output = Reg;
   fn bitand(self, rhs: &'b Reg) -> Self::Output {
     let mut res = self.clone();
@@ -126,7 +126,7 @@ impl<'a, 'b> BitAnd<&'b Reg> for &'a Reg {
       else { res.data.push(val); }}
     res }}
 
-impl<'a, 'b> BitOr<&'b Reg> for &'a Reg {
+impl<'b> BitOr<&'b Reg> for &Reg {
   type Output = Reg;
   fn bitor(self, rhs: &'b Reg) -> Self::Output {
     let mut res = self.clone();
@@ -135,7 +135,7 @@ impl<'a, 'b> BitOr<&'b Reg> for &'a Reg {
       else { res.data.push(val); }}
     res}}
 
-impl<'a, 'b> BitXor<&'b Reg> for &'a Reg {
+impl<'b> BitXor<&'b Reg> for &Reg {
   type Output = Reg;
   fn bitxor(self, rhs: &'b Reg) -> Self::Output {
     let mut res = self.clone();
@@ -144,7 +144,7 @@ impl<'a, 'b> BitXor<&'b Reg> for &'a Reg {
         else { res.data.push(val); }}
     res }}
 
-impl<'a> Not for &'a Reg {
+impl Not for &Reg {
   type Output = Reg;
   fn not(self) -> Self::Output {
     let mut res = self.clone();

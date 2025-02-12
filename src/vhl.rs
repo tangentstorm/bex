@@ -113,6 +113,7 @@ impl HiLoCache {
   pub fn new()->Self { Self::default() }
 
   pub fn len(&self)->usize { self.hilos.vec.len() }
+  #[must_use] pub fn is_empty(&self) -> bool { self.len() == 0 }
 
   // TODO: ->Option<HiLo>, and then impl HiLoBase
   #[inline] pub fn get_hilo(&self, n:NID)->HiLo {
