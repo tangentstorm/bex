@@ -29,7 +29,6 @@ pub struct BDDSolIterator<'a> {
 
 impl<'a> BDDSolIterator<'a> {
   pub fn from_bdd(bdd: &'a BddBase, n:NID, nvars:usize)->BDDSolIterator<'a> {
-    // init scope with all variables assigned to 0
     let next = bdd.first_solution(n, nvars);
     BDDSolIterator{ bdd, next }}}
 
@@ -58,14 +57,38 @@ impl BddBase {
   pub fn solutions_pad(&self, n:NID, nvars:usize)->BDDSolIterator {
     BDDSolIterator::from_bdd(self, n, nvars)}
 
-  pub fn first_solution(&self, n:NID, nvars:usize)->Option<Cursor> {
-    if n== O || nvars == 0 { None }
+  // New helper: create a cursor from a node, a list of variable indices to watch, and pad_top.
+  pub fn make_cursor(&self, n: NID, watch_vars: &[usize], pad_top: usize) -> Option<Cursor> {
+    if n == O { return None; }
+    let base_nvars = if n.is_const() { 0 } else { n.vid().var_ix() + 1 };
+    let nvars = base_nvars + pad_top;
+    let mut cur = Cursor::new(nvars, n);
+    for &idx in watch_vars {
+      if idx < nvars { cur.watch.put(idx, true); }}
+    cur.descend(self);
+    debug_assert!(cur.node.is_const());
+    debug_assert!(self.in_solution(&cur), "{:?}", cur.scope);
+    Some(cur)}
+
+  // Construct a "don't care" cursor: effective nvars with all indices watched.
+  pub fn make_dontcare_cursor(&self, n: NID, pad_top: usize) -> Option<Cursor> {
+    let base_nvars = if n.is_const() { 1 } else { n.vid().var_ix() + 1 };
+    let nvars = base_nvars + pad_top;
+    let watch_vars: Vec<usize> = (0..nvars).collect();
+    self.make_cursor(n, &watch_vars, pad_top)}
+
+  // Construct a "solution" cursor: use an empty watch_vars then invert the watch register.
+  pub fn make_solution_cursor(&self, n: NID, pad_top: usize) -> Option<Cursor> {
+    let mut cur = self.make_cursor(n, &[], pad_top)?;
+    cur.watch = !&cur.watch;
+    Some(cur)}
+
+  pub fn first_solution(&self, n: NID, nvars: usize) -> Option<Cursor> {
+    if n == O || nvars == 0 { None }
     else {
-      let mut cur = Cursor::new(nvars, n);
-      cur.descend(self);
-      debug_assert!(cur.node.is_const());
-      debug_assert!(self.in_solution(&cur), "{:?}", cur.scope);
-      Some(cur) }}
+      let nid_nvars = if n.is_const() { 0 } else { n.vid().var_ix() + 1 };
+      let pad = nvars.saturating_sub(nid_nvars);
+      self.make_cursor(n, &[], pad) }}
 
   pub fn next_solution(&self, cur:Cursor)->Option<Cursor> {
     self.log(&cur, "advance>"); self.log_indent(1);
@@ -104,7 +127,7 @@ impl BddBase {
     let mut rippled = false;
     // if we've already walked the hi branch...
     if cur.scope.var_get(tv) {
-      cur.go_next_lo_var();
+      cur.ascend();
       // if we've cleared the stack and already explored the hi branch...
       { let iv = cur.node.vid();
         if cur.nstack.is_empty() && cur.scope.var_get(iv) {

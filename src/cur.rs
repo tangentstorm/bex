@@ -78,7 +78,10 @@ impl Cursor {
    if val { self.step_down(base, HiLoPart::HiPart) }
    else { self.step_down(base, HiLoPart::LoPart) }}
 
-  /// walk down to next included term while setting the scope
+  /// walk down to next included term while setting the scope.
+  /// this finds the leftmost leaf beneath the current node that contains a solution.
+  /// it does NOT backtrack up higher in the graph, so once we reach the bottom we have
+  /// to call ascend() to get back to the next branch point.
   pub fn descend(&mut self, base: &dyn CursorPlan) {
     while !self.node.is_const() {
       let hl = base.get_hilo(self.node).expect("couldn't get_hilo");
@@ -90,7 +93,7 @@ impl Cursor {
 
   /// starting at a leaf, climb the stack until we reach
   /// a branch whose variable is still set to lo.
-  pub fn go_next_lo_var(&mut self) {
+  pub fn ascend(&mut self) {
     let mut bv = self.node.vid();
     while self.scope.var_get(bv) && !self.nstack.is_empty() {
       bv = self.step_up().vid(); }}

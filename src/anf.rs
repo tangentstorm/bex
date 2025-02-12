@@ -258,14 +258,14 @@ impl ANFBase {
       println!("warning: ANFBase::next_term should be called on cursor pointing at a leaf.");
       cur.descend(self); }
     loop {
-      cur.step_up();                             self.log(&cur,"step up");
-      cur.go_next_lo_var();                      self.log(&cur,"next lo");
-      if cur.at_top() && cur.var_get() { self.log(&cur, "@end"); return None }
-      cur.clear_trailing_bits();                 self.log(&cur, "cleared trailing");
+      cur.step_up();
+      cur.ascend();
+      if cur.at_top() && cur.var_get() { return None }
+      cur.clear_trailing_bits();
       cur.put_step(self, true);
-      if cur.node == I { self.log(&cur, "<-- answer (lo)"); return Some(cur) }
-      cur.descend(self);                         self.log(&cur, "descend");
-      if cur.node == I { self.log(&cur, "<-- answer (lo)"); return Some(cur) }}}
+      if cur.node == I { return Some(cur) }
+      cur.descend(self);
+      if cur.node == I { return Some(cur) }}}
 
   pub fn terms(&self, n:NID)->ANFTermIterator {
     ANFTermIterator::from_anf_base(self, n) }}
