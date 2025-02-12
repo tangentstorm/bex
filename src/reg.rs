@@ -5,7 +5,7 @@ use std::ops::{BitAnd, BitOr, BitXor, Not};
 
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Reg { nbits: usize, data: Vec<usize> }
+pub struct Reg { nbits: usize, pub(crate) data: Vec<usize> }
 
 const USIZE:usize = usize::BITS as usize;
 
@@ -229,3 +229,10 @@ fn test_reg_not() {
   let not_result = !&reg1;
   let expected_not_bits: Vec<usize> = (0..70).filter(|&i| ![0, 1, 2, 3, 64, 65].contains(&i)).collect();
   assert_eq!(not_result.hi_bits(), expected_not_bits);}
+
+#[test]
+fn test_reg_mask() {
+  let mut reg = Reg::from_bits(5, &[0, 1, 2, 3]);
+  assert_eq!(&reg.as_usize(), &0b1111);
+  reg.mask_last_cell();
+  assert_eq!(&reg.as_usize(), &0b1111); }

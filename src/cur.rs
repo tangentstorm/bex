@@ -13,24 +13,41 @@ pub trait CursorPlan : HiLoBase {
 
 
 pub struct Cursor {
-  pub nvars: usize,       // number of input variables in context
-  pub node: NID,          // the current node.
-  pub scope: Reg,         // the current variable assignments
-  pub nstack: Vec<NID>,   // the path of nodes we have traversed
-  pub istack: Vec<bool>,  // the stack of node inversion states
-  pub invert: bool,       // whether to invert the results
-}
+  /// number of input variables in context
+  pub nvars: usize,
+  /// the current node.
+  pub node: NID,
+  /// whether to invert the results
+  pub invert: bool,
+  /// the path of nodes we have traversed
+  pub nstack: Vec<NID>,
+  /// the stack of node inversion states
+  pub istack: Vec<bool>,
+  /// the current variable assignments
+  pub scope: Reg,
+  /// can_skip[i]=1 means the variable is a "don't care" and can be skipped over.
+  /// this is set on each step by the next_solution method of whatever data structure
+  /// we're iterating through.
+  pub can_skip: Reg,
+  /// watch[i]=1 is an indication from the caller that they wants us to force
+  /// iteration over this variable regardless of can_skip[i]
+  pub watch: Reg }
 
 impl Cursor {
 
   pub fn new(nvars:usize, node:NID)->Self {
     Cursor {
-      node,
       nvars,
+      node,
       invert: false,  // start:0, swap when we push, so parity of self.nstack == self.invert
       scope: Reg::new(nvars),
+      can_skip: Reg::new(nvars), // by default we don't skip anything
+      watch: Reg::new(nvars), // nor do we force anything
       nstack: vec![],
       istack: vec![]}}
+
+  pub fn new_with_watch(nvars:usize, node:NID, watch:Reg)->Self {
+    Self { watch, ..Self::new(nvars, node) }}
 
   /// push a new node onto the stack
   fn push_node(&mut self, node:NID) {
@@ -84,7 +101,11 @@ impl Cursor {
 
   /// decorate the increment() method on the scope register.
   /// returns Some index of first 0 or None on overflow.
-  pub fn increment(&mut self)->Option<usize> {
+  pub fn increment(&mut self) -> Option<usize> {
+    // directly compose bits from the three registers to handle the "don't care" situation
+    let len = self.scope.data.len();
+    for i in 0..len { self.scope.data[i] |= self.can_skip.data[i] & (!self.watch.data[i]); }
+    // then increment as usual, and capture the bottom 0 index
     if let Some(zpos) = self.scope.increment() {
       let vz = VID::var(zpos as u32);
       // climb the bdd until we find the layer where the lmz would be.
@@ -92,6 +113,4 @@ impl Cursor {
         && !vz.is_below(&self.nstack[self.nstack.len()-1].vid()) {
         self.pop_node(); }
       Some(zpos) }
-    else { None }}
-
-  }
+    else { None }}}

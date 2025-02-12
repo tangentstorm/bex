@@ -114,11 +114,11 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   assert_eq!(it.next(), None);}
 
 
-#[test] fn test_bdd_solutions_extra() {
+#[test] fn test_bdd_solutions_dontcare() {
+  use crate::nid::named::{x1, x3};
   let mut base = BddBase::new();
-  let (b, d) = (NID::var(1), NID::var(3));
   // the idea here is that we have "don't care" above, below, and between the used vars:
-  let n = base.and(b,d);
+  let n = base.and(x1,x3);
   // by default, we ignore the "don't cares" above:
   let actual:Vec<_> = base.solutions(n).map(|r| r.as_usize()).collect();
   assert_eq!(actual, vec![0b1010, 0b1011, 0b1110, 0b1111]);
