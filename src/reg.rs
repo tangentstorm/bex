@@ -1,6 +1,7 @@
 //! Registers -- arbitrarily large arrays of bits.
 use std::fmt;
 use crate::vid::VID;
+use std::ops::{BitAnd, BitOr, BitXor, Not};
 
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -18,10 +19,12 @@ impl Reg {
   /// constructor that takes the indices of the high bits
   pub fn from_bits( nbits:usize, hi_bits: &[usize] )->Self {
     let mut res = Reg::new(nbits);
-    for &bit in hi_bits { res.put(bit, true) }
+    for &bit in hi_bits {
+      if bit >= nbits { panic!("called from_bits({nbits:?},...) with out-of-bounds bit {bit}") }
+      else { res.put(bit, true) }}
     res}
 
-  /// constructor that takes the indices of the high bits
+  /// return the high bits of the register as a vector of indices.
   pub fn hi_bits(&self)->Vec<usize> {
     let mut res = vec![];
     for (j, &raw) in self.data.iter().enumerate() {
@@ -105,6 +108,51 @@ impl Reg {
 
 } // impl Reg
 
+
+// -- bitwise operations --------------------------------------------
+
+impl Reg {
+  fn mask_last_cell(&mut self) {
+    let rem = self.nbits % USIZE;
+    let mask = if rem == 0 { !0 } else { (1 << rem) - 1 };
+    if let Some(last) = self.data.last_mut() { *last &= mask; }}}
+
+impl BitAnd for Reg {
+  type Output = Self;
+  fn bitand(self, rhs: Self) -> Self::Output {
+    let mut res = self.clone();
+    for (i, &val) in rhs.data.iter().enumerate() {
+      if i < res.data.len() { res.data[i] &= val; }
+      else { res.data.push(0); }}
+    res.mask_last_cell();
+    res }}
+
+impl BitOr for Reg {
+  type Output = Self;
+  fn bitor(self, rhs: Self) -> Self::Output {
+    let mut res = self.clone();
+    for (i, &val) in rhs.data.iter().enumerate() {
+      if i < res.data.len() { res.data[i] |= val; }
+      else { res.data.push(val); }}
+    res.mask_last_cell();
+    res }}
+
+impl BitXor for Reg {
+  type Output = Self;
+  fn bitxor(self, rhs: Self) -> Self::Output {
+    let mut res = self.clone();
+    for (i, &val) in rhs.data.iter().enumerate() {
+      if i < res.data.len() { res.data[i] ^= val; }
+      else { res.data.push(val); }}
+    res.mask_last_cell();
+    res }}
+
+impl Not for Reg {
+  type Output = Self;
+  fn not(mut self) -> Self::Output {
+    for val in &mut self.data { *val = !*val; }
+    self.mask_last_cell();
+    self }}
 
 
 /// display the bits of the register and the usize
@@ -155,3 +203,31 @@ fn test_reg_mut() {
   assert_eq!(ten.hi_bits(), [1,3], "bits for 'ten' should come back in order");
   let big = Reg::from_bits(65, &[64,63]);
   assert_eq!(big.hi_bits(), [63,64], "bits for 'big' should come back in order"); }
+
+#[test]
+fn test_reg_and() {
+  let reg1 = Reg::from_bits(70, &[0, 1, 2, 3, 64, 65]);
+  let reg2 = Reg::from_bits(70, &[1, 2, 66, 67]);
+  let and_result = reg1 & reg2;
+  assert_eq!(and_result.hi_bits(), vec![1, 2]);}
+
+#[test]
+fn test_reg_or() {
+  let reg1 = Reg::from_bits(70, &[0, 1, 2, 3, 64, 65]);
+  let reg2 = Reg::from_bits(70, &[1, 2, 66, 67]);
+  let or_result = reg1 | reg2;
+  assert_eq!(or_result.hi_bits(), vec![0, 1, 2, 3, 64, 65, 66, 67]);}
+
+#[test]
+fn test_reg_xor() {
+  let reg1 = Reg::from_bits(70, &[0, 1, 2, 3, 64, 65]);
+  let reg2 = Reg::from_bits(70, &[1, 2, 66, 67]);
+  let xor_result = reg1 ^ reg2;
+  assert_eq!(xor_result.hi_bits(), vec![0, 3, 64, 65, 66, 67]);}
+
+#[test]
+fn test_reg_not() {
+  let reg1 = Reg::from_bits(70, &[0, 1, 2, 3, 64, 65]);
+  let not_result = !reg1;
+  let expected_not_bits: Vec<usize> = (0..70).filter(|&i| ![0, 1, 2, 3, 64, 65].contains(&i)).collect();
+  assert_eq!(not_result.hi_bits(), expected_not_bits);}
