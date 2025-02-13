@@ -158,7 +158,7 @@ impl Not for &Reg {
 impl fmt::Display for Reg {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
       write!(f, "reg[")?;
-      let mut write_bit = |i| { write!(f, "{}", if self.get(i) {'1'} else {'o'}) };
+      let mut write_bit = |i| { write!(f, "{}", if self.get(i) {'i'} else {'o'}) };
       for i in (0..self.nbits).rev() { write_bit(i)? };
       write!(f, "={:02x}]", self.as_usize()) }}
 
