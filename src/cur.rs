@@ -11,7 +11,7 @@ pub trait CursorPlan : HiLoBase {
   fn includes_lo(&self, n:NID)->bool { n != nid::O }
 }
 
-
+#[derive(Debug)]
 pub struct Cursor {
   /// number of input variables in context
   pub nvars: usize,
@@ -77,6 +77,21 @@ impl Cursor {
    self.scope.var_put(self.node.vid(), val);
    if val { self.step_down(base, HiLoPart::HiPart) }
    else { self.step_down(base, HiLoPart::LoPart) }}
+
+  pub fn dontcares(&self)->Vec<usize> {
+    println!("self.can_skip = {:?}", self.can_skip);
+    println!("self.watch.= {:?}", self.watch);
+    let mut res = vec![];
+    for i in self.can_skip.hi_bits() {
+      if !self.watch.get(i) { res.push(i) }}
+    res }
+
+  pub fn cube(&self)->Vec<(VID,bool)> {
+    let mut res = vec![];
+    for i in 0..self.nvars {
+      if self.watch.get(i) || !self.can_skip.get(i) {
+        res.push((VID::var(i as u32), self.scope.get(i))) }}
+    res }
 
   /// walk down to next included term while setting the scope.
   /// this finds the leftmost leaf beneath the current node that contains a solution.

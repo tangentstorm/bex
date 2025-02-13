@@ -114,20 +114,6 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   assert_eq!(it.next(), None);}
 
 
-#[test] fn test_bdd_solutions_dontcare() {
-  use crate::nid::named::{x1, x3};
-  let mut base = BddBase::new();
-  // the idea here is that we have "don't care" above, below, and between the used vars:
-  let n = base.and(x1,x3);
-  // by default, we ignore the "don't cares" above:
-  let actual:Vec<_> = base.solutions(n).map(|r| r.as_usize()).collect();
-  assert_eq!(actual, vec![0b1010, 0b1011, 0b1110, 0b1111]);
-
-  // but we can pad this if we prefer:
-  let actual:Vec<_> = base.solutions_pad(n, 5).map(|r| r.as_usize()).collect();
-  assert_eq!(actual, vec![0b01010, 0b01011, 0b01110, 0b01111,
-                          0b11010, 0b11011, 0b11110, 0b11111])}
-
 #[test] fn test_bdd_solutions_xor() {
   use crate::nid::named::{x0, x1};
   let mut base = BddBase::new();
@@ -171,3 +157,42 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   let mut base = BddBase::new();
   let n = expr![base, ((x0 & x1) ^ x2)];
   assert_eq!(base.solution_count(n), 4);}
+
+#[test] fn test_bdd_solutions_dontcare() {
+  use crate::nid::named::{x1, x3};
+  let mut base = BddBase::new();
+  // the idea here is that we have "don't care" above, below, and between the used vars:
+  let n = base.and(x1,x3);
+  // by default, we ignore the "don't cares" above:
+  let actual:Vec<_> = base.solutions(n).map(|r| r.as_usize()).collect();
+  assert_eq!(actual, vec![0b1010, 0b1011, 0b1110, 0b1111]);
+
+  // but we can pad this if we prefer:
+  let actual:Vec<_> = base.solutions_pad(n, 5).map(|r| r.as_usize()).collect();
+  assert_eq!(actual, vec![0b01010, 0b01011, 0b01110, 0b01111,
+                          0b11010, 0b11011, 0b11110, 0b11111])}
+
+#[test] fn test_cursor_dontcare() {
+  use crate::nid::named::{x1, x3};
+  use crate::vid::named::{x1 as X1, x3 as X3};
+  let mut base = BddBase::new();
+  let n = base.and(x1, x3);
+  let cur = base.make_dontcare_cursor(n, 0).unwrap();
+  assert_eq!(cur.dontcares(), vec![0, 2], "Variables x0 and x2 should be skipped (don't care)");
+  assert_eq!(cur.cube(), vec![(X1, true), (X3, true)], "Variables x1 and x3 should be set to true");
+  assert!(base.next_solution(cur).is_none(), "Should has only one solution"); }
+
+#[test] fn test_cursor_watch() {
+  use crate::nid::named::{x1, x3};
+  use crate::vid::named::{x1 as X1, x2 as X2, x3 as X3};
+  let mut base = BddBase::new();
+  let n = base.and(x1, x3);
+  let mut cur = base.make_dontcare_cursor(n, 0).unwrap();
+  cur.watch.put(2, true);
+  assert_eq!(cur.dontcares(), &[0], "X2 should no longer be skipped");
+  assert_eq!(cur.cube(), vec![(X1, true), (X2, false), (X3, true)], "now we should include x2=0");
+  let next = base.next_solution(cur);
+  assert!(next.is_some(), "Should have another solution now");
+  cur = next.unwrap();
+  assert_eq!(cur.cube(), vec![(X1, true), (X2, true), (X3, true)], "we should get both solutions for x2");
+  assert!(base.next_solution(cur).is_none(), "Should have only two solutions"); }

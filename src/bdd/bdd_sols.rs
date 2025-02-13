@@ -57,65 +57,44 @@ impl BddBase {
   pub fn solutions_pad(&self, n:NID, nvars:usize)->BDDSolIterator {
     BDDSolIterator::from_bdd(self, n, nvars)}
 
-  // New helper: create a cursor from a node, a list of variable indices to watch, and pad_top.
-  pub fn make_cursor(&self, n: NID, watch_vars: &[usize], pad_top: usize) -> Option<Cursor> {
+
+  /// base function to make a cursor. if nvars < n.vid().var_ix(), it will be ignored.
+  /// if it is larger than the var_ix, all variables above the nid will be watched.
+  pub fn make_cursor(&self, n: NID, watch_vars: &[usize], nvars: usize) -> Option<Cursor> {
     if n == O { return None; }
     let base_nvars = if n.is_const() { 0 } else { n.vid().var_ix() + 1 };
-    let nvars = base_nvars + pad_top;
-    let mut cur = Cursor::new(nvars, n);
-    for &idx in watch_vars {
-      if idx < nvars { cur.watch.put(idx, true); }}
+    let real_nvars = std::cmp::max(base_nvars, nvars);
+    let mut cur = Cursor::new(real_nvars, n);
+    for &idx in watch_vars { cur.watch.put(idx, true); }
+    for i in base_nvars..real_nvars { cur.watch.put(i, true); }
     cur.descend(self);
+    self.mark_skippable(&mut cur);
     debug_assert!(cur.node.is_const());
     debug_assert!(self.in_solution(&cur), "{:?}", cur.scope);
     Some(cur)}
 
   // Construct a "don't care" cursor: effective nvars with all indices watched.
-  pub fn make_dontcare_cursor(&self, n: NID, pad_top: usize) -> Option<Cursor> {
-    let base_nvars = if n.is_const() { 1 } else { n.vid().var_ix() + 1 };
-    let nvars = base_nvars + pad_top;
-    let watch_vars: Vec<usize> = (0..nvars).collect();
-    self.make_cursor(n, &watch_vars, pad_top)}
+  pub fn make_dontcare_cursor(&self, n: NID, nvars: usize) -> Option<Cursor> {
+    self.make_cursor(n, &[], nvars)}
 
-  // Construct a "solution" cursor: use an empty watch_vars then invert the watch register.
-  pub fn make_solution_cursor(&self, n: NID, pad_top: usize) -> Option<Cursor> {
-    let mut cur = self.make_cursor(n, &[], pad_top)?;
-    cur.watch = !&cur.watch;
+  // cursor for .solutions: always watch all variables
+  pub fn make_solution_cursor(&self, n: NID, nvars: usize) -> Option<Cursor> {
+    let mut cur = self.make_cursor(n, &[], nvars)?;
+    for i in 0..cur.nvars { cur.watch.put(i, true); }
     Some(cur)}
 
   pub fn first_solution(&self, n: NID, nvars: usize) -> Option<Cursor> {
     if n == O || nvars == 0 { None }
-    else {
-      let nid_nvars = if n.is_const() { 0 } else { n.vid().var_ix() + 1 };
-      let pad = nvars.saturating_sub(nid_nvars);
-      self.make_cursor(n, &[], pad) }}
-
-  pub fn next_solution(&self, cur:Cursor)->Option<Cursor> {
-    self.log(&cur, "advance>"); self.log_indent(1);
-    let res = self.advance0(cur); self.log_indent(-1);
-    res }
+    else { self.make_solution_cursor(n, nvars)}}
 
   /// is the cursor currently pointing at a span of 1 or more solutions?
   pub fn in_solution(&self, cur:&Cursor)->bool {
     self.includes_leaf(cur.node) }
 
-  fn log_indent(&self, _d:i8) { /*self.indent += d;*/ }
-  fn log(&self, _c:&Cursor, _msg: &str) {}
-    // #[cfg(test)]{
-    //   print!(" {}", if _c.invert { '¬' } else { ' ' });
-    //   print!("{:>10}", format!("{}", _c.node));
-    //   print!(" {:?}{}", _c.scope, if self.in_solution(_c) { '.' } else { ' ' });
-    //   println!(" {:50} {:?}", _msg, _c.nstack);}}
-
 
+  /// helper function for next_solution
   /// walk depth-first from lo to hi until we arrive at the next solution
   fn find_next_leaf(&self, cur:&mut Cursor)->Option<NID> {
-    self.log(cur, "find_next_leaf"); self.log_indent(1);
-    let res = self.find_next_leaf0(cur);
-    self.log(cur, format!("^ next leaf: {:?}", res.clone()).as_str());
-    self.log_indent(-1); res }
-
-  fn find_next_leaf0(&self, cur:&mut Cursor)->Option<NID> {
     // we always start at a leaf and move up, with the one exception of root=I
     assert!(cur.node.is_const(), "find_next_leaf should always start by looking at a leaf");
     if cur.nstack.is_empty() { assert!(cur.node == I); return None }
@@ -134,24 +113,21 @@ impl BddBase {
           // ... then first check if there are any variables above us on which
           // the node doesn't actually depend. ifso: ripple add. else: done.
           let top = cur.nvars-1;
-          if let Some(x) = cur.scope.ripple(iv.var_ix(), top) {
-            rippled = true;
-            self.log(cur, format!("rippled top to {}. restarting.", x).as_str()); }
-          else { self.log(cur, "no next leaf!"); return None }}} }
+          if cur.scope.ripple(iv.var_ix(), top).is_some() { rippled = true; }
+          else { return None }}} }
 
     if rippled { cur.clear_trailing_bits() }
-    else if cur.var_get() { self.log(cur, "done with node."); return None }
+    else if cur.var_get() { return None }
     else { cur.put_step(self, true); }
     cur.descend(self);
     Some(cur.node) }
 
   /// walk depth-first from lo to hi until we arrive at the next solution
-  fn advance0(&self, mut cur:Cursor)->Option<Cursor> {
+  pub fn next_solution(&self, mut cur:Cursor)->Option<Cursor> {
     assert!(cur.node.is_const(), "advance should always start by looking at a leaf");
     if self.in_solution(&cur) {
       // if we're in the solution, we're going to increment the "counter".
-      if let Some(zpos) = cur.increment() {
-        self.log(&cur, format!("rebranch on {:?}",zpos).as_str());
+      if cur.increment().is_some() {
         // The 'zpos' variable exists in the solution space, but there might or might
         // not be a branch node for that variable in the current bdd path.
         // Whether we follow the hi or lo branch depends on which variable we're looking at.
@@ -159,7 +135,28 @@ impl BddBase {
         cur.put_step(self, cur.var_get());
         cur.descend(self); }
       else { // overflow. we've counted all the way to 2^nvars-1, and we're done.
-        self.log(&cur, "$ found all solutions!"); return None }}
+        return None }}
     // If still here, we are looking at a leaf that isn't a solution (out=0 in truth table)
     while !self.in_solution(&cur) { self.find_next_leaf(&mut cur)?; }
-    Some(cur) }}
+    self.mark_skippable(&mut cur);
+    Some(cur) }
+
+  fn mark_skippable(&self, cur: &mut Cursor) {
+    let mut can_skip = Reg::new(cur.nvars);
+    // iterate through the cursor's nid stack, checking each nid.vid_ix() to get its level.
+    // any time there's a gap between the levels, mark that level as "don't care" by setting can_skip[i]=true.
+    // We also need to include all the bits BELOW the current level any any bits above the top level.
+    let mut prev = 0;
+    // path from the top
+    let path: Vec<usize> = cur.nstack.iter().map(|nid|nid.vid().var_ix()).collect();
+    for (i,&level) in path.iter().rev().enumerate() {
+      if i == 0 { for j in 0..level { can_skip.put(j, true);  }}
+      else if level > prev + 1 {
+        for j in (prev + 1)..level { can_skip.put(j, true); }}
+      prev = level; }
+    // skippable variables above the top level
+    if !cur.nstack.is_empty() {
+      for i in path[0]+1..cur.nvars { can_skip.put(i, true); }}
+    cur.can_skip = can_skip; }
+
+} // impl BddBase
