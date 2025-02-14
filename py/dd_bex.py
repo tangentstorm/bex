@@ -303,15 +303,15 @@ class BDDNode:
         """Return the level of the BDDNode."""
         return None if self.nid.is_const() else self.nid._vid()
 
+    def __hash__(self) -> int:
+        """Return the hash of the BDDNode."""
+        return hash((id(self.bdd), self.nid))
+
     # -------------------------------------------------------------------------
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Call the BDD function with given arguments."""
         raise NotImplementedError("BDDNode.__call__")
-
-    def __hash__(self) -> int:
-        """Return the hash of the BDDNode."""
-        raise NotImplementedError("BDDNode.__hash__")
 
     def __repr__(self) -> str:
         """Return a string representation of the BDDNode for debugging."""
