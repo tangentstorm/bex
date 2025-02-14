@@ -66,7 +66,6 @@ impl BddBase {
     let real_nvars = std::cmp::max(base_nvars, nvars);
     let mut cur = Cursor::new(real_nvars, n);
     for &idx in watch_vars { cur.watch.put(idx, true); }
-    for i in base_nvars..real_nvars { cur.watch.put(i, true); }
     cur.descend(self);
     self.mark_skippable(&mut cur);
     debug_assert!(cur.node.is_const());

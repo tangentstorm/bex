@@ -80,7 +80,7 @@ impl PyBddBase {
     base.solution_count(x.0) }
   fn first_solution(&self, n: &PyNID, nvars: usize) -> PyCursor {
     let base = self.0.lock().unwrap();
-    PyCursor(base.first_solution(n.0, nvars)) }}
+    PyCursor(base.make_dontcare_cursor(n.0, nvars)) }}
 
 #[pymethods]
 impl PyReg {
@@ -94,21 +94,22 @@ impl PyReg {
 impl PyCursor {
   #[getter] fn scope(&self) -> Option<PyReg> { self.0.as_ref().map(|c| PyReg(c.scope.clone())) }
   #[getter] fn at_end(&self) -> bool { self.0.is_none() }
+  #[getter] fn dontcares(&self) -> Vec<usize> { self.0.as_ref().map(|c| c.dontcares()).unwrap_or_default() }
+  #[getter] fn cube(&self) -> Vec<(PyVID, bool)> {
+    self.0.as_ref().map(|c| c.cube().iter().map(|(v,b)| (PyVID(*v), *b)).collect()).unwrap_or_default() }
+  fn _watch(&mut self, v: &PyVID) { if let Some(c) = self.0.as_mut() { c.watch.put(v.0.vid_ix(), true) }}
   fn _advance(&mut self, base:&PyBddBase) {
     let base = base.0.lock().unwrap();
     if self.0.is_some() {
       let cur = self.0.take().unwrap();
       self.0 = base.next_solution(cur) }}}
 
-
-#[pyfunction]
-fn var(i:i32)->PyResult<PyVID> { if i<0 { Err(BexErr::NegVar.into()) } else { Ok(PyVID(VID::var(i as u32))) }}
-#[pyfunction]
-fn vir(i:i32)->PyResult<PyVID> { if i<0 { Err(BexErr::NegVir.into()) } else { Ok(PyVID(VID::vir(i as u32))) }}
-#[pyfunction]
-fn nvar(i:i32)->PyResult<PyNID> { var(i).map(|v| v.to_nid()) }
-#[pyfunction]
-fn nvir(i:i32)->PyResult<PyNID> { vir(i).map(|v| v.to_nid()) }
+#[pyfunction] fn var(i:i32)->PyResult<PyVID> {
+  if i<0 { Err(BexErr::NegVar.into()) } else { Ok(PyVID(VID::var(i as u32))) }}
+#[pyfunction] fn vir(i:i32)->PyResult<PyVID> {
+  if i<0 { Err(BexErr::NegVir.into()) } else { Ok(PyVID(VID::vir(i as u32))) }}
+#[pyfunction] fn nvar(i:i32)->PyResult<PyNID> { var(i).map(|v| v.to_nid()) }
+#[pyfunction] fn nvir(i:i32)->PyResult<PyNID> { vir(i).map(|v| v.to_nid()) }
 
 #[pymodule]
 fn bex(m: &Bound<'_, PyModule>)->PyResult<()> {

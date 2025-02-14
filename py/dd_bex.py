@@ -176,15 +176,18 @@ class BDD:
         """Iterate over all solutions of the BDD."""
         # TODO: support dont_care situations
         if u.nid == _bex.I:
-            yield {} # dd uses this to indicate al vars are "don't care"
+            yield {} # dd uses this to indicate all vars are "don't care"
         elif u.nid == _bex.O:
             return
         else:
             nvars = u.nid._vid().ix + 1
             cursor = self.base.first_solution(u.nid, nvars)
+            for s in care_vars:
+                cursor._watch(self.vars[s])
+            revmap = {vid: s for s,vid in self.vars.items()}
             while not cursor.at_end:
-                ones = set(cursor.scope.hi_bits())
-                yield {k: v.ix in ones for k, v in self.vars.items() if v.ix < nvars}
+                cube = cursor.cube
+                yield {revmap[vid]: bit for vid,bit in cube}
                 cursor._advance(self.base)
 
     # -------------------------------------------------------------------------
@@ -276,7 +279,7 @@ class BDDNode:
     def __str__(self) -> str:
         """Return a string representation of the BDDNode."""
         return f"BDDNode({self.bdd}, {self.nid})"
-    
+
     def _vid(self) -> Optional[_bex.VID]:
         """Return the level of the BDDNode."""
         return None if self.nid.is_const() else self.nid._vid()
