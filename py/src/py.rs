@@ -80,6 +80,9 @@ impl PyBddBase {
   fn solution_count(&mut self, x: &PyNID) -> u64 {
     let mut base = self.0.lock().unwrap();
     base.solution_count(x.0) }
+  fn support(&self, x: &PyNID) -> Vec<PyVID> {
+    let base = self.0.lock().unwrap();
+    base.support(x.0).iter().map(|v| PyVID(*v)).collect() }
   fn first_solution(&self, n: &PyNID, nvars: usize) -> PyCursor {
     let base = self.0.lock().unwrap();
     PyCursor(base.make_dontcare_cursor(n.0, nvars)) }}

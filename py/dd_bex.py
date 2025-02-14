@@ -217,6 +217,15 @@ class BDD:
         """Perform existential quantification on a node."""
         return self.quantify(u, variables, forall=False)
 
+    def support(self, u: Any, as_levels: bool = False) -> Union[Set[str], Set[int]]:
+        """Return the support of a node."""
+        res = self.base.support(u.nid)
+        if as_levels:
+            return {v.ix for v in res}
+        else:
+            rev = {v: s for s,v in self.vars.items()}
+            return {rev[v] for v in self.base.support(u.nid)}
+
     # -------------------------------------------------------------------------
 
     def configure(self, **kw: Any) -> Dict[str, Any]:
@@ -226,10 +235,6 @@ class BDD:
     def statistics(self) -> Dict[str, Any]:
         """Return statistics of the BDD manager."""
         raise NotImplementedError("BDD.statistics")
-
-    def support(self, u: Any, as_levels: bool = False) -> Union[Set[str], Set[int]]:
-        """Return the support of a node."""
-        raise NotImplementedError("BDD.support")
 
     def pick(self, u: Any, care_vars: Optional[Set[str]] = None) -> Optional[Dict[str, bool]]:
         """Pick a satisfying assignment for a node."""
