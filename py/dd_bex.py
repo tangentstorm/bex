@@ -124,6 +124,7 @@ class BDD:
             case "and" | "/\\" | "&" | "&&": return u & v
             case "or"  | "\\/" | "|" | "||": return u | v
             case "xor" | "#" | "^": return u ^ v
+            case "ite" : return self.ite(u, v, w)
         raise NotImplementedError(f"BDD.apply({op})")
 
     def _walk_df(self, nid: _bex.NID) -> Iterable[Tuple[_bex.NID, _bex.VID, _bex.NID, _bex.NID]]:
