@@ -191,6 +191,32 @@ class BDD:
                 yield {revmap[vid]: bit for vid,bit in cube}
                 cursor._advance(self.base)
 
+    def when_hi(self, nid: _bex.NID, vid: _bex.VID) -> 'BDDNode':
+        """Return the node when the variable is true."""
+        return BDDNode(self, self.base.when_hi(nid, vid))
+
+    def when_lo(self, nid: _bex.NID, vid: _bex.VID) -> 'BDDNode':
+        """Return the node when the variable is false."""
+        return BDDNode(self, self.base.when_lo(nid, vid))
+
+    def quantify(self, u: 'BDDNode', variables: Iterable[str], forall: bool = True) -> 'BDDNode':
+        """Perform quantification on a node."""
+        res = u
+        for s in variables:
+            v = self.vars[s]
+            res = self.apply(op = 'and' if forall else 'or',
+                             u = self.when_hi(v, res.nid),
+                             v = self.when_lo(v, res.nid))
+        return res
+
+    def forall(self, variables: Iterable[str], u: Any) -> Any:
+        """Perform universal quantification on a node."""
+        return self.quantify(u, variables, forall=True)
+
+    def exist(self, variables: Iterable[str], u: Any) -> Any:
+        """Perform existential quantification on a node."""
+        return self.quantify(u, variables, forall=False)
+
     # -------------------------------------------------------------------------
 
     def configure(self, **kw: Any) -> Dict[str, Any]:
@@ -204,14 +230,6 @@ class BDD:
     def support(self, u: Any, as_levels: bool = False) -> Union[Set[str], Set[int]]:
         """Return the support of a node."""
         raise NotImplementedError("BDD.support")
-
-    def forall(self, variables: Iterable[str], u: Any) -> Any:
-        """Perform universal quantification on a node."""
-        raise NotImplementedError("BDD.forall")
-
-    def exist(self, variables: Iterable[str], u: Any) -> Any:
-        """Perform existential quantification on a node."""
-        raise NotImplementedError("BDD.exist")
 
     def pick(self, u: Any, care_vars: Optional[Set[str]] = None) -> Optional[Dict[str, bool]]:
         """Pick a satisfying assignment for a node."""

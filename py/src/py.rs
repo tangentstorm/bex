@@ -60,6 +60,8 @@ impl PyBddBase {
   fn ite(&mut self, i:&PyNID, t:&PyNID, e:&PyNID)->PyNID {
     let mut base = self.0.lock().unwrap();
     PyNID(base.ite(i.0, t.0, e.0)) }
+  fn when_hi(&self, v:&PyVID, x:&PyNID)->PyNID { PyNID(self.0.lock().unwrap().when_hi(v.0, x.0)) }
+  fn when_lo(&self, v:&PyVID, x:&PyNID)->PyNID { PyNID(self.0.lock().unwrap().when_lo(v.0, x.0)) }
   fn eval(&mut self, x: &PyNID, kv: &Bound<'_, PyDict>) -> PyResult<PyNID> {
     let mut base = self.0.lock().unwrap();
     let mut rust_kv = HashMap::new();
