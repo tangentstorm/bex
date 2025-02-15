@@ -326,6 +326,34 @@ class BDDNode:
         """Return the hash of the BDDNode."""
         return hash((id(self.bdd), self.nid))
 
+    def __lt__(self, other: Any) -> bool:
+        if not isinstance(other, BDDNode):
+            return NotImplemented
+        if self.bdd != other.bdd:
+            raise ValueError("Cannot compare BDDNodes from different BDD managers")
+        # Handle constant nodes specially
+        if self.nid.is_const():
+            if other.nid.is_const():
+                return int(self.nid) < int(other.nid)
+            # false constant is less than any nonconstant;
+            # true constant is greater than any nonconstant.
+            return int(self.nid) == int(_bex.O)
+        else:
+            if other.nid.is_const():
+                return int(other.nid) == int(_bex.I)
+            return int(self.nid) < int(other.nid)
+
+    def __le__(self, other: Any) -> bool:
+        return self == other or self < other
+
+    def __gt__(self, other: Any) -> bool:
+        if not isinstance(other, BDDNode):
+            return NotImplemented
+        return not (self <= other)
+
+    def __ge__(self, other: Any) -> bool:
+        return self == other or self > other
+
     @property
     def support(self) -> Set[str]:
         """Return the support of a node."""
