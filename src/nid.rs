@@ -258,7 +258,12 @@ impl NID {
   #[inline] pub fn might_depend_on(&self, v:vid::VID)->bool {
     if self.is_const() { false }
     else if self.is_vid() { self.vid() == v }
-    else { let sv = self.vid(); sv == v || sv.is_above(&v) }}}
+    else { let sv = self.vid(); sv == v || sv.is_above(&v) }}
+
+  // -- int conversions used by the dd python package
+  #[inline] pub fn _from_u64(x:u64)->Self { NID{n:x} }
+  #[inline] pub fn _to_u64(&self)->u64 { self.n }
+}
 
 #[test] fn test_tbl_fmt() {
   assert_eq!("t1110", format!("{}", NID::fun(2, 0b1110).to_nid()));

@@ -32,6 +32,8 @@ impl PyNID {
   fn __invert__(&self)->PyNID { PyNID(!self.0) }
   fn __str__(&self) -> String { self.0.to_string() }
   fn __hash__(&self) -> u64 { fxhash::hash64(&self.0) }
+  fn __int__(&self) -> u64 { self.0._to_u64() }
+  #[staticmethod] fn from_int(x:u64)->PyNID { PyNID(NID::_from_u64(x)) }
   fn __repr__(&self) -> String { format!("<NID({:?})>", self.0) }}
 
 #[pymethods]

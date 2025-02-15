@@ -240,6 +240,10 @@ class BDD:
             v, h, l = self._vhl(u.nid)
             return f'ite({s(v.to_nid())}, {s(h)}, {s(l)})'
 
+    def _add_int(self, i: int) -> Any:
+        """This is an odd name. What it does is connvert an integer back into a nid."""
+        return BDDNode(self, _bex.NID.from_int(i))
+
     # -------------------------------------------------------------------------
 
     def configure(self, **kw: Any) -> Dict[str, Any]:
@@ -253,10 +257,6 @@ class BDD:
     def pick(self, u: Any, care_vars: Optional[Set[str]] = None) -> Optional[Dict[str, bool]]:
         """Pick a satisfying assignment for a node."""
         raise NotImplementedError("BDD.pick")
-
-    def _add_int(self, i: int) -> Any:
-        """Add an integer to the BDD."""
-        raise NotImplementedError("BDD._add_int")
 
     def cube(self, dvars: Dict[str, bool]) -> Any:
         """Return the conjunction of a set of literals."""
@@ -310,9 +310,13 @@ class BDDNode:
         """Return the XOR of two BDDNodes."""
         return BDDNode(self.bdd, self.bdd.base.op_xor(self.nid, other.nid))
 
-    def __str__(self) -> str:
+    def __repr__(self) -> str:
         """Return a string representation of the BDDNode."""
         return f"BDDNode({self.bdd}, {self.nid})"
+
+    def __str__(self) -> str:
+        """Return a string representation of the nid"""
+        return f"@{int(self.nid)}"
 
     def _vid(self) -> Optional[_bex.VID]:
         """Return the level of the BDDNode."""
@@ -326,6 +330,10 @@ class BDDNode:
     def support(self) -> Set[str]:
         """Return the support of a node."""
         return self.bdd.support(self)
+
+    def __int__(self) -> int:
+        """return the nid as a python int"""
+        return int(self.nid)
 
     # -------------------------------------------------------------------------
 
