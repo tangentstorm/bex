@@ -81,7 +81,11 @@ impl PyBddBase {
     let (v, hi, lo) = base.get_vhl(n.0); (PyVID(v), PyNID(hi), PyNID(lo))}
   fn to_dot(&self, x:&PyNID)->String {
     let base = self.0.lock().unwrap();
-    let mut s = String::new(); base.write_dot(x.0, &mut s);  s }
+    let mut s = String::new(); base.write_dot(x.0, &mut s); s }
+  fn to_json(&self, x:&PyNID)->String {
+    "{}".to_string() }
+    // let base = self.0.lock().unwrap();
+    // let /*mut*/ s = String::new(); /*base.write_json(x.0, &mut s);*/ s }
   fn solution_count(&mut self, x: &PyNID) -> u64 {
     let mut base = self.0.lock().unwrap();
     base.solution_count(x.0) }

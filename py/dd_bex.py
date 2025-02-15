@@ -3,6 +3,7 @@ wrapper for bex to make it look like the dd package
 https://github.com/tulip-control/dd/
 """
 import warnings
+import subprocess
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 import bex as _bex
 from dd import _parser
@@ -275,6 +276,32 @@ class BDD:
             res = res & self.var(name)._inv_if(inv)
         return res
 
+    def dump(self, filename: str, roots: Optional[List[Any]] = None, filetype: Optional[str] = None) -> None:
+        """Dump the BDD to a file."""
+        if roots is None:
+            raise ValueError("please supply at least one root to dump")
+        if filetype is None:
+            filetype = filename[filename.rfind('.')+1:] if '.' in filename else 'dot'
+        if filetype in ['dot', 'pdf', 'svg', 'png']:
+            dot_code = '\n'.join(self.base.to_dot(root.nid) for root in roots)
+            if filetype == 'dot':
+                with open(filename, 'w', encoding='utf-8') as f:
+                    f.write(dot_code)
+            else:
+                cmd = ['dot', f'-T{filetype}', '-o', filename]
+                subprocess.run(cmd, encoding='utf8', input=dot_code, capture_output=True, check=True)
+        elif filetype == 'json':
+            assert len(roots) == 1, "json dump only supports a single root"
+            json_code = self.base.to_json(roots[0].nid)
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(json_code)
+        else:
+            raise ValueError(f"unsupported filetype for dump: {filetype}")
+
+    def load(self, filename: str, levels: bool = True) -> Union[List['BDDNode']]:
+        """Load a BDD from a file."""
+        return []
+
     # -------------------------------------------------------------------------
 
     def statistics(self) -> Dict[str, Any]:
@@ -284,14 +311,6 @@ class BDD:
     def pick(self, u: Any, care_vars: Optional[Set[str]] = None) -> Optional[Dict[str, bool]]:
         """Pick a satisfying assignment for a node."""
         raise NotImplementedError("BDD.pick")
-
-    def dump(self, filename: str, roots: Optional[Union[Dict[str, Any], List[Any]]] = None, filetype: Optional[str] = None, **kw: Any) -> None:
-        """Dump the BDD to a file."""
-        raise NotImplementedError("BDD.dump")
-
-    def load(self, filename: str, levels: bool = True) -> Union[Dict[str, Any], List[Any]]:
-        """Load a BDD from a file."""
-        raise NotImplementedError("BDD.load")
 
 
 class BDDNode:
