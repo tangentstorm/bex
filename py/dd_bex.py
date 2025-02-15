@@ -18,6 +18,19 @@ class BDD:
         self.var_count = 0
         self._config = {'reordering':False}
 
+    def configure(self, **kw: Any) -> Dict[str, Any]:
+        """Configure the BDD manager with given parameters.
+        Returns the old configuration.
+        """
+        old = dict(**self._config)
+        for k, v in kw.items():
+            if k not in self._config:
+                raise ValueError(f"Unknown configuration option: {k}")
+            if k == 'reordering' and v:
+                warnings.warn(".configure(reordering=True) currently does nothing")
+            self._config[k] = v
+        return old
+
     @property
     def false(self) -> 'BDDNode':
         """Return the false constant (O)."""
@@ -248,31 +261,8 @@ class BDD:
             return f'ite({s(v.to_nid())}, {s(h)}, {s(l)})'
 
     def _add_int(self, i: int) -> Any:
-        """This is an odd name. What it does is connvert an integer back into a nid."""
+        """This is an odd name. What it does is convert an integer back into a nid."""
         return BDDNode(self, _bex.NID.from_int(i))
-
-    # -------------------------------------------------------------------------
-
-    def configure(self, **kw: Any) -> Dict[str, Any]:
-        """Configure the BDD manager with given parameters.
-        Returns the old configuration.
-        """
-        old = dict(**self._config)
-        for k, v in kw.items():
-            if k not in self._config:
-                raise ValueError(f"Unknown configuration option: {k}")
-            if k == 'reordering' and v:
-                warnings.warn(".configure(reordering=True) currently does nothing")
-            self._config[k] = v
-        return old
-
-    def statistics(self) -> Dict[str, Any]:
-        """Return statistics of the BDD manager."""
-        raise NotImplementedError("BDD.statistics")
-
-    def pick(self, u: Any, care_vars: Optional[Set[str]] = None) -> Optional[Dict[str, bool]]:
-        """Pick a satisfying assignment for a node."""
-        raise NotImplementedError("BDD.pick")
 
     def cube(self, vars: Union[Dict[str, bool], List[str]]) -> 'BDDNode':
         """Return the conjunction of a set of literals."""
@@ -284,6 +274,16 @@ class BDD:
         for name, inv in sorted(vars.items(), key=lambda item: self.vars[item[0]].ix):
             res = res & self.var(name)._inv_if(inv)
         return res
+
+    # -------------------------------------------------------------------------
+
+    def statistics(self) -> Dict[str, Any]:
+        """Return statistics of the BDD manager."""
+        raise NotImplementedError("BDD.statistics")
+
+    def pick(self, u: Any, care_vars: Optional[Set[str]] = None) -> Optional[Dict[str, bool]]:
+        """Pick a satisfying assignment for a node."""
+        raise NotImplementedError("BDD.pick")
 
     def dump(self, filename: str, roots: Optional[Union[Dict[str, Any], List[Any]]] = None, filetype: Optional[str] = None, **kw: Any) -> None:
         """Dump the BDD to a file."""
