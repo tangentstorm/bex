@@ -27,6 +27,7 @@ impl PyNID {
   fn is_const(&self)->bool { self.0.is_const() }
   fn is_lit(&self)->bool { self.0.is_lit() }
   fn is_vid(&self)->bool { self.0.is_vid() }
+  fn inv_if(&self, bit:bool)->PyNID { PyNID(self.0.inv_if(bit)) }
   fn _vid(&self)->PyVID { PyVID(self.0.vid()) }
   fn __eq__(&self, other:&PyNID)->bool { self.0 == other.0 }
   fn __invert__(&self)->PyNID { PyNID(!self.0) }

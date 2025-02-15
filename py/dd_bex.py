@@ -258,9 +258,16 @@ class BDD:
         """Pick a satisfying assignment for a node."""
         raise NotImplementedError("BDD.pick")
 
-    def cube(self, dvars: Dict[str, bool]) -> Any:
+    def cube(self, vars: Union[Dict[str, bool], List[str]]) -> 'BDDNode':
         """Return the conjunction of a set of literals."""
-        raise NotImplementedError("BDD.cube")
+        if isinstance(vars, list):
+            vars = {name: True for name in vars}
+        if not isinstance(vars, dict):
+            raise TypeError("cube expects a list or dict")
+        res = self.true
+        for name, inv in sorted(vars.items(), key=lambda item: self.vars[item[0]].ix):
+            res = res & self.var(name)._inv_if(inv)
+        return res
 
     def dump(self, filename: str, roots: Optional[Union[Dict[str, Any], List[Any]]] = None, filetype: Optional[str] = None, **kw: Any) -> None:
         """Dump the BDD to a file."""
@@ -362,6 +369,10 @@ class BDDNode:
     def __int__(self) -> int:
         """return the nid as a python int"""
         return int(self.nid)
+
+    def _inv_if(self, bit:bool) -> 'BDDNode':
+        """Invert the node if bit is True."""
+        return self if bit else ~self
 
     # -------------------------------------------------------------------------
 
