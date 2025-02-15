@@ -2,8 +2,9 @@
 wrapper for bex to make it look like the dd package
 https://github.com/tulip-control/dd/
 """
-import bex as _bex
+import warnings
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
+import bex as _bex
 from dd import _parser
 
 class BDD:
@@ -15,6 +16,7 @@ class BDD:
         self.base = _bex.BddBase()
         self.vars = {}
         self.var_count = 0
+        self._config = {'reordering':False}
 
     @property
     def false(self) -> 'BDDNode':
@@ -252,8 +254,17 @@ class BDD:
     # -------------------------------------------------------------------------
 
     def configure(self, **kw: Any) -> Dict[str, Any]:
-        """Configure the BDD manager with given parameters."""
-        raise NotImplementedError("BDD.configure")
+        """Configure the BDD manager with given parameters.
+        Returns the old configuration.
+        """
+        old = dict(**self._config)
+        for k, v in kw.items():
+            if k not in self._config:
+                raise ValueError(f"Unknown configuration option: {k}")
+            if k == 'reordering' and v:
+                warnings.warn(".configure(reordering=True) currently does nothing")
+            self._config[k] = v
+        return old
 
     def statistics(self) -> Dict[str, Any]:
         """Return statistics of the BDD manager."""

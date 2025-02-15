@@ -17,10 +17,6 @@ class Tests(common.Tests, common_bdd.Tests):
     def setup_method(self):
         self.DD = _bdd.BDD
 
-    @pytest.mark.skip(reason="not implemented")
-    def test_configure_reordering(self):
-        pass
-
     def test_len(self):
         """bex does not allocate nodes for constants or literals"""
         bdd = self.DD()
