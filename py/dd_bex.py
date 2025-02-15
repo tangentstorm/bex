@@ -182,7 +182,7 @@ class BDD:
             return
         else:
             nvars = u.nid._vid().ix + 1
-            cursor = self.base.first_solution(u.nid, nvars)
+            cursor = self.base.make_dontcare_cursor(u.nid, nvars)
             for s in care_vars:
                 cursor._watch(self.vars[s])
             revmap = {vid: s for s,vid in self.vars.items()}

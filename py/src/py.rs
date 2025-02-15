@@ -86,7 +86,8 @@ impl PyBddBase {
   fn support(&self, x: &PyNID) -> Vec<PyVID> {
     let base = self.0.lock().unwrap();
     base.support(x.0).iter().map(|v| PyVID(*v)).collect() }
-  fn first_solution(&self, n: &PyNID, nvars: usize) -> PyCursor {
+  /// Make a cursor. Base.next_solution is PyCursor::_advance in python
+  fn make_dontcare_cursor(&self, n: &PyNID, nvars: usize) -> PyCursor {
     let base = self.0.lock().unwrap();
     PyCursor(base.make_dontcare_cursor(n.0, nvars)) }}
 
