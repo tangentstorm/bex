@@ -125,6 +125,7 @@ class BDD:
             case "or"  | "\\/" | "|" | "||": return u | v
             case "xor" | "#" | "^": return u ^ v
             case "ite" : return self.ite(u, v, w)
+            case "<=>" | "<->" | "equiv" : return ~(u ^ v)
         raise NotImplementedError(f"BDD.apply({op})")
 
     def _walk_df(self, nid: _bex.NID) -> Iterable[Tuple[_bex.NID, _bex.VID, _bex.NID, _bex.NID]]:
@@ -146,6 +147,10 @@ class BDD:
         """Perform the if-then-else operation on nodes."""
         nid = self.base.ite(g.nid, u.nid, v.nid)
         return BDDNode(self, nid)
+
+    def find_or_add(self, v:str, l:'BDDNode', h: 'BDDNode') -> 'BDDNode':
+        """Find or add a node to the BDD. Note that dd puts the low branch first (bex usually does the opposite)"""
+        return self.ite(self.var(v), h, l)
 
     def copy(self, u: 'BDDNode', other: 'BDD') -> 'BDDNode':
         """Copy a node from one BDD manager to another."""
@@ -286,16 +291,24 @@ class BDDNode:
         self.nid = nid
 
     @property
-    def vhl(self) -> Optional[Tuple[_bex.NID, _bex.NID]]:
-        return self.bdd.base.get_vhl(self.nid)
+    def _vhl(self) -> Optional[Tuple[_bex.NID, _bex.NID]]:
+        """Return the variable, high, and low nodes of a node.
+        Note that unlike bex, dd wants us to return the vhl for the RAW nid,
+        and inverts them separately if self.negated
+        """
+        return self.bdd.base.get_vhl(self.nid.raw)
 
     @property
-    def high(self) -> Optional[_bex.NID]:
-        return None if self.nid.is_const() else self.vhl[1]
+    def var(self) -> Optional[str]:
+        return None if self.nid.is_const() else self.bdd.var_at_level(self.nid._vid().ix)
 
     @property
-    def low(self) -> Optional[_bex.NID]:
-        return None if self.nid.is_const() else self.vhl[2]
+    def high(self) -> Optional['BDDNode']:
+        return None if self.nid.is_const() else BDDNode(self.bdd, self._vhl[1])
+
+    @property
+    def low(self) -> Optional['BDDNode']:
+        return None if self.nid.is_const() else BDDNode(self.bdd, self._vhl[2])
 
     def __eq__(self, other: Any) -> bool:
         """Check if two BDDNodes are equal."""
@@ -374,6 +387,11 @@ class BDDNode:
         """Invert the node if bit is True."""
         return self if bit else ~self
 
+    @property
+    def negated(self) -> bool:
+        """Return True if the node is negated."""
+        return self.nid.is_inv()
+
     # -------------------------------------------------------------------------
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
@@ -382,7 +400,7 @@ class BDDNode:
 
     def __repr__(self) -> str:
         """Return a string representation of the BDDNode for debugging."""
-        raise NotImplementedError("BDDNode.__repr__")
+        return f"BDDNode({self.bdd}, {self.nid})"
 
 
 def reorder(bdd: BDD, order: Optional[Dict[str, int]] = None) -> None:

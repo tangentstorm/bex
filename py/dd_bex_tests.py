@@ -13,7 +13,7 @@ import common_bdd
 logging.getLogger('astutils').setLevel('ERROR')
 
 
-class Tests(common.Tests):
+class Tests(common.Tests, common_bdd.Tests):
     def setup_method(self):
         self.DD = _bdd.BDD
 
@@ -46,8 +46,3 @@ class Tests(common.Tests):
         # r_ = 'ite(x, TRUE, y)'
         r_ = 'ite(y, TRUE, x)'
         assert r == r_, (r, r_)
-
-class BDDTests(common_bdd.Tests):
-    def setup_method(self):
-        self.DD = _bdd.BDD
-

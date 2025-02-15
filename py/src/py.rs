@@ -27,6 +27,7 @@ impl PyNID {
   fn is_const(&self)->bool { self.0.is_const() }
   fn is_lit(&self)->bool { self.0.is_lit() }
   fn is_vid(&self)->bool { self.0.is_vid() }
+  fn is_inv(&self)->bool { self.0.is_inv() }
   fn inv_if(&self, bit:bool)->PyNID { PyNID(self.0.inv_if(bit)) }
   fn _vid(&self)->PyVID { PyVID(self.0.vid()) }
   fn __eq__(&self, other:&PyNID)->bool { self.0 == other.0 }
@@ -34,6 +35,7 @@ impl PyNID {
   fn __str__(&self) -> String { self.0.to_string() }
   fn __hash__(&self) -> u64 { fxhash::hash64(&self.0) }
   fn __int__(&self) -> u64 { self.0._to_u64() }
+  #[getter] fn raw(&self)->PyNID { PyNID(self.0.raw()) }
   #[staticmethod] fn from_int(x:u64)->PyNID { PyNID(NID::_from_u64(x)) }
   fn __repr__(&self) -> String { format!("<NID({:?})>", self.0) }}
 
