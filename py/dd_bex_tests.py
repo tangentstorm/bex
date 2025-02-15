@@ -25,7 +25,27 @@ class Tests(common.Tests):
         """bex does not allocate nodes for constants or literals"""
         bdd = self.DD()
         u = bdd.true
+        # assert len(bdd) == 1, len(bdd)
         assert len(bdd) == 0, len(bdd)
+
+    def test_to_expr(self):
+        """bex orders variables from the bottom up"""
+        bdd = self.DD()
+        bdd.declare('x', 'y')
+        u = bdd.var('x')
+        r = bdd.to_expr(u)
+        r_ = 'x'
+        assert r == r_, (r, r_)
+        u = bdd.add_expr(r'x /\ y')
+        r = bdd.to_expr(u)
+        # r_ = 'ite(x, y, FALSE)'
+        r_ = 'ite(y, x, FALSE)'
+        assert r == r_, (r, r_)
+        u = bdd.add_expr(r'x \/ y')
+        r = bdd.to_expr(u)
+        # r_ = 'ite(x, TRUE, y)'
+        r_ = 'ite(y, TRUE, x)'
+        assert r == r_, (r, r_)
 
 class BDDTests(common_bdd.Tests):
     def setup_method(self):

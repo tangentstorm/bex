@@ -226,6 +226,20 @@ class BDD:
             rev = {v: s for s,v in self.vars.items()}
             return {rev[v] for v in self.base.support(u.nid)}
 
+    def to_expr(self, u: Any) -> str:
+        """Convert a node to a Boolean expression."""
+        def s(nid):
+            if nid.is_const():
+                return 'TRUE' if nid == _bex.I else 'FALSE'
+            if nid.is_lit():
+                return self.var_at_level(nid._vid().ix)
+            return f'#{nid.ix:03x}'
+        if u.nid.is_lit():
+            return s(u.nid)
+        else:
+            v, h, l = self._vhl(u.nid)
+            return f'ite({s(v.to_nid())}, {s(h)}, {s(l)})'
+
     # -------------------------------------------------------------------------
 
     def configure(self, **kw: Any) -> Dict[str, Any]:
@@ -239,10 +253,6 @@ class BDD:
     def pick(self, u: Any, care_vars: Optional[Set[str]] = None) -> Optional[Dict[str, bool]]:
         """Pick a satisfying assignment for a node."""
         raise NotImplementedError("BDD.pick")
-
-    def to_expr(self, u: Any) -> str:
-        """Convert a node to a Boolean expression."""
-        raise NotImplementedError("BDD.to_expr")
 
     def _add_int(self, i: int) -> Any:
         """Add an integer to the BDD."""
