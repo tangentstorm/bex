@@ -322,6 +322,11 @@ class BDDNode:
         """Return the hash of the BDDNode."""
         return hash((id(self.bdd), self.nid))
 
+    @property
+    def support(self) -> Set[str]:
+        """Return the support of a node."""
+        return self.bdd.support(self)
+
     # -------------------------------------------------------------------------
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
