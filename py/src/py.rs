@@ -76,6 +76,7 @@ impl PyBddBase {
       rust_kv.insert(py_vid.0, py_nid.0); }
     Ok(PyNID(base.eval(x.0, &rust_kv))) }
   fn __len__(&self)->usize { self.0.lock().unwrap().len() }
+  fn node_count(&self, n:&PyNID)->usize { self.0.lock().unwrap().node_count(n.0) }
   fn get_vhl(&self, n:&PyNID)->(PyVID, PyNID, PyNID) {
     let base = self.0.lock().unwrap();
     let (v, hi, lo) = base.get_vhl(n.0); (PyVID(v), PyNID(hi), PyNID(lo))}

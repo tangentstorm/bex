@@ -465,6 +465,10 @@ class BDDNode:
         # (Bex does garbage collection via refcounting when it reorders nodes, but otherwise doesn't refcount.)
         return 1
 
+    @property
+    def dag_size(self)->int:
+        return self.bdd.base.node_count(self.nid)
+
     # -------------------------------------------------------------------------
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
