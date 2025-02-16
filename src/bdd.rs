@@ -167,6 +167,23 @@ impl BddBase {
       counts.insert(nid, hi_count + lo_count);});
     counts[&n]}
 
+  /// return supports for all nids in the list and all their descendents.
+  /// used in reorder_by_force()
+  pub fn all_supports(&self, nids:&[NID])->HashMap<NID,HashSet<VID>> {
+    let mut res = HashMap::new();
+    res.insert(O, HashSet::new());
+    self.walk_up_each(nids, &mut |nid, vid, hi, lo| {
+      let mut set = HashSet::new();
+      if !nid.is_const() {
+        let hi_set = res.get(&hi.raw()).unwrap();
+        set.extend(hi_set.iter());
+        let lo_set = res.get(&lo.raw()).unwrap();
+        set.extend(lo_set.iter());
+        set.insert(vid); }
+      res.insert(nid.raw(), set); });
+    res }
+
+  /// return the set of variables associated with a node
   pub fn support(&self, n:NID)->HashSet<VID> {
     let mut res = HashSet::new();
     self.walk_dn(n, &mut |_,v,_,_| { res.insert(v); });
@@ -247,6 +264,67 @@ impl BddBase {
     scaffold.regroup(groups);
     if gc { self.reset(); }
     scaffold.copy_to_bdd(self, &xids)}
+
+  /// use the FORCE algorithm to reorder the BDD
+  /// FORCE: A Fast and Easy-To-Implement Variable-Ordering Heuristic
+  /// Fadi A. Aloul, Igor L. Markov, Karem A. Sakallah
+  /// Department of Electrical Engineering and Computer Science
+  /// University of Michigan
+  /// https://web.eecs.umich.edu/~imarkov/pubs/conf/glsvlsi03-force.pdf
+  pub fn reorder_by_force(&mut self, nids: &[NID], gc: bool) -> (Vec<NID>, Vec<VID>) {
+
+    // build the co-occurrence matrix
+    let matrix = {
+      let mut mtx: HashMap<VID, HashMap<VID, f64>> = HashMap::new();
+      let all_supports = self.all_supports(nids);
+      for (_, support) in &all_supports {
+          for &vid1 in support {
+              for &vid2 in support {
+                  if vid1.is_below(&vid2) {
+                      let entry = mtx.entry(vid1).or_default();
+                      *entry.entry(vid2).or_insert(0.0) += 1.0; }}}}
+      mtx };
+
+    // find the topmost used variable:
+    let mut max_vid = VID::var(0); // Initialize with a default value
+    for &nid in nids { let v = nid.vid(); if v.var_ix() > max_vid.var_ix() { max_vid = v; }}
+
+    // the current order is just x0..max_vid:
+    let mut vids: Vec<VID> = (0..=max_vid.var_ix()).map(|i| VID::var(i as u32)).collect();
+
+    // we position them in a 1d continuous space:
+    let mut positions: HashMap<VID, f64> = vids.iter().map(|&v| (v, v.var_ix() as f64)).collect();
+
+    // Force-directed placement (simplified version)
+    let iterations = 50;
+    let repulsion_strength = 10.0;
+    let attraction_strength = 1.0;
+
+    for _i in 0..iterations {
+      let mut forces: HashMap<VID, f64> = HashMap::new();
+
+      for (i, &vid1) in vids.iter().enumerate() {
+        for &vid2 in vids.iter().skip(i+1) {
+          let dist = positions[&vid1] - positions[&vid2];
+          let repulsion = repulsion_strength / (dist * dist + 0.001); // Avoid division by zero
+          let force =
+            if let Some(count) = matrix.get(&vid1).and_then(|m| m.get(&vid2)) {
+              attraction_strength * count - repulsion }
+            else { -repulsion }; // Only repulsion if no co-occurrence
+          // Newton's third law (equal and opposite reactions)
+          *forces.entry(vid1).or_insert(0.0) += force;
+          *forces.entry(vid2).or_insert(0.0) -= force; }}
+
+        // Update positions
+        for &vid in &vids {
+            positions.entry(vid).and_modify(|p| *p += forces[&vid] * 0.1); }}
+
+    // 5. Create the new VID order based on positions
+    vids.sort_by(|&a, &b| positions[&a].partial_cmp(&positions[&b]).unwrap());
+
+    // 6. Reorder the BDD using your existing reorder function
+    let new_nids = self.reorder(&vids, nids, gc);
+    (new_nids, vids)}
 
 }
 
