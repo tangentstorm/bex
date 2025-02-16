@@ -3,6 +3,7 @@ wrapper for bex to make it look like the dd package
 https://github.com/tulip-control/dd/
 """
 import warnings
+import weakref
 import subprocess
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
 import bex as _bex
@@ -18,6 +19,23 @@ class BDD:
         self.vars = {}
         self.var_count = 0
         self._config = {'reordering':False}
+        self.next_ref_num = 0
+        self.ref_nids = weakref.WeakKeyDictionary() # BDDNode -> NID
+        self.nid_refs = weakref.WeakValueDictionary() # NID -> BDDNode
+        self.int_refs = weakref.WeakValueDictionary() # int -> BDDNode
+        self.false = self._nidref(_bex.O)
+        self.true = self._nidref(_bex.I)
+
+    def _nidref(self, nid: _bex.NID) -> 'BDDNode':
+        """Return the BDDNode corresponding to a NID."""
+        if node := self.nid_refs.get(nid):
+            return node
+        else:
+            self.nid_refs[nid] = \
+            self.int_refs[self.next_ref_num] = \
+            node = BDDNode(self, nid, self.next_ref_num)
+            self.next_ref_num += 1
+            return node
 
     def configure(self, **kw: Any) -> Dict[str, Any]:
         """Configure the BDD manager with given parameters.
@@ -31,16 +49,6 @@ class BDD:
                 warnings.warn(".configure(reordering=True) currently does nothing")
             self._config[k] = v
         return old
-
-    @property
-    def false(self) -> 'BDDNode':
-        """Return the false constant (O)."""
-        return BDDNode(self, _bex.O)
-
-    @property
-    def true(self) -> 'BDDNode':
-        """Return the true constant (I)."""
-        return BDDNode(self, _bex.I)
 
     def add_var(self, name: str) -> None:
         """Add a new variable to the BDD."""
@@ -56,7 +64,7 @@ class BDD:
 
     def var(self, name: str) -> 'BDDNode':
         """Return the node corresponding to a variable name."""
-        return BDDNode(self, self.vars[name].to_nid())
+        return self._nidref(self.vars[name].to_nid())
 
     def _vhl(self, nid) -> Tuple[_bex.VID, _bex.NID, _bex.NID]:
         """Return the variable, high, and low nodes of a node."""
@@ -65,14 +73,14 @@ class BDD:
     def succ(self, u: 'BDDNode') -> Tuple[int, 'BDDNode', 'BDDNode']:
         """Return the successors of a node. (level, low, high)"""
         v,h,l = self._vhl(u.nid)
-        return v.ix, BDDNode(self, l), BDDNode(self, h)
+        return v.ix, self._nidref(l), self._nidref(h)
 
     def __eq__(self, other: Any) -> bool:
         """Check if two BDD managers are equal."""
         return isinstance(other, BDD) and self.base is other.base
 
     def _eval(self, nid: _bex.NID, assignment: Dict[_bex.VID, _bex.NID]) -> bool:
-        return BDDNode(self, self.base.eval(nid, assignment))
+        return self._nidref(self.base.eval(nid, assignment))
 
     def _to_nid(self, x: Any) -> _bex.NID:
         if isinstance(x, bool):
@@ -81,6 +89,11 @@ class BDD:
             return self.vars[x].to_nid()
         elif isinstance(x, BDDNode):
             return x.nid
+        elif isinstance(x, int):
+            try:
+                return self.int_refs[x].nid
+            except KeyError:
+                raise ValueError(f"Invalid reference number: {x}")
         else:
             raise TypeError(f"Unsupported type: {type(x)}")
 
@@ -161,8 +174,7 @@ class BDD:
 
     def ite(self, g: 'BDDNode', u: 'BDDNode', v: 'BDDNode') -> 'BDDNode':
         """Perform the if-then-else operation on nodes."""
-        nid = self.base.ite(g.nid, u.nid, v.nid)
-        return BDDNode(self, nid)
+        return self._nidref(self.base.ite(g.nid, u.nid, v.nid))
 
     def find_or_add(self, v:str, l:'BDDNode', h: 'BDDNode') -> 'BDDNode':
         """Find or add a node to the BDD. Note that dd puts the low branch first (bex usually does the opposite)"""
@@ -172,11 +184,10 @@ class BDD:
         """Copy a node from one BDD manager to another."""
         nid_map = {}
         for nid, v0, h0, l0 in self._walk_df(u.nid):
-            v = BDDNode(other, v0.to_nid())
+            v = other._nidref(v0.to_nid())
             # h and l should either be in nid_map or be literals
-            h = nid_map.get(h0) or BDDNode(other, h0)
-            l = nid_map.get(l0) or BDDNode(other, l0)
-            print(v,h,l)
+            h = nid_map.get(h0) or other._nidref(h0)
+            l = nid_map.get(l0) or other._nidref(l0)
             nid_map[nid] = last = other.ite(v, h, l)
         return last
 
@@ -214,11 +225,11 @@ class BDD:
 
     def when_hi(self, nid: _bex.NID, vid: _bex.VID) -> 'BDDNode':
         """Return the node when the variable is true."""
-        return BDDNode(self, self.base.when_hi(nid, vid))
+        return self._nidref(self.base.when_hi(nid, vid))
 
     def when_lo(self, nid: _bex.NID, vid: _bex.VID) -> 'BDDNode':
         """Return the node when the variable is false."""
-        return BDDNode(self, self.base.when_lo(nid, vid))
+        return self._nidref(self.base.when_lo(nid, vid))
 
     def quantify(self, u: 'BDDNode', variables: Iterable[str], forall: bool = True) -> 'BDDNode':
         """Perform quantification on a node."""
@@ -262,8 +273,9 @@ class BDD:
             return f'ite({s(v.to_nid())}, {s(h)}, {s(l)})'
 
     def _add_int(self, i: int) -> Any:
-        """This is an odd name. What it does is convert an integer back into a nid."""
-        return BDDNode(self, _bex.NID.from_int(i))
+        """I think this is meant to add a reference to an existing node by its ref number.
+        (Which it does. Python tracks the references internally.)"""
+        return self.int_refs[i]
 
     def cube(self, vars: Union[Dict[str, bool], List[str]]) -> 'BDDNode':
         """Return the conjunction of a set of literals."""
@@ -315,10 +327,11 @@ class BDD:
 
 class BDDNode:
     """Pairs a NID with a reference to its BDD."""
-    def __init__(self, bdd: BDD, nid: _bex.NID) -> None:
+    def __init__(self, bdd: BDD, nid:_bex.NID, ref: int) -> None:
         """Initialize the BDDNode with a BDD and a node ID."""
         self.bdd = bdd
         self.nid = nid
+        self.ref = ref
 
     @property
     def _vhl(self) -> Optional[Tuple[_bex.NID, _bex.NID]]:
@@ -334,11 +347,11 @@ class BDDNode:
 
     @property
     def high(self) -> Optional['BDDNode']:
-        return None if self.nid.is_const() else BDDNode(self.bdd, self._vhl[1])
+        return None if self.nid.is_const() else self.bdd._nidref(self._vhl[1])
 
     @property
     def low(self) -> Optional['BDDNode']:
-        return None if self.nid.is_const() else BDDNode(self.bdd, self._vhl[2])
+        return None if self.nid.is_const() else self.bdd._nidref(self._vhl[2])
 
     def __eq__(self, other: Any) -> bool:
         """Check if two BDDNodes are equal."""
@@ -346,19 +359,19 @@ class BDDNode:
 
     def __invert__(self) -> 'BDDNode':
         """Return the negation of the BDDNode."""
-        return BDDNode(self.bdd, ~self.nid)
+        return self.bdd._nidref(~self.nid)
 
     def __and__(self, other: Any) -> 'BDDNode':
         """Return the conjunction of two BDDNodes."""
-        return BDDNode(self.bdd, self.bdd.base.op_and(self.nid, other.nid))
+        return self.bdd._nidref(self.bdd.base.op_and(self.nid, other.nid))
 
     def __or__(self, other: Any) -> 'BDDNode':
         """Return the disjunction of two BDDNodes."""
-        return BDDNode(self.bdd, self.bdd.base.op_or(self.nid, other.nid))
+        return self.bdd._nidref(self.bdd.base.op_or(self.nid, other.nid))
 
     def __xor__(self, other: Any) -> 'BDDNode':
         """Return the XOR of two BDDNodes."""
-        return BDDNode(self.bdd, self.bdd.base.op_xor(self.nid, other.nid))
+        return self.bdd._nidref(self.bdd.base.op_xor(self.nid, other.nid))
 
     def __repr__(self) -> str:
         """Return a string representation of the BDDNode."""
@@ -366,7 +379,7 @@ class BDDNode:
 
     def __str__(self) -> str:
         """Return a string representation of the nid"""
-        return f"@{int(self.nid)}"
+        return f"@{int(self)}"
 
     def _vid(self) -> Optional[_bex.VID]:
         """Return the level of the BDDNode."""
@@ -374,7 +387,7 @@ class BDDNode:
 
     def __hash__(self) -> int:
         """Return the hash of the BDDNode."""
-        return hash((id(self.bdd), self.nid))
+        return hash((id(self.bdd), self.ref))
 
     def __lt__(self, other: Any) -> bool:
         if not isinstance(other, BDDNode):
@@ -406,12 +419,12 @@ class BDDNode:
 
     @property
     def support(self) -> Set[str]:
-        """Return the support of a node."""
+        """Return the set of variables used by a node."""
         return self.bdd.support(self)
 
     def __int__(self) -> int:
         """return the nid as a python int"""
-        return int(self.nid)
+        return self.ref
 
     def _inv_if(self, bit:bool) -> 'BDDNode':
         """Invert the node if bit is True."""
@@ -427,11 +440,6 @@ class BDDNode:
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Call the BDD function with given arguments."""
         raise NotImplementedError("BDDNode.__call__")
-
-    def __repr__(self) -> str:
-        """Return a string representation of the BDDNode for debugging."""
-        return f"BDDNode({self.bdd}, {self.nid})"
-
 
 def reorder(bdd: BDD, order: Optional[Dict[str, int]] = None) -> None:
     """Reorder the variables in the BDD."""
