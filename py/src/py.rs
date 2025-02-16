@@ -2,14 +2,14 @@
 extern crate bex as bex_rs;
 extern crate fxhash;
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyList};
 use pyo3::exceptions::PyException;
 use bex_rs::{Base, GraphViz, ast::ASTBase, BddBase, nid::{I,O,NID}, vid::VID, cur::Cursor, Reg};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
-#[pyclass(name="NID")] struct PyNID(NID);
-#[pyclass(name="VID")] struct PyVID(VID);
+#[pyclass(name="NID")] #[derive(Clone)] struct PyNID(NID);
+#[pyclass(name="VID")] #[derive(Clone)] struct PyVID(VID);
 #[pyclass(name="ASTBase")] struct PyASTBase(ASTBase);
 #[pyclass(name="BddBase")] struct PyBddBase(Arc<Mutex<BddBase>>);
 #[pyclass(name="Reg")] struct PyReg(Reg);
@@ -82,7 +82,7 @@ impl PyBddBase {
   fn to_dot(&self, x:&PyNID)->String {
     let base = self.0.lock().unwrap();
     let mut s = String::new(); base.write_dot(x.0, &mut s); s }
-  fn to_json(&self, x:&PyNID)->String {
+  fn to_json(&self, _x:&PyNID)->String {
     "{}".to_string() }
     // let base = self.0.lock().unwrap();
     // let /*mut*/ s = String::new(); /*base.write_json(x.0, &mut s);*/ s }
@@ -92,6 +92,15 @@ impl PyBddBase {
   fn support(&self, x: &PyNID) -> Vec<PyVID> {
     let base = self.0.lock().unwrap();
     base.support(x.0).iter().map(|v| PyVID(*v)).collect() }
+  fn reorder(&mut self, py_vids: &Bound<'_,PyList>, py_nids: &Bound<'_,PyList>, gc:bool)-> PyResult<Vec<PyNID>> {
+    let mut base = self.0.lock().unwrap();
+    let vids: Vec<VID> = py_vids.iter().map(|v|
+        v.extract::<PyVID>().map(|pv| pv.0).map_err(|_| PyException::new_err("reorder(py_vids=[non_VID])")))
+      .collect::<Result<Vec<_>, _>>()?;
+    let nids:Vec<NID> = py_nids.iter().map(|n|
+        n.extract::<PyNID>().map(|pn| pn.0).map_err(|_| PyException::new_err("reorder(py_nids=[non_NID])")))
+      .collect::<Result<_,_>>()?;
+    Ok(base.reorder(&vids, &nids, gc).iter().map(|&nid|PyNID(nid)).collect()) }
   /// Make a cursor. Base.next_solution is PyCursor::_advance in python
   fn make_dontcare_cursor(&self, n: &PyNID, nvars: usize) -> PyCursor {
     let base = self.0.lock().unwrap();
