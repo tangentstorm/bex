@@ -72,7 +72,7 @@ pub trait Walkable {
   fn step<F>(&self, n:NID, f:&mut F, seen:&mut HashSet<NID>, topdown:bool)
   where F: FnMut(NID,VID,NID,NID);
 
-  /// iterate through (nid, vid, hi:nid, lo:nid) tuples in the graph
+  /// iterate through (nid, vid, hi:nid, lo:nid) tuples in the graph.
   /// visit the parent before visiting the children.
   fn walk_dn<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
     let mut seen = HashSet::new();
@@ -85,6 +85,12 @@ pub trait Walkable {
   fn walk_up<F>(&self, n:NID, f:&mut F) where F: FnMut(NID,VID,NID,NID) {
     let mut seen = HashSet::new();
     self.step(n, f, &mut seen, false)}
+
+  /// iterate through (nid, vid, hi:nid, lo:nid) tuples in the graph
+  /// for each nid. visit children before visiting the parent.
+  fn walk_up_each<F>(&self, nids:&[NID], f:&mut F) where F: FnMut(NID,VID,NID,NID) {
+    let mut seen = HashSet::new();
+    for &n in nids { self.step(n, f, &mut seen, false) }}
 
   /// this is meant for walking nodes ordered by variables from bottom to top.
   /// it's deprecated because the whole thing ought to be replaced by a nice iterator
