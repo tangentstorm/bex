@@ -93,6 +93,7 @@ impl PyBddBase {
   fn support(&self, x: &PyNID) -> Vec<PyVID> {
     let base = self.0.lock().unwrap();
     base.support(x.0).iter().map(|v| PyVID(*v)).collect() }
+
   fn reorder(&mut self, py_vids: &Bound<'_,PyList>, py_nids: &Bound<'_,PyList>, gc:bool)-> PyResult<Vec<PyNID>> {
     let mut base = self.0.lock().unwrap();
     let vids: Vec<VID> = py_vids.iter().map(|v|
@@ -102,6 +103,16 @@ impl PyBddBase {
         n.extract::<PyNID>().map(|pn| pn.0).map_err(|_| PyException::new_err("reorder(py_nids=[non_NID])")))
       .collect::<Result<_,_>>()?;
     Ok(base.reorder(&vids, &nids, gc).iter().map(|&nid|PyNID(nid)).collect()) }
+
+  fn reorder_by_force(&mut self, py_nids: &Bound<'_,PyList>, gc:bool)-> PyResult<(Vec<PyNID>, Vec<PyVID>)> {
+    let mut base = self.0.lock().unwrap();
+    let nids:Vec<NID> = py_nids.iter().map(|n|
+        n.extract::<PyNID>().map(|pn| pn.0).map_err(|_| PyException::new_err("reorder_by_force(py_nids=[non_NID])")))
+      .collect::<Result<_,_>>()?;
+    let (new_nids, new_vids) = base.reorder_by_force(&nids, gc);
+    Ok((new_nids.iter().map(|&nid|PyNID(nid)).collect(),
+        new_vids.iter().map(|&nid|PyVID(nid)).collect())) }
+
   /// Make a cursor. Base.next_solution is PyCursor::_advance in python
   fn make_dontcare_cursor(&self, n: &PyNID, nvars: usize) -> PyCursor {
     let base = self.0.lock().unwrap();
