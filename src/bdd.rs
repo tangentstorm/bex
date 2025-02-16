@@ -223,6 +223,30 @@ impl BddBase {
       let (v, hi, lo) = self.get_vhl(nid);
       res.push(scaffold.add(v, n2x[&hi], n2x[&lo], true)); }
     res }
+
+  /// Reorder the BDD.
+  /// vids: must be provided as a permutation of all variables from index 0 up to the top variable.
+  /// nids: list of external node references.
+  /// gc: if true, clear internal caches after reordering.
+  pub fn reorder(&mut self, vids: &[VID], nids: &[NID], gc: bool) -> Vec<NID> {
+    use std::collections::HashSet;
+    // Determine the top variable (using var_ix as proxy)
+    let max_vid = vids.iter().max_by_key(|v| v.var_ix()).expect("no vids provided");
+    let expected_count = max_vid.var_ix() + 1;
+    let unique_vids: HashSet<_> = vids.iter().cloned().collect();
+    if unique_vids.len() != expected_count {
+      panic!("BddBase::reorder: vids should be a complete permutation up to the top vid"); }
+    // Copy the current BDD to a scaffold.
+    let mut scaffold = crate::swap::XVHLScaffold::new();
+    let xids = self.copy_to_scaffold(&mut scaffold, nids);
+    // Create one group per vid.
+    let groups: Vec<HashSet<VID>> = vids.iter().map(|&v| {
+        let mut group = HashSet::new(); group.insert(v); group
+    }).collect();
+    scaffold.regroup(groups);
+    if gc { self.reset(); }
+    scaffold.copy_to_bdd(self, &xids)}
+
 }
 
 impl Default for BddBase { fn default() -> Self { Self::new() }}

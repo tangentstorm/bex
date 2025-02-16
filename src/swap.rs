@@ -128,7 +128,7 @@ pub struct XVHLScaffold {
 thread_local! { static SNAPSHOT : RefCell<XVHLScaffold> = RefCell::new(XVHLScaffold::new()) }
 
 impl XVHLScaffold {
-  fn new()->Self { XVHLScaffold{
+  pub fn new()->Self { XVHLScaffold{
     vids:vec![], vhls:vec![XVHL_O], rows: HashMap::new(), locked:HashSet::new(), drcd:HashMap::new(), complete:HashMap::new() } }
 
   pub fn dump(&self, msg:&str) {
@@ -564,7 +564,7 @@ impl XVHLScaffold {
   /// arrange row order to match the given groups.
   /// the groups are given in bottom-up order (so groups[0] is on bottom), and should
   /// completely partition the scaffold vids.
-  fn regroup(&mut self, groups:Vec<HashSet<VID>>) {
+  pub fn regroup(&mut self, groups:Vec<HashSet<VID>>) {
     assert!(self.locked.is_empty());
     self.complete = HashMap::new();
     self.drcd = HashMap::new();
