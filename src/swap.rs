@@ -8,9 +8,9 @@ use std::collections::{HashMap, HashSet};
 use std::{fmt, hash::Hash};
 use crate::base::GraphViz;
 use crate::vid::{VID, NOV, TOP};
-use crate::{solve::SubSolver, reg::Reg, nid::{NID,O}, ops::Ops};
+use crate::{solve::SubSolver, reg::Reg, nid::NID, ops::Ops};
 use crate::swarm::{Swarm,Worker,QID,SwarmCmd,WID};
-use crate::Fun;
+use crate::{nid, BddBase, Fun};
 
 /// XID: An index-based unique identifier for nodes.
 ///
@@ -460,8 +460,24 @@ impl XVHLScaffold {
     let ix = self.vix(v).expect("can't remove a row that doesn't exist.");
     assert!(self.rows[&v].hm.is_empty(), "can't remove a non-empty row!");
     self.vids.remove(ix);
-    self.rows.remove(&v);}}
+    self.rows.remove(&v);}
 
+  /// Copy the scaffold to a BddBase and translate a list of XIDs to NIDs.
+  pub fn copy_to_bdd(&self, bdd: &mut BddBase, xids: &[XID]) -> Vec<NID> {
+    let mut x2n: HashMap<XID, NID> = HashMap::new();
+    x2n.insert(XID_O, nid::O);
+    x2n.insert(XID_I, nid::I);
+    // Copy each row over, from bottom to top...
+    for (i, &rv) in self.vids.iter().enumerate() {
+      let bv = NID::from_vid(VID::var(i as u32));
+      for (x, ixrc) in self.rows[&rv].hm.iter() {
+        if ixrc.rc() > 0 || Some(rv) == self.top_vid() {
+          let nx = |x: XID| -> NID { if x.is_inv() { !x2n[&!x] } else { x2n[&x] } };
+          let (hi, lo) = (nx(x.hi), nx(x.lo));
+          x2n.insert(ixrc.ix, bdd.ite(bv, hi, lo)); }}}
+    xids.iter().map(|&xid| x2n[&xid]).collect()}
+
+}
 
 
 fn plan_regroup(vids:&[VID], groups:&[HashSet<VID>])->HashMap<VID,usize> {
@@ -1277,25 +1293,13 @@ impl SubSolver for SwapSolver {
     self.dst.validate("before get_all");
 
     // Copy from the scaffold to the BDD Base.
-    let mut x2n:HashMap<XID,NID> = HashMap::new();
-    x2n.insert(XID_O, O);
-
-    // copy each row over, from bottom to top...
-    // vids[i] in the scaffold becomes var(i) in the bdd.
-    let mut bdd = crate::bdd::BddBase::new();
-    for (i,rv) in self.dst.vids.iter().enumerate() {
-      let bv = NID::from_vid(VID::var(i as u32));
-      for (x, ixrc) in self.dst.rows[rv].hm.iter() {
-        if ixrc.rc() > 0 || *rv == self.dst.top_vid().unwrap() {
-          let nx = |x:XID|->NID { if x.is_inv() { !x2n[&!x] } else { x2n[&x] }};
-          let (hi, lo) = (nx(x.hi), nx(x.lo));
-          // !! row pairs are never inverted, so we shouldn't have to mess with inv() (... right??)
-          x2n.insert(ixrc.ix, bdd.ite(bv, hi, lo)); }}}
-
-    // Now the base solutions back to the original input ordering.
     // Each solution `Reg` contains one bit per input var.
     // To map it back to problem-land:  problem_var[i] = solution_var[self.vix(var(i))]
     // "pv" actually stands for permutation vector, but problem var works too. :)
+    let mut bdd = crate::bdd::BddBase::new();
+    let xid = XID::from_nid(ctx);
+    let nid = self.dst.copy_to_bdd(&mut bdd, &[xid])[0];
+
     let mut pv:Vec<usize> = vec![0;self.dst.vids.len()];
     for (i,v) in self.dst.vids.iter().enumerate() { pv[v.var_ix()] = i; }
 
@@ -1305,8 +1309,7 @@ impl SubSolver for SwapSolver {
     //    SubSolver protocol could have an output field for discarded inputs.
 
     let mut res:HashSet<Reg> = HashSet::new();
-    let nctx = x2n[&XID::from_nid(ctx)];
-    for reg in bdd.solutions_pad(nctx, nvars) { res.insert(reg.permute_bits(&pv)); }
+    for reg in bdd.solutions_pad(nid, nvars) { res.insert(reg.permute_bits(&pv)); }
     res}
 
   fn status(&self) -> String { "".to_string() } // TODO
