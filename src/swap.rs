@@ -259,7 +259,7 @@ impl XVHLScaffold {
      else { panic!("vid_below(v:{}): v not in the scaffold.", v) }}
 
   /// add a new vid to the top of the stack. return its position.
-  fn push(&mut self, v:VID)->usize {
+  pub fn push(&mut self, v:VID)->usize {
     if self.vix(v).is_some() { panic!("pushed variable that was already in the scaffold: {:?}", v) }
     let ix = self.vids.len();
     self.vids.push(v);
