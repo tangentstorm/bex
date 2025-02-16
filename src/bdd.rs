@@ -203,6 +203,26 @@ impl BddBase {
     let tests = wip::COUNT_CACHE_TESTS.with(|c| *c.borrow());
     let hits = wip::COUNT_CACHE_HITS.with(|c| *c.borrow());
     (tests, hits)}
+
+  /// Converts the BDD to a scaffold representation.
+  /// Walks the BDD bottom-up and maps each NID to an XID using the provided scaffold.
+  /// Returns a Vec<XID> corresponding to the input NIDs.
+  pub fn copy_to_scaffold(&mut self, scaffold: &mut crate::swap::XVHLScaffold, nids: &[NID]) -> Vec<crate::swap::XID> {
+    use std::collections::HashMap;
+    use crate::swap::{XID, XID_I, XID_O};
+    let mut res = Vec::new();
+    let mut n2x: HashMap<NID, XID> = HashMap::new();
+    n2x.insert(I, XID_I);
+    n2x.insert(O, XID_O);
+    for &nid in nids {
+      self.walk_up(nid, &mut |nid, v, h, l| {
+        let hi:XID = n2x[&h];
+        let lo:XID = n2x[&l];
+        n2x.insert(nid, scaffold.add(v, hi, lo, false)); });
+      // add an external reference to prevent garbage collection, and remember the mapping
+      let (v, hi, lo) = self.get_vhl(nid);
+      res.push(scaffold.add(v, n2x[&hi], n2x[&lo], true)); }
+    res }
 }
 
 impl Default for BddBase { fn default() -> Self { Self::new() }}

@@ -47,8 +47,8 @@ impl fmt::Debug for XID {
     if *self == XID_O { write!(f, "XO")}
     else if *self == XID_I { write!(f, "XI")}
     else { write!(f, "{}#{}", if self.is_inv() { "!" } else {""}, self.raw().x)}}}
-const XID_O:XID = XID { x: 0 };
-const XID_I:XID = XID { x: !0 };
+pub const XID_O:XID = XID { x: 0 };
+pub const XID_I:XID = XID { x: !0 };
 impl XID {
   pub fn ix(&self)->usize { self.raw().x as usize }
   fn raw(&self)->XID { if self.x >= 0 { *self } else { !*self }}
@@ -272,6 +272,12 @@ impl XVHLScaffold {
   //     self.vids.pop();
   //     self.rows.remove(&v); }
   //   else { panic!("can't pop {} because it's not on top ({:?})", v, self.vids) }}
+
+  /// allocate a new node in the scaffold, returning its index.
+  /// if track=true, add an external reference to the node.
+  pub fn add(&mut self, v:VID, hi:XID, lo:XID, track:bool)->XID {
+    let erc = if track { 1 } else { 0 };
+    self.add_ref(XVHL{ v, hi, lo }, 0, erc) }
 
   /// add a reference to the given XVHL, inserting it into the row if necessary.
   /// returns the xid representing this xvhl triple.
