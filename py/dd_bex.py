@@ -128,7 +128,7 @@ class BDD:
 
     def level_of_var(self, var: str) -> Optional[int]:
         """Return the level of a given variable."""
-        return (len(self.vars) - 1) - self._to_vid(var).ix
+        return self._to_vid(var).ix
 
     def var_at_level(self, level: int) -> str:
         """Return the variable at a given level."""
@@ -320,14 +320,12 @@ class BDD:
             raise NotImplementedError("reorder without args")
         print('vars before:', self.vars)
         keep = list({nid for nid in self.nid_refs.keys() if not nid.is_const()})
-        last = len(order)-1 # bex orders variables from the bottom up, so we want to reverse the list
-        perm = [v for ix,v in sorted((last-new_ix, self.vars[var]) for var, new_ix in order.items())]
+        perm = [v for ix,v in sorted((new_ix, self.vars[var]) for var, new_ix in order.items())]
         print("keep:", keep)
         print("perm:", perm)
         kept = self.base.reorder(perm, keep, gc=True) # returns new nids. always garbage collect.
-        # update our internal variable list. again, reverse the order.
         for i,name in enumerate(order):
-            self.vars[name] = _bex.var(last-i)
+            self.vars[name] = _bex.var(i)
         print('vars after:', self.vars)
         # now update all the live python objects with the new nid:
         refs = [self.nid_refs[old] for old in keep]
