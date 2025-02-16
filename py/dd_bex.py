@@ -128,7 +128,7 @@ class BDD:
 
     def level_of_var(self, var: str) -> Optional[int]:
         """Return the level of a given variable."""
-        return self._to_vid(var).ix
+        return (len(self.vars) - 1) - self._to_vid(var).ix
 
     def var_at_level(self, level: int) -> str:
         """Return the variable at a given level."""
@@ -314,6 +314,28 @@ class BDD:
         """Load a BDD from a file."""
         return []
 
+    def reorder(self, order: Optional[Dict[str, int]] = None):
+        """Reorder the variables in the BDD."""
+        if not order:
+            raise NotImplementedError("reorder without args")
+        print('vars before:', self.vars)
+        keep = list({nid for nid in self.nid_refs.keys() if not nid.is_const()})
+        last = len(order)-1 # bex orders variables from the bottom up, so we want to reverse the list
+        perm = [v for ix,v in sorted((last-new_ix, self.vars[var]) for var, new_ix in order.items())]
+        print("keep:", keep)
+        print("perm:", perm)
+        kept = self.base.reorder(perm, keep, gc=True) # returns new nids. always garbage collect.
+        # update our internal variable list. again, reverse the order.
+        for i,name in enumerate(order):
+            self.vars[name] = _bex.var(last-i)
+        print('vars after:', self.vars)
+        # now update all the live python objects with the new nid:
+        refs = [self.nid_refs[old] for old in keep]
+        self.nid_refs = weakref.WeakValueDictionary()
+        for ref, new in zip(refs, kept):
+            self.nid_refs[new] = ref
+            ref.nid = new
+
     # -------------------------------------------------------------------------
 
     def statistics(self) -> Dict[str, Any]:
@@ -327,11 +349,11 @@ class BDD:
 
 class BDDNode:
     """Pairs a NID with a reference to its BDD."""
-    def __init__(self, bdd: BDD, nid:_bex.NID, ref: int) -> None:
+    def __init__(self, bdd: BDD, nid:_bex.NID, _id: int) -> None:
         """Initialize the BDDNode with a BDD and a node ID."""
         self.bdd = bdd
         self.nid = nid
-        self.ref = ref
+        self._id = _id
 
     @property
     def _vhl(self) -> Optional[Tuple[_bex.NID, _bex.NID]]:
@@ -387,7 +409,7 @@ class BDDNode:
 
     def __hash__(self) -> int:
         """Return the hash of the BDDNode."""
-        return hash((id(self.bdd), self.ref))
+        return hash((id(self.bdd), self._id))
 
     def __lt__(self, other: Any) -> bool:
         if not isinstance(other, BDDNode):
@@ -424,7 +446,7 @@ class BDDNode:
 
     def __int__(self) -> int:
         """return the nid as a python int"""
-        return self.ref
+        return self._id
 
     def _inv_if(self, bit:bool) -> 'BDDNode':
         """Invert the node if bit is True."""
@@ -434,13 +456,19 @@ class BDDNode:
     def negated(self) -> bool:
         """Return True if the node is negated."""
         return self.nid.is_inv()
+    @property
+    def level(self) -> int:
+        """Return the level of the node."""
+        return self.bdd.level_of_var(self.var)
+
+    @property
+    def ref(self) -> int:
+        """I don't know what this is, but it's in the tests. Internal refcount, maybe? Bex doesn't have this."""
+        # (Bex does garbage collection via refcounting when it reorders nodes, but otherwise doesn't refcount.)
+        return 1
 
     # -------------------------------------------------------------------------
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         """Call the BDD function with given arguments."""
         raise NotImplementedError("BDDNode.__call__")
-
-def reorder(bdd: BDD, order: Optional[Dict[str, int]] = None) -> None:
-    """Reorder the variables in the BDD."""
-    raise NotImplementedError("reorder")
