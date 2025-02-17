@@ -145,7 +145,7 @@ impl PyCursor {
 #[pyfunction] fn nvir(i:i32)->PyResult<PyNID> { vir(i).map(|v| v.to_nid()) }
 
 #[pymodule]
-fn bex(m: &Bound<'_, PyModule>)->PyResult<()> {
+fn _bex(m: &Bound<'_, PyModule>)->PyResult<()> {
   m.add_class::<PyVID>()?;
   m.add_class::<PyNID>()?;
   m.add_class::<PyASTBase>()?;

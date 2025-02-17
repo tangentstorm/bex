@@ -6,8 +6,8 @@ import warnings
 import weakref
 import subprocess
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple, Union
-import bex as _bex
 from dd import _parser
+import _bex
 
 class BDD:
     """dd-style python interface for bex::BddBase"""

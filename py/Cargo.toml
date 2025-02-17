@@ -1,6 +1,6 @@
 [package]
-name = "pybex"
-version = "0.2.0"
+name = "bex_py"
+version = "0.3.0"
 authors = ["tangentstorm <michal.wallace@gmail.com>"]
 edition = "2021"
 license = "MIT"

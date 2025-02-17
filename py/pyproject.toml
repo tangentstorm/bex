@@ -1,0 +1,24 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "bex"
+version = "0.3.0"
+authors = [
+    {name = "tangentstorm", email = "michal.wallace@gmail.com"}
+]
+description = "A brief description of your bex package"
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering"
+]
+
+[tool.maturin]
+module-name = "_bex"
+python-packages = ["bex"]
+
