@@ -572,6 +572,9 @@ impl XVHLScaffold {
     // (var, ix) pairs, where plan is to lift var to row ix
     let plan = self.plan_regroup(&groups);
     if plan.is_empty() { return }
+    // println!("current order: {:?}", self.vids);
+    // println!("goal grouping: {:?}", groups);
+    // println!("regroup plan: {:?}", plan);
     let mut swarm: Swarm<Q,R,SwapWorker> = Swarm::new_with_threads(plan.len());
     let mut alarm: HashMap<VID,WID> = HashMap::new();
     let _:Option<()> = swarm.run(|wid,qid,r|->SwarmCmd<Q,()> {
@@ -616,9 +619,17 @@ impl XVHLScaffold {
 
         QID::DONE => { SwarmCmd::Pass }}});
 
-        let plan2 = self.plan_regroup(&groups);
-        debug_assert!(plan2.is_empty(), "regroup failed to make these moves: {:?}", plan2);
         debug_assert!(self.locked.is_empty());
+        // println!("variables now: {:?}", self.vids);
+        let plan2 = self.plan_regroup(&groups);
+        // println!("remaining regroup plan: {:?}", plan2);
+        if !plan2.is_empty() {
+          println!("------------------------------------------------");
+          println!("WARNING! reordering operation did not complete!");
+          println!("Regroup failed to make these moves: {:?}", plan2);
+          println!("------------------------------------------------");
+          println!("This is a known bug. See here for status and workarounds:");
+          println!("https://github.com/tangentstorm/bex/issues/12"); }
         self.validate("after regroup()"); }
 
 
