@@ -2,7 +2,22 @@
 
 Bex is a rust crate for working with binary expressions.
 
-## 0.2.0 (in progress)
+## 0.3.0 (2025-02-16)
+
+- Greatly expanded and fleshed out the python integration, including support for [@tulip-control/dd](https://github.com/tulip-control/dd)
+- Added a variety of new functions to `BddBase`:
+  - `reorder` for arbitrary reorderings
+  - `reorder_by_force` for the FORCE algorith, a fast (but not always as effective) alternative to variable sifting
+  - `to_json` and `from_json` to serialize and restore a set of nids
+- Added a simple [HTTP API](https://github.com/tangentstorm/bex/tree/main/api) for integrating with other languages.
+- Added new `Fun` trait and `NidFun` struct, refining the idea of storing truth tables of up to 5 inputs in a NID.
+- Added `ASTBase::{apply,eval}`
+- `naf.rs` (a variation of ANF)
+- VhlSwarm (extracted a generic VHL swarm framework from BddSwarm, to re-use on other VHL-based mods)
+- Began standardizing the formatting/parsing of NIDs (`FromStr` and `fmt::Display` should now round-trip)
+- Many other small fixes and cleanups.
+
+## 0.2.0 (2023-04-22)
 
 `BddBase` is now 100 times faster (or more, depending on your CPU count!)
 
