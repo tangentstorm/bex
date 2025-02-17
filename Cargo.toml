@@ -47,6 +47,7 @@ dashmap = { version="5.4.0"}
 boxcar = "0.1.0"
 fxhash = "0.2.1"
 concurrent-queue = "2.1.0"
+json = "0.12.4"
 
 [dev-dependencies]
 bencher = "0.1.5"

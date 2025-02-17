@@ -255,7 +255,7 @@ impl BddBase {
       panic!("BddBase::reorder: vids should be a complete permutation up to the top vid"); }
     // Copy the current BDD to a scaffold.
     let mut scaffold = crate::swap::XVHLScaffold::new();
-    for i in 0..=max_vid.var_ix() { scaffold.push(VID::var(i as  u32)); }
+    for i in 0..=max_vid.var_ix() { scaffold.push(VID::var(i as u32)); }
     let xids = self.copy_to_scaffold(&mut scaffold, nids);
     // Create one group per vid.
     let groups: Vec<HashSet<VID>> = vids.iter().map(|&v| {
@@ -428,3 +428,4 @@ impl Base for BddBase {
 
 
 include!("test-bdd.rs");
+include!("bdd/bdd-json.rs");
