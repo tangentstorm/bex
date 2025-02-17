@@ -4,8 +4,8 @@ version = "0.3.0"
 authors = ["tangentstorm <michal.wallace@gmail.com>"]
 edition = "2021"
 license = "MIT"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Python bindings for bex, a rust crate for working with boolean functions as graphs (BDDs, etc)."
+repository = "https://github.com/tangentstorm/bex/tree/main/py"
 
 [lib]
 name = "bex"

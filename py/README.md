@@ -5,7 +5,7 @@ This is a python binding for the `bex` crate, a library for boolean expression m
 ## Installation
 
 ```bash
-pip install bex
+pip install tangentstorm-bex
 ```
 
 ## Usage
