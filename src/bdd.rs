@@ -17,8 +17,6 @@ pub mod bdd_swarm; use self::bdd_swarm::*;
 #[derive(Debug, Default, PartialEq, Eq, Hash, Clone, Copy)]
 pub struct ITE {pub i:NID, pub t:NID, pub e:NID}  // nopub!! only public for WorkState
 impl ITE {
-  /// shorthand constructor
-  pub fn new (i:NID, t:NID, e:NID)-> ITE { ITE { i, t, e } }
   pub fn top_vid(&self)->VID {
     let (i,t,e) = (self.i.vid(), self.t.vid(), self.e.vid());
     topmost_of3(i,t,e) }}
@@ -90,7 +88,7 @@ impl ITE {
               Norm::Nid(nid) => Norm::Nid(!nid),
               Norm::Not(ite) => Norm::Ite(ite),
               Norm::Ite(ite) => Norm::Not(ite)}}
-            else { return Norm::Ite(NormIteKey(ITE::new(f,g,h))) }}}}}} }
+            else { return Norm::Ite(NormIteKey(ITE{i:f, t:g, e:h})) }}}}}} }
 
 
 /// Finally, we put everything together. This is the top-level type for this crate.
