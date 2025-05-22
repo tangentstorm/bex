@@ -497,35 +497,49 @@ fn plan_regroup(vids:&[VID], groups:&[HashSet<VID>])->HashMap<VID,usize> {
   let mut sum = 0; for x in groups.iter() { sum+= x.len() }
   assert_eq!(vids.len(), sum, "vids and groups had different total size");
 
-  // map each variable to its group number:
-  let mut dest:HashMap<VID,usize> = HashMap::new();
-  for (i, g) in groups.iter().enumerate() {
-    for &v in g { dest.insert(v, i); }}
-
-  // start position of each group:
-  let mut start:Vec<usize> = groups.iter().scan(0, |a,x| {
-    *a+=x.len(); Some(*a)}).collect();
-  start.insert(0, 0);
-  start.pop();
-
-  // downward-moving cursor for each group (starts at last position)
-  let mut curs:Vec<usize> = groups.iter().scan(0, |a,x|{
-    *a+=x.len(); Some(*a)}).collect();
-
-  let mut saw_misplaced = false;
-  for (i,v) in vids.iter().enumerate().rev() {
-    let g = dest[v]; // which group does it go to?
-    // we never schedule a move for group 0. others just move past them.
-    if g == 0 { if i>=start[1] { saw_misplaced = true }}
-    // once we see a misplaced item, we have to track everything below it, so that
-    // items that start in place *stay* in place as the swaps happen.
-    else {
-      curs[g]-=1;
-      if saw_misplaced || i<start[g] {
-        plan.insert(*v, curs[g]);
-        saw_misplaced=true }}
-    //println!("i: {} v: {} g:{}, saw_misplaced: {}, curs:{:?}, plan:{:?}" , i, v, g, saw_misplaced, curs, plan);
+  // First, construct the target ordering of variables based on groups
+  // We'll maintain the relative ordering of variables within each group
+  let mut target_order: Vec<VID> = Vec::with_capacity(vids.len());
+  
+  // Map from variable to its current position
+  let mut vid_to_current_pos: HashMap<VID, usize> = HashMap::new();
+  for (i, &v) in vids.iter().enumerate() {
+    vid_to_current_pos.insert(v, i);
   }
+
+  // Group variables by their group number
+  let mut variables_by_group: Vec<Vec<VID>> = vec![Vec::new(); groups.len()];
+  for &v in vids {
+    for (group_idx, group) in groups.iter().enumerate() {
+      if group.contains(&v) {
+        variables_by_group[group_idx].push(v);
+        break;
+      }
+    }
+  }
+
+  // Construct target ordering by concatenating groups
+  // Maintain relative ordering within each group
+  for group_vars in &mut variables_by_group {
+    // Sort variables within each group by their current position to maintain relative ordering
+    group_vars.sort_by_key(|&v| vid_to_current_pos[&v]);
+    target_order.extend(group_vars);
+  }
+
+  // Now determine the target position for each variable
+  let mut vid_to_target_pos: HashMap<VID, usize> = HashMap::new();
+  for (i, &v) in target_order.iter().enumerate() {
+    vid_to_target_pos.insert(v, i);
+  }
+
+  // For each variable, if it needs to move, add it to the plan
+  for (i, &v) in vids.iter().enumerate() {
+    let target_pos = vid_to_target_pos[&v];
+    if i != target_pos {
+      plan.insert(v, target_pos);
+    }
+  }
+
   plan}
 
 // functions for performing the distributed regroup()

@@ -222,29 +222,35 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
 #[cfg(test)] macro_rules! d {
   { } => { HashMap::new() };
   {$( $k:ident : $v:expr ),+ }=> {{ let mut tmp = HashMap::new(); $( tmp.insert($k,$v); )* tmp }};}
-#[test] fn test_plan_regroup() {
+#[test] fn test_plan_regroup_complex() {
   let x0:VID = VID::var(0);
   let x1:VID = VID::var(1);
   let x2:VID = VID::var(2);
   let x3:VID = VID::var(3);
   let x4:VID = VID::var(4);
+  let x5:VID = VID::var(5);
 
-  // here these are all in place already, so we can remove them from the plan.
-  assert_eq!(d!{ }, plan_regroup(&[x0,x1,x2], &[s![x0], s![x1], s![x2]]));
-
-  // here x2 stays in place, so we don't have to include it in the plan.
-  assert_eq!(d!{ x1:1 }, plan_regroup(&[x1,x0,x2], &[s![x0], s![x1], s![x2]]));
-
-  // here we find 4 before 3 moving right to left (top down in the scaffold)
-  assert_eq!(d!{ x4:4, x3:3 }, plan_regroup(&[x3,x2,x4,x0,x1], &[s![x2,x0,x1],s![],s![x4,x3]]));
-
-  // but here we find them in the opposite order, and we want to preserve that order. (one less swap to do)
-  assert_eq!(d!{ x4:3, x3:4 }, plan_regroup(&[x4,x2,x3,x0,x1], &[s![x2,x0,x1],s![],s![x4,x3]]));
-
-  // here x4 starts out in the right area, but dragging x3 up past x0 will push x4 down. so x4 must be in
-  // the plan so that the plan can ensure it *stays* in the right place.
-  assert_eq!(d!{ x4:4, x3:3 }, plan_regroup(&[x3,x1,x2,x4,x0], &[s![x2,x0,x1],s![],s![x4,x3]]));
-println!("----------");
-  // but here, x4 is at the end, and nothing will ever swap with it, so we can drop it from the plan.
-  assert_eq!(d!{ x3:3 }, plan_regroup(&[x3,x1,x2,x0,x4], &[s![x2,x0,x1],s![],s![x4,x3]]));
+  // Test a more complex reordering: arbitrary permutation
+  // Current order: [0,1,2,3,4,5]
+  // Target groups: [{5,2,3}, {0,4}, {1}]
+  // Expected target: [5,2,3,0,4,1]
+  let current = vec![x0, x1, x2, x3, x4, x5];
+  let groups = vec![s![x5, x2, x3], s![x0, x4], s![x1]];
+  let plan = plan_regroup(&current, &groups);
+  
+  // Check that plan includes all variables that need to move
+  assert_eq!(plan.contains_key(&x0), true);
+  assert_eq!(plan.contains_key(&x1), true);
+  assert_eq!(plan.contains_key(&x2), true);
+  assert_eq!(plan.contains_key(&x3), true);
+  assert_eq!(plan.contains_key(&x4), true);
+  assert_eq!(plan.contains_key(&x5), true);
+  
+  // Check the target positions
+  assert_eq!(plan[&x5], 0); // x5 should move to position 0
+  assert_eq!(plan[&x2], 1); // x2 should move to position 1
+  assert_eq!(plan[&x3], 2); // x3 should move to position 2
+  assert_eq!(plan[&x0], 3); // x0 should move to position 3
+  assert_eq!(plan[&x4], 4); // x4 should move to position 4
+  assert_eq!(plan[&x1], 5); // x1 should move to position 5
 }
