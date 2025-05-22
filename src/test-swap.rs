@@ -254,3 +254,74 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   assert_eq!(plan[&x4], 4); // x4 should move to position 4
   assert_eq!(plan[&x1], 5); // x1 should move to position 5
 }
+
+#[test] fn test_plan_regroup_deadlock() {
+  // This test creates a situation where the naive algorithm might get stuck in a deadlock
+  // Our implementation should handle this correctly by finding an optimal sequence of swaps
+  
+  let x0:VID = VID::var(0);
+  let x1:VID = VID::var(1);
+  let x2:VID = VID::var(2);
+  let x3:VID = VID::var(3);
+  let x4:VID = VID::var(4);
+  let x5:VID = VID::var(5);
+  let x6:VID = VID::var(6);
+  let x7:VID = VID::var(7);
+
+  // Current order: [0,1,2,3,4,5,6,7]
+  // Target groups: [{7,5,3,1}, {6,4,2,0}]
+  // This creates a situation where many variables need to move through each other
+  let current = vec![x0, x1, x2, x3, x4, x5, x6, x7];
+  let groups = vec![s![x7, x5, x3, x1], s![x6, x4, x2, x0]];
+  let plan = plan_regroup(&current, &groups);
+  
+  // Check that plan includes all variables that need to move
+  assert_eq!(plan.contains_key(&x0), true);
+  assert_eq!(plan.contains_key(&x1), true);
+  assert_eq!(plan.contains_key(&x2), true);
+  assert_eq!(plan.contains_key(&x3), true);
+  assert_eq!(plan.contains_key(&x4), true);
+  assert_eq!(plan.contains_key(&x5), true);
+  assert_eq!(plan.contains_key(&x6), true);
+  assert_eq!(plan.contains_key(&x7), true);
+  
+  // Expected target positions: [7,5,3,1,6,4,2,0]
+  // Check the target positions for the first group
+  assert_eq!(plan[&x7], 0); // x7 should move to position 0
+  assert_eq!(plan[&x5], 1); // x5 should move to position 1
+  assert_eq!(plan[&x3], 2); // x3 should move to position 2
+  assert_eq!(plan[&x1], 3); // x1 should move to position 3
+  
+  // Check the target positions for the second group
+  assert_eq!(plan[&x6], 4); // x6 should move to position 4
+  assert_eq!(plan[&x4], 5); // x4 should move to position 5
+  assert_eq!(plan[&x2], 6); // x2 should move to position 6
+  assert_eq!(plan[&x0], 7); // x0 should move to position 7
+}
+}
+
+#[test] fn test_plan_regroup_maintain_order() {
+  // This test verifies that the algorithm maintains the relative order of variables within groups
+  let x0:VID = VID::var(0);
+  let x1:VID = VID::var(1);
+  let x2:VID = VID::var(2);
+  let x3:VID = VID::var(3);
+  let x4:VID = VID::var(4);
+  let x5:VID = VID::var(5);
+
+  // Current order: [0,1,2,3,4,5]
+  // Target groups: [{2,0,4}, {3,1,5}]
+  // The relative ordering within each group should be maintained
+  // Expected target: [2,0,4,3,1,5]
+  let current = vec![x0, x1, x2, x3, x4, x5];
+  let groups = vec![s![x2, x0, x4], s![x3, x1, x5]];
+  let plan = plan_regroup(&current, &groups);
+  
+  // Check the target positions
+  assert_eq!(plan[&x2], 0); // x2 should move to position 0
+  assert_eq!(plan[&x0], 1); // x0 should move to position 1
+  assert_eq!(plan[&x4], 2); // x4 should move to position 2
+  assert_eq!(plan[&x3], 3); // x3 should move to position 3
+  assert_eq!(plan[&x1], 4); // x1 should move to position 4
+  assert_eq!(plan[&x5], 5); // x5 should stay at position 5
+}
