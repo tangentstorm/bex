@@ -325,3 +325,35 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   assert_eq!(plan[&x1], 4); // x1 should move to position 4
   assert_eq!(plan[&x5], 5); // x5 should stay at position 5
 }
+
+#[test] fn test_plan_regroup_replan_needed() {
+  // This test demonstrates that replanning is needed after each swap
+  
+  let x0:VID = VID::var(0);
+  let x1:VID = VID::var(1);
+  let x2:VID = VID::var(2);
+  let x3:VID = VID::var(3);
+  
+  // Initial state: [0,1,2,3]
+  // Target groups: [{2,0}, {3,1}]
+  let mut vids = vec![x0, x1, x2, x3];
+  let groups = vec![s![x2, x0], s![x3, x1]];
+  
+  // Initial plan
+  let plan1 = plan_regroup(&vids, &groups);
+  
+  // After first swap of x2 (first variable that needs to move)
+  // New state would be: [0,1,3,2]
+  vids.swap(2, 3);
+  let plan2 = plan_regroup(&vids, &groups);
+  
+  // The plans should be different
+  assert_ne!(plan1, plan2, "Plan should change after each swap");
+  
+  // First plan should have x2 moving
+  assert!(plan1.contains_key(&x2));
+  
+  // After moving x2 up, the second plan should no longer have x2 moving
+  // (because it's now at its target position at the top)
+  assert!(!plan2.contains_key(&x2));
+}
