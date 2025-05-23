@@ -298,7 +298,6 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   assert_eq!(plan[&x2], 6); // x2 should move to position 6
   assert_eq!(plan[&x0], 7); // x0 should move to position 7
 }
-}
 
 #[test] fn test_plan_regroup_maintain_order() {
   // This test verifies that the algorithm maintains the relative order of variables within groups

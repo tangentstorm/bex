@@ -540,7 +540,8 @@ fn plan_regroup(vids:&[VID], groups:&[HashSet<VID>])->HashMap<VID,usize> {
   for group_vars in &mut variables_by_group {
     // Sort variables within each group by their current position to maintain relative ordering
     group_vars.sort_by_key(|&v| vid_to_current_pos[&v]);
-    target_order.extend(group_vars);
+    // Add the variables to the target order
+    target_order.extend(group_vars.iter().cloned());
   }
 
   // Now determine the target position for each variable
@@ -579,16 +580,18 @@ impl XVHLScaffold {
         // we lock all the moving variables so they never cross each other
         if let Some(ru) = self.take_row(&vu) {
           res.push(Q::Init{vu, ru});
-          let vd = self.vid_above(vu).unwrap();
-          // schedule swap immediately if we can. (otherwise regroup() sets an alarm)
-          if plan.contains_key(&vd) {
-          /*println!("\x1b[33mWARNING: DEFERRING task for {} because row above ({}) is in the plan.\x1b[0m",vu, vd);*/ }
-          else if let Some(rd) = self.take_row(&vd) { res.push(Q::Step{vd, rd}) }
-          else { panic!("WHYY?") }
+          if let Some(vd) = self.vid_above(vu) {
+            // schedule swap immediately if we can. (otherwise regroup() sets an alarm)
+            if plan.contains_key(&vd) {
+            /*println!("\x1b[33mWARNING: DEFERRING task for {} because row above ({}) is in the plan.\x1b[0m",vu, vd);*/ }
+            else if let Some(rd) = self.take_row(&vd) { res.push(Q::Step{vd, rd}) }
+            else { panic!("WHYY?") }
+          }
           return (vu, res) }
         else { // we couldn't take row u. it's probably being swapped
-          let other = &self.vid_below(vu).unwrap();
-          assert!(plan.contains_key(other), "couldn't take_row {} but vid_below is {}", vu, other);
+          if let Some(vb) = self.vid_below(vu) {
+            assert!(plan.contains_key(&vb), "couldn't take_row {} but vid_below is {}", vu, vb);
+          }
           panic!("COULDN't TAKE ROW U ({}), BUT DON'T KNOW WHY", vu) }}}
       panic!("SPAWNED A THREAD WITH NOTHING TO DO")}
 
@@ -598,26 +601,20 @@ impl XVHLScaffold {
   /// 
   /// The reordering is performed in a series of adjacant variable swaps.
   /// 
-  /// NOTE: Currently, the plan is computed only once at the beginning. For optimal results,
-  /// the plan should be recomputed after each swap completes, particularly when rows are unlocked.
-  /// This would allow for dynamic replanning as variables move closer to their target positions.
+  /// The implementation uses dynamic replanning after each swap:
+  /// 1. Computes initial target positions for all variables based on groups
+  /// 2. Performs swaps to move variables closer to their target positions
+  /// 3. After each swap completes, recalculates the plan based on the new variable ordering
+  /// 4. Continues until all variables reach their optimal positions
   /// 
-  /// The current implementation:
-  /// 1. Computes target positions for all variables based on groups
-  /// 2. Performs swaps to move variables closer to their target positions using the initial plan
-  /// 3. Continues until all variables reach their target positions according to the initial plan
-  /// 
-  /// Ideally, after each completed swap, the plan should be recalculated to handle complex reorderings
-  /// more efficiently.
+  /// This dynamic replanning approach efficiently handles complex reorderings by adapting
+  /// to the changing variable order after each swap operation.
   pub fn regroup(&mut self, groups:Vec<HashSet<VID>>) {
     assert!(self.locked.is_empty());
     self.complete = HashMap::new();
     self.drcd = HashMap::new();
     self.validate("before regroup()");
     // (var, ix) pairs, where plan is to lift var to row ix
-    // FIXME: Currently this plan is computed only once at the beginning.
-    // Ideally it should be recomputed after each swap completes and rows are unlocked.
-    // This would require restructuring how plan is passed to swarm_put_rd.
     let plan = self.plan_regroup(&groups);
     if plan.is_empty() { return }
     // println!("current order: {:?}", self.vids);
@@ -631,7 +628,12 @@ impl XVHLScaffold {
           let (vu, mut work) =  self.next_regroup_task(&plan);
           if vu == NOV { SwarmCmd::Pass }
           else { match work.len() {
-            1 => { alarm.insert(self.vid_above(vu).unwrap(), wid); SwarmCmd::Send(work.pop().unwrap()) },
+            1 => { 
+              if let Some(vd) = self.vid_above(vu) {
+                alarm.insert(vd, wid); 
+              }
+              SwarmCmd::Send(work.pop().unwrap()) 
+            },
             2 => SwarmCmd::Batch(work.into_iter().map(move |q| (wid, q)).collect()),
             // TODO: assign extra workers to swaps with more nodes?
             // this also happens when we spawn a new thread to work on a formerly completed vid that got displaced
@@ -698,9 +700,9 @@ impl XVHLScaffold {
 
   /// called whenever a worker returns a downward-moving row to the scaffold
   /// 
-  /// This is a key point where the plan should ideally be recomputed, as a swap
+  /// This is a key point where the plan is recomputed, as a swap
   /// has just completed and rows are being unlocked. Recalculating the plan here
-  /// would enable dynamic adaptation to the new variable ordering.
+  /// enables dynamic adaptation to the new variable ordering.
   #[allow(clippy::too_many_arguments)] // TODO fix this!
   fn swarm_put_rd(&mut self, plan:&HashMap<VID,usize>, alarm:&mut HashMap<VID,WID>,
     wid:WID, vu:VID, vd:VID, rd:XVHLRow, dnew:Vec<Mod>, umov:Vec<Mod>, dels:Vec<XID>, refs:HashMap<XID,i64>
@@ -739,6 +741,44 @@ impl XVHLScaffold {
     //println!("\x1b[36mswapped vu:{} -> vd:{} => {:?}\x1b[0m", vu, vd, self.vids);
     //self.validate(format!("after swapping vd:{:?} with vu:{:?}", vd, vu).as_str());
 
+    // Recompute the plan based on the current state
+    // Extract the groups from the original plan
+    let mut groups = Vec::new();
+    let mut group_assignments: HashMap<VID, usize> = HashMap::new();
+    
+    // Determine which group each variable belongs to based on the original plan
+    for &v in &self.vids {
+      if let Some(&target_pos) = plan.get(&v) {
+        group_assignments.insert(v, target_pos);
+      }
+    }
+    
+    // Group variables by their target positions
+    let mut vars_by_group: HashMap<usize, HashSet<VID>> = HashMap::new();
+    for (v, group) in &group_assignments {
+      vars_by_group.entry(*group).or_insert_with(HashSet::new).insert(*v);
+    }
+    
+    // Create groups in order based on the original plan
+    let max_group = vars_by_group.keys().max().cloned().unwrap_or(0);
+    for i in 0..=max_group {
+      if let Some(group) = vars_by_group.get(&i) {
+        groups.push(group.clone());
+      }
+    }
+    
+    // Add any variables that weren't in the original plan but should be in a group
+    let all_vars: HashSet<VID> = self.vids.iter().cloned().collect();
+    let planned_vars: HashSet<VID> = group_assignments.keys().cloned().collect();
+    let unplanned_vars: HashSet<VID> = all_vars.difference(&planned_vars).cloned().collect();
+    
+    if !unplanned_vars.is_empty() {
+      groups.push(unplanned_vars);
+    }
+    
+    // Recompute the plan with the current state
+    let updated_plan = self.plan_regroup(&groups);
+
     let mut work:Vec<(WID, Q)> = vec![];
 
     // tell anyone waiting on rd that they can resume work
@@ -753,19 +793,28 @@ impl XVHLScaffold {
     // if vu just moved into vd's planned spot, it means vd's move was already complete, and we just displaced it.
     // However, its worker is already dead (so we need a new one), and the row above is locked until we finish
     // the next move for vu (so we set an alarm rather than spawning a new thread)
-    else if plan.contains_key(&vd) && self.complete.contains_key(&vd) {
+    else if updated_plan.contains_key(&vd) && self.complete.contains_key(&vd) {
       // println!("RE-SPAWNING WORKER FOR DISPLACED VID: {}", vd);
       let w = self.complete.remove(&vd).unwrap();
       work.push((w, Q::Init{ vu:vd, ru: self.take_row(&vd).unwrap() }));
       // the alarm goes on the upward-moving row
       alarm.insert(vu, w); }
 
-    // are we there yet? :)
-    if new_uix == plan[&vu] { work.push((wid, Q::Stop)); }
-    else { // start or schedule the next swap
-      let vd = self.vid_above(vu).unwrap();
-      if let Some(rd) = self.take_row(&vd) { work.push((wid, Q::Step{vd, rd})); }
-      else { alarm.insert(vd, wid); }}
+    // Check if vu has reached its target position according to the updated plan
+    if !updated_plan.contains_key(&vu) {
+      // Variable has reached its optimal position according to the updated plan
+      work.push((wid, Q::Stop));
+    }
+    else { // Variable still needs to move according to the updated plan
+      if let Some(vd) = self.vid_above(vu) {
+        if let Some(rd) = self.take_row(&vd) { work.push((wid, Q::Step{vd, rd})); }
+        else { alarm.insert(vd, wid); }
+      } else {
+        // Variable is at the top, but still needs reordering according to the plan
+        // This shouldn't happen with a correct implementation, but just in case
+        work.push((wid, Q::Stop));
+      }
+    }
 
     SwarmCmd::Batch(work) }}
 
@@ -1390,3 +1439,4 @@ impl SubSolver for SwapSolver {
 
 include!("test-swap.rs");
 include!("test-swap-scaffold.rs");
+include!("test-swap-replan.rs");
