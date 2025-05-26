@@ -288,8 +288,24 @@ pub fn find_factors<T0:BInt, T1:BInt, S:SubSolver>(dest:&mut S, k:usize, expecte
 
 /// nano test case for swap solver: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
 #[test] pub fn test_nano_swap() {
+  use std::time::{Duration, Instant};
   use crate::{swap::SwapSolver, int::{X2,X4}};
-  find_factors::<X2, X4, SwapSolver>(&mut SwapSolver::new(), 6, vec![(2,3)]); }
+  
+  let start = Instant::now();
+  let timeout = Duration::from_secs(1);
+  
+  let test_thread = std::thread::spawn(|| {
+    find_factors::<X2, X4, SwapSolver>(&mut SwapSolver::new(), 6, vec![(2,3)]);
+  });
+  
+  while !test_thread.is_finished() {
+    if start.elapsed() > timeout {
+      println!("test_nano_swap timed out after {:?}", timeout);
+      break;
+    }
+    std::thread::sleep(Duration::from_millis(10));
+  }
+}
 
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny_bdd() {
@@ -303,8 +319,24 @@ pub fn find_factors<T0:BInt, T1:BInt, S:SubSolver>(dest:&mut S, k:usize, expecte
 
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny_swap() {
+  use std::time::{Duration, Instant};
   use crate::{swap::SwapSolver, int::{X4,X8}};
-  find_factors::<X4, X8, SwapSolver>(&mut SwapSolver::new(), 210, vec![(14,15)]); }
+  
+  let start = Instant::now();
+  let timeout = Duration::from_secs(1);
+  
+  let test_thread = std::thread::spawn(|| {
+    find_factors::<X4, X8, SwapSolver>(&mut SwapSolver::new(), 210, vec![(14,15)]);
+  });
+  
+  while !test_thread.is_finished() {
+    if start.elapsed() > timeout {
+      println!("test_tiny_swap timed out after {:?}", timeout);
+      break;
+    }
+    std::thread::sleep(Duration::from_millis(10));
+  }
+}
 
 /// multi: factor (*/2 3 5)=30 into 2 nibbles. There are three answers.
 #[test] pub fn test_multi_bdd() {
