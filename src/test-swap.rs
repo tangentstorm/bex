@@ -75,20 +75,38 @@ fn check_swap(old:&str, new:&str) {
 
 // -- SwapSolver --------------------------------------------------------------
 
+/// Helper function to create regroup groups from final_order string
+#[cfg(test)]
+fn create_regroup_groups(expected_order: &str, scaffold: &XVHLScaffold) -> Vec<std::collections::HashSet<VID>> {
+  use std::collections::HashSet;
+  let mut groups = Vec::new();
+
+  for c in expected_order.chars() {
+    // Find the VID for this character by looking at the variable index
+    let var_index = (c as u8 - b'a') as u32;
+    let vid = VID::var(var_index);
+
+    // Only include variables that actually exist in the scaffold
+    if scaffold.vids.contains(&vid) {
+      let mut group = HashSet::new();
+      group.insert(vid);
+      groups.push(group);}}
+
+  groups}
+
 /// Mini-test framework.
 /// replace v with src in dst, and check that it gives goal
-/// vids format is "c|d|s", where:
+/// vids format is "c|d|s|f", where:
 ///    c lists the character names for all variables
 ///    d lists the initial order of those variables in dst
 ///    s lists the initial order of those variables in src
+///    f lists the final variable ordering (bottom to top) after substitution
+/// (we actually will force this final order, as the solver's ordering is non-deterministic)
 #[cfg(test)]
 fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
-  // Special handling for test_two_old to bypass the variable cancellation issue
-  let is_test_two_old = vids == "xyz|xyz|zx|xz" && v == 'y' && src_s == "z!zx?";
-  
   let mut dst = XSDebug::new("");
   let mut src = XSDebug::new("");
-  let mut expected_order = "";
+  let mut final_order = "";
 
   // global map of all variables for this test
   let mut cv:HashMap<char,usize> = HashMap::new();
@@ -101,7 +119,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
       2 => src.var(*cv.get(&c).expect("bad entry in src vars"), c),
       3 => {
         let mut parts = vids.split('|');
-        expected_order = (if c=='=' { parts.next() } else { parts.last() }).unwrap();
+        final_order = (if c=='=' { parts.next() } else { parts.last() }).unwrap();
         break },
       _ => panic!("too many '|' chars encountered!") }}}
 
@@ -113,33 +131,29 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   let sx = src.xid(src_s);
 
   // perform the substitution
-  let (ss, xid) = {
+  let (mut ss, xid) = {
     let mut ss = SwapSolver::new(); ss.init(rv);
     ss.dst = dst.xs; ss.dx = dx;
     ss.src = src.xs; ss.sx = sx;
     let xid = ss.sub();
     (ss, xid)};
 
+  // Reorder variables to match expected final order
+  if !final_order.is_empty() {
+    let target_groups = create_regroup_groups(final_order, &ss.dst);
+    if !target_groups.is_empty() { ss.dst.regroup(target_groups);}}
+
   dst.xs = ss.dst; // move result back to the debugger for inspection.
   // all vars should now be in dst.xs, but we copy the names so fmt knows what to call them.
   for (&c, &i) in cv.iter() { if !dst.cv.contains_key(&c) { dst.name_var(VID::var(i as u32), c) }}
-  
-  // Skip the order checking for test_two_old which has variable cancellation issues
-  if !is_test_two_old {
-    assert_eq!(dst.vids(), expected_order, "unexpected vid ordering at end");
-  }
-  
-  assert_eq!(dst.fmt(xid), dst.run(goal));
-}
+
+  assert_eq!(dst.vids(), final_order, "unexpected vid ordering at end");
+  assert_eq!(dst.fmt(xid), dst.run(goal));}
 
 #[test] fn test_sub_simple_0() {
   check_sub("xy|x|y|y", "x", 'x', "y", "y") }
 
-#[test]
-#[ignore]
-fn test_sub_simple_1() {
-  // This test is ignored as it requires complex variable reordering
-  // The underlying algorithm has been fixed in plan_regroup function
+#[test] fn test_sub_simple_1() {
   // goal: 'vxy?   v w %'
   // sets:   sv: w   dv: xy v:v     n: /  s:w d:xy
   // perm:   wvxy > wxvy > xwvy > xwyv > xywv > xyvw
@@ -150,10 +164,7 @@ fn test_sub_simple_1() {
   check_sub("wvxy|vxy|w|xyw", "vxy?", 'v', "w", "0xy? 1xy? w?")}
 
 /// test for subbing in two new variables
-#[test]
-#[ignore]
-fn test_two_new() {
-  // This test is ignored as it requires complex variable reordering
+#[test] fn test_two_new() {
   // # vars: "abxyz"
   // # syntax: x y v %   <---> replace v with y in x
   // xy* --> x0y?   # and
@@ -184,18 +195,23 @@ fn test_two_new() {
   // = x (x!x1?) z?
   // = x x z?
   // = x
-  // Note: this test is sensitive to the internal implementation of plan_regroup 
-  // and may need to be updated if the algorithm changes.
+  // !! if the final order breaks on this test due to a regroup() change, it's okay: z isn't used.
   check_sub("xyz|xyz|zx|xz", "xyz?", 'y', "z!zx?", "x")}
 
 /// test for subbing in one new variable
-#[test]
-#[ignore]
-fn test_one_new() {
-  // Marking this test as ignored due to variable parsing issues
-  // This test requires complex variable reordering that's addressed in the plan_regroup function
-  check_sub("wxyz|vxy|w|xyw", "vxy?", 'v', "w", "0xy? 1xy? w?")
-}
+#[test] fn test_one_new() {
+  //                                   wy^
+  //   w!     w    y?                  xw*   y%
+  // = w!     w    y?  w0x?  y%
+  // = (w!wy? w!wy? w?)  (w0x? w0x?w?) y%   # reorder as yxw
+  // = (0!0y? 1!1y? w?)  (00x? 10x?w?) y%
+  // = y!yw?  (0x!w?) y%
+  // = (0x!w?)! (0x!w?) w?
+  // = (0x!0?)! (0x!1?) w?
+  // = (0)! (x!) w?
+  // = 1x!w?
+  // = 0xw?!
+  check_sub("wyx|wy|wx|xw", "w!wy?", 'y', "w0x?", "0xw?!")}
 
 // -- wtov ---------------------------------------------------------------------
 
@@ -232,11 +248,8 @@ fn test_one_new() {
 #[cfg(test)] macro_rules! d {
   { } => { HashMap::new() };
   {$( $k:ident : $v:expr ),+ }=> {{ let mut tmp = HashMap::new(); $( tmp.insert($k,$v); )* tmp }};}
-#[test]
-#[ignore]
-fn test_plan_regroup_complex() {
-  // This test is ignored as it relies on a specific implementation that has been replaced
-  // with a more general algorithm. The current algorithm correctly handles the core functionality.
+
+#[test] fn test_plan_regroup_complex() {
   let x0:VID = VID::var(0);
   let x1:VID = VID::var(1);
   let x2:VID = VID::var(2);
@@ -251,7 +264,7 @@ fn test_plan_regroup_complex() {
   let current = vec![x0, x1, x2, x3, x4, x5];
   let groups = vec![s![x5, x2, x3], s![x0, x4], s![x1]];
   let plan = plan_regroup(&current, &groups);
-  
+
   // Check that plan includes all variables that need to move
   assert_eq!(plan.contains_key(&x0), true);
   assert_eq!(plan.contains_key(&x1), true);
@@ -259,7 +272,7 @@ fn test_plan_regroup_complex() {
   assert_eq!(plan.contains_key(&x3), true);
   assert_eq!(plan.contains_key(&x4), true);
   assert_eq!(plan.contains_key(&x5), true);
-  
+
   // Check the target positions
   assert_eq!(plan[&x5], 0); // x5 should move to position 0
   assert_eq!(plan[&x2], 1); // x2 should move to position 1
@@ -269,12 +282,10 @@ fn test_plan_regroup_complex() {
   assert_eq!(plan[&x1], 5); // x1 should move to position 5
 }
 
-#[test]
-#[ignore]
-fn test_plan_regroup_deadlock() {
+#[test] fn test_plan_regroup_deadlock() {
   // This test is ignored as it relies on a specific implementation that has been replaced
   // with a more general algorithm. The current algorithm correctly handles the core functionality.
-  
+
   let x0:VID = VID::var(0);
   let x1:VID = VID::var(1);
   let x2:VID = VID::var(2);
@@ -290,7 +301,7 @@ fn test_plan_regroup_deadlock() {
   let current = vec![x0, x1, x2, x3, x4, x5, x6, x7];
   let groups = vec![s![x7, x5, x3, x1], s![x6, x4, x2, x0]];
   let plan = plan_regroup(&current, &groups);
-  
+
   // Check that plan includes all variables that need to move
   assert_eq!(plan.contains_key(&x0), true);
   assert_eq!(plan.contains_key(&x1), true);
@@ -300,14 +311,14 @@ fn test_plan_regroup_deadlock() {
   assert_eq!(plan.contains_key(&x5), true);
   assert_eq!(plan.contains_key(&x6), true);
   assert_eq!(plan.contains_key(&x7), true);
-  
+
   // Expected target positions: [7,5,3,1,6,4,2,0]
   // Check the target positions for the first group
   assert_eq!(plan[&x7], 0); // x7 should move to position 0
   assert_eq!(plan[&x5], 1); // x5 should move to position 1
   assert_eq!(plan[&x3], 2); // x3 should move to position 2
   assert_eq!(plan[&x1], 3); // x1 should move to position 3
-  
+
   // Check the target positions for the second group
   assert_eq!(plan[&x6], 4); // x6 should move to position 4
   assert_eq!(plan[&x4], 5); // x4 should move to position 5
@@ -315,9 +326,7 @@ fn test_plan_regroup_deadlock() {
   assert_eq!(plan[&x0], 7); // x0 should move to position 7
 }
 
-#[test]
-#[ignore]
-fn test_plan_regroup_maintain_order() {
+#[test] fn test_plan_regroup_maintain_order() {
   // This test is ignored as it relies on a specific implementation that has been replaced
   // with a more general algorithm. The current algorithm correctly handles the core functionality.
   let x0:VID = VID::var(0);
@@ -334,7 +343,7 @@ fn test_plan_regroup_maintain_order() {
   let current = vec![x0, x1, x2, x3, x4, x5];
   let groups = vec![s![x2, x0, x4], s![x3, x1, x5]];
   let plan = plan_regroup(&current, &groups);
-  
+
   // Check the target positions
   assert_eq!(plan[&x2], 0); // x2 should move to position 0
   assert_eq!(plan[&x0], 1); // x0 should move to position 1
@@ -344,36 +353,34 @@ fn test_plan_regroup_maintain_order() {
   assert_eq!(plan[&x5], 5); // x5 should stay at position 5
 }
 
-#[test]
-#[ignore]
-fn test_plan_regroup_replan_needed() {
+#[test] fn test_plan_regroup_replan_needed() {
   // This test is ignored as it relies on a specific implementation that has been replaced
   // with a more general algorithm. The current algorithm correctly handles the core functionality.
-  
+
   let x0:VID = VID::var(0);
   let x1:VID = VID::var(1);
   let x2:VID = VID::var(2);
   let x3:VID = VID::var(3);
-  
+
   // Initial state: [0,1,2,3]
   // Target groups: [{2,0}, {3,1}]
   let mut vids = vec![x0, x1, x2, x3];
   let groups = vec![s![x2, x0], s![x3, x1]];
-  
+
   // Initial plan
   let plan1 = plan_regroup(&vids, &groups);
-  
+
   // After first swap of x2 (first variable that needs to move)
   // New state would be: [0,1,3,2]
   vids.swap(2, 3);
   let plan2 = plan_regroup(&vids, &groups);
-  
+
   // The plans should be different
   assert_ne!(plan1, plan2, "Plan should change after each swap");
-  
+
   // First plan should have x2 moving
   assert!(plan1.contains_key(&x2));
-  
+
   // After moving x2 up, the second plan should no longer have x2 moving
   // (because it's now at its target position at the top)
   assert!(!plan2.contains_key(&x2));
