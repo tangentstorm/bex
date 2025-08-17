@@ -8,3 +8,9 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 bex = { path = ".." }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

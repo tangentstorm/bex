@@ -27,6 +27,10 @@ add_custom_command(
 
 add_custom_target(bex-capi-header ALL DEPENDS ${bex_capi_h})
 
+# Set C++ optimization flags
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -DNDEBUG -ffast-math")
+set(CMAKE_C_FLAGS_RELEASE "-O3 -march=native -DNDEBUG -ffast-math")
+
 corrosion_import_crate(MANIFEST_PATH Cargo.toml CRATES bex-ffi)
 
 add_dependencies(bex_ffi bex-capi-header)
