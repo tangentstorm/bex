@@ -1,0 +1,4 @@
+language = "C"
+pragma_once = true
+sys_includes = ["stdint.h", "stdbool.h"]
+cpp_compat = true

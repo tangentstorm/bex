@@ -36,7 +36,7 @@ path = "examples/solve/factor-p.rs"
 slowtests = []
 
 [workspace]
-members = ["py", "api"]
+members = ["py", "api", "ffi"]
 
 [dependencies]
 log = { version = "0.4", features = ["max_level_debug"]}
