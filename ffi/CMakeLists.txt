@@ -9,6 +9,9 @@ FetchContent_Declare(
   GIT_TAG v0.5.0)
 FetchContent_MakeAvailable(corrosion)
 
+set(BEX_CARGO_PROFILE "release" CACHE STRING "Sets the build profile used for Rust dependencies (`dev`, `release`, or `release-with-debug`)")
+set_property(CACHE BEX_CARGO_PROFILE PROPERTY STRINGS "dev" "release" "release-with-debug")
+
 find_program(CBINDGEN_EXECUTABLE
     NAMES cbindgen
     DOC "Requires cbindgen to generate the bex headers"
@@ -31,7 +34,7 @@ add_custom_target(bex-capi-header ALL DEPENDS ${bex_capi_h})
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -march=native -DNDEBUG -ffast-math")
 set(CMAKE_C_FLAGS_RELEASE "-O3 -march=native -DNDEBUG -ffast-math")
 
-corrosion_import_crate(MANIFEST_PATH Cargo.toml CRATES bex-ffi)
+corrosion_import_crate(MANIFEST_PATH Cargo.toml CRATES bex-ffi PROFILE ${BEX_CARGO_PROFILE})
 
 add_dependencies(bex_ffi bex-capi-header)
 target_include_directories(bex_ffi INTERFACE ${bex_capi_include})
