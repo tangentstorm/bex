@@ -38,6 +38,12 @@ slowtests = []
 [workspace]
 members = ["py", "api", "ffi"]
 
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
 [dependencies]
 log = { version = "0.4", features = ["max_level_debug"]}
 simplelog = "0.5"
