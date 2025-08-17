@@ -122,6 +122,12 @@ impl Base for ANFBase {
   fn or(&mut self, x:NID, y:NID)->NID {
     if let Some(nid) = simp::or(x,y) { nid }
     else { expr![self, ((x & y) ^ (x ^ y))] }}
+
+  fn ite(&mut self, i:NID, t:NID, e:NID)->NID {
+    if let Some(nid) = simp::ite(i,t,e) { nid }
+    else {
+      let not_i = !i;
+      expr![self, ((i & t) ^ (not_i & e))] }}
 
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID {
     let cv = ctx.vid();

@@ -24,3 +24,11 @@ pub fn or(x:NID, y:NID)->Option<NID> {
   else if x == y { Some(x) }
   else if x == !y { Some(I) }
   else { None }}
+
+pub fn ite(i:NID, t:NID, e:NID)->Option<NID> {
+  if i == I { Some(t) }
+  else if i == O { Some(e) }
+  else if t == e { Some(t) }
+  else if t == I && e == O { Some(i) }
+  else if t == O && e == I { Some(!i) }
+  else { None }}

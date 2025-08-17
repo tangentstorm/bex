@@ -2,6 +2,11 @@
 
 Bex is a rust crate for working with binary expressions.
 
+## 0.4.0 (upcoming)
+
+- add C ffi for use with https://github.com/SSoelvsten/bdd-benchmark (bex adapter is at https://github.com/tangentforks/bdd-benchmark for now)
+- add `ite` to the Base trait
+
 ## 0.3.0 (2025-02-16)
 
 - Greatly expanded and fleshed out the python integration, including support for [@tulip-control/dd](https://github.com/tulip-control/dd)

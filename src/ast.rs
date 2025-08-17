@@ -232,6 +232,11 @@ impl Base for RawASTBase {
       let (lo, hi) = if x<y {(x,y)} else {(y,x)};
       self.nid(ops::vel(lo, hi)) }}
 
+  fn ite(&mut self, i:NID, t:NID, e:NID)->NID {
+    if let Some(nid) = simp::ite(i,t,e) { nid }
+    else {
+      self.nid(ops::ite(i, t, e)) }}
+
   fn sub(&mut self, _v:vid::VID, _n:NID, _ctx:NID)->NID { todo!("ast::sub") }
 
   fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
@@ -307,7 +312,7 @@ impl Default for ASTBase {
     fn default() -> Self {Self::new()}}
 
 impl Base for ASTBase {
-  inherit![when_hi, when_lo, and, xor, or, def, tag, get, sub, dot ];
+  inherit![when_hi, when_lo, and, xor, or, ite, def, tag, get, sub, dot ];
   fn new()->Self { ASTBase::new() }}
 
 impl ASTBase {

@@ -363,6 +363,7 @@ impl Base for BddBase {
   fn and(&mut self, x:NID, y:NID)->NID { self.ite(x, y, O) }
   fn xor(&mut self, x:NID, y:NID)->NID { self.ite(x, !y, y) }
   fn  or(&mut self, x:NID, y:NID)->NID { self.ite(x, I, y) }
+  fn ite(&mut self, i:NID, t:NID, e:NID)->NID { self.ite(i, t, e) }
 
   /// replace var v with n in ctx
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID {

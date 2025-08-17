@@ -60,7 +60,11 @@ impl<B:Base> SubSolver for B {
           ops::XOR => self.xor(x[0], x[1]),
           ops::VEL => self.or(x[0], x[1]),
           _ => panic!("don't know how to translate {:?}", ops)}}
-        else { todo!("SubSolver impl for Base can only handle simple dyadic ops for now.") }};
+        else if x.len() == 4 {
+        match x[3].to_fun().unwrap() {
+          ops::ITE => self.ite(x[0], x[1], x[2]),
+          _ => panic!("don't know how to translate 4-ary op {:?}", ops)}}
+        else { todo!("SubSolver impl for Base can only handle simple dyadic and ITE ops for now.") }};
       //_ => { todo!("SubSolver impl for Base can only handle RPN for now")}};
     self.sub(v, def, ctx)}
 

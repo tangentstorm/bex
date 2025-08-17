@@ -27,6 +27,9 @@ pub trait Base {
   /// Return a `NID` representing the logical OR of `x` and `y`.
   fn or(&mut self, x:NID, y:NID)->NID;
 
+  /// Return a `NID` representing IF `i` THEN `t` ELSE `e`.
+  fn ite(&mut self, i:NID, t:NID, e:NID)->NID;
+
   /// Assign a name to variable `v`, and return its `NID`.
   fn def(&mut self, s:String, v:VID)->NID;
 
@@ -115,6 +118,7 @@ impl<T:Base> GraphViz for T {
   (@fn and) =>      { #[inline] fn and(&mut self, x:NID, y:NID)->NID { self.base.and(x, y) }};
   (@fn xor) =>      { #[inline] fn xor(&mut self, x:NID, y:NID)->NID { self.base.xor(x, y) }};
   (@fn or) =>       { #[inline] fn or(&mut self, x:NID, y:NID)->NID  { self.base.or(x, y) }};
+  (@fn ite) =>      { #[inline] fn ite(&mut self, i:NID, t:NID, e:NID)->NID { self.base.ite(i, t, e) }};
   (@fn def) =>      { #[inline] fn def(&mut self, s:String, i:VID)->NID { self.base.def(s, i) }};
   (@fn tag) =>      { #[inline] fn tag(&mut self, n:NID, s:String)->NID { self.base.tag(n, s) }};
   (@fn get) =>      { #[inline] fn get(&self, s:&str)->Option<NID> { self.base.get(s) }};
@@ -127,7 +131,7 @@ impl<T:Base> GraphViz for T {
 pub struct Simplify<T:Base> { pub base: T }
 
 impl<T:Base> Base for Simplify<T> {
-  inherit![ new, when_hi, when_lo, xor, or, def, tag, get, sub, dot ];
+  inherit![ new, when_hi, when_lo, xor, or, ite, def, tag, get, sub, dot ];
   fn and(&mut self, x:NID, y:NID)->NID {
     if let Some(nid) = simp::and(x,y) { nid }
     else {

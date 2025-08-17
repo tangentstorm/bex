@@ -140,6 +140,9 @@ pub fn xor<X:ToNID,Y:ToNID>(x:X,y:Y)->Ops { rpn(&[x.to_nid(), y.to_nid(), XOR.to
 /// construct the expression `x VEL y` ("x or y")
 pub fn vel<X:ToNID,Y:ToNID>(x:X,y:Y)->Ops { rpn(&[x.to_nid(), y.to_nid(), VEL.to_nid()]) }
 
+/// construct the expression `if i then t else e`
+pub fn ite<I:ToNID,T:ToNID,E:ToNID>(i:I,t:T,e:E)->Ops { rpn(&[i.to_nid(), t.to_nid(), e.to_nid(), ITE.to_nid()]) }
+
 /// construct the expression `x IMP y` ("x implies y")
 pub fn imp<X:ToNID,Y:ToNID>(x:X,y:Y)->Ops { rpn(&[x.to_nid(), y.to_nid(), IMP.to_nid()]) }
 
