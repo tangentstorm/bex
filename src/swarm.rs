@@ -146,7 +146,8 @@ impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+De
     me.start(n); me }
 
   pub fn start(&mut self, num_workers:usize) {
-    let n = if num_workers==0 { num_cpus::get() } else { num_workers };
+    // leave one core free for the main thread
+    let n = if num_workers==0 { num_cpus::get()-1 } else { num_workers };
     for _ in 0..n { self.spawn(); }}
 
   fn spawn(&mut self)->WID {
