@@ -151,7 +151,13 @@ impl XVHLScaffold {
       println!("^{:03}: {} {:?} {:?} {}", i, x.v, x.hi, x.lo, rcs)}
     println!("@/dump");}
 
-  /// validate that this scaffold is well formed. (this is for debugging)
+
+  /// validate that this scaffold is well formed. (disabled unless cfg(test))
+  #[cfg(not(test))]
+  pub fn validate(&self, _msg:&str) {}
+
+  /// validate that this scaffold is well formed. (disabled unless cfg(test))
+  #[cfg(test)]
   pub fn validate(&self, msg:&str) {
     if let Err(e) = self.is_valid() {
       println!("==== ERROR: VALIDATION FAILED. ====");
@@ -162,6 +168,7 @@ impl XVHLScaffold {
       panic!("{}", e)}
     else { SNAPSHOT.with(|s| *s.borrow_mut() = self.clone())}}
 
+  #[cfg(test)]
   fn is_valid(&self)->std::result::Result<(), String> {
 
     // vids must be unique:
