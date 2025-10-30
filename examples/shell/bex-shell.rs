@@ -91,8 +91,8 @@ fn repl(base:&mut ASTBase) {
         //todo "save" => base.save("saved.bdd").expect("failed to save bdd"),
         //todo "load" => base.load("saved.bdd").expect("failed to load bdd"),
         // bdd commands
-        "i"|"I" => data.push(nid::I),
-        "o"|"O" => data.push(nid::O),
+        "I" => data.push(nid::I),
+        "O" => data.push(nid::O),
         _ => {
           // define a new binding
           if word.starts_with(':') {
