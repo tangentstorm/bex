@@ -11,7 +11,7 @@
   let z = xsd.ite(w,y,x);
   assert_eq!(xsd.fmt(z), "abv? acv? w? "); }
 
-// -- XVHLScaffold ------------------------------------------------------------
+// -- VhlScaffold ------------------------------------------------------------
 
 #[cfg(test)]
 fn check_swap(old:&str, new:&str) {
@@ -29,7 +29,7 @@ fn check_swap(old:&str, new:&str) {
 #[test] fn test_tbl() {
   let mut xsd = XSDebug::new("abcd");
   let x = xsd.xid("a 1 b? 0 c?");
-  let o = XID_O; let i = XID_I;
+  let o = crate::nid::O; let i = crate::nid::I;
   assert_eq!(xsd.xs.tbl(x, None), vec![o,i,i,i, o,o,o,o]);
   let a = xsd.xid("a");
   assert_eq!(xsd.xs.tbl(x, Some(VID::var(0))), vec![a,i,o,o]);
@@ -41,7 +41,7 @@ fn check_swap(old:&str, new:&str) {
 #[test] fn test_tbl_inv() {
   let mut xsd = XSDebug::new("abcd");
   let x = xsd.xid("a 1 b? 0 c?");
-  let o = XID_O; let i = XID_I;
+  let o = crate::nid::O; let i = crate::nid::I;
   assert_eq!(xsd.xs.tbl(!x, None), vec![i,o,o,o, i,i,i,i]);
   let a = xsd.xid("a");
   assert_eq!(xsd.xs.tbl(!x, Some(VID::var(0))), vec![!a,o,i,i]);
@@ -54,7 +54,7 @@ fn check_swap(old:&str, new:&str) {
   // this bdd skips over the 'b' row
   let mut xsd = XSDebug::new("abc");
   let x = xsd.xid("a a! c?");
-  let o = XID_O; let i = XID_I;
+  let o = crate::nid::O; let i = crate::nid::I;
   assert_eq!(xsd.xs.tbl(x, None), vec![o,i,o,i, i,o,i,o]);}
 
 #[test] fn test_untbl() {
@@ -190,11 +190,11 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
 // -- wtov ---------------------------------------------------------------------
 
 #[test] fn check_wtov_simple() {
-  let v = XID{ x: 1 };
-  let w = XID{ x: 2 };
-  let io = XHiLo{ hi: XID_I, lo: XID_O };
-  let mut ru = XVHLRow::new(); ru.hm.insert(io, IxRc{ ix:v, irc: 1, erc:0 });
-  let mut rd = XVHLRow::new(); rd.hm.insert(io, IxRc{ ix:w, irc: 1, erc:0 });
+  let v = NID::ixn(1);
+  let w = NID::ixn(2);
+  let io = crate::vhl::HiLo::new(nid::I, nid::O);
+  let mut ru = VhlRow::new(); ru.hm.insert(io, IxRc{ ix:v, irc: 1, erc:0 });
+  let mut rd = VhlRow::new(); rd.hm.insert(io, IxRc{ ix:w, irc: 1, erc:0 });
   let mut worker = SwapWorker::new(WID::default());
   let res = worker.set_ru(VID::var(0), ru).set_rd(VID::var(1), rd).gather_umovs();
   assert_eq!(0, res.len());}
@@ -204,14 +204,15 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   // so refcount of u should drop by 1.
   // TODO: assert that the refcount of u actually drops by 1.
   let mut xsd = XSDebug::new("tuvw");
-  let top:XID = xsd.xid("utv? uu!v? w?");
+  let top = xsd.xid("utv? uu!v? w?");
   let v = xsd.cv[&'v'];
   xsd.xs.swap(v);
   assert_eq!(xsd.fmt(top), "utu!w? v? ")}
 
 #[test] fn test_fun_tbl() {
-  use crate::ops; let o = XID_O; let i = XID_I;
-  assert_eq!(fun_tbl(ops::AND.to_nid()), vec![o,o,o,i])}
+  use crate::ops; let o = crate::nid::O; let i = crate::nid::I;
+  let result: Vec<NID> = fun_tbl(ops::AND.to_nid()).into_iter().map(x2n).collect();
+  assert_eq!(result, vec![o,o,o,i])}
 
 
 // -- SwapSolver regroup tests ------------------------------------------------

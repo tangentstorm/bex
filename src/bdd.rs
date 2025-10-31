@@ -221,22 +221,21 @@ impl BddBase {
 
   /// Converts the BDD to a scaffold representation.
   /// Walks the BDD bottom-up and maps each NID to an XID using the provided scaffold.
-  /// Returns a Vec<XID> corresponding to the input NIDs.
-  pub fn copy_to_scaffold(&mut self, scaffold: &mut crate::swap::XVHLScaffold, nids: &[NID]) -> Vec<crate::swap::XID> {
+  /// Returns a Vec<NID> corresponding to the input NIDs.
+  pub fn copy_to_scaffold(&mut self, scaffold: &mut crate::swap::VhlScaffold, nids: &[NID]) -> Vec<NID> {
     use std::collections::HashMap;
-    use crate::swap::{XID, XID_I, XID_O};
     let mut res = Vec::new();
-    let mut n2x: HashMap<NID, XID> = HashMap::new();
-    n2x.insert(I, XID_I);
-    n2x.insert(O, XID_O);
+    let mut n2n: HashMap<NID, NID> = HashMap::new();
+    n2n.insert(I, crate::nid::I);
+    n2n.insert(O, crate::nid::O);
     for &nid in nids {
       self.walk_up(nid, &mut |nid, v, h, l| {
-        let hi:XID = n2x[&h];
-        let lo:XID = n2x[&l];
-        n2x.insert(nid, scaffold.add(v, hi, lo, false)); });
+        let hi:NID = n2n[&h];
+        let lo:NID = n2n[&l];
+        n2n.insert(nid, scaffold.add(v, hi, lo, false)); });
       // add an external reference to prevent garbage collection, and remember the mapping
       let (v, hi, lo) = self.get_vhl(nid);
-      res.push(scaffold.add(v, n2x[&hi], n2x[&lo], true)); }
+      res.push(scaffold.add(v, n2n[&hi], n2n[&lo], true)); }
     res }
 
   /// Reorder the BDD.
@@ -252,16 +251,16 @@ impl BddBase {
     if unique_vids.len() != expected_count {
       panic!("BddBase::reorder: vids should be a complete permutation up to the top vid"); }
     // Copy the current BDD to a scaffold.
-    let mut scaffold = crate::swap::XVHLScaffold::new();
+    let mut scaffold = crate::swap::VhlScaffold::new();
     for i in 0..=max_vid.var_ix() { scaffold.push(VID::var(i as u32)); }
-    let xids = self.copy_to_scaffold(&mut scaffold, nids);
+    let scaffold_nids = self.copy_to_scaffold(&mut scaffold, nids);
     // Create one group per vid.
     let groups: Vec<HashSet<VID>> = vids.iter().map(|&v| {
         let mut group = HashSet::new(); group.insert(v); group
     }).collect();
     scaffold.regroup(groups);
     if gc { self.reset(); }
-    scaffold.copy_to_bdd(self, &xids)}
+    scaffold.copy_to_bdd(self, &scaffold_nids)}
 
   /// use the FORCE algorithm to reorder the BDD
   /// FORCE: A Fast and Easy-To-Implement Variable-Ordering Heuristic
