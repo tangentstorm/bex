@@ -108,7 +108,7 @@ impl<T:Base> GraphViz for T {
 /// // example do-nothing decorator
 /// pub struct Decorated<T:Base> { base: T }
 /// impl<T:Base> Base for Decorated<T> {
-///   inherit![ new, when_hi, when_lo, and, xor, or, def, tag, get, sub, dot ]; }
+///   inherit![ new, when_hi, when_lo, and, xor, or, ite, def, tag, get, sub, dot ]; }
 /// ```
 #[macro_export] macro_rules! inherit {
   ( $($i:ident),* ) => { $( inherit!(@fn $i); )* };
