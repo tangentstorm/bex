@@ -1,11 +1,42 @@
 //! Swap Solver
+//!
 //! This solver attempts to optimize the BDD concept for substitution solving.
 //! It adjusts the input variable ordering by swapping adjacent inputs until the
 //! one to be replaced next is at the top of the BDD. The actual replacement work
 //! at each step then only involves the top three rows.
+//!
+//! ## Design: Index-based Node IDs
+//!
+//! In a regular NID, the branch variable is embedded directly in the ID for easy
+//! comparisons. The working assumption is always that the variable refers to
+//! the level of the tree, and that the levels are numbered in ascending order.
+//!
+//! In contrast, the swap solver works by shuffling the levels so that the next
+//! substitution happens at the top, where there are only a small number of nodes.
+//!
+//! When two adjacent levels are swapped, nodes on the old top level that refer to
+//! the old bottom level are rewritten as nodes on the new top level. But nodes on
+//! the old top level that do not refer to the bottom level remain on the old top
+//! (new bottom) level. So some of the nodes with the old top branch variable change
+//! their variable, and some do not.
+//!
+//! NIDs are designed to optimize cases where comparing branch variables are important
+//! and so the variable is encoded directly in the reference to avoid frequent lookups.
+//! For the swap solver, however, this encoding would force us to rewrite the nids in
+//! every layer above each swap, and references held outside the base would quickly
+//! fall out of sync.
+//!
+//! So instead, the swap solver uses index-only NIDs via `NID::ixn()`. These are
+//! simple indices into an array with no variable information embedded. If we want to
+//! know the branch variable for such a node, we simply look it up by index in a
+//! central vector (the `VhlScaffold`).
+//!
+//! We could use pointers instead of array indices, but using simple flat indices
+//! into an array of Vhls allows this representation to persist on disk.
+
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::{fmt, hash::Hash};
+use std::hash::Hash;
 use crate::base::GraphViz;
 use crate::vid::{VID, NOV, TOP};
 use crate::{solve::SubSolver, reg::Reg, nid::NID, ops::Ops};
@@ -13,86 +44,13 @@ use crate::swarm::{Swarm,Worker,QID,SwarmCmd,WID};
 use crate::{nid, BddBase, Fun};
 use crate::vhl::{Vhl, HiLo};
 
-/// XID: An index-based unique identifier for nodes.
-///
-/// In a regular NID, the branch variable is embedded directly in the ID for easy
-/// comparisons. The working assumption is always that the variable refers to
-/// the level of the tree, and that the levels are numbered in ascending order.
-///
-/// In contrast, the swap solver works by shuffling the levels so that the next
-/// substitution happens at the top, where there are only a small number of nodes.
-///
-/// When two adjacent levels are swapped, nodes on the old top level that refer to
-/// the old bottom level are rewritten as nodes on the new top level. But nodes on
-/// the old top level that do not refer to the bottom level remain on the old top
-/// (new bottom) level. So some of the nodes with the old top branch variable change
-/// their variable, and some do not.
-///
-/// NIDs are designed to optimize cases where comparing branch variables are important
-/// and so the variable is encoded directly in the reference to avoid frequent lookups.
-/// For the swap solver, however, this encoding would force us to rewrite the nids in
-/// every layer above each swap, and references held outside the base would quickly
-/// fall out of sync.
-///
-/// So instead, XIDs are simple indices into an array (XID=index ID). If we want to
-/// know the branch variable for a XID, we simply look it up by index in a central
-/// vector.
-///
-/// We could use pointers instead of array indices, but I want this to be a representation
-/// that can persist on disk, so a simple flat index into an array of Vhls is fine for me.
-
-#[derive(PartialEq, Eq, Hash, Clone, Copy)]
-pub struct XID { x: i64 }
-impl fmt::Debug for XID {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    if *self == XID_O { write!(f, "XO")}
-    else if *self == XID_I { write!(f, "XI")}
-    else { write!(f, "{}#{}", if self.is_inv() { "!" } else {""}, self.raw().x)}}}
-pub const XID_O:XID = XID { x: 0 };
-pub const XID_I:XID = XID { x: !0 };
-impl XID {
-  pub fn ix(&self)->usize { self.raw().x as usize }
-  fn raw(&self)->XID { if self.x >= 0 { *self } else { !*self }}
-  pub fn is_inv(&self)->bool { self.x<0 }
-  fn is_const(&self)->bool { *self == XID_O || *self == XID_I }
-  pub fn from_nid(x:NID)->Self {
-    if x.is_lit() { panic!("don't know how to convert lit nid -> xid")}
-    if x.vid()!=NOV { panic!("don't know how to convert nid.var(v!=NOV) -> xid")}
-    n2x(x) }
-  pub fn to_nid(self)->NID {
-    x2n(self) }
-  fn to_bool(self)->bool {
-    if self.is_const() { self == XID_I }
-    else { panic!("attempted to convert non-constant XID->bool") }}
-  fn inv(&self) -> XID { XID { x: !self.x } }}
-impl std::ops::Not for XID { type Output = XID; fn not(self)->XID { self.inv() }}
-
-#[inline] fn n2x(n: NID)->XID {
-  if n == nid::O { return XID_O }
-  if n == nid::I { return XID_I }
-  if !n.vid().is_nov() { panic!("n2x expects NOV nodes, got {:?}", n) }
-  let raw = NID::raw(n);
-  let xid = XID{ x: raw.idx() as i64 };
-  if n.is_inv() { !xid } else { xid }}
-
-#[inline] fn x2n(x: XID)->NID {
-  if x == XID_O { return nid::O }
-  if x == XID_I { return nid::I }
-  let raw = NID::ixn(x.ix());
-  if x.is_inv() { !raw } else { raw }}
-
-#[inline] fn hilo_from_xids(hi:XID, lo:XID)->HiLo { HiLo::new(x2n(hi), x2n(lo)) }
-#[inline] fn hilo_to_xids(hl:HiLo)->(XID, XID) { (n2x(hl.hi), n2x(hl.lo)) }
-
-// XHiLo and XVHL removed - now using HiLo and Vhl from vhl module directly
-
 /// Extension trait for Vhl to add swap-specific methods
 trait VhlExt {
   fn is_var(&self)->bool;
 }
 
 impl VhlExt for Vhl {
-  fn is_var(&self)->bool { self.v.is_var() && self.hi == x2n(XID_I) && self.lo == x2n(XID_O) }
+  fn is_var(&self)->bool { self.v.is_var() && self.hi == nid::I && self.lo == nid::O }
 }
 
 /// Dummy value to stick into vhls[0]
@@ -123,8 +81,8 @@ We need to map:
 struct VhlRow { hm: HashMap<HiLo, IxRc> }
 impl VhlRow {
   fn new()->Self {VhlRow{ hm: HashMap::new() }}
-  /// build a reverse index, mapping of xids to hilo pairs
-  fn xid_map(&self)->HashMap<XID,HiLo> { self.hm.iter().map(|(hl,ixrc)|(n2x(ixrc.ix),*hl)).collect() }}
+  /// build a reverse index, mapping of nids to hilo pairs
+  fn xid_map(&self)->HashMap<NID,HiLo> { self.hm.iter().map(|(hl,ixrc)|(ixrc.ix,*hl)).collect() }}
 
 /// The scaffold itself contains the master list of records (vhls) and the per-row index
 #[derive(Clone)]
@@ -137,7 +95,7 @@ pub struct VhlScaffold {
   /// tracks rows that are locked during the distributed regroup() operation
   locked: HashSet<VID>,
   /// tracks refcount changes that are pending for locked rows ("deferred refcount delta")
-  drcd: HashMap<VID,HashMap<XID, i64>> }
+  drcd: HashMap<VID,HashMap<NID, i64>> }
 
 // snapshot used for debugging
 thread_local! { static SNAPSHOT : RefCell<VhlScaffold> = RefCell::new(VhlScaffold::new()) }
@@ -161,7 +119,7 @@ impl VhlScaffold {
       else if self.locked.contains(&x.v) { "[locked]".to_string() } // can't get rc for locked rows
       else {
         let ixrc = self.rows[&x.v].hm.get(&x.hilo()).unwrap();
-        assert_eq!(n2x(ixrc.ix).x, i as i64);
+        assert_eq!(ixrc.ix.idx(), i);
         format!("(i:{} e:{})",ixrc.irc, ixrc.erc) };
       println!("^{:03}: {} {:?} {:?} {}", i, x.v, x.hi, x.lo, rcs)}
     println!("@/dump");}
@@ -192,7 +150,7 @@ impl VhlScaffold {
     if vids.len()!=self.rows.len()+self.locked.len() { return Err("vids and rows should have the same len()".to_string()) }
     vids.insert(NOV, -1);
 
-    let mut rc: HashMap<XID, usize> = HashMap::new();
+    let mut rc: HashMap<NID, usize> = HashMap::new();
     let mut seen : HashMap<Vhl,usize> = HashMap::new();
     // validate the rows:
     for (i, &x) in self.vhls.iter().enumerate() {
@@ -202,17 +160,17 @@ impl VhlScaffold {
         // the vid should be in the scaffold, or cleared out to indicate a blank row.
         if !vids.contains_key(&x.v) { return Err(format!("invalid v for vhls[{}]: {}", i, x.v))}
         // the lo branch should not be inverted.
-        if n2x(x.lo).is_inv() {return Err(format!("found inverted lo branch in vhls[{}]: {:?}", i, x))}
+        if x.lo.is_inv() {return Err(format!("found inverted lo branch in vhls[{}]: {:?}", i, x))}
 
         // the lo branch should be different from the hi branch
         if x.lo==x.hi { return Err(format!("unmerged branches in vhl[{}]: {:?}", i, x)) }
 
-        let hi = self.get(NID::raw(x.hi)).expect("hi branch points nowhere");
-        let lo = self.get(NID::raw(x.lo)).expect("lo branch points nowhere");
+        let hi = self.get(x.hi.raw()).expect("hi branch points nowhere");
+        let lo = self.get(x.lo.raw()).expect("lo branch points nowhere");
 
         if !self.locked.contains(&x.v) {
-          if hi.v == NOV && n2x(x.hi).raw() != XID_O { return Err(format!("hi branch to garbage-collected node {:?} @vhl[{}]",n2x(x.hi), i))}
-          if lo.v == NOV && n2x(x.lo).raw() != XID_O { return Err(format!("lo branch to garbage-collected node {:?} @vhl[{}]",n2x(x.lo), i))}}
+          if hi.v == NOV && x.hi.raw() != nid::O { return Err(format!("hi branch to garbage-collected node {:?} @vhl[{}]", x.hi, i))}
+          if lo.v == NOV && x.lo.raw() != nid::O { return Err(format!("lo branch to garbage-collected node {:?} @vhl[{}]", x.lo, i))}}
 
         // the hi and lo branches should point "downward"
         if vids[&lo.v] >= vids[&x.v] { return Err(format!("upward lo branch @vhl[{}]: {:?}", i, x))}
@@ -224,44 +182,42 @@ impl VhlScaffold {
 
         // there should be a hashmap entry pointing back to the item (but we can only check for unlocked rows):
         if !self.locked.contains(&x.v) {
-          if let Some(ixrc) = self.rows[&x.v].hm.get(&hilo_from_xids(n2x(x.hi), n2x(x.lo))) {
-            let ix = n2x(ixrc.ix).raw().x as usize;
-            if ix!=i {return Err(format!("hashmap stored wrong index ({:?}) for vhl[{}]: {:?} ", n2x(ixrc.ix), i, x))}}
+          if let Some(ixrc) = self.rows[&x.v].hm.get(&HiLo::new(x.hi, x.lo)) {
+            let ix = ixrc.ix.idx();
+            if ix!=i {return Err(format!("hashmap stored wrong index ({:?}) for vhl[{}]: {:?} ", ixrc.ix, i, x))}}
           else { return Err(format!("no hashmap reference to vhl[{}]: {:?}", i, x)) }}
 
         // update ref counts
-        *rc.entry(n2x(x.hi).raw()).or_insert(0)+=1;
-        *rc.entry(n2x(x.lo).raw()).or_insert(0)+=1; }}
+        *rc.entry(x.hi.raw()).or_insert(0)+=1;
+        *rc.entry(x.lo.raw()).or_insert(0)+=1; }}
 
       // if we are running this in the middle of a regroup(), we may have deferred refcounts.
-      let mut drcd : HashMap::<XID,i64> = HashMap::new();
+      let mut drcd : HashMap::<NID,i64> = HashMap::new();
       self.drcd.iter().for_each(|(_, hm)| {
-        for (xid, drc) in hm {
-          *drcd.entry(xid.raw()).or_insert(0) += drc; }});
+        for (nid, drc) in hm {
+          *drcd.entry(nid.raw()).or_insert(0) += drc; }});
 
       // check internal refcounts vs the ones we just calculated
       for (_v, row) in self.rows.iter() {
         for (_hl, ixrc) in row.hm.iter() {
-          let xrc = *rc.get(&n2x(ixrc.ix).raw()).unwrap_or(&0) as i64;
-          let drc = *drcd.get(&n2x(ixrc.ix).raw()).unwrap_or(&0);
+          let xrc = *rc.get(&ixrc.ix.raw()).unwrap_or(&0) as i64;
+          let drc = *drcd.get(&ixrc.ix.raw()).unwrap_or(&0);
           // *subtract* drc from expected count because those changes haven't happened yet.
           let expect = (xrc - drc) as usize;
           if ixrc.irc != expect {
-            return Err(format!("refcount was wrong for xid: {:?} (expected {}-{}={}, got {})",
-               n2x(ixrc.ix), xrc, drc, expect, ixrc.irc)) }}}
+            return Err(format!("refcount was wrong for nid: {:?} (expected {}-{}={}, got {})",
+               ixrc.ix, xrc, drc, expect, ixrc.irc)) }}}
       Ok(())}
 
   pub fn get_ixrc(&self, n:NID)->Option<&IxRc> {
-    let x = n2x(n);
-    let Vhl{ v, hi, lo } = self.vhls[x.ix()];
-    self.rows[&v].hm.get(&hilo_from_xids(n2x(hi), n2x(lo))) }
+    let Vhl{ v, hi, lo } = self.vhls[n.idx()];
+    self.rows[&v].hm.get(&HiLo::new(hi, lo)) }
   pub fn del_node(&mut self, n:NID) {
-    let x = n2x(n);
-    let Vhl{ v, hi, lo } = self.vhls[x.ix()];
-    self.add_ref_ix_or_defer(n2x(hi), -1);
-    self.add_ref_ix_or_defer(n2x(lo), -1);
-    self.vhls[x.ix()] = VHL_O;
-    self.rows.get_mut(&v).unwrap().hm.remove(&hilo_from_xids(n2x(hi), n2x(lo))); }
+    let Vhl{ v, hi, lo } = self.vhls[n.idx()];
+    self.add_ref_ix_or_defer(hi, -1);
+    self.add_ref_ix_or_defer(lo, -1);
+    self.vhls[n.idx()] = VHL_O;
+    self.rows.get_mut(&v).unwrap().hm.remove(&HiLo::new(hi, lo)); }
   pub fn get_refcount(&self, n:NID)->Option<usize> { self.get_ixrc(n).map(|ixrc| ixrc.irc) }
   pub fn ixrcs_on_row(&self, v:VID)->HashSet<&IxRc> { self.rows[&v].hm.values().collect() }
   pub fn nids_on_row(&self, v:VID)->HashSet<NID> { self.rows[&v].hm.values().map(|ixrc| ixrc.ix).collect() }
@@ -306,9 +262,9 @@ impl VhlScaffold {
   /// add a reference to the given Vhl, inserting it into the row if necessary.
   /// returns the nid representing this vhl triple.
   fn add_ref(&mut self, hl0:Vhl, irc:usize, erc:usize)->NID {
-    let inv = n2x(hl0.lo).is_inv();
+    let inv = hl0.lo.is_inv();
     let vhl = if inv { !hl0 } else { hl0 };
-    if vhl == VHL_O { return if inv { x2n(XID_I) } else { x2n(XID_O) }}
+    if vhl == VHL_O { return if inv { nid::I } else { nid::O }}
     debug_assert_ne!(vhl.hi, vhl.lo, "hi and lo should be different"); // to trigger traceback
     let hl = vhl.hilo();
     let row = self.rows.entry(vhl.v).or_insert_with(VhlRow::new);
@@ -316,21 +272,21 @@ impl VhlScaffold {
       if let Some(mut x) = row.hm.remove(&hl) { x.irc += irc; x.erc += erc; x }
       else { // entry was vacant:
         let alloc = self.alloc_one();
-        self.vhls[alloc.x as usize] = vhl;
+        self.vhls[alloc] = vhl;
         let hi = self.get(vhl.hi).unwrap(); self.add_ref(hi,1,0);
         let lo = self.get(vhl.lo).unwrap(); self.add_ref(lo,1,0);
-        IxRc{ ix:x2n(alloc), irc, erc }};
+        IxRc{ ix:NID::ixn(alloc), irc, erc }};
       // !! is there a way to just use row here, and still have &mut self for the new entry code?
       self.rows.get_mut(&vhl.v).unwrap().hm.insert(hl, ixrc);
       let res = ixrc.ix;
       if inv { !res } else { res }}
 
-  fn add_iref_ix(&mut self, ix:XID, dirc:i64) { self.add_refs_ix(ix, dirc, 0) }
-  fn add_eref_ix(&mut self, ix:XID, derc:i64) { self.add_refs_ix(ix, 0, derc) }
+  fn add_iref_ix(&mut self, ix:NID, dirc:i64) { self.add_refs_ix(ix, dirc, 0) }
+  fn add_eref_ix(&mut self, ix:NID, derc:i64) { self.add_refs_ix(ix, 0, derc) }
 
-  fn add_refs_ix(&mut self, ix:XID, dirc:i64, derc:i64) {
-    if ix.is_const() { return }
-    let vhl = self.vhls[ix.raw().x as usize];
+  fn add_refs_ix(&mut self, ix:NID, dirc:i64, derc:i64) {
+    if ix.is_lit() { return }
+    let vhl = self.vhls[ix.idx()];
     if let Some(row) = self.rows.get_mut(&vhl.v) {
       if let Some(ixrc) = row.hm.get_mut(&vhl.hilo()) {
         if dirc < 0 && (dirc + ixrc.irc as i64 ) < 0 { panic!("dirc would result in negative refcount")}
@@ -338,13 +294,12 @@ impl VhlScaffold {
         if derc < 0 && (derc + ixrc.erc as i64 ) < 0 { panic!("derc would result in negative refcount")}
         else { ixrc.erc = (ixrc.erc as i64 + derc) as usize; }}
       else { panic!("add_ref_ix warning: entry not found for {:?}", vhl) }}
-    else if ix.raw() == XID_O { return } // ignore refs to XID_O/XID_I for now
+    else if ix == nid::O { return } // ignore refs to nid::O/nid::I for now
     else { panic!("add_ref_ix warning: row not found for {:?}", vhl.v); }}
 
   /// fetch the Vhl for the given nid (if we know it)
   fn get(&self, n:NID)->Option<Vhl> {
-    let x = n2x(n);
-    self.vhls.get(x.raw().ix()).map(|&y| if x.is_inv() { !y } else { y }) }
+    self.vhls.get(n.idx()).map(|&y| if n.is_inv() { !y } else { y }) }
 
   /// follow the hi or lo branch of n
   fn follow(&self, n:NID, which:bool)->NID {
@@ -381,10 +336,10 @@ impl VhlScaffold {
 
   /// Given a truth table, construct the corresponding bdd
   /// Starts at the lowest row variable unless base is given.
-  fn untbl(&mut self, xs: Vec<XID>, base:Option<VID>)->NID {
+  fn untbl(&mut self, xs: Vec<NID>, base:Option<VID>)->NID {
     let mut v = base.unwrap_or(self.vids[0]);
     assert!(xs.len().is_power_of_two(), "untbl: xs len must be 2^x. len: {} {:?}", xs.len(), xs);
-    let mut nids: Vec<NID> = xs.into_iter().map(x2n).collect();
+    let mut nids = xs;
     loop {
       nids = nids.chunks(2).map(|lh:&[NID]| {
         let (lo, hi) = (lh[0], lh[1]);
@@ -394,36 +349,31 @@ impl VhlScaffold {
       v = self.vid_above(v).expect("not enough vars in scaffold to untbl!"); }
     nids[0]}
 
-  #[allow(dead_code)]
-  fn untbl_nids(&mut self, xs: Vec<NID>, base:Option<VID>)->NID {
-    let xids: Vec<XID> = xs.into_iter().map(n2x).collect();
-    self.untbl(xids, base) }
-
-  /// allocate a single xid
+  /// allocate a single slot, returning its index
   // TODO: cache the empty slots so this doesn't take O(n) time.
-  fn alloc_one(&mut self)->XID {
+  fn alloc_one(&mut self)->usize {
     for (j,vhl) in self.vhls.iter_mut().enumerate().skip(1) {
-      if vhl.v == NOV { *vhl = VHL_NEW; return XID{x:j as i64 }}}
-    self.vhls.push(VHL_NEW); XID{x:self.vhls.len() as i64-1}}
+      if vhl.v == NOV { *vhl = VHL_NEW; return j }}
+    self.vhls.push(VHL_NEW); self.vhls.len()-1}
 
-  /// allocate free xids
-  fn alloc(&mut self, count:usize)->Vec<XID> {
+  /// allocate free slots, returning their indices
+  fn alloc(&mut self, count:usize)->Vec<usize> {
     let mut i = count; let mut res = vec![];
     if count == 0 { return res }
-    // reclaim garbage collected xids.
+    // reclaim garbage collected slots.
     for (j,vhl) in self.vhls.iter_mut().enumerate().skip(1) {
       if vhl.v == NOV {
         *vhl = VHL_NEW;
-        res.push(XID{x:j as i64});
+        res.push(j);
         i-= 1;  if i == 0 { break; }}}
-    // create new xids if there weren't enough reclaimed ones.
+    // create new slots if there weren't enough reclaimed ones.
     // note that we give these nodes a fake variable distinct from NOV,
     // so that we don't allocate the same slot when running regroup()
     // across multiple threads
     while i > 0 {
-      let x = self.vhls.len() as i64;
+      let x = self.vhls.len();
       self.vhls.push(VHL_NEW);
-      res.push(XID{x});
+      res.push(x);
       i-=1 }
     res }
 
@@ -459,10 +409,16 @@ impl VhlScaffold {
     self.reclaim_swapped_nodes(std::mem::take(&mut worker.dels));
 
     // commit changes to nodes:
-    let (dnew, wipxid) = worker.dnew_mods(xids); let dnews=dnew.len();
-    for (ix, hi, lo) in dnew { self.vhls[ix] = Vhl{ v: vd, hi:x2n(hi), lo:x2n(lo) } }
-    let unew = worker.umov_mods(wipxid); let unews=unew.len();
-    for (ix, hi, lo) in unew { self.vhls[ix] = Vhl{ v: vu, hi:x2n(hi), lo:x2n(lo) } }
+    let (dnew, wipnid) = worker.dnew_mods(xids); let dnews=dnew.len();
+    for (ix, hi, lo) in dnew {
+      debug_assert!(hi.is_const() || hi.is_ixn(), "hi should be ixn NID: {:?}", hi);
+      debug_assert!(lo.is_const() || lo.is_ixn(), "lo should be ixn NID: {:?}", lo);
+      self.vhls[ix] = Vhl{ v: vd, hi, lo } }
+    let unew = worker.umov_mods(wipnid); let unews=unew.len();
+    for (ix, hi, lo) in unew {
+      debug_assert!(hi.is_const() || hi.is_ixn(), "hi should be ixn NID: {:?}", hi);
+      debug_assert!(lo.is_const() || lo.is_ixn(), "lo should be ixn NID: {:?}", lo);
+      self.vhls[ix] = Vhl{ v: vu, hi, lo } }
 
     // [ commit refcount changes ]
     for (xid, dc) in worker.refs.iter() { self.add_iref_ix(*xid, *dc); }
@@ -482,7 +438,7 @@ impl VhlScaffold {
   /// note: this should ONLY be called from swap() or regroup() because
   /// it doesn't change refcounts (since those functions handle the refcounting)
   // TODO: add to some kind of linked list so they're easier to find.
-  fn reclaim_swapped_nodes(&mut self, xids:Vec<XID>) { for xid in xids { self.vhls[xid.raw().ix()] = VHL_O }}
+  fn reclaim_swapped_nodes(&mut self, indices:Vec<usize>) { for ix in indices { self.vhls[ix] = VHL_O }}
 
   /// Remove all nodes from the top rows of the scaffold, down to and including row v.
   /// (the rows themselves remain in place).
@@ -673,24 +629,24 @@ impl VhlScaffold {
 
 
   // like add_ref_ix but defers if row is locked.
-  fn add_ref_ix_or_defer(&mut self, xid:XID, drc:i64) {
+  fn add_ref_ix_or_defer(&mut self, nid:NID, drc:i64) {
     if drc != 0 {
-      let v = self.vhls[xid.ix()].v;
+      let v = self.vhls[nid.idx()].v;
       if self.locked.contains(&v) {
-        //println!("row {} was locked so deferring xid:{:?} drc:{} ({:?})", v, xid.raw(), drc, self.vhls[xid.ix()]);
-        *self.drcd.entry(v).or_default().entry(xid.raw()).or_default()+=drc; }
-      else { self.add_iref_ix(xid, drc); }}}
+        //println!("row {} was locked so deferring nid:{:?} drc:{} ({:?})", v, nid, drc, self.vhls[nid.idx()]);
+        *self.drcd.entry(v).or_default().entry(nid).or_default()+=drc; }
+      else { self.add_iref_ix(nid, drc); }}}
 
   /// apply deferred refcount delta (call whenever a row gets unlocked)
   fn apply_drcd(&mut self, v:&VID) {
     if let Some(drcd) = self.drcd.remove(v) {
       // if xvhl.v changed again (due to umov), we may need to defer again (since new row may be locked)
-      for (&xid, &drc) in drcd.iter() { self.add_ref_ix_or_defer(xid, drc)} }}
+      for (&nid, &drc) in drcd.iter() { self.add_ref_ix_or_defer(nid, drc)} }}
 
   /// called whenever a worker returns a downward-moving row to the scaffold
   #[allow(clippy::too_many_arguments)] // TODO fix this!
   fn swarm_put_rd(&mut self, plan:&HashMap<VID,usize>, alarm:&mut HashMap<VID,WID>,
-    wid:WID, vu:VID, vd:VID, rd:VhlRow, dnew:Vec<Mod>, umov:Vec<Mod>, dels:Vec<XID>, refs:HashMap<XID,i64>
+    wid:WID, vu:VID, vd:VID, rd:VhlRow, dnew:Vec<Mod>, umov:Vec<Mod>, dels:Vec<usize>, refs:HashMap<NID,i64>
   )->SwarmCmd<Q,()> {
     // replace and unlock the downward-moving row:
     debug_assert_eq!(vd, self.vid_above(vu).unwrap(), "row d isn't the row that was above row u!?!");
@@ -702,16 +658,20 @@ impl VhlScaffold {
     // println!("vu:{} vd:{} dnew: {:?} umov:{:?} dels:{:?}", vu, vd, dnew, umov, dels);
     self.reclaim_swapped_nodes(dels);
     for (ix, hi, lo) in dnew {
-      debug_assert!(hi.is_const() || self.vhls[hi.ix()] != VHL_O, "garbage hi link in dnew: {:?}->{:?}", ix, hi);
-      debug_assert!(lo.is_const() || self.vhls[lo.ix()] != VHL_O, "garbage lo link in dnew: {:?}->{:?}", ix, lo);
-      self.vhls[ix] = Vhl{ v: vd, hi:x2n(hi), lo:x2n(lo) } }
+      debug_assert!(hi.is_const() || self.vhls[hi.idx()] != VHL_O, "garbage hi link in dnew: {:?}->{:?}", ix, hi);
+      debug_assert!(lo.is_const() || self.vhls[lo.idx()] != VHL_O, "garbage lo link in dnew: {:?}->{:?}", ix, lo);
+      let hi_ix = if hi.is_const() { hi } else { NID::ixn(hi.idx()).inv_if(hi.is_inv()) };
+      let lo_ix = if lo.is_const() { lo } else { NID::ixn(lo.idx()).inv_if(lo.is_inv()) };
+      self.vhls[ix] = Vhl{ v: vd, hi: hi_ix, lo: lo_ix } }
     for (ix, hi, lo) in umov {
-      debug_assert!(hi.is_const() || self.vhls[hi.ix()] != VHL_O, "garbage hi link in umov: {:?}->{:?}", ix, hi);
-      debug_assert!(lo.is_const() || self.vhls[lo.ix()] != VHL_O, "garbage lo link in umov: {:?}->{:?}", ix, lo);
-      self.vhls[ix] = Vhl{ v: vu, hi:x2n(hi), lo:x2n(lo) } }
+      debug_assert!(hi.is_const() || self.vhls[hi.idx()] != VHL_O, "garbage hi link in umov: {:?}->{:?}", ix, hi);
+      debug_assert!(lo.is_const() || self.vhls[lo.idx()] != VHL_O, "garbage lo link in umov: {:?}->{:?}", ix, lo);
+      let hi_ix = if hi.is_const() { hi } else { NID::ixn(hi.idx()).inv_if(hi.is_inv()) };
+      let lo_ix = if lo.is_const() { lo } else { NID::ixn(lo.idx()).inv_if(lo.is_inv()) };
+      self.vhls[ix] = Vhl{ v: vu, hi: hi_ix, lo: lo_ix } }
     // println!("ref changes: {:?}", refs);
-    // for (xid, drc) in refs.iter() { println!("drc: {} for xid:{:?} ({:?})", *drc, *xid, self.vhls[xid.ix()] ); }
-    for (xid, drc) in refs.iter() { self.add_ref_ix_or_defer(*xid, *drc) }
+    // for (nid, drc) in refs.iter() { println!("drc: {} for nid:{:?} ({:?})", *drc, *nid, self.vhls[nid.ix()] ); }
+    for (nid, drc) in refs.iter() { self.add_ref_ix_or_defer(*nid, *drc) }
 
     debug_assert!(self.locked.contains(&vd), "vd:{} wasn't locked!??", vd);
     self.locked.remove(&vd);
@@ -759,21 +719,21 @@ impl VhlScaffold {
 
 // -- message types for swarm -------------------------------------------
 
-type Mod = (usize,XID,XID);
+type Mod = (usize,NID,NID);
 
 #[derive(Debug, Clone)]
 enum Q {
   Init{ vu:VID, ru: VhlRow },
   Step{ vd:VID, rd: VhlRow },
   Stop,
-  DRcD( HashMap<XID,i64> ),
-  Xids( Vec<XID> )}
+  DRcD( HashMap<NID,i64> ),
+  Xids( Vec<usize> )}
 
 #[derive(Debug)]
 enum R {
   DRcD{ vu:VID },
   Alloc{ needed:usize },
-  PutRD{ vu:VID, vd:VID, rd: VhlRow, dnew:Vec<Mod>, umov:Vec<Mod>, dels:Vec<XID>, refs:HashMap<XID, i64> },
+  PutRD{ vu:VID, vd:VID, rd: VhlRow, dnew:Vec<Mod>, umov:Vec<Mod>, dels:Vec<usize>, refs:HashMap<NID, i64> },
   PutRU{ vu:VID, ru: VhlRow }}
 
 // -- graphviz ----------------------------------------------------------
@@ -793,18 +753,17 @@ impl GraphViz for VhlScaffold {
       let row = &self.rows[ev];
       if !row.hm.is_empty() {
         write!(wr, "{{rank=same").unwrap();
-        for ixrc in row.hm.values() { write!(wr, " \"{:?}\"", n2x(ixrc.ix)).unwrap() }
+        for ixrc in row.hm.values() { write!(wr, " \"{:?}\"", ixrc.ix).unwrap() }
         w!("}}") }
       for (hl,ixrc) in row.hm.iter() {
-        let x = n2x(ixrc.ix);
-        w!("  \"{:?}\"[label=\"{}\"];", x, ev);  // draw the node itself
-        let arrow = |n:XID| if n.is_const() || !n.is_inv() { "normal" } else { "odot" };
-        let sink = |n:XID| if n.is_const() { n } else { n.raw() };
-        let (hi, lo) = hilo_to_xids(*hl);
+        w!("  \"{:?}\"[label=\"{}\"];", ixrc.ix, ev);  // draw the node itself
+        let arrow = |n:NID| if n.is_lit() || !n.is_inv() { "normal" } else { "odot" };
+        let sink = |n:NID| if n.is_lit() { n } else { NID::raw(n) };
+        let (hi, lo) = (hl.hi, hl.lo);
         w!("edge[style=solid, arrowhead={}];", arrow(hi));
-        w!("  \"{:?}\"->\"{:?}\";", x, sink(hi));
+        w!("  \"{:?}\"->\"{:?}\";", ixrc.ix, sink(hi));
         w!("edge[style=dashed, arrowhead={}];", arrow(lo));
-        w!("  \"{:?}\"->\"{:?}\";", x, sink(lo)); }}
+        w!("  \"{:?}\"->\"{:?}\";", ixrc.ix, sink(lo)); }}
     w!("}}"); }}
 
 
@@ -816,15 +775,15 @@ impl GraphViz for VhlScaffold {
 // in a distributed process, which will modify the two rows in place and then send the
 // refcount and branch variable changes to a central repo.
 
-/// in the first WIP step, we either work with existing xids
+/// in the first WIP step, we either work with existing nids
 /// and hilo pairs that may or may not already exist.
 #[derive(Debug, Clone, Copy)]
-enum XWIP0 { Xid(XID), HL(XID,XID) }
+enum XWIP0 { Xid(NID), HL(NID,NID) }
 
 /// in the second wip step, the hilo pairs are all resolved to existing
-/// xids or mapped to a new one
+/// nids or mapped to a new one
 #[derive(Debug, Clone, Copy)]
-enum XWIP1 { Xid(XID), New(i64) }
+enum XWIP1 { Xid(NID), New(i64) }
 
 // 0: swap the rows. (lift row u above row d)
 //    u was independent before, so we leave it alone except for gc.
@@ -856,21 +815,21 @@ struct SwapWorker {
   /// row d is the row that moves downward.
   rd:VhlRow,
   /// external reference counts to change
-  refs: HashMap<XID, i64>,
+  refs: HashMap<NID, i64>,
   /// track any nodes we've deleted (so scaffold can recycle them)
-  dels: Vec<XID>,
-  /// xids we've recycled ourselves
-  mods: Vec<XID>,
+  dels: Vec<usize>,
+  /// indices we've recycled ourselves
+  mods: Vec<usize>,
   // reverse map for row u (so we can see if a branch from d points to row u)
-  ru_map:HashMap<XID,HiLo>,
+  ru_map:HashMap<NID,HiLo>,
   // reverse map for row d (to detect when we need a new ref from a umov to an existing node on row d)
-  rd_map:HashMap<XID,HiLo>,
+  rd_map:HashMap<NID,HiLo>,
   /// wip for nodes moving to row u.
   umov: Vec<(IxRc,XWIP1,XWIP1)>,
   // next (fake/tmp) xid to assign
   next:i64,
   /// new parent nodes to create on row d
-  dnew: HashMap<(XID,XID), IxRc> }
+  dnew: HashMap<(NID,NID), IxRc> }
 
 impl Worker<Q,R> for SwapWorker {
 
@@ -932,13 +891,13 @@ impl SwapWorker {
   /// garbage collect nodes on one of the rows:
   fn gc(&mut self, which:Row) {
     let mut dels = vec![];
-    let mut refs: HashMap::<XID, i64> = HashMap::new();
+    let mut refs: HashMap::<NID, i64> = HashMap::new();
     let row = match which { Row::U => &mut self.ru, Row::D => &mut self.rd };
     row.hm.retain(|hl, ixrc| {
       if ixrc.rc() == 0 {
-        *refs.entry(n2x(hl.hi)).or_insert(0)-=1;
-        *refs.entry(n2x(hl.lo)).or_insert(0)-=1;
-        dels.push(n2x(ixrc.ix));
+        *refs.entry(hl.hi.raw()).or_insert(0)-=1;
+        *refs.entry(hl.lo.raw()).or_insert(0)-=1;
+        dels.push(ixrc.ix.idx());
         false }
       else { true }});
     match which { Row::U => self.ru_map = self.ru.xid_map(), Row::D => self.rd_map = self.rd.xid_map() }
@@ -946,14 +905,11 @@ impl SwapWorker {
     for (x, dc) in refs { self.xref(x, dc); }}
 
   /// record a refcount change to an external node
-  fn xref(&mut self, x:XID, dc:i64)->XID {
-    if x.is_const() { x }
+  fn xref(&mut self, x:NID, dc:i64)->NID {
+    if x.is_lit() { x }
     else { if let Some(key) = self.ru_map.get(&x.raw()) { self.ru.hm.get_mut(key).unwrap().add(dc); }
       else if let Some(key) = self.rd_map.get(&x.raw()) { self.rd.hm.get_mut(key).unwrap().add(dc); }
       else { *self.refs.entry(x.raw()).or_insert(0)+=dc }; x }}
-
-  /// generate a new (wip) xid to use internally
-  fn new_xid(&mut self)->XID { let xid = XID {x:self.next}; self.next+=1; xid }
 
   /// given the rows from swap(), find all the nodes from row d that need
   /// to move to row u. (that is, rows that have a reference to row u).
@@ -976,16 +932,16 @@ impl SwapWorker {
     let mut umovs: Vec<(HiLo,XWIP0,XWIP0)> = vec![];
     for dhl in self.rd.hm.clone().keys() {
       // fetch the hi,lo branches, but only when they point to row u
-      let uget = |xid:XID|->Option<HiLo> {
-        self.ru_map.get(&xid.raw()).cloned().map(|hl|
-          if xid.is_inv() { !hl } else { hl })};
-      let (hi, lo) = hilo_to_xids(*dhl);
+      let uget = |nid:NID|->Option<HiLo> {
+        self.ru_map.get(&nid.raw()).cloned().map(|hl|
+          if nid.is_inv() { !hl } else { hl })};
+      let (hi, lo) = (dhl.hi, dhl.lo);
       let (uhi, ulo) = (uget(hi), uget(lo));
       // if neither points to row u, this node is independent, and there's nothing to do
       if let (None, None) = (uhi, ulo) {}
       else {  // otherwise we move the node to row u and build at least 1 new child on row d
-        let (ii, io) = if let Some(x) = uhi { hilo_to_xids(x) } else {(hi, hi)};
-        let (oi, oo) = if let Some(x) = ulo { hilo_to_xids(x) } else {(lo, lo)};
+        let (ii, io) = if let Some(x) = uhi { (x.hi, x.lo) } else {(hi, hi)};
+        let (oi, oo) = if let Some(x) = ulo { (x.hi, x.lo) } else {(lo, lo)};
         // remove both refs for now, even though we may add one right back:
         self.xref(hi, -1); self.xref(lo, -1);
         umovs.push((*dhl, self.new_ref(ii,oi), self.new_ref(io,oo))); }}
@@ -1011,13 +967,13 @@ impl SwapWorker {
 
   fn resolve(&mut self, xw0:XWIP0)->XWIP1 {
     match xw0 {
-      // the new_ref() function would have marked it as a XID if it were already in row d.
+      // the new_ref() function would have marked it as a NID if it were already in row d.
       XWIP0::Xid(x) => { XWIP1::Xid(self.xref(x,1)) },
       XWIP0::HL(hi0,lo0) => {
         // these are the new children on the w level, so we are creating a new node.
         // but: it's possible that multiple new nodes point to the same place.
         // this pass ensures that all duplicates resolve to the same place.
-        // TODO: this isn't really an IxRc since the xid is virtual
+        // TODO: this isn't really an IxRc since the nid is temporary
         let (hi,lo,inv) = if lo0.is_inv() { (!hi0, !lo0, true) } else { (hi0,lo0,false) };
         let ir = {
           if let Some(mut ixrc) = self.dnew.remove(&(hi,lo)) {
@@ -1025,9 +981,10 @@ impl SwapWorker {
             ixrc.irc += 1; ixrc }
           else { // Entry::Vacant, so build a new node with one reference to it.
             self.xref(hi, 1); self.xref(lo,1);
-            IxRc { ix: x2n(self.new_xid()), irc: 1, erc: 0 }}};
+            let temp_idx = self.next; self.next += 1;
+            IxRc { ix: NID::ixn(temp_idx as usize), irc: 1, erc: 0 }}};
         self.dnew.insert((hi,lo), ir);
-        XWIP1::New(if inv { !n2x(ir.ix).x } else { n2x(ir.ix).x }) }}}
+        XWIP1::New(if inv { !(ir.ix.idx() as i64) } else { ir.ix.idx() as i64 }) }}}
 
   /// remove garbage from row u. these won't conflict with .unew because we will never
   /// add a *completely* new node on row u - only move existing nodes from row d, and
@@ -1040,7 +997,7 @@ impl SwapWorker {
     self.gc(Row::U);
 
     // remove any ref changes to nodes we've deleted
-    for xid in &self.dels { self.refs.remove(&xid.raw()); }
+    for &idx in &self.dels { self.refs.remove(&NID::ixn(idx)); }
     let mut dels = self.dels.clone();
     let mut needed = 0; // in case there are more new nodes than old trash
 
@@ -1061,47 +1018,46 @@ impl SwapWorker {
 
   /// add newly created child nodes on row d, and
   /// return the list of changes to make to the master scaffold,
-  /// and a vector mapping the wip ix to the final xid
-  fn dnew_mods(&mut self, alloc:Vec<XID>)->(Vec<(usize, XID, XID)>, Vec<XID>) {
+  /// and a vector mapping the wip ix to the final nid
+  fn dnew_mods(&mut self, alloc:Vec<usize>)->(Vec<(usize, NID, NID)>, Vec<NID>) {
     self.mods.extend(alloc);
-    let xids = std::mem::take(&mut self.mods);
-    assert_eq!(xids.len(), self.dnew.len());
+    let indices = std::mem::take(&mut self.mods);
+    assert_eq!(indices.len(), self.dnew.len());
     let mut res = vec![];
-    let mut wipxid = vec![XID_O; self.dnew.len()];
+    let mut wipnid = vec![nid::O; self.dnew.len()];
     for ((hi,lo), ixrc0) in self.dnew.iter() {
       let mut ixrc = *ixrc0; // clone so we maintain the refcount
       debug_assert!(ixrc.irc > 0);
-      let inv = n2x(ixrc0.ix).x < 0; assert!(!inv);
-      let wipix = n2x(ixrc0.ix).x as usize;
-      ixrc.ix = x2n(xids[wipix]);  // map the temp xid -> true xid
-      wipxid[wipix] = n2x(ixrc.ix); // remember for w2x, below.
-      assert!(!self.rd.hm.contains_key(&hilo_from_xids(*hi, *lo)));
-      let key = hilo_from_xids(*hi, *lo);
+      let wipix = ixrc0.ix.idx();
+      ixrc.ix = NID::ixn(indices[wipix]);  // map the temp index -> true index
+      wipnid[wipix] = ixrc.ix; // remember for w2x, below.
+      assert!(!self.rd.hm.contains_key(&HiLo::new(*hi, *lo)));
+      let key = HiLo::new(*hi, *lo);
       self.rd.hm.insert(key, ixrc);  // refcount chages are done so no need for rd_map
       // and now update the master store:
       debug_assert_ne!(hi, lo, "hi=lo when committing wnew");
-      res.push((n2x(ixrc.ix).x as usize, *hi, *lo)); }
-    (res, wipxid)}
+      res.push((ixrc.ix.idx(), *hi, *lo)); }
+    (res, wipnid)}
 
   /// move the dependent nodes from row d to row u, and
   /// return the list of changes to make to the master scaffold.
-  /// wipxid argument is the mapping returned by dnew_mods
-  fn umov_mods(&mut self, wipxid:Vec<XID>)->Vec<(usize, XID, XID)> {
+  /// wipnid argument is the mapping returned by dnew_mods
+  fn umov_mods(&mut self, wipnid:Vec<NID>)->Vec<(usize, NID, NID)> {
     let mut res = vec![];
-    let w2x = |wip:&XWIP1| {
+    let w2n = |wip:&XWIP1| {
       match wip {
         XWIP1::Xid(x) => *x,
-        XWIP1::New(x) => { if *x<0 { !wipxid[!*x as usize]  } else { wipxid[*x as usize ]}}}};
+        XWIP1::New(x) => { if *x<0 { !wipnid[!*x as usize]  } else { wipnid[*x as usize ]}}}};
     for (ixrc, wip_hi, wip_lo) in self.umov.iter() {
-      let (hi, lo) = (w2x(wip_hi), w2x(wip_lo));
-      let key = hilo_from_xids(hi, lo);
+      let (hi, lo) = (w2n(wip_hi), w2n(wip_lo));
+      let key = HiLo::new(hi, lo);
       self.ru.hm.insert(key, *ixrc);
-      self.ru_map.insert(n2x(ixrc.ix), key); // probably redundant.
-      res.push((n2x(ixrc.ix).ix(), hi, lo)); }
+      self.ru_map.insert(ixrc.ix, key); // probably redundant.
+      res.push((ixrc.ix.idx(), hi, lo)); }
     res}
 
   /// reference a node on/below row d, or create a node on row d
-  fn new_ref(&mut self, h:XID, l:XID)->XWIP0 {
+  fn new_ref(&mut self, h:NID, l:NID)->XWIP0 {
     let (hi, lo, inv) = if l.is_inv() {(!h, !l, true)} else {(h, l, false)};
     // hi == lo only when the match statement passes hi,hi or lo,lo.
     // previously, this triggered a decref, but that was incorrect:
@@ -1113,8 +1069,8 @@ impl SwapWorker {
     // balanced we garbage collect extraneous row u nodes on the second swap and
     // decref their children.)
     if hi == lo { return XWIP0::Xid(if inv { !lo } else { lo }); }
-    if let Some(ixrc) = self.rd.hm.get(&hilo_from_xids(hi, lo)) {
-      XWIP0::Xid(if inv {!n2x(ixrc.ix)} else {n2x(ixrc.ix)}) }
+    if let Some(ixrc) = self.rd.hm.get(&HiLo::new(hi, lo)) {
+      XWIP0::Xid(if inv {!ixrc.ix} else {ixrc.ix}) }
     else if inv { XWIP0::HL(!hi, !lo) } else { XWIP0::HL(hi, lo) }}}
 
 // -- debugger ------------------------------------------------------------
@@ -1136,7 +1092,7 @@ impl XSDebug {
     for (i, c) in vars.chars().enumerate() { this.var(i, c) }
     this }
   fn var(&mut self, i:usize, c:char) {
-    let v = VID::var(i as u32); self.xs.push(v); self.xs.add_ref(Vhl{v, hi:x2n(XID_I), lo:x2n(XID_O)}, 0, 1);
+    let v = VID::var(i as u32); self.xs.push(v); self.xs.add_ref(Vhl{v, hi:nid::I, lo:nid::O}, 0, 1);
     self.name_var(v, c); }
   fn vids(&self)->String { self.xs.vids.iter().map(|v| *self.vc.get(v).unwrap()).collect() }
   fn name_var(&mut self, v:VID, c:char) { self.vc.insert(v, c); self.cv.insert(c, v); }
@@ -1147,10 +1103,10 @@ impl XSDebug {
     for c in s.chars() {
       match c {
         'a'..='z' =>
-          if let Some(&v) = self.cv.get(&c) { self.ds.push(self.xs.add_ref(Vhl{v,hi:x2n(XID_I),lo:x2n(XID_O)}, 0, 1)) }
+          if let Some(&v) = self.cv.get(&c) { self.ds.push(self.xs.add_ref(Vhl{v,hi:nid::I,lo:nid::O}, 0, 1)) }
           else { panic!("unknown variable: {}", c)},
-        '0' => self.ds.push(x2n(XID_O)),
-        '1' => self.ds.push(x2n(XID_I)),
+        '0' => self.ds.push(nid::O),
+        '1' => self.ds.push(nid::I),
         '.' => { self.ds.pop(); },
         '!' => { let x= self.pop(); self.ds.push(!x) },
         ' ' => {}, // no-op
@@ -1160,8 +1116,7 @@ impl XSDebug {
             let vhl = self.xs.get(x).unwrap();
             if !vhl.is_var() { panic!("last item in odd-len stack was not var for #") }
             Some(vhl.v)};
-          let xids: Vec<XID> = self.ds.iter().map(|&n| n2x(n)).collect();
-          let x = self.xs.untbl(xids, v);
+          let x = self.xs.untbl(self.ds.clone(), v);
           self.ds = vec![x]; },
         '?' => { let vx=self.pop(); let hi = self.pop(); let lo = self.pop(); self.ite(vx,hi,lo); },
         _ => panic!("unrecognized character: {}", c)}}
@@ -1173,15 +1128,15 @@ impl XSDebug {
       let res = self.xs.add_ref(Vhl{v:xvhl.v, hi, lo}, 0, 1); self.ds.push(res); res }
     else { panic!("limit not found for '#': {:?}", vx) }}
   fn fmt(&self, n:NID)->String {
-    let x = n2x(n);
-    match x {
-      XID_O => "0".to_string(),
-      XID_I => "1".to_string(),
-      _ => { let inv = x.is_inv(); let x = x.raw(); let sign = if inv { "!" } else { "" };
-        let xv = self.xs.get(x2n(x)).unwrap();
-        let vc:char = *self.vc.get(&xv.v).unwrap();
-        if xv.is_var() { format!("{}{}", vc, sign) }
-        else { format!("{}{}{}?{} ", self.fmt(xv.lo), self.fmt(xv.hi), vc, sign) } } }}}
+    if n == nid::O { return "0".to_string() }
+    if n == nid::I { return "1".to_string() }
+    let inv = n.is_inv();
+    let raw = n.raw();
+    let sign = if inv { "!" } else { "" };
+    let xv = self.xs.get(raw).unwrap();
+    let vc:char = *self.vc.get(&xv.v).unwrap();
+    if xv.is_var() { format!("{}{}", vc, sign) }
+    else { format!("{}{}{}?{} ", self.fmt(xv.lo), self.fmt(xv.hi), vc, sign) }}}
 
 // ------------------------------------------------------
 
@@ -1199,7 +1154,7 @@ impl SwapSolver {
   pub fn new() -> Self {
     let dst = VhlScaffold::new();
     let src = VhlScaffold::new();
-    SwapSolver{ dst, dx:x2n(XID_O), rv:NOV, src, sx:x2n(XID_O) }}
+    SwapSolver{ dst, dx:nid::O, rv:NOV, src, sx:nid::O }}
 
   /// Arrange the two scaffolds so that their variable orders match.
   ///  1. vids shared between src and dst (set n) are above rv
@@ -1245,15 +1200,15 @@ impl SwapSolver {
 
     let rvix = self.dst.vix(self.rv);
     if rvix.is_none() { return self.dx } // rv isn't in the scaffold, so do nothing.
-    if self.dx == x2n(XID_O) { panic!("dx is XID_O. this should never happen.")}
+    if self.dx == nid::O { panic!("dx is nid::O. this should never happen.")}
     let vhl = self.dst.get(self.dx).unwrap();
     if vhl.v == VID::nov() { panic!("node dx:{:?} appears to have been garbage collected!?!", self.dx)}
     let vvix = self.dst.vix(vhl.v);
     if vvix.is_none() { panic!("got vhl:{:?} for self.dx:{:?} but {:?} is not in dst!?", vhl, self.dx, vhl.v); }
 
     // add external refs so our root nodes don't get collected
-    self.dst.add_eref_ix(n2x(self.dx), 1);
-    self.src.add_eref_ix(n2x(self.sx), 1);
+    self.dst.add_eref_ix(self.dx, 1);
+    self.src.add_eref_ix(self.sx, 1);
 
     // 1. permute vars.
     let vix = self.arrange_vids();
@@ -1300,8 +1255,7 @@ impl SwapSolver {
 
     // 6. rebuild the rows above set d, and return new top node
     let bv = self.dst.vids[vix]; // whatever the new branch var in that slot is
-    let xids: Vec<XID> = r.into_iter().map(n2x).collect();
-    self.dx = self.dst.untbl(xids, Some(bv));
+    self.dx = self.dst.untbl(r, Some(bv));
     self.dst.validate("after substitution");
 
     // 7. return result
@@ -1309,13 +1263,13 @@ impl SwapSolver {
     self.dx }} // sub, SwapSolver
 
 
-fn fun_tbl(n:NID)->Vec<XID> {
+fn fun_tbl(n:NID)->Vec<NID> {
   let f = n.to_fun().unwrap();
   let ar = f.arity();
   let ft = f.tbl();
-  let mut tbl = vec![XID_O;(1<<ar) as usize];
+  let mut tbl = vec![nid::O;(1<<ar) as usize];
   let end = (1<<ar)-1;
-  for i in 0..=end { if ft & (1<<i) != 0 { tbl[end-i] = XID_I; }}
+  for i in 0..=end { if ft & (1<<i) != 0 { tbl[end-i] = nid::I; }}
   tbl }
 
 impl SubSolver for SwapSolver {
@@ -1323,7 +1277,7 @@ impl SubSolver for SwapSolver {
   fn init(&mut self, v: VID)->NID {
     self.dst = VhlScaffold::new(); self.dst.push(v);
     self.rv = v;
-    self.dx = self.dst.add_ref(Vhl{ v, hi:x2n(XID_I), lo:x2n(XID_O)}, 0, 1);
+    self.dx = self.dst.add_ref(Vhl{ v, hi:nid::I, lo:nid::O}, 0, 1);
     self.dx }
 
   fn subst(&mut self, ctx: NID, v: VID, ops: &Ops)->NID {

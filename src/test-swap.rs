@@ -211,7 +211,7 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
 
 #[test] fn test_fun_tbl() {
   use crate::ops; let o = crate::nid::O; let i = crate::nid::I;
-  let result: Vec<NID> = fun_tbl(ops::AND.to_nid()).into_iter().map(x2n).collect();
+  let result = fun_tbl(ops::AND.to_nid());
   assert_eq!(result, vec![o,o,o,i])}
 
 
