@@ -44,13 +44,9 @@ use crate::swarm::{Swarm,Worker,QID,SwarmCmd,WID};
 use crate::{nid, BddBase, Fun};
 use crate::vhl::{Vhl, HiLo};
 
-/// Extension trait for Vhl to add swap-specific methods
-trait VhlExt {
-  fn is_var(&self)->bool;
-}
-
-impl VhlExt for Vhl {
-  fn is_var(&self)->bool { self.v.is_var() && self.hi == nid::I && self.lo == nid::O }
+#[cfg(test)]
+fn vhl_is_var(vhl:&Vhl)->bool {
+  vhl.v.is_var() && vhl.hi == nid::I && vhl.lo == nid::O
 }
 
 /// Dummy value to stick into vhls[0]
@@ -1114,7 +1110,7 @@ impl XSDebug {
           let v = if self.ds.len()&1 == 0 { None } else {
             let x = self.pop();
             let vhl = self.xs.get(x).unwrap();
-            if !vhl.is_var() { panic!("last item in odd-len stack was not var for #") }
+            if !vhl_is_var(&vhl) { panic!("last item in odd-len stack was not var for #") }
             Some(vhl.v)};
           let x = self.xs.untbl(self.ds.clone(), v);
           self.ds = vec![x]; },
@@ -1123,7 +1119,7 @@ impl XSDebug {
     if let Some(&x) = self.ds.last() { self.fmt(x) } else { "".to_string() }}
   fn ite(&mut self, vx:NID, hi:NID, lo:NID)->NID {
     if let Some(xvhl) = self.xs.get(vx) {
-      if !xvhl.is_var() { panic!("not a branch var: {} ({:?})", self.fmt(vx), xvhl) }
+      if !vhl_is_var(&xvhl) { panic!("not a branch var: {} ({:?})", self.fmt(vx), xvhl) }
       assert_ne!(hi, lo, "hi and lo branches must be different");
       let res = self.xs.add_ref(Vhl{v:xvhl.v, hi, lo}, 0, 1); self.ds.push(res); res }
     else { panic!("limit not found for '#': {:?}", vx) }}
@@ -1135,7 +1131,7 @@ impl XSDebug {
     let sign = if inv { "!" } else { "" };
     let xv = self.xs.get(raw).unwrap();
     let vc:char = *self.vc.get(&xv.v).unwrap();
-    if xv.is_var() { format!("{}{}", vc, sign) }
+    if vhl_is_var(&xv) { format!("{}{}", vc, sign) }
     else { format!("{}{}{}?{} ", self.fmt(xv.lo), self.fmt(xv.hi), vc, sign) }}}
 
 // ------------------------------------------------------
