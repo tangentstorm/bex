@@ -26,6 +26,8 @@ pub mod solve;
 pub mod apl;
 pub mod int;
 pub mod io;
+#[cfg(feature = "sql")]
+pub mod sql;
 pub mod anf;
 pub mod swap;
 pub mod swarm;

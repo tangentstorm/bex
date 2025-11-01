@@ -33,6 +33,8 @@ name = "factor-p"
 path = "examples/solve/factor-p.rs"
 
 [features]
+default = ["sql"]
+sql = []
 slowtests = []
 
 [workspace]
@@ -55,6 +57,7 @@ boxcar = "0.1.0"
 fxhash = "0.2.1"
 concurrent-queue = "2.1.0"
 json = "0.12.4"
+rusqlite = { version = "0.31", features = ["bundled"] }
 
 [dev-dependencies]
 bencher = "0.1.5"
