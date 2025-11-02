@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::str::FromStr;
 
-use rusqlite::{params, Connection, Result, Transaction};
+use rusqlite::{params, Connection, OptionalExtension, Result, Transaction};
 
 use crate::{ast::RawASTBase, nid::NID, ops};
 
@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS ast_edge(
 
 CREATE TABLE IF NOT EXISTS tag(
   name    TEXT PRIMARY KEY,
+  nid     INTEGER NOT NULL,
   aid     INTEGER,
   FOREIGN KEY(aid) REFERENCES ast_node(id)
 );
@@ -55,6 +56,8 @@ CREATE TABLE IF NOT EXISTS meta(
   v  TEXT NOT NULL
 );
 "#;
+
+const EXPECTED_FMT_VERSION: &str = "0.1";
 
 fn ensure_schema(tx: &Transaction<'_>) -> Result<()> {
   tx.execute_batch(CREATE_SCHEMA)
@@ -141,12 +144,13 @@ fn insert_edges(tx: &Transaction<'_>, base: &RawASTBase) -> Result<()> {
 
 fn insert_tags(tx: &Transaction<'_>, base: &RawASTBase) -> Result<()> {
   let mut stmt = tx.prepare(
-    "INSERT OR REPLACE INTO tag(name, aid) VALUES(?1, ?2)"
+    "INSERT OR REPLACE INTO tag(name, nid, aid) VALUES(?1, ?2, ?3)"
   )?;
   for (name, nid) in base.tags.iter() {
     let node_id = if nid.is_ixn() { Some(nid.raw().idx() as i64) } else { None };
     stmt.execute(params![
       name,
+      nid_to_sql(*nid),
       node_id
     ])?;
   }
@@ -173,7 +177,7 @@ fn insert_keep(tx: &Transaction<'_>, keep: &[NID]) -> Result<()> {
 fn insert_meta(tx: &Transaction<'_>) -> Result<()> {
   tx.execute(
     "INSERT OR REPLACE INTO meta(k, v) VALUES(?1, ?2)",
-    params!["fmt.version", "0.1"],
+    params!["fmt.version", EXPECTED_FMT_VERSION],
   )?;
   Ok(())
 }
@@ -202,6 +206,38 @@ pub fn import_raw_ast_from_conn(conn: &Connection) -> Result<(RawASTBase, Vec<NI
   let mut base = RawASTBase::empty();
 
   {
+    let version: Option<String> =
+      conn.query_row(
+        "SELECT v FROM meta WHERE k = 'fmt.version'",
+        [],
+        |row| row.get(0),
+      ).optional()?;
+    match version {
+      Some(v) if v == EXPECTED_FMT_VERSION => {}
+      Some(v) => {
+        return Err(rusqlite::Error::FromSqlConversionFailure(
+          0,
+          rusqlite::types::Type::Text,
+          Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("unexpected fmt.version {v}, expected {EXPECTED_FMT_VERSION}"),
+          )),
+        ));
+      }
+      None => {
+        return Err(rusqlite::Error::FromSqlConversionFailure(
+          0,
+          rusqlite::types::Type::Null,
+          Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "missing fmt.version metadata",
+          )),
+        ));
+      }
+    }
+  }
+
+  {
     let mut node_stmt = conn.prepare("SELECT id, op FROM ast_node ORDER BY id")?;
     let mut edge_stmt = conn.prepare("SELECT arg FROM ast_edge WHERE aid = ?1 ORDER BY ord")?;
     let mut node_rows = node_stmt.query([])?;
@@ -228,13 +264,16 @@ pub fn import_raw_ast_from_conn(conn: &Connection) -> Result<(RawASTBase, Vec<NI
   }
 
   {
-    let mut tag_stmt = conn.prepare("SELECT name, aid FROM tag ORDER BY name")?;
+    let mut tag_stmt = conn.prepare("SELECT name, nid, aid FROM tag ORDER BY name")?;
     let mut tag_rows = tag_stmt.query([])?;
     while let Some(row) = tag_rows.next()? {
       let name: String = row.get(0)?;
-      let aid: Option<i64> = row.get(1)?;
+      let nid_val: i64 = row.get(1)?;
+      let aid: Option<i64> = row.get(2)?;
+      let nid = sql_to_nid(nid_val);
+      base.tags.insert(name.clone(), nid);
       if let Some(aid) = aid {
-        base.tags.insert(name, NID::ixn(aid as usize));
+        debug_assert_eq!(nid, NID::ixn(aid as usize));
       }
     }
   }
@@ -317,9 +356,24 @@ mod tests {
       ]
     );
 
-    let tag_aid: Option<i64> =
-      conn.query_row("SELECT aid FROM tag WHERE name = 'and'", [], |row| row.get(0))?;
-    assert_eq!(tag_aid, Some(0));
+    let mut tag_stmt = conn.prepare("SELECT name, nid, aid FROM tag ORDER BY name")?;
+    let mut tag_rows = tag_stmt.query([])?;
+    let mut observed_tags = Vec::new();
+    while let Some(row) = tag_rows.next()? {
+      let name: String = row.get(0)?;
+      let nid_val: i64 = row.get(1)?;
+      let aid_val: Option<i64> = row.get(2)?;
+      observed_tags.push((name, sql_to_nid(nid_val), aid_val));
+    }
+    assert_eq!(observed_tags.len(), base.tags.len());
+    for (name, nid) in base.tags.iter() {
+      let Some((_, observed_nid, observed_aid)) = observed_tags.iter().find(|(n, _, _)| n == name) else {
+        panic!("missing tag {}", name);
+      };
+      assert_eq!(observed_nid, nid);
+      let expected_aid = if nid.is_ixn() { Some(nid.raw().idx() as i64) } else { None };
+      assert_eq!(*observed_aid, expected_aid);
+    }
 
     let (keep_nid, keep_aid): (i64, Option<i64>) =
       conn.query_row("SELECT id, aid FROM keep", [], |row| Ok((row.get(0)?, row.get(1)?)))?;
@@ -328,7 +382,7 @@ mod tests {
 
     let fmt_version: String =
       conn.query_row("SELECT v FROM meta WHERE k = 'fmt.version'", [], |row| row.get(0))?;
-    assert_eq!(fmt_version, "0.1");
+    assert_eq!(fmt_version, EXPECTED_FMT_VERSION);
 
     Ok(())
   }
@@ -346,8 +400,7 @@ mod tests {
 
     let (loaded, keep) = import_raw_ast_from_conn(&conn)?;
     assert_eq!(loaded.bits, base.bits);
-    assert_eq!(loaded.tags.get("and"), base.tags.get("and"));
-    assert_eq!(loaded.tags.len(), 1);
+    assert_eq!(loaded.tags, base.tags);
     assert_eq!(keep, vec![and]);
 
     Ok(())
