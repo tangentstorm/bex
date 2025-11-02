@@ -19,3 +19,6 @@ Unit tests live beside implementations (`test-*.rs` files and `#[cfg(test)]` mod
 
 ## Commit & Pull Request Guidelines
 Follow the `area: imperative summary` subject style seen in history (`swap: disable validate() checks`). Keep subjects under 72 characters, add details in the body (link issues with `Refs #id`), and explain any solver performance trade-offs. Pull requests should outline affected modules, note API or CLI impacts, and include logs or screenshots when touching the HTTP or shell tooling.
+
+## Tooling Notes
+- Do not run `cargo fmt`; formatting is hand-tuned.
