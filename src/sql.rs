@@ -273,7 +273,7 @@ pub fn import_raw_ast_from_conn(conn: &Connection) -> Result<(RawASTBase, Vec<NI
       let nid = sql_to_nid(nid_val);
       base.tags.insert(name.clone(), nid);
       if let Some(aid) = aid {
-        debug_assert_eq!(nid, NID::ixn(aid as usize));
+        debug_assert_eq!(nid.raw(), NID::ixn(aid as usize));
       }
     }
   }
@@ -308,9 +308,13 @@ mod tests {
     let y = base.def("y".into(), VID::var(1));
     let and = base.and(x, y);
     base.tag(and, "and".into());
+    let inv_and = !and;
+    let inv_x = !x;
+    base.tag(x, "var_x".into());
+    base.tag(inv_x, "not_var_x".into());
 
     let mut conn = Connection::open_in_memory()?;
-    export_raw_ast_to_conn(&mut conn, &base, &[and])?;
+    export_raw_ast_to_conn(&mut conn, &base, &[and, inv_and, x, inv_x])?;
 
     let node_count: i64 = conn.query_row("SELECT COUNT(*) FROM ast_node", [], |row| row.get(0))?;
     assert_eq!(node_count, base.len() as i64);
@@ -375,10 +379,23 @@ mod tests {
       assert_eq!(*observed_aid, expected_aid);
     }
 
-    let (keep_nid, keep_aid): (i64, Option<i64>) =
-      conn.query_row("SELECT id, aid FROM keep", [], |row| Ok((row.get(0)?, row.get(1)?)))?;
-    assert_eq!(keep_nid, nid_to_sql(and));
-    assert_eq!(keep_aid, Some(0));
+    let mut keep_stmt = conn.prepare("SELECT id, aid FROM keep ORDER BY rowid")?;
+    let mut keep_rows = keep_stmt.query([])?;
+    let mut observed_keep = Vec::new();
+    while let Some(row) = keep_rows.next()? {
+      let id: i64 = row.get(0)?;
+      let aid: Option<i64> = row.get(1)?;
+      observed_keep.push((sql_to_nid(id), aid));
+    }
+    observed_keep.sort_by_key(|(nid, _)| nid._to_u64());
+    let mut expected_keep = vec![
+      (and, Some(0)),
+      (inv_and, Some(0)),
+      (x, None),
+      (inv_x, None)
+    ];
+    expected_keep.sort_by_key(|(nid, _)| nid._to_u64());
+    assert_eq!(observed_keep, expected_keep);
 
     let fmt_version: String =
       conn.query_row("SELECT v FROM meta WHERE k = 'fmt.version'", [], |row| row.get(0))?;
@@ -394,14 +411,22 @@ mod tests {
     let y = base.def("y".into(), VID::var(1));
     let and = base.and(x, y);
     base.tag(and, "and".into());
+    let inv_and = !and;
+    let inv_x = !x;
+    base.tag(x, "var_x".into());
+    base.tag(inv_x, "not_var_x".into());
 
     let mut conn = Connection::open_in_memory()?;
-    export_raw_ast_to_conn(&mut conn, &base, &[and])?;
+    export_raw_ast_to_conn(&mut conn, &base, &[and, inv_and, x, inv_x])?;
 
     let (loaded, keep) = import_raw_ast_from_conn(&conn)?;
     assert_eq!(loaded.bits, base.bits);
     assert_eq!(loaded.tags, base.tags);
-    assert_eq!(keep, vec![and]);
+    let mut keep_sorted = keep.clone();
+    keep_sorted.sort();
+    let mut expected_keep = vec![and, inv_and, x, inv_x];
+    expected_keep.sort();
+    assert_eq!(keep_sorted, expected_keep);
 
     Ok(())
   }
