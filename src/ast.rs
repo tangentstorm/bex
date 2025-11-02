@@ -26,6 +26,13 @@ impl RawASTBase {
   pub fn len(&self)->usize { self.bits.len() }
   pub fn is_empty(&self)->bool { self.bits.is_empty() }
 
+  pub fn push_raw_ops(&mut self, ops:Ops)->NID {
+    let nid = NID::ixn(self.bits.len());
+    self.bits.push(ops.clone());
+    self.hash.insert(ops, nid);
+    nid
+  }
+
   fn nid(&mut self, ops:Ops)->NID {
     match self.hash.get(&ops) {
       Some(&n) => n,

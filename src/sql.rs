@@ -1,10 +1,11 @@
 //! Persistence helpers for storing graphs in SQLite.
 use std::collections::HashSet;
 use std::path::Path;
+use std::str::FromStr;
 
 use rusqlite::{params, Connection, Result, Transaction};
 
-use crate::{ast::RawASTBase, nid::NID};
+use crate::{ast::RawASTBase, nid::NID, ops};
 
 const CREATE_SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS ast_node(
@@ -71,6 +72,12 @@ fn clear_schema(tx: &Transaction<'_>) -> Result<()> {
 
 fn nid_to_sql(nid: NID) -> i64 {
   i64::from_le_bytes(nid._to_u64().to_le_bytes())
+}
+
+fn sql_to_nid(value: i64) -> NID {
+  let bytes = value.to_le_bytes();
+  let raw = u64::from_le_bytes(bytes);
+  NID::_from_u64(raw)
 }
 
 fn node_levels(base: &RawASTBase) -> Vec<i64> {
@@ -191,19 +198,72 @@ pub fn export_raw_ast_to_path<P: AsRef<Path>>(base: &RawASTBase, path: P, keep: 
   export_raw_ast_to_conn(&mut conn, base, keep)
 }
 
+pub fn import_raw_ast_from_conn(conn: &Connection) -> Result<(RawASTBase, Vec<NID>)> {
+  let mut base = RawASTBase::empty();
+
+  {
+    let mut node_stmt = conn.prepare("SELECT id, op FROM ast_node ORDER BY id")?;
+    let mut edge_stmt = conn.prepare("SELECT arg FROM ast_edge WHERE aid = ?1 ORDER BY ord")?;
+    let mut node_rows = node_stmt.query([])?;
+    while let Some(row) = node_rows.next()? {
+      let node_id: i64 = row.get(0)?;
+      let op_text: String = row.get(1)?;
+      let op_text_trimmed = op_text.trim();
+      if op_text_trimmed.is_empty() {
+        return Err(rusqlite::Error::InvalidQuery);
+      }
+      let fun = NID::from_str(op_text_trimmed)
+        .map_err(|err| rusqlite::Error::InvalidParameterName(format!("invalid op '{}': {}", op_text_trimmed, err)))?;
+      let mut args = Vec::new();
+      let mut edge_rows = edge_stmt.query([node_id])?;
+      while let Some(edge_row) = edge_rows.next()? {
+        let arg_val: i64 = edge_row.get(0)?;
+        args.push(sql_to_nid(arg_val));
+      }
+      let mut rpn = args;
+      rpn.push(fun);
+      let ops = ops::rpn(&rpn);
+      base.push_raw_ops(ops);
+    }
+  }
+
+  {
+    let mut tag_stmt = conn.prepare("SELECT name, aid FROM tag ORDER BY name")?;
+    let mut tag_rows = tag_stmt.query([])?;
+    while let Some(row) = tag_rows.next()? {
+      let name: String = row.get(0)?;
+      let aid: Option<i64> = row.get(1)?;
+      if let Some(aid) = aid {
+        base.tags.insert(name, NID::ixn(aid as usize));
+      }
+    }
+  }
+
+  let mut keep = Vec::new();
+  {
+    let mut keep_stmt = conn.prepare("SELECT id FROM keep ORDER BY rowid")?;
+    let mut keep_rows = keep_stmt.query([])?;
+    while let Some(row) = keep_rows.next()? {
+      let id: i64 = row.get(0)?;
+      keep.push(sql_to_nid(id));
+    }
+  }
+
+  Ok((base, keep))
+}
+
+pub fn import_raw_ast_from_path<P: AsRef<Path>>(path: P) -> Result<(RawASTBase, Vec<NID>)> {
+  let conn = Connection::open(path)?;
+  import_raw_ast_from_conn(&conn)
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
   use crate::{base::Base, ops, vid::VID};
 
-  fn sql_to_nid(value: i64) -> NID {
-    let bytes = value.to_le_bytes();
-    let raw = u64::from_le_bytes(bytes);
-    NID::_from_u64(raw)
-  }
-
   #[test]
-  fn test_roundtrip() -> Result<()> {
+  fn test_save() -> Result<()> {
     let mut base = RawASTBase::empty();
     let x = base.def("x".into(), VID::var(0));
     let y = base.def("y".into(), VID::var(1));
@@ -269,6 +329,26 @@ mod tests {
     let fmt_version: String =
       conn.query_row("SELECT v FROM meta WHERE k = 'fmt.version'", [], |row| row.get(0))?;
     assert_eq!(fmt_version, "0.1");
+
+    Ok(())
+  }
+
+  #[test]
+  fn test_roundtrip() -> Result<()> {
+    let mut base = RawASTBase::empty();
+    let x = base.def("x".into(), VID::var(0));
+    let y = base.def("y".into(), VID::var(1));
+    let and = base.and(x, y);
+    base.tag(and, "and".into());
+
+    let mut conn = Connection::open_in_memory()?;
+    export_raw_ast_to_conn(&mut conn, &base, &[and])?;
+
+    let (loaded, keep) = import_raw_ast_from_conn(&conn)?;
+    assert_eq!(loaded.bits, base.bits);
+    assert_eq!(loaded.tags.get("and"), base.tags.get("and"));
+    assert_eq!(loaded.tags.len(), 1);
+    assert_eq!(keep, vec![and]);
 
     Ok(())
   }
