@@ -4,10 +4,7 @@ Bex is a rust crate for working with binary expressions.
 
 ## 0.4.0 (upcoming)
 
-- add C ffi for use with https://github.com/SSoelvsten/bdd-benchmark (bex adapter is at https://github.com/tangentforks/bdd-benchmark for now)
-- add `ite` to the Base trait
-- Removed `XID` type from `swap.rs`, as it is equivalent to `NID::ixn()` and required duplicating (or genericizing) `Hilo` and `Vhl` types.
-- Added a new SQLite persistence module (`sql` feature, enabled by default) with an `ast_node`/`ast_edge` schema, `tag`/`keep` tables, an `edge_src_bits` view, and stored format-version metadata.
+Upcoming changes for 0.4.0 now live in the README section titled \"Changes in main branch (upcoming version)\".
 
 
 ## 0.3.0 (2025-02-16)
@@ -17,7 +14,7 @@ Bex is a rust crate for working with binary expressions.
   - `reorder` for arbitrary reorderings
   - `reorder_by_force` for the FORCE algorith, a fast (but not always as effective) alternative to variable sifting
   - `to_json` and `from_json` to serialize and restore a set of nids
-- Added a simple [HTTP API](https://github.com/tangentstorm/bex/tree/main/api) for integrating with other languages.
+- Added a simple [HTTP API](api) for integrating with other languages.
 - Added new `Fun` trait and `NidFun` struct, refining the idea of storing truth tables of up to 5 inputs in a NID.
 - Added `ASTBase::{apply,eval}`
 - `naf.rs` (a variation of ANF)
@@ -189,7 +186,7 @@ immediately apparent from its topmost variable.)
 
 **documentation**
 - Began writing/collecting more documentation in the
-  [doc/](https://github.com/tangentstorm/bex/tree/main/doc) directory.
+  [doc/](doc/) directory.
 
 ## 0.1.3 (2019-09-24)
 
@@ -221,7 +218,7 @@ continue to tinker with it.
   to solve arbitrary problems. (Albeit very very slowly, still...)
 - `examples/bex-shell.rs` is a tiny forth-like interpreter for
   manipulating expressions interactively.
-- See [examples/README.md](https://github.com/tangentstorm/bex/tree/main/examples)
+- See [examples/README.md](examples/README.md)
   for more details.
 
 **other improvements**

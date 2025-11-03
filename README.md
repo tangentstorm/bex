@@ -19,27 +19,17 @@ You can also "solve" these AST structures by converting them into various canoni
 is about converting "simple" factoring problems into
 boolean expressions and solving them with bex.
 
-It covers the large factoring problems in [examples/solve/bdd-solve.rs](https://github.com/tangentstorm/bex/blob/main/examples/solve/bdd-solve.rs)
-and the smaller tests in [src/solve.rs](https://github.com/tangentstorm/bex/blob/main/src/solve.rs)
+It covers the large factoring problems in [examples/solve/bdd-solve.rs](examples/solve/bdd-solve.rs)
+and the smaller tests in [src/solve.rs](src/solve.rs)
 
 
 ## Changes in main branch (upcoming version)
 
-- TBD
+- add C ffi for use with https://github.com/SSoelvsten/bdd-benchmark (bex adapter is at https://github.com/tangentforks/bdd-benchmark for now)
+- add `ite` to the Base trait
+- Removed `XID` type from `swap.rs`, as it is equivalent to `NID::ixn()` and required duplicating (or genericizing) `Hilo` and `Vhl` types.
+- Added a new SQLite persistence module (`sql` feature, enabled by default) with an `ast_node`/`ast_edge` schema, `tag`/`keep` tables, an `edge_src_bits` view, and stored format-version metadata.
 
-## What's new in 0.3.0
+## Release versions
 
-- Greatly expanded and fleshed out the python integration, including support for [@tulip-control/dd](https://github.com/tulip-control/dd)
-- Added a variety of new functions to `BddBase`:
-  - `reorder` for arbitrary reorderings
-  - `reorder_by_force` for the FORCE algorith, a fast (but not always as effective) alternative to variable sifting
-  - `to_json` and `from_json` to serialize and restore a set of nids
-- Added a simple [HTTP API](https://github.com/tangentstorm/bex/tree/main/api) for integrating with other languages.
-- Added new `Fun` trait and `NidFun` struct, refining the idea of storing truth tables of up to 5 inputs in a NID.
-- Added `ASTBase::{apply,eval}`
-- `naf.rs` (a variation of ANF)
-- VhlSwarm (extracted a generic VHL swarm framework from BddSwarm, to re-use on other VHL-based mods)
-- Began standardizing the formatting/parsing of NIDs (`FromStr` and `fmt::Display` should now round-trip)
-- Many other small fixes and cleanups.
-
-For full changelog, see [CHANGELOG.md](https://github.com/tangentstorm/bex/blob/main/CHANGELOG.md).
+See [CHANGELOG.md](CHANGELOG.md) for detailed notes on published releases, including [0.3.0](CHANGELOG.md#030-2025-02-16).
