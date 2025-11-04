@@ -35,6 +35,16 @@ and the smaller tests in [src/solve.rs](src/solve.rs)
 - Swap: disable `validate()` checks except in test mode.
 - FFI build/profile updates: move FFI release profile to the workspace root, enable optimizations, and allow configurable profiles.
 - Profiling: set debug info to line-labels-only for profiling release builds.
+- Notation: standardize and tighten NID string forms
+  - Use `@` for indexed nodes; remove legacy `#` form.
+  - Enforce uppercase hex for all hex segments (`xN`, `vN`, `.MMMM`, `@MMMM`, `fN.M`).
+  - Allow binary tables `t` with lengths 2/4/8/16/32 bits (arity 1..5).
+  - Restrict hex tables shorthand to a single digit: `fX` == `f2.X`; multi-digit `fXX` shorthand is rejected (full `fN.M` remains).
+  - Fix parsing of virtual variables (`v…`).
+- Shell: align with spec
+  - Only `!` for negation (remove `~` and `not`).
+  - Only `O` and `I` for constants (remove lowercase aliases).
+- API: no response format change; endpoints still return plain text, but paths now accept the updated NID syntax (uppercase hex, `@…`, extended `t…`, `fX`).
 
 ## Release versions
 

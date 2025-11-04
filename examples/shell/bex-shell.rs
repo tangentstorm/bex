@@ -31,8 +31,8 @@ fn pop<T>(data: &mut Vec<T>)->T {
 fn pop2<T>(data: &mut Vec<T>)->(T,T){
   let y=pop(data); let x=pop(data); (x,y) }
 
-/*fn pop3<T>(data: &mut Vec<T>)->(T,T,T){
-  let (y,z)=pop2(data); let x=pop(data); (x,y,z) }*/
+fn pop3<T>(data: &mut Vec<T>)->(T,T,T){
+  let (y,z)=pop2(data); let x=pop(data); (x,y,z) }
 
 
 // forth-like REPL for the BDD  (main loop)
@@ -51,7 +51,7 @@ fn repl(base:&mut ASTBase) {
     let line = readln();
     for word in line.split_whitespace() {
       match word {
-        "~"|"not"|"!" => { let x = pop(&mut data); data.push(!x) }
+        "!" => { let x = pop(&mut data); data.push(!x) }
         "and" => { let (x,y)=pop2(&mut data); data.push(base.and(x,y)) }
         "xor" => { let (x,y)=pop2(&mut data); data.push(base.xor(x,y)) }
         "or"  => { let (x,y)=pop2(&mut data); data.push(base.or(x,y)) }
@@ -66,7 +66,7 @@ fn repl(base:&mut ASTBase) {
         //todo "lo" => { let (x,y)=pop2(&mut data); data.push(base.when_lo(y,x)) }
         //todo "hi" => { let (x,y)=pop2(&mut data); data.push(base.when_hi(y,x)) }
         //todo "cnt" => { let x = pop(&mut data); data.push(base.node_count(x)) }
-        // "ite" => { let (x,y,z) = pop3(&mut data); data.push(base.ite(x,y,z)); }
+        "ite" => { let (x,y,z) = pop3(&mut data); data.push(base.ite(x,y,z)); }
         //todo "shuf" => { let (n,x,y) = pop3(&mut data); data.push(base.swap(n,x,y)); }
         // "norm" => { let (x,y,z) = pop3(&mut data); println!("{:?}", base.norm(x,y,z)) }
         // "tup" => { let (v,hi,lo) = base.tup(data.pop().expect("underflow")); println!("({}, {}, {})", v,hi,lo); },

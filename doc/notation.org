@@ -1,0 +1,87 @@
+#+title: Bex Notation Vocabulary and Encodings
+#+startup: content
+
+* Goal
+- Define a standard, URL- and shell-friendly notation for Bex NIDs, operators, and expressions that can be shared across the shell(s), API, and JSON.
+
+* NID Notation
+- Constants: =O= (false), =I= (true).
+- Input variables: =xN= where =N= is uppercase hex (e.g., =x0=, =xEB=).
+- Virtual variables: =vN= for synthesized/AST-assigned vars (e.g., =vF3=).
+- Inverted literals: =!xN= and =!vN= denote logical negation.
+- Table NIDs (binary): =tBBB...= with =2^n= bits (1 ≤ n ≤ 5). Example: =t0001= is dyadic AND.
+- Table NIDs (hex): =fN.M...= where the hex payload encodes the truth table. Shorthand: =fN= means =f2.N=.
+  - Example: =f2.6= ≡ =t0110= (XOR).
+- BDD/VHL nodes: =xNN.MMMM= (branching variable is =xNN= or =vNN=) with address =MMMM= in the hilocache.
+  - Inverted BDD edge: =!xNN.MMMM=.
+- AST nodes: =@MMMM= refers to the AST node at index =MMMM=; inverted form =!@MMMM=.
+- Numeric namespace (optional): prefix with =N:= when working with multiple bases (e.g., =3:xA=).
+
+Notes:
+- The hex payload size and arity for =fN.M...= follow the usual truth-table bit ordering; examples above use XOR for illustration.
+
+* Operators
+The vocabulary aims to be grammar-agnostic; the same operator names/symbols work in both infix and RPN grammars. Two schemes are in scope:
+
+** Default (C-like) scheme
+- =|=  or
+- =&=  and
+- =%=: xor
+- ==: equal
+- =!=: not
+- =<: y ∧ ¬x ("less-than" in Boolean algebra sense: =x < y= means "y and not x")
+- =/=: implies (="x implies y"; =x / y=)
+- =?:=: if-then-else (ITE): =f ? g : h=
+
+URL tip: =|= may need URL encoding. If necessary, operators can be aliased by name in URL paths.
+
+** Alternate (J-style) scheme
+- =+.= or
+- =*.= and
+- =~:= xor
+- ==: equal
+- =-.= not
+- =<=: y ∧ ¬x
+- =<:=: implies
+- =?:=: if-then-else (ITE)
+
+Rationale: keep bare =+= for integer circuit addition (see =bex::int::wrapping_add=) while reserving =+.=, =*.=, etc., for bitwise logic. C-like =|,&,^= are also familiar to many users; a grammar may choose either scheme.
+
+* Application and Bracket Notation
+- Tables as operators: bracket application applies arguments to a table. Example: =t0001[x y]= behaves like a dyadic AND.
+  - With C-like scheme: =t0001[x y] ≡ (x & y)=.
+  - With J-style scheme: =t0001[x y] ≡ (x *. y)=.
+- ITE shortcut: when the first argument is a variable, bracket form can serve as an if/then/else shorthand.
+- Applying to structured NIDs (BDD/AST): =NID[args...]= performs top-down substitution into the referenced structure.
+  - For BDDs, substituting two arguments into a node branching on =x5= typically yields a node branching on the next variable (e.g., =x3=), assuming the arguments introduce no new variables.
+  - For AST nodes, this same top-down convention can be adopted; alternatively, this may be disallowed until needed.
+
+* Multiple Grammars
+- Infix algebraic: named variables, =:= for definition/assignment if desired, parentheses for grouping, operators as above.
+- RPN (forth-like): use postfix operators; ITE remains spelled =?:=. To apply a NID as a function rather than push it, a dedicated sigil may be required by the shell grammar.
+- JSON: see below; uses the same operator vocabulary.
+
+* JSON Notation
+- Primitives as strings: e.g., ="O"=, ="x0"=, ="!vA"=.
+- Compound nodes as single-key objects mapping an operator to a list of arguments: e.g., ={"|": ["x0", "x1"]}= means "x0 OR x1".
+- Unary shorthand: the ="~"= operator may elide the list wrapper, e.g., ={"~": "x3"}=.
+- NID-as-operator: a NID string may be used as the operator to perform application/substitution over its structure. Example:
+  - ={ "v5.234": ["x2", "x93"] }= → yields a new BDD NID after substituting =v5→x2= and =v4→x93= within =v5.234=.
+ - ITE construction over BDD NIDs: e.g., ={"?:": ["x9", "!x8.324", "!x4.54C"]}=, passing a branch VID and two NIDs.
+
+Implementation note: Inversion uses a leading =!= on any NID (e.g., =!xNN.MMMM=, =!@0042=). Dotted payloads are hex-encoded.
+
+* Open Questions / Clarifications
+- BDD/VHL bullet in the original proposal listed an inverted form twice; this document treats =xNN.MMMM= as the base form and =!xNN.MMMM= as inverted.
+- Operator scheme: choose a default (C-like vs. J-style) per grammar, or support both with explicit mode selection.
+- URL encoding constraints: confirm which symbols require encoding and whether named aliases are needed for clean endpoints.
+- Table arity limits (=1..5= in the proposal): are these fixed, or should larger tables be supported?
+- AST application: adopt top-down substitution now, or disallow application to AST NIDs until requested by use-cases.
+
+* Examples
+- Infix: =xA % xB=  (xor),  =!(x3 / x7)=  (not implies),  =f ? g : h=  (ITE).
+- RPN: =xA xB %=,  =x3 x7 / !=,  =f g h ?:=.
+- JSON:
+  - ={ "|": ["x0", "x1"] }=
+  - ={ "~": "x3" }=
+  - ={ "?:": ["x9", "!x8.324", "!x4.54C"] }=

@@ -106,7 +106,7 @@ impl fmt::Display for NID {
     else {
       if self.is_inv() { write!(f, "!")?; }
       if self.is_vid() { write!(f, "{}", self.vid()) }
-      else if self.is_ixn() { write!(f, "#{:X}", self.idx()) }
+      else if self.is_ixn() { write!(f, "@{:X}", self.idx()) }
       else { write!(f, "{}.{:X}", self.vid(), self.idx()) }}}}
 
 /// Same as fmt::Display. Mostly so it's easier to see the problem when an assertion fails.
@@ -128,40 +128,63 @@ impl FromStr for NID {
       if ch.peek().unwrap() == &'!' { ch.next(); inv = true }
       macro_rules! num_suffix {
         ($radix:expr, $ch:expr) => { usize::from_str_radix(&$ch.collect::<String>(), $radix) }}
+      let is_upper_hex = |s: &str| s.chars().all(|c| c.is_ascii_digit() || ('A'..='F').contains(&c));
       let c = ch.next().unwrap();
       // literals or VHL NIDS:
-      if c == 'x' || 'c'=='v'  {
-        if let Ok(n) = num_suffix!(16, ch) {
+      if c == 'x' || c == 'v'  {
+        let tail = ch.collect::<String>();
+        if tail.is_empty() { return Err(format!("malformed variable: {}", word)); }
+        if !is_upper_hex(&tail) { return Err(format!("hex must be uppercase: {}", word)); }
+        if let Ok(n) = usize::from_str_radix(&tail, 16) {
           let v = if c == 'x' { vid::VID::var(n as u32) } else { vid::VID::vir(n as u32) };
           if b.is_empty() { Ok(NID::from_vid(v).inv_if(inv)) }
-          else if let Ok(ix) = usize::from_str_radix(&b[1..], 16) {
+          else {
+            if !is_upper_hex(&b[1..]) { return Err(format!("hex must be uppercase: {}", word)); }
+            if let Ok(ix) = usize::from_str_radix(&b[1..], 16) {
             Ok(NID::from_vid_idx(v, ix).inv_if(inv) )}
-          else { Err(format!("bad index after '.': {}", word)) }}
+            else { Err(format!("bad index after '.': {}", word)) }
+          }
+        }
         else { Err(format!("malformed variable: {}", word)) }}
       else { match c {
-        '#' => if let Ok(n) = num_suffix!(16, ch) { Ok(NID::ixn(n).inv_if(inv)) }
-              else { Err(format!("bad ixn: {}", word)) }
+        '@' => {
+          let tail = ch.collect::<String>();
+          if tail.is_empty() { return Err(format!("bad ixn: {}", word)) }
+          if !is_upper_hex(&tail) { return Err(format!("hex must be uppercase: {}", word)); }
+          if let Ok(n) = usize::from_str_radix(&tail, 16) { Ok(NID::ixn(n).inv_if(inv)) }
+          else { Err(format!("bad ixn: {}", word)) }
+        }
         'f' =>
           if let Some(i) = word.find('.') {
             let (a, b) = word.split_at(i);
             if let Ok(ar) = num_suffix!(16, a.chars().skip(1)) {
-              if let Ok(tb) = num_suffix!(16, b.chars().skip(1)) {
+              if !is_upper_hex(&b[1..]) { Err(format!("hex must be uppercase: {}", word)) }
+              else if let Ok(tb) = usize::from_str_radix(&b[1..], 16) {
                 Ok(NID::fun(ar as u8, tb as u32).to_nid().inv_if(inv))}
               else { Err(format!("bad fun arity: {}", word)) }}
             else { Err(format!("bad fun code: {}", word)) }}
-          else if let Ok(n) = num_suffix!(16, ch) {
-            let ar: u8 = if n >= 2 << 16 { 5 }
-              else if n > 2 << 8 { 4 }
-              else if n > 2 << 4 { 3 }
-              else { 2 };
-            Ok(NID::fun(ar, n as u32).to_nid().inv_if(inv))}
-          else { Err(format!("bad fun: {}", word)) }
+          else {
+            // shorthand: fX == f2.X (single uppercase hex digit only)
+            let tail = ch.collect::<String>();
+            if tail.len() == 1 && is_upper_hex(&tail) {
+              let n = usize::from_str_radix(&tail, 16).map_err(|_| format!("bad fun: {}", word))?;
+              Ok(NID::fun(2, n as u32).to_nid().inv_if(inv))
+            } else { Err(format!("bad fun: {}", word)) }
+          }
         't' =>
-            if ch.clone().count() == 4 {
-              if let Ok(tb) = num_suffix!(2, ch) {
-                Ok(NID::fun(2, tb as u32).to_nid().inv_if(inv))}
-              else { Err(format!("bad table (expect 4 bits): {}", word)) }}
-            else { Err(format!("bad length for table (expect 4 bits): {}", word)) }
+            {
+              let bits = ch.collect::<String>();
+              let len = bits.len();
+              if !(len == 2 || len == 4 || len == 8 || len == 16 || len == 32) {
+                return Err(format!("bad length for table (expect 2,4,8,16,32 bits): {}", word));
+              }
+              if !bits.chars().all(|c| c == '0' || c == '1') {
+                return Err(format!("bad table (non-binary digit): {}", word));
+              }
+              let ar = match len { 2=>1, 4=>2, 8=>3, 16=>4, 32=>5, _=> unreachable!() };
+              let tb = usize::from_str_radix(&bits, 2).map_err(|_| format!("bad table: {}", word))?;
+              Ok(NID::fun(ar as u8, tb as u32).to_nid().inv_if(inv))
+            }
         _ => Err(format!("{}?", word))}}}}}}
 
 
