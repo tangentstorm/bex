@@ -9,8 +9,9 @@ use crate::{ast::RawASTBase, nid::NID, ops};
 
 const CREATE_SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS ast_node(
-  id  INTEGER PRIMARY KEY,
-  op  TEXT
+  id    INTEGER PRIMARY KEY,
+  op    TEXT,
+  cost  INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS ast_edge(
@@ -58,7 +59,13 @@ CREATE TABLE IF NOT EXISTS meta(
 const EXPECTED_FMT_VERSION: &str = "0.1";
 
 fn ensure_schema(tx: &Transaction<'_>) -> Result<()> {
-  tx.execute_batch(CREATE_SCHEMA)
+  tx.execute_batch(CREATE_SCHEMA)?;
+  if let Err(err) = tx.execute("ALTER TABLE ast_node ADD COLUMN cost INTEGER", []) {
+    if !matches!(err, rusqlite::Error::SqliteFailure(_, Some(ref msg)) if msg.contains("duplicate column name")) {
+      return Err(err);
+    }
+  }
+  Ok(())
 }
 
 
@@ -83,8 +90,9 @@ fn sql_to_nid(value: i64) -> NID {
 
 fn insert_nodes(tx: &Transaction<'_>, base: &RawASTBase) -> Result<()> {
   let mut stmt = tx.prepare(
-    "INSERT INTO ast_node(id, op) VALUES(?1, ?2)"
+    "INSERT INTO ast_node(id, op, cost) VALUES(?1, ?2, ?3)"
   )?;
+  let costs = base.get_costs();
   for (idx, ops) in base.bits.iter().enumerate() {
     let rpn: Vec<NID> = ops.to_rpn().cloned().collect();
     let op = rpn
@@ -93,7 +101,8 @@ fn insert_nodes(tx: &Transaction<'_>, base: &RawASTBase) -> Result<()> {
       .unwrap_or_else(|| String::from("")); // fallback for unexpected empty ops
     stmt.execute(params![
       idx as i64,
-      op
+      op,
+      costs[idx] as i64
     ])?;
   }
   Ok(())
@@ -295,9 +304,11 @@ mod tests {
     let node_count: i64 = conn.query_row("SELECT COUNT(*) FROM ast_node", [], |row| row.get(0))?;
     assert_eq!(node_count, base.len() as i64);
 
-    let op: String =
-      conn.query_row("SELECT op FROM ast_node WHERE id = 0", [], |row| row.get(0))?;
+    let costs = base.node_costs();
+    let (op, cost): (String, i64) =
+      conn.query_row("SELECT op, cost FROM ast_node WHERE id = 0", [], |row| Ok((row.get(0)?, row.get(1)?)))?;
     assert_eq!(op, format!("{}", ops::AND.to_nid()));
+    assert_eq!(cost, costs[0] as i64);
 
     let mut edge_stmt = conn.prepare("SELECT aid, ord, arg FROM ast_edge ORDER BY ord")?;
     let mut edge_rows = edge_stmt.query([])?;

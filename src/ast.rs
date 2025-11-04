@@ -90,6 +90,7 @@ impl RawASTBase {
   /// Calculate the cost of each bit, where constants have cost 0, inputs have cost 1,
   /// and everything else is 1 + max(cost of input bits).
   pub fn node_costs(&self)->Vec<u64> { self.costs.clone() }
+  pub fn get_costs(&self)->&[u64] { &self.costs }
 
   fn cost_for_ops(costs:&[u64], ops:&Ops)->u64 {
     use std::cmp::max;
