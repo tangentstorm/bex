@@ -9,10 +9,8 @@ use crate::{ast::RawASTBase, nid::NID, ops};
 
 const CREATE_SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS ast_node(
-  id     INTEGER PRIMARY KEY,
-  op     TEXT,
-  level  INTEGER,
-  color  INTEGER
+  id  INTEGER PRIMARY KEY,
+  op  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS ast_edge(
@@ -83,28 +81,9 @@ fn sql_to_nid(value: i64) -> NID {
   NID::_from_u64(raw)
 }
 
-fn node_levels(base: &RawASTBase) -> Vec<i64> {
-  let mut levels = vec![0i64; base.len()];
-  for (idx, ops) in base.bits.iter().enumerate() {
-    let mut max_child = 0i64;
-    let rpn: Vec<NID> = ops.to_rpn().cloned().collect();
-    if let Some((_fun, args)) = rpn.split_last() {
-      for arg in args.iter() {
-        if arg.is_ixn() {
-          let level = levels[arg.idx()];
-          if level > max_child { max_child = level; }
-        }
-      }
-    }
-    levels[idx] = max_child + 1;
-  }
-  levels
-}
-
-fn insert_nodes(tx: &Transaction<'_>, base: &RawASTBase) -> Result<Vec<i64>> {
-  let levels = node_levels(base);
+fn insert_nodes(tx: &Transaction<'_>, base: &RawASTBase) -> Result<()> {
   let mut stmt = tx.prepare(
-    "INSERT INTO ast_node(id, op, level, color) VALUES(?1, ?2, ?3, ?4)"
+    "INSERT INTO ast_node(id, op) VALUES(?1, ?2)"
   )?;
   for (idx, ops) in base.bits.iter().enumerate() {
     let rpn: Vec<NID> = ops.to_rpn().cloned().collect();
@@ -112,15 +91,12 @@ fn insert_nodes(tx: &Transaction<'_>, base: &RawASTBase) -> Result<Vec<i64>> {
       .last()
       .map(|f| format!("{}", f))
       .unwrap_or_else(|| String::from("")); // fallback for unexpected empty ops
-    let level = levels[idx];
     stmt.execute(params![
       idx as i64,
-      op,
-      level,
-      Option::<i64>::None
+      op
     ])?;
   }
-  Ok(levels)
+  Ok(())
 }
 
 fn insert_edges(tx: &Transaction<'_>, base: &RawASTBase) -> Result<()> {
@@ -319,10 +295,9 @@ mod tests {
     let node_count: i64 = conn.query_row("SELECT COUNT(*) FROM ast_node", [], |row| row.get(0))?;
     assert_eq!(node_count, base.len() as i64);
 
-    let (op, level): (String, i64) =
-      conn.query_row("SELECT op, level FROM ast_node WHERE id = 0", [], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    let op: String =
+      conn.query_row("SELECT op FROM ast_node WHERE id = 0", [], |row| row.get(0))?;
     assert_eq!(op, format!("{}", ops::AND.to_nid()));
-    assert_eq!(level, 1);
 
     let mut edge_stmt = conn.prepare("SELECT aid, ord, arg FROM ast_edge ORDER BY ord")?;
     let mut edge_rows = edge_stmt.query([])?;
