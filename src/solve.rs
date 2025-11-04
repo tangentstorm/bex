@@ -16,7 +16,7 @@ use std::env;
 /// capturing of stdout so that you can see debug lines from the solver)
 
 use std::{collections::HashSet, time::SystemTime};
-use crate::{apl, ops};
+use crate::ops;
 use crate::base::Base;
 use crate::nid::NID;
 use crate::vid::VID;
@@ -129,20 +129,14 @@ impl<S:SubSolver> Progress<S> for ProgressReport<'_> {
     println!("total time: {} ms", self.start.elapsed().unwrap().as_millis() ) }}
 
 
-fn default_bitmask(_src:&RawASTBase, v:VID) -> u64 { v.bitmask() }
-
 /// This function renumbers the NIDs so that nodes with higher IDs "cost" more.
 /// Sorting your AST this way dramatically reduces the cost of converting to
 /// another form. (For example, the test_tiny benchmark drops from 5282 steps to 111 for BddBase)
 pub fn sort_by_cost(src:&RawASTBase, top:SrcNid)->(RawASTBase,SrcNid) {
-  let (mut src0,kept0) = src.repack(vec![top.n]);
-  src0.tag(kept0[0], "-top-".to_string());
-  // m:mask (which input vars are required?); c:cost (in steps before we can calculate)
-  let (_m0,c0) = src0.masks_and_costs(default_bitmask);
-  let p = apl::gradeup(&c0); // p[new idx] = old idx
-  let ast = src0.permute(&p);
-  let n = ast.get("-top-").expect("what? I just put it there.");
-  (ast,SrcNid{n}) }
+  let (mut ast, kept) = src.repack(vec![top.n]);
+  let top_nid = kept[0];
+  ast.tag(top_nid, "-top-".to_string());
+  (ast, SrcNid{ n: top_nid }) }
 
 
 /// map a nid from the source to a (usually virtual) variable in the destination

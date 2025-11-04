@@ -6,6 +6,7 @@ use crate::base::*;
 use crate::{nid, NID, Fun};
 use crate::{vid, vid::VID};
 use crate::{ops, ops::Ops};
+use crate::apl;
 use crate::simp;
 
 
@@ -74,36 +75,38 @@ impl RawASTBase {
   /// given a function that maps input bits to 64-bit masks, color each node
   /// in the base according to its inputs (thus tracking the spread of influence
   /// of up to 64 bits (or groups of bits).
-  ///
-  /// while we're at it, calculate the cost of each bit, where constants have cost 0,
-  /// inputs have a cost of 1, and everything else is 1 + max(cost of input bits)
-  /// (TOOD: break masks_and_costs into two functions)
-  pub fn masks_and_costs(&self, vm:VarMaskFn)->(Vec<u64>, Vec<u32>) {
-    use std::cmp::max;
-    let mut masks = vec![];
-    let mut costs = vec![];
+  pub fn node_masks(&self, vm:VarMaskFn)->Vec<u64> {
+    let mut masks:Vec<u64> = Vec::with_capacity(self.bits.len());
     for bit in self.bits.iter() {
-      let (mask, cost) = {
-        let cost = |x:NID| {
-          if x.is_const() { 0 }
-          else if x.is_vid() { 1 }
-          else if x.is_ixn() { costs[x.idx()] }
-          else { todo!("cost({:?})", x) }};
-        let mask = |x:NID| {
-          if x.is_const() { 0 }
-          else if x.is_vid() { vm(self, x.vid()) }
-          else if x.is_ixn() { masks[x.idx()] }
-          else { todo!("mask({:?})", x) }};
-        let mut m = 0u64;
-        let mut c = 0u32;
-        for &op in bit.to_rpn() {
-          if ! op.is_fun() {
-            m |= mask(op);
-            c = max(c, cost(op)); }}
-        (m, c+1) };
-      masks.push(mask);
-      costs.push(cost)}
-    (masks, costs)}
+      let mut mask = 0u64;
+      for &op in bit.to_rpn() {
+        if op.is_fun() { continue }
+        let op_mask =
+          if op.is_const() { 0 }
+          else if op.is_vid() { vm(self, op.vid()) }
+          else if op.is_ixn() { masks[op.idx()] }
+          else { todo!("mask({:?})", op) };
+        mask |= op_mask; }
+      masks.push(mask); }
+    masks }
+
+  /// Calculate the cost of each bit, where constants have cost 0, inputs have cost 1,
+  /// and everything else is 1 + max(cost of input bits).
+  pub fn node_costs(&self)->Vec<u64> {
+    use std::cmp::max;
+    let mut costs:Vec<u64> = Vec::with_capacity(self.bits.len());
+    for bit in self.bits.iter() {
+      let mut cost = 0u64;
+      for &op in bit.to_rpn() {
+        if op.is_fun() { continue }
+        let op_cost =
+          if op.is_const() { 0 }
+          else if op.is_vid() { 1 }
+          else if op.is_ixn() { costs[op.idx()] }
+          else { todo!("cost({:?})", op) };
+        cost = max(cost, op_cost); }
+      costs.push(cost + 1); }
+    costs }
 
   /// this returns a ragged 2d vector of direct references for each bit in the base
   pub fn reftable(&self) -> Vec<Vec<NID>> {
@@ -158,7 +161,7 @@ impl RawASTBase {
 
   /// Construct a new RawASTBase with only the nodes necessary to define the given nodes.
   /// The relative order of the bits is preserved.
-  pub fn repack(&self, keep:Vec<NID>) -> (RawASTBase, Vec<NID>) {
+  pub fn gc(&self, keep:Vec<NID>) -> (RawASTBase, Vec<NID>) {
     // garbage collection: mark dependencies of the bits we want to keep
     let mut deps = vec!(false;self.bits.len());
     for &nid in keep.iter() { self.markdeps(nid, &mut deps) }
@@ -170,7 +173,23 @@ impl RawASTBase {
 
     (self.permute(&kept), keep.iter().map(|&i| {
       if let Some(ix) = new[i.idx()] { NID::ixn(ix) }
-      else { panic!("repack(): failed to find new index for kept nid: {i:?}."); }}).collect())}
+      else { panic!("gc(): failed to find new index for kept nid: {i:?}."); }}).collect())}
+
+  /// Construct a new RawASTBase with only the nodes necessary to define the given nodes,
+  /// then reorder those nodes by increasing cost (cheapest nodes first).
+  pub fn repack(&self, keep:Vec<NID>) -> (RawASTBase, Vec<NID>) {
+    let (base, kept) = self.gc(keep);
+    if base.is_empty() { return (base, kept); }
+    let costs = base.node_costs();
+    let perm = apl::gradeup(&costs);
+    let mut inv = vec![0usize; perm.len()];
+    for (new_idx, &old_idx) in perm.iter().enumerate() { inv[old_idx] = new_idx; }
+    let new_keep = kept.iter().map(|&nid|{
+      if nid.is_ixn() {
+        let mapped = NID::ixn(inv[nid.idx()]);
+        if nid.is_inv() { !mapped } else { mapped }}
+      else { nid }}).collect();
+    (base.permute(&perm), new_keep) }
 
   pub fn get_ops(&self, n:NID)->&Ops {
     if n.is_ixn() { &self.bits[n.idx()] }
