@@ -1,6 +1,5 @@
 extern crate bex as bex_rs;
 use bex_rs::{Base, BddBase, ast::ASTBase, swap::SwapSolver, nid::{NID, I, O}, vid::VID};
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 macro_rules! bex_bdd_op_body {

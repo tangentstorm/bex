@@ -230,7 +230,7 @@ impl ANFBase {
         let lo = self.xor(c, r);
         self.vhl(a, hi, lo)}}}
 
-  pub fn solutions_pad(&self, n:NID, nvars:usize)->ANFSolIterator {
+  pub fn solutions_pad(&self, n:NID, nvars:usize)->ANFSolIterator<'_> {
     ANFSolIterator::from_anf_base(self, n, nvars)}
 } // impl ANFBase
 
@@ -273,7 +273,7 @@ impl ANFBase {
       cur.descend(self);
       if cur.node == I { return Some(cur) }}}
 
-  pub fn terms(&self, n:NID)->ANFTermIterator {
+  pub fn terms(&self, n:NID)->ANFTermIterator<'_> {
     ANFTermIterator::from_anf_base(self, n) }}
 
 pub struct ANFTermIterator<'a> {

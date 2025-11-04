@@ -47,14 +47,14 @@ impl Iterator for BDDSolIterator<'_> {
 
 /// Solution iterators.
 impl BddBase {
-  pub fn solutions(&mut self, n:NID)->BDDSolIterator {
+  pub fn solutions(&mut self, n:NID)->BDDSolIterator<'_> {
     let nvars = if n.is_const() { 1 } else if n.vid().is_var() { n.vid().var_ix() }
     else if n.vid().is_vir() {
       panic!("It probably doesn't make sense to call solutions(n) when n.vid().is_vir(), but you can try solutions_pad() if you think it makes sense.") }
     else { panic!("Don't know how to find solutions({:?}). Maybe try solutions_pad()...?", n) };
     self.solutions_pad(n, nvars)}
 
-  pub fn solutions_pad(&self, n:NID, nvars:usize)->BDDSolIterator {
+  pub fn solutions_pad(&self, n:NID, nvars:usize)->BDDSolIterator<'_> {
     BDDSolIterator::from_bdd(self, n, nvars)}
 
 
