@@ -87,23 +87,25 @@ impl RawASTBase {
       masks.push(mask); }
     masks }
 
-  /// Calculate the cost of each bit, where constants have cost 0, inputs have cost 1,
-  /// and everything else is 1 + max(cost of input bits).
+  /// Calculate the cost of each bit, where constants and literals have cost 0,
+  /// and every other node is 1 + max(cost of its inputs).
   pub fn node_costs(&self)->Vec<u64> { self.costs.clone() }
   pub fn get_costs(&self)->&[u64] { &self.costs }
 
   fn cost_for_ops(costs:&[u64], ops:&Ops)->u64 {
     use std::cmp::max;
     let mut cost = 0u64;
-    for &op in ops.to_rpn() {
-      if op.is_fun() { continue }
+    let mut has_fun = false;
+    for op in ops.to_rpn() {
+      if op.is_fun() {
+        has_fun = true;
+        continue }
       let op_cost =
-        if op.is_const() { 0 }
-        else if op.is_vid() { 1 }
+        if op.is_lit() { 0 }
         else if op.is_ixn() { costs[op.idx()] }
         else { todo!("cost({:?})", op) };
       cost = max(cost, op_cost); }
-    cost + 1 }
+    if has_fun { cost + 1 } else { cost } }
 
   pub(crate) fn rebuild_metadata(&mut self) {
     self.hash.clear();
