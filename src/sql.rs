@@ -235,7 +235,7 @@ pub fn import_raw_ast_from_conn(conn: &Connection) -> Result<(RawASTBase, Vec<NI
       let mut rpn = args;
       rpn.push(fun);
       let ops = ops::rpn(&rpn);
-      base.push_raw_ops(ops);
+      base.nid(ops);
     }
   }
 
