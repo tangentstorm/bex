@@ -29,6 +29,12 @@ and the smaller tests in [src/solve.rs](src/solve.rs)
 - add `ite` to the Base trait
 - Removed `XID` type from `swap.rs`, as it is equivalent to `NID::ixn()` and required duplicating (or genericizing) `Hilo` and `Vhl` types.
 - Added a new SQLite persistence module (`sql` feature, enabled by default) with an `ast_node`/`ast_edge` schema, `tag`/`keep` tables, an `edge_src_bits` view, and stored format-version metadata.
+- Expose AST/BDD operations, solvers, and `NID` utilities via the C FFI.
+- Breaking: remove `ITE::new` (use the normal constructor instead).
+- Swarm: when `num_workers=0`, leave one core free for the main thread.
+- Swap: disable `validate()` checks except in test mode.
+- FFI build/profile updates: move FFI release profile to the workspace root, enable optimizations, and allow configurable profiles.
+- Profiling: set debug info to line-labels-only for profiling release builds.
 
 ## Release versions
 
