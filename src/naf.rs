@@ -394,6 +394,7 @@ impl NafBase {
           vec![ix(*x), ix(*y), (if *inv { ops::NAND } else { ops::AND }).to_nid()]},
         NAF::Xor { inv, x, y } => {
           vec![ix(*x), ix(*y), (if *inv { ops::NXOR } else { ops::XOR }).to_nid()]} })); }
+    res.rebuild_metadata();
     for i in (self.nodes.len()-16)..self.nodes.len()  {
       let row = &res.bits[i];
       let (f, args) = row.to_app();

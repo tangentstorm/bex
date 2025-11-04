@@ -16,6 +16,7 @@ pub struct RawASTBase {
   // TODO: redesign tags. (only used externally)
   pub tags: HashMap<String, NID>,   // support for naming/tagging bits.
   hash: HashMap<Ops, NID>,          // expression cache (simple+complex)
+  costs: Vec<u64>,                  // cached per-node costs (aligned with bits)
 }
 
 type VarMaskFn = fn(&RawASTBase,vid::VID)->u64;
@@ -23,7 +24,8 @@ type VarMaskFn = fn(&RawASTBase,vid::VID)->u64;
 /// An ASTBase that does not use extra simplification rules.
 impl RawASTBase {
 
-  pub fn empty()->RawASTBase { RawASTBase{ bits:vec![], tags:HashMap::new(), hash:HashMap::new() }}
+  pub fn empty()->RawASTBase {
+    RawASTBase{ bits:vec![], tags:HashMap::new(), hash:HashMap::new(), costs:vec![] }}
   pub fn len(&self)->usize { self.bits.len() }
   pub fn is_empty(&self)->bool { self.bits.is_empty() }
 
@@ -31,8 +33,10 @@ impl RawASTBase {
     match self.hash.get(&ops) {
       Some(&n) => n,
       None => {
+        let cost = Self::cost_for_ops(&self.costs, &ops);
         let nid = NID::ixn(self.bits.len());
         self.bits.push(ops.clone());
+        self.costs.push(cost);
         self.hash.insert(ops, nid);
         nid }}}
 
@@ -85,21 +89,30 @@ impl RawASTBase {
 
   /// Calculate the cost of each bit, where constants have cost 0, inputs have cost 1,
   /// and everything else is 1 + max(cost of input bits).
-  pub fn node_costs(&self)->Vec<u64> {
+  pub fn node_costs(&self)->Vec<u64> { self.costs.clone() }
+
+  fn cost_for_ops(costs:&[u64], ops:&Ops)->u64 {
     use std::cmp::max;
-    let mut costs:Vec<u64> = Vec::with_capacity(self.bits.len());
-    for bit in self.bits.iter() {
-      let mut cost = 0u64;
-      for &op in bit.to_rpn() {
-        if op.is_fun() { continue }
-        let op_cost =
-          if op.is_const() { 0 }
-          else if op.is_vid() { 1 }
-          else if op.is_ixn() { costs[op.idx()] }
-          else { todo!("cost({:?})", op) };
-        cost = max(cost, op_cost); }
-      costs.push(cost + 1); }
-    costs }
+    let mut cost = 0u64;
+    for &op in ops.to_rpn() {
+      if op.is_fun() { continue }
+      let op_cost =
+        if op.is_const() { 0 }
+        else if op.is_vid() { 1 }
+        else if op.is_ixn() { costs[op.idx()] }
+        else { todo!("cost({:?})", op) };
+      cost = max(cost, op_cost); }
+    cost + 1 }
+
+  pub(crate) fn rebuild_metadata(&mut self) {
+    self.hash.clear();
+    self.costs.clear();
+    self.hash.reserve(self.bits.len());
+    self.costs.reserve(self.bits.len());
+    for (idx, ops) in self.bits.iter().enumerate() {
+      let cost = Self::cost_for_ops(&self.costs, ops);
+      self.costs.push(cost);
+      self.hash.insert(ops.clone(), NID::ixn(idx)); }}
 
   /// this returns a ragged 2d vector of direct references for each bit in the base
   pub fn reftable(&self) -> Vec<Vec<NID>> {
@@ -150,7 +163,9 @@ impl RawASTBase {
     for (key, &nid) in &self.tags {
       if nid.is_ixn() && new[nid.idx()].is_none() { continue }
       else { tags.insert(key.clone(), nnix(nid)); }}
-    RawASTBase{ bits, tags, hash:HashMap::new() }}
+    let mut base = RawASTBase{ bits, tags, hash:HashMap::new(), costs:vec![] };
+    base.rebuild_metadata();
+    base }
 
   /// Construct a new RawASTBase with only the nodes necessary to define the given nodes.
   /// The relative order of the bits is preserved.
@@ -182,7 +197,8 @@ impl RawASTBase {
         let mapped = NID::ixn(inv[nid.idx()]);
         if nid.is_inv() { !mapped } else { mapped }}
       else { nid }}).collect();
-    (base.permute(&perm), new_keep) }
+    let ast = base.permute(&perm);
+    (ast, new_keep) }
 
   pub fn get_ops(&self, n:NID)->&Ops {
     if n.is_ixn() { &self.bits[n.idx()] }
@@ -379,4 +395,5 @@ test_base_when!(ASTBase);
   let (b2, keep) = b.repack(vec![xor]);
   assert_eq!(b2.len(), 2);
   assert_eq!(keep, vec![NID::ixn(1)]);
+  assert_eq!(b2.node_costs().len(), b2.len());
   assert_eq!(b2.get_ops(keep[0]), b.get_ops(xor)); }
