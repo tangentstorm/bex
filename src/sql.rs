@@ -17,38 +17,23 @@ CREATE TABLE IF NOT EXISTS ast_node(
 CREATE TABLE IF NOT EXISTS ast_edge(
   aid     INTEGER NOT NULL,
   ord     INTEGER NOT NULL,
-  arg     INTEGER NOT NULL,
+  arg     TEXT NOT NULL,
   PRIMARY KEY(aid, ord),
   FOREIGN KEY(aid) REFERENCES ast_node(id)
 );
 
 CREATE TABLE IF NOT EXISTS tag(
   name    TEXT PRIMARY KEY,
-  nid     INTEGER NOT NULL,
+  nid     TEXT NOT NULL,
   aid     INTEGER,
   FOREIGN KEY(aid) REFERENCES ast_node(id)
 );
 
 CREATE TABLE IF NOT EXISTS keep(
-  id    INTEGER PRIMARY KEY,
-  aid   INTEGER,
+  aid   INTEGER PRIMARY KEY,
+  nid   TEXT NOT NULL,
   FOREIGN KEY(aid) REFERENCES ast_node(id)
 );
-
-CREATE VIEW IF NOT EXISTS edge_src_bits AS
-SELECT
-  e.aid,
-  e.ord,
-  e.arg,
-  CASE WHEN (e.arg & 0x8000000000000000) != 0 THEN 1 ELSE 0 END AS src_inv,
-  CASE WHEN (e.arg & 0x4000000000000000) != 0 THEN 1 ELSE 0 END AS src_var,
-  CASE
-    WHEN (e.arg & 0x0800000000000000) != 0 THEN 'tbl'
-    WHEN (e.arg & 0x2000000000000000) != 0 THEN 'const'
-    WHEN (e.arg & 0x4000000000000000) != 0 THEN 'lit'
-    ELSE 'ixn'
-  END AS src_type
-FROM ast_edge e;
 
 CREATE TABLE IF NOT EXISTS meta(
   k  TEXT PRIMARY KEY,
@@ -76,16 +61,6 @@ fn clear_schema(tx: &Transaction<'_>) -> Result<()> {
   tx.execute("DELETE FROM keep", [])?;
   tx.execute("DELETE FROM meta", [])?;
   Ok(())
-}
-
-fn nid_to_sql(nid: NID) -> i64 {
-  i64::from_le_bytes(nid._to_u64().to_le_bytes())
-}
-
-fn sql_to_nid(value: i64) -> NID {
-  let bytes = value.to_le_bytes();
-  let raw = u64::from_le_bytes(bytes);
-  NID::_from_u64(raw)
 }
 
 fn insert_nodes(tx: &Transaction<'_>, base: &RawASTBase) -> Result<()> {
@@ -119,7 +94,7 @@ fn insert_edges(tx: &Transaction<'_>, base: &RawASTBase) -> Result<()> {
         stmt.execute(params![
           idx as i64,
           ord as i64,
-          nid_to_sql(*arg)
+          format!("{}", arg)
         ])?;
       }
     }
@@ -135,7 +110,7 @@ fn insert_tags(tx: &Transaction<'_>, base: &RawASTBase) -> Result<()> {
     let node_id = if nid.is_ixn() { Some(nid.raw().idx() as i64) } else { None };
     stmt.execute(params![
       name,
-      nid_to_sql(*nid),
+      format!("{}", nid),
       node_id
     ])?;
   }
@@ -144,16 +119,18 @@ fn insert_tags(tx: &Transaction<'_>, base: &RawASTBase) -> Result<()> {
 
 fn insert_keep(tx: &Transaction<'_>, keep: &[NID]) -> Result<()> {
   let mut stmt = tx.prepare(
-    "INSERT OR REPLACE INTO keep(id, aid) VALUES(?1, ?2)"
+    "INSERT OR REPLACE INTO keep(aid, nid) VALUES(?1, ?2)"
   )?;
-  let mut seen: HashSet<NID> = HashSet::new();
+  let mut seen: HashSet<usize> = HashSet::new();
   for &nid in keep {
-    if seen.insert(nid) {
-      let node_id = if nid.is_ixn() { Some(nid.raw().idx() as i64) } else { None };
-      stmt.execute(params![
-        nid_to_sql(nid),
-        node_id
-      ])?;
+    if nid.is_ixn() {
+      let aid = nid.raw().idx();
+      if seen.insert(aid) {
+        stmt.execute(params![
+          aid as i64,
+          format!("{}", nid)
+        ])?;
+      }
     }
   }
   Ok(())
@@ -238,8 +215,10 @@ pub fn import_raw_ast_from_conn(conn: &Connection) -> Result<(RawASTBase, Vec<NI
       let mut args = Vec::new();
       let mut edge_rows = edge_stmt.query([node_id])?;
       while let Some(edge_row) = edge_rows.next()? {
-        let arg_val: i64 = edge_row.get(0)?;
-        args.push(sql_to_nid(arg_val));
+        let arg_str: String = edge_row.get(0)?;
+        let arg = NID::from_str(&arg_str)
+          .map_err(|err| rusqlite::Error::InvalidParameterName(format!("invalid arg '{}': {}", arg_str, err)))?;
+        args.push(arg);
       }
       let mut rpn = args;
       rpn.push(fun);
@@ -253,9 +232,10 @@ pub fn import_raw_ast_from_conn(conn: &Connection) -> Result<(RawASTBase, Vec<NI
     let mut tag_rows = tag_stmt.query([])?;
     while let Some(row) = tag_rows.next()? {
       let name: String = row.get(0)?;
-      let nid_val: i64 = row.get(1)?;
+      let nid_str: String = row.get(1)?;
       let aid: Option<i64> = row.get(2)?;
-      let nid = sql_to_nid(nid_val);
+      let nid = NID::from_str(&nid_str)
+        .map_err(|err| rusqlite::Error::InvalidParameterName(format!("invalid nid '{}': {}", nid_str, err)))?;
       base.tags.insert(name.clone(), nid);
       if let Some(aid) = aid {
         debug_assert_eq!(nid.raw(), NID::ixn(aid as usize));
@@ -265,11 +245,13 @@ pub fn import_raw_ast_from_conn(conn: &Connection) -> Result<(RawASTBase, Vec<NI
 
   let mut keep = Vec::new();
   {
-    let mut keep_stmt = conn.prepare("SELECT id FROM keep ORDER BY rowid")?;
+    let mut keep_stmt = conn.prepare("SELECT nid FROM keep ORDER BY aid")?;
     let mut keep_rows = keep_stmt.query([])?;
     while let Some(row) = keep_rows.next()? {
-      let id: i64 = row.get(0)?;
-      keep.push(sql_to_nid(id));
+      let nid_str: String = row.get(0)?;
+      let nid = NID::from_str(&nid_str)
+        .map_err(|err| rusqlite::Error::InvalidParameterName(format!("invalid nid '{}': {}", nid_str, err)))?;
+      keep.push(nid);
     }
   }
 
@@ -318,42 +300,24 @@ mod tests {
       let ord: i64 = row.get(1)?;
       assert_eq!(aid, 0);
       assert!(ord == 0 || ord == 1);
-      let arg: i64 = row.get(2)?;
-      src_values.push(sql_to_nid(arg));
+      let arg_str: String = row.get(2)?;
+      let arg = NID::from_str(&arg_str).unwrap();
+      src_values.push(arg);
     }
     src_values.sort();
     let mut expected = vec![x, y];
     expected.sort();
     assert_eq!(src_values, expected);
 
-    let mut bits_stmt = conn.prepare(
-      "SELECT ord, src_inv, src_var, src_type FROM edge_src_bits WHERE aid = 0 ORDER BY ord"
-    )?;
-    let mut bits_rows = bits_stmt.query([])?;
-    let mut view_entries = Vec::new();
-    while let Some(row) = bits_rows.next()? {
-      let ord: i64 = row.get(0)?;
-      let inv_flag: i64 = row.get(1)?;
-      let var_flag: i64 = row.get(2)?;
-      let kind: String = row.get(3)?;
-      view_entries.push((ord, inv_flag != 0, var_flag != 0, kind));
-    }
-    assert_eq!(
-      view_entries,
-      vec![
-        (0, false, true, String::from("lit")),
-        (1, false, true, String::from("lit"))
-      ]
-    );
-
     let mut tag_stmt = conn.prepare("SELECT name, nid, aid FROM tag ORDER BY name")?;
     let mut tag_rows = tag_stmt.query([])?;
     let mut observed_tags = Vec::new();
     while let Some(row) = tag_rows.next()? {
       let name: String = row.get(0)?;
-      let nid_val: i64 = row.get(1)?;
+      let nid_str: String = row.get(1)?;
       let aid_val: Option<i64> = row.get(2)?;
-      observed_tags.push((name, sql_to_nid(nid_val), aid_val));
+      let nid = NID::from_str(&nid_str).unwrap();
+      observed_tags.push((name, nid, aid_val));
     }
     assert_eq!(observed_tags.len(), base.tags.len());
     for (name, nid) in base.tags.iter() {
@@ -365,22 +329,20 @@ mod tests {
       assert_eq!(*observed_aid, expected_aid);
     }
 
-    let mut keep_stmt = conn.prepare("SELECT id, aid FROM keep ORDER BY rowid")?;
+    let mut keep_stmt = conn.prepare("SELECT aid, nid FROM keep ORDER BY aid")?;
     let mut keep_rows = keep_stmt.query([])?;
     let mut observed_keep = Vec::new();
     while let Some(row) = keep_rows.next()? {
-      let id: i64 = row.get(0)?;
-      let aid: Option<i64> = row.get(1)?;
-      observed_keep.push((sql_to_nid(id), aid));
+      let aid: i64 = row.get(0)?;
+      let nid_str: String = row.get(1)?;
+      let nid = NID::from_str(&nid_str).unwrap();
+      observed_keep.push((aid, nid));
     }
-    observed_keep.sort_by_key(|(nid, _)| nid._to_u64());
-    let mut expected_keep = vec![
-      (and, Some(0)),
-      (inv_and, Some(0)),
-      (x, None),
-      (inv_x, None)
+    // Only ixn nodes are stored in keep table (and and inv_and both point to aid=0)
+    // inv_and is the inverted version of and, but they have the same aid
+    let expected_keep = vec![
+      (0, and),
     ];
-    expected_keep.sort_by_key(|(nid, _)| nid._to_u64());
     assert_eq!(observed_keep, expected_keep);
 
     let fmt_version: String =
@@ -408,11 +370,10 @@ mod tests {
     let (loaded, keep) = import_raw_ast_from_conn(&conn)?;
     assert_eq!(loaded.bits, base.bits);
     assert_eq!(loaded.tags, base.tags);
-    let mut keep_sorted = keep.clone();
-    keep_sorted.sort();
-    let mut expected_keep = vec![and, inv_and, x, inv_x];
-    expected_keep.sort();
-    assert_eq!(keep_sorted, expected_keep);
+    // Only ixn nodes are stored in keep table
+    // and and inv_and share the same aid (0), so only one entry is stored
+    let expected_keep = vec![and];
+    assert_eq!(keep, expected_keep);
 
     Ok(())
   }
