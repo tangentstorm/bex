@@ -1,3 +1,0 @@
-- flip anf/bdd/etc upside down (so smallest is at bottom)
-- replace the "real" bit with a "virtual" bit
-- parse env/command line to determine if we show trees in tests
