@@ -478,46 +478,35 @@ impl VhlScaffold {
 
 
 fn plan_regroup(vids:&[VID], groups:&[HashSet<VID>])->HashMap<VID,usize> {
-  // vids are arranged from bottom to top
   let mut plan = HashMap::new();
 
   // if only one group, there's nothing to do:
   if groups.len() == 1 && groups[0].len() == vids.len() { return plan }
 
-  // TODO: check for complete partition (set(vids)==set(U/groups)
-  let mut sum = 0; for x in groups.iter() { sum+= x.len() }
-  assert_eq!(vids.len(), sum, "vids and groups had different total size");
-
-  // map each variable to its group number:
-  let mut dest:HashMap<VID,usize> = HashMap::new();
-  for (i, g) in groups.iter().enumerate() {
-    for &v in g { dest.insert(v, i); }}
-
-  // start position of each group:
-  let mut start:Vec<usize> = groups.iter().scan(0, |a,x| {
-    *a+=x.len(); Some(*a)}).collect();
-  start.insert(0, 0);
-  start.pop();
-
-  // downward-moving cursor for each group (starts at last position)
-  let mut curs:Vec<usize> = groups.iter().scan(0, |a,x|{
-    *a+=x.len(); Some(*a)}).collect();
-
-  let mut saw_misplaced = false;
-  for (i,v) in vids.iter().enumerate().rev() {
-    let g = dest[v]; // which group does it go to?
-    // we never schedule a move for group 0. others just move past them.
-    if g == 0 { if i>=start[1] { saw_misplaced = true }}
-    // once we see a misplaced item, we have to track everything below it, so that
-    // items that start in place *stay* in place as the swaps happen.
-    else {
-      curs[g]-=1;
-      if saw_misplaced || i<start[g] {
-        plan.insert(*v, curs[g]);
-        saw_misplaced=true }}
-    //println!("i: {} v: {} g:{}, saw_misplaced: {}, curs:{:?}, plan:{:?}" , i, v, g, saw_misplaced, curs, plan);
+  // Build target position mapping from groups (bottom-to-top)
+  // Sort variables within each group for deterministic ordering
+  let mut vid_to_target: HashMap<VID, usize> = HashMap::new();
+  let mut target_pos = 0;
+  for group in groups {
+    let mut sorted_group: Vec<_> = group.iter().cloned().collect();
+    sorted_group.sort_by_key(|v| v.vid_ix());
+    for vid in sorted_group {
+      vid_to_target.insert(vid, target_pos);
+      target_pos += 1;
+    }
   }
-  plan}
+
+  // Add all variables that are not in their target position to the plan
+  for (i, &vid) in vids.iter().enumerate() {
+    if let Some(&target) = vid_to_target.get(&vid) {
+      if i != target {
+        plan.insert(vid, target);
+      }
+    }
+  }
+
+  plan
+}
 
 // functions for performing the distributed regroup()
 impl VhlScaffold {
@@ -532,25 +521,32 @@ impl VhlScaffold {
   fn next_regroup_task(&mut self, plan:&HashMap<VID,usize>)->(VID, Vec<Q>) {
     let mut res = vec![];
     // find a variable to move that isn't locked yet:
+    // Only consider variables that need to move UP (current < target)
     for &vu in self.vids.iter().rev() {
       if self.locked.contains(&vu) { continue }
       if let Some(&dst) = plan.get(&vu) {
-        if self.vix(vu).unwrap() == dst { continue }
+        let current = self.vix(vu).unwrap();
+        if current == dst { continue }
+        // Only assign work to variables that need to move UP
+        if current >= dst { continue }
         // we lock all the moving variables so they never cross each other
         if let Some(ru) = self.take_row(&vu) {
           res.push(Q::Init{vu, ru});
-          let vd = self.vid_above(vu).unwrap();
-          // schedule swap immediately if we can. (otherwise regroup() sets an alarm)
-          if plan.contains_key(&vd) {
-          /*println!("\x1b[33mWARNING: DEFERRING task for {} because row above ({}) is in the plan.\x1b[0m",vu, vd);*/ }
-          else if let Some(rd) = self.take_row(&vd) { res.push(Q::Step{vd, rd}) }
-          else { panic!("WHYY?") }
+          if let Some(vd) = self.vid_above(vu) {
+            // schedule swap immediately if we can. (otherwise regroup() sets an alarm)
+            if plan.contains_key(&vd) && self.vix(vd).map(|p| p < plan[&vd]).unwrap_or(false) {
+            /*println!("\x1b[33mWARNING: DEFERRING task for {} because row above ({}) is in the plan.\x1b[0m",vu, vd);*/ }
+            else if let Some(rd) = self.take_row(&vd) { res.push(Q::Step{vd, rd}) }
+            else { panic!("WHYY?") }
+          }
           return (vu, res) }
         else { // we couldn't take row u. it's probably being swapped
-          let other = &self.vid_below(vu).unwrap();
-          assert!(plan.contains_key(other), "couldn't take_row {} but vid_below is {}", vu, other);
+          if let Some(other) = self.vid_below(vu) {
+            assert!(plan.contains_key(&other), "couldn't take_row {} but vid_below is {}", vu, other);
+          }
           panic!("COULDN't TAKE ROW U ({}), BUT DON'T KNOW WHY", vu) }}}
-      panic!("SPAWNED A THREAD WITH NOTHING TO DO")}
+      // Return a sentinel indicating no more work available
+      (NOV, vec![])}
 
   /// arrange row order to match the given groups.
   /// the groups are given in bottom-up order (so groups[0] is on bottom), and should
@@ -561,20 +557,33 @@ impl VhlScaffold {
     self.drcd = HashMap::new();
     self.validate("before regroup()");
     // (var, ix) pairs, where plan is to lift var to row ix
-    let plan = self.plan_regroup(&groups);
+    let mut plan = self.plan_regroup(&groups);
     if plan.is_empty() { return }
-    // println!("current order: {:?}", self.vids);
-    // println!("goal grouping: {:?}", groups);
-    // println!("regroup plan: {:?}", plan);
-    let mut swarm: Swarm<Q,R,SwapWorker> = Swarm::new_with_threads(plan.len());
+
+    // Count only variables that need to move UP (current < target)
+    // Variables that need to move DOWN will be displaced by others
+    let upward_movers = plan.iter()
+      .filter(|(&vid, &target)| {
+        self.vix(vid).map(|current| current < target).unwrap_or(false)
+      })
+      .count();
+
+    // Need at least one worker
+    let num_workers = upward_movers.max(1);
+    let mut swarm: Swarm<Q,R,SwapWorker> = Swarm::new_with_threads(num_workers);
     let mut alarm: HashMap<VID,WID> = HashMap::new();
     let _:Option<()> = swarm.run(|wid,qid,r|->SwarmCmd<Q,()> {
       match qid {
         QID::INIT => { // assign next task to the worker
-          let (vu, mut work) =  self.next_regroup_task(&plan);
+          let (vu, mut work) = self.next_regroup_task(&plan);
           if vu == NOV { SwarmCmd::Pass }
           else { match work.len() {
-            1 => { alarm.insert(self.vid_above(vu).unwrap(), wid); SwarmCmd::Send(work.pop().unwrap()) },
+            1 => {
+              if let Some(vd) = self.vid_above(vu) {
+                alarm.insert(vd, wid);
+              }
+              SwarmCmd::Send(work.pop().unwrap())
+            },
             2 => SwarmCmd::Batch(work.into_iter().map(move |q| (wid, q)).collect()),
             // TODO: assign extra workers to swaps with more nodes?
             // this also happens when we spawn a new thread to work on a formerly completed vid that got displaced
@@ -592,18 +601,25 @@ impl VhlScaffold {
 
             // complete one swap in the move:
             R::PutRD{vu, vd, rd, dnew, umov, dels, refs} => {
-              self.swarm_put_rd(&plan, &mut alarm, wid, vu, vd, rd, dnew, umov, dels, refs) },
+              self.swarm_put_rd(&mut plan, &groups, &mut alarm, wid, vu, vd, rd, dnew, umov, dels, refs) },
 
             // finish the move for this vid
             R::PutRU{vu, ru} => {
-              debug_assert!(plan.contains_key(&vu), "got back vu:{:?} that wasn't in the plan", vu);
+              // Note: vu might not be in the updated plan if it just reached its target
               debug_assert!(self.locked.contains(&vu), "vu:{} wasn't locked!", vu);
               self.locked.remove(&vu);
               self.rows.insert(vu, ru);
               self.apply_drcd(&vu);
               self.complete.insert(vu, wid);
 
-              if self.complete.len() == plan.len() {
+              // Check if there are any more variables that need to move UP
+              let upward_movers = plan.iter()
+                .filter(|(&vid, &target)| {
+                  self.vix(vid).map(|current| current < target).unwrap_or(false)
+                })
+                .count();
+
+              if upward_movers == 0 {
                 debug_assert!(alarm.is_empty(), "last worker died but we still have alarms: {:?}", alarm);
                 SwarmCmd::Return(()) }
               else { SwarmCmd::Pass }}}},
@@ -640,8 +656,8 @@ impl VhlScaffold {
       for (&nid, &drc) in drcd.iter() { self.add_ref_ix_or_defer(nid, drc)} }}
 
   /// called whenever a worker returns a downward-moving row to the scaffold
-  #[allow(clippy::too_many_arguments)] // TODO fix this!
-  fn swarm_put_rd(&mut self, plan:&HashMap<VID,usize>, alarm:&mut HashMap<VID,WID>,
+  #[allow(clippy::too_many_arguments)]
+  fn swarm_put_rd(&mut self, plan:&mut HashMap<VID,usize>, groups:&[HashSet<VID>], alarm:&mut HashMap<VID,WID>,
     wid:WID, vu:VID, vd:VID, rd:VhlRow, dnew:Vec<Mod>, umov:Vec<Mod>, dels:Vec<usize>, refs:HashMap<NID,i64>
   )->SwarmCmd<Q,()> {
     // replace and unlock the downward-moving row:
@@ -682,6 +698,9 @@ impl VhlScaffold {
     //println!("\x1b[36mswapped vu:{} -> vd:{} => {:?}\x1b[0m", vu, vd, self.vids);
     //self.validate(format!("after swapping vd:{:?} with vu:{:?}", vd, vu).as_str());
 
+    // Recalculate the plan based on the new ordering
+    *plan = self.plan_regroup(groups);
+
     let mut work:Vec<(WID, Q)> = vec![];
 
     // tell anyone waiting on rd that they can resume work
@@ -696,19 +715,45 @@ impl VhlScaffold {
     // if vu just moved into vd's planned spot, it means vd's move was already complete, and we just displaced it.
     // However, its worker is already dead (so we need a new one), and the row above is locked until we finish
     // the next move for vu (so we set an alarm rather than spawning a new thread)
-    else if plan.contains_key(&vd) && self.complete.contains_key(&vd) {
+    let vd_needs_to_move_up = if let Some(&target_pos) = plan.get(&vd) {
+      let current_pos = self.vix(vd).unwrap();
+      current_pos < target_pos  // Only respawn if vd needs to move UP
+    } else {
+      false
+    };
+
+    if vd_needs_to_move_up && self.complete.contains_key(&vd) {
       // println!("RE-SPAWNING WORKER FOR DISPLACED VID: {}", vd);
       let w = self.complete.remove(&vd).unwrap();
       work.push((w, Q::Init{ vu:vd, ru: self.take_row(&vd).unwrap() }));
       // the alarm goes on the upward-moving row
       alarm.insert(vu, w); }
 
-    // are we there yet? :)
-    if new_uix == plan[&vu] { work.push((wid, Q::Stop)); }
-    else { // start or schedule the next swap
-      let vd = self.vid_above(vu).unwrap();
-      if let Some(rd) = self.take_row(&vd) { work.push((wid, Q::Step{vd, rd})); }
-      else { alarm.insert(vd, wid); }}
+    // Check if variable has reached its target position
+    let current_pos = self.vix(vu).unwrap();
+    let needs_to_move = if let Some(&target_pos) = plan.get(&vu) {
+      current_pos < target_pos
+    } else {
+      false
+    };
+
+    if !needs_to_move {
+      work.push((wid, Q::Stop));
+    }
+    else { // Variable still needs to move according to the updated plan
+      if let Some(vd) = self.vid_above(vu) {
+        if let Some(rd) = self.take_row(&vd) {
+          work.push((wid, Q::Step{vd, rd}));
+        }
+        else {
+          alarm.insert(vd, wid);
+        }
+      } else {
+        // Variable is at the top, but the plan says it needs to move.
+        // This shouldn't happen with a correct implementation, but just in case.
+        work.push((wid, Q::Stop));
+      }
+    }
 
     SwarmCmd::Batch(work) }}
 

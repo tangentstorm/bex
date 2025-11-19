@@ -233,19 +233,82 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   // here these are all in place already, so we can remove them from the plan.
   assert_eq!(d!{ }, plan_regroup(&[x0,x1,x2], &[s![x0], s![x1], s![x2]]));
 
-  // here x2 stays in place, so we don't have to include it in the plan.
-  assert_eq!(d!{ x1:1 }, plan_regroup(&[x1,x0,x2], &[s![x0], s![x1], s![x2]]));
+  // The new algorithm adds all misplaced variables to the plan
+  // [x1,x0,x2] with target [x0,x1,x2] -> x0 at 1→0, x1 at 0→1 (both misplaced)
+  assert_eq!(d!{ x0:0, x1:1 }, plan_regroup(&[x1,x0,x2], &[s![x0], s![x1], s![x2]]));
 
-  // here we find 4 before 3 moving right to left (top down in the scaffold)
-  assert_eq!(d!{ x4:4, x3:3 }, plan_regroup(&[x3,x2,x4,x0,x1], &[s![x2,x0,x1],s![],s![x4,x3]]));
+  // [x3,x2,x4,x0,x1] with target [{x0,x1,x2},{},{x3,x4}] = [x0,x1,x2,x3,x4]
+  // x3 at 0→3, x2 at 1→2, x4 at 2→4, x0 at 3→0, x1 at 4→1
+  assert_eq!(d!{ x3:3, x2:2, x4:4, x0:0, x1:1 }, plan_regroup(&[x3,x2,x4,x0,x1], &[s![x2,x0,x1],s![],s![x4,x3]]));
 
-  // but here we find them in the opposite order, and we want to preserve that order. (one less swap to do)
-  assert_eq!(d!{ x4:3, x3:4 }, plan_regroup(&[x4,x2,x3,x0,x1], &[s![x2,x0,x1],s![],s![x4,x3]]));
+  // [x4,x2,x3,x0,x1] with target [x0,x1,x2,x3,x4]
+  // x4 at 0→4, x2 at 1→2, x3 at 2→3, x0 at 3→0, x1 at 4→1
+  assert_eq!(d!{ x4:4, x2:2, x3:3, x0:0, x1:1 }, plan_regroup(&[x4,x2,x3,x0,x1], &[s![x2,x0,x1],s![],s![x4,x3]]));
 
-  // here x4 starts out in the right area, but dragging x3 up past x0 will push x4 down. so x4 must be in
-  // the plan so that the plan can ensure it *stays* in the right place.
-  assert_eq!(d!{ x4:4, x3:3 }, plan_regroup(&[x3,x1,x2,x4,x0], &[s![x2,x0,x1],s![],s![x4,x3]]));
-println!("----------");
-  // but here, x4 is at the end, and nothing will ever swap with it, so we can drop it from the plan.
-  assert_eq!(d!{ x3:3 }, plan_regroup(&[x3,x1,x2,x0,x4], &[s![x2,x0,x1],s![],s![x4,x3]]));
+  // [x3,x1,x2,x4,x0] with target [x0,x1,x2,x3,x4]
+  // x3 at 0→3, x1 at 1→1 (OK!), x2 at 2→2 (OK!), x4 at 3→4, x0 at 4→0
+  assert_eq!(d!{ x3:3, x4:4, x0:0 }, plan_regroup(&[x3,x1,x2,x4,x0], &[s![x2,x0,x1],s![],s![x4,x3]]));
+
+  // [x3,x1,x2,x0,x4] with target [x0,x1,x2,x3,x4]
+  // x3 at 0→3, x1 at 1→1 (OK!), x2 at 2→2 (OK!), x0 at 3→0, x4 at 4→4 (OK!)
+  assert_eq!(d!{ x3:3, x0:0 }, plan_regroup(&[x3,x1,x2,x0,x4], &[s![x2,x0,x1],s![],s![x4,x3]]));
+}
+
+/// Regression test for bug #12: reordering operation does not complete
+/// This test creates a simpler permutation that exercises the algorithm.
+#[test] fn test_regroup_bug_12_regression() {
+  // Create a scaffold with 4 variables
+  let mut xs = VhlScaffold::new();
+  let vars: Vec<VID> = (0..4).map(|i| VID::var(i)).collect();
+
+  // Push variables in order [0,1,2,3]
+  for &v in &vars {
+    xs.push(v);
+    // Add a simple node for each variable so the row isn't empty
+    xs.add(v, nid::I, nid::O, true);
+  }
+
+  // Target groups: [{2,0}, {3,1}]
+  // After sorting by vid_ix: [0,2], [1,3]
+  // Expected final order: [0,2,1,3]
+  let groups = vec![
+    s![vars[2], vars[0]],
+    s![vars[3], vars[1]]
+  ];
+
+  // This tests swapping where variables need to pass through each other
+  xs.regroup(groups);
+
+  // Verify the final ordering is correct
+  let expected_order = vec![vars[0], vars[2], vars[1], vars[3]];
+  assert_eq!(xs.vids, expected_order,
+    "Bug #12: regroup() did not achieve the expected variable ordering");
+}
+
+/// Another regression test for bug #12 with an interleaved pattern
+/// This pattern requires many variables to "pass through" each other
+#[test] fn test_regroup_bug_12_interleaved() {
+  let mut xs = VhlScaffold::new();
+  let vars: Vec<VID> = (0..8).map(|i| VID::var(i)).collect();
+
+  // Push variables in order [0,1,2,3,4,5,6,7]
+  for &v in &vars {
+    xs.push(v);
+    xs.add(v, nid::I, nid::O, true);
+  }
+
+  // Target groups: [{7,5,3,1}, {6,4,2,0}]
+  // After sorting by vid_ix: [1,3,5,7], [0,2,4,6]
+  // Expected final order: [1,3,5,7,0,2,4,6]
+  // This is a particularly challenging pattern because odd and even indices swap places
+  let groups = vec![
+    s![vars[7], vars[5], vars[3], vars[1]],
+    s![vars[6], vars[4], vars[2], vars[0]]
+  ];
+
+  xs.regroup(groups);
+
+  let expected_order = vec![vars[1], vars[3], vars[5], vars[7], vars[0], vars[2], vars[4], vars[6]];
+  assert_eq!(xs.vids, expected_order,
+    "Bug #12: regroup() failed on interleaved pattern");
 }
