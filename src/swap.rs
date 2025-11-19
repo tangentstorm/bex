@@ -478,33 +478,45 @@ impl VhlScaffold {
 
 
 fn plan_regroup(vids:&[VID], groups:&[HashSet<VID>])->HashMap<VID,usize> {
+  // vids are arranged from bottom to top
   let mut plan = HashMap::new();
 
   // if only one group, there's nothing to do:
   if groups.len() == 1 && groups[0].len() == vids.len() { return plan }
 
-  // Build target position mapping from groups (bottom-to-top)
-  // Sort variables within each group for deterministic ordering
-  let mut vid_to_target: HashMap<VID, usize> = HashMap::new();
-  let mut target_pos = 0;
-  for group in groups {
-    let mut sorted_group: Vec<_> = group.iter().cloned().collect();
-    sorted_group.sort_by_key(|v| v.vid_ix());
-    for vid in sorted_group {
-      vid_to_target.insert(vid, target_pos);
-      target_pos += 1;
-    }
-  }
+  // TODO: check for complete partition (set(vids)==set(U/groups)
+  let mut sum = 0; for x in groups.iter() { sum+= x.len() }
+  assert_eq!(vids.len(), sum, "vids and groups had different total size");
 
-  // Add all variables that are not in their target position to the plan
-  for (i, &vid) in vids.iter().enumerate() {
-    if let Some(&target) = vid_to_target.get(&vid) {
-      if i != target {
-        plan.insert(vid, target);
-      }
-    }
-  }
+  // map each variable to its group number:
+  let mut dest:HashMap<VID,usize> = HashMap::new();
+  for (i, g) in groups.iter().enumerate() {
+    for &v in g { dest.insert(v, i); }}
 
+  // start position of each group:
+  let mut start:Vec<usize> = groups.iter().scan(0, |a,x| {
+    *a+=x.len(); Some(*a)}).collect();
+  start.insert(0, 0);
+  start.pop();
+
+  // downward-moving cursor for each group (starts at last position)
+  let mut curs:Vec<usize> = groups.iter().scan(0, |a,x|{
+    *a+=x.len(); Some(*a)}).collect();
+
+  let mut saw_misplaced = false;
+  for (i,v) in vids.iter().enumerate().rev() {
+    let g = dest[v]; // which group does it go to?
+    // we never schedule a move for group 0. others just move past them.
+    if g == 0 { if i>=start[1] { saw_misplaced = true }}
+    // once we see a misplaced item, we have to track everything below it, so that
+    // items that start in place *stay* in place as the swaps happen.
+    else {
+      curs[g]-=1;
+      if saw_misplaced || i<start[g] {
+        plan.insert(*v, curs[g]);
+        saw_misplaced=true }}
+    //println!("i: {} v: {} g:{}, saw_misplaced: {}, curs:{:?}, plan:{:?}" , i, v, g, saw_misplaced, curs, plan);
+  }
   plan
 }
 
@@ -528,37 +540,32 @@ impl VhlScaffold {
     let target_vu = *plan.get(&vu).unwrap_or(&current_vu);
     let target_vd = *plan.get(&vd).unwrap_or(&current_vd);
 
-    // Determine directions: 'up' (to higher index), 'down' (to lower index), or 'stay'
-    let dir_vu = if current_vu < target_vu { 1 }      // up (needs to move to higher position)
-                 else if current_vu > target_vu { -1 } // down (needs to move to lower position)
-                 else { 0 };                           // stay
-    let dir_vd = if current_vd < target_vd { 1 }
-                 else if current_vd > target_vd { -1 }
-                 else { 0 };
+    // Determine directions: positive = up, negative = down, 0 = stay
+    let dir_vu = (target_vu as i64 - current_vu as i64).signum();
+    let dir_vd = (target_vd as i64 - current_vd as i64).signum();
 
-    // Only consider swapping if directions are different (or one is staying)
-    let different_dirs = dir_vu != dir_vd
-                       || (dir_vu == 0 && dir_vd != 0)
-                       || (dir_vd == 0 && dir_vu != 0);
-
-    if !different_dirs {
+    // If both moving in same non-zero direction, don't swap (prevents infinite loop)
+    if dir_vu == dir_vd && dir_vu != 0 {
       return false;
     }
 
-    // Calculate distances
-    let dist_vu = (current_vu as i64 - target_vu as i64).abs();
-    let dist_vd = (current_vd as i64 - target_vd as i64).abs();
-    let old_total_dist = dist_vu + dist_vd;
+    // If vd is staying, always allow vu to pass
+    if dir_vd == 0 {
+      return true;
+    }
 
-    // After swap: vu at current_vd, vd at current_vu
-    let new_dist_vu = (current_vd as i64 - target_vu as i64).abs();
-    let new_dist_vd = (current_vu as i64 - target_vd as i64).abs();
-    let new_total_dist = new_dist_vu + new_dist_vd;
+    // If vu is staying but vd is moving, allow swap
+    if dir_vu == 0 {
+      return true;
+    }
 
-    // Swap if it reduces total distance, or helps the moving one when one is staying
-    new_total_dist < old_total_dist
-      || (dir_vu == 0 && new_dist_vd < dist_vd)
-      || (dir_vd == 0 && new_dist_vu < dist_vu)
+    // Both moving in opposite directions - check if total distance improves
+    let dist_before = (current_vu as i64 - target_vu as i64).abs()
+                    + (current_vd as i64 - target_vd as i64).abs();
+    let dist_after = (current_vd as i64 - target_vu as i64).abs()
+                   + (current_vu as i64 - target_vd as i64).abs();
+
+    dist_after < dist_before
   }
 
   fn next_regroup_task(&mut self, plan:&HashMap<VID,usize>)->(VID, Vec<Q>) {
@@ -605,30 +612,26 @@ impl VhlScaffold {
     self.drcd = HashMap::new();
     self.validate("before regroup()");
     // (var, ix) pairs, where plan is to lift var to row ix
-    let mut plan = self.plan_regroup(&groups);
+    let plan = self.plan_regroup(&groups);
     if plan.is_empty() { return }
 
     // Count only variables that need to move UP (current < target)
-    // Variables that need to move DOWN will be displaced by others
-    let upward_movers = plan.iter()
+    // These are the ones that will get workers
+    let upward_movers: usize = plan.iter()
       .filter(|(&vid, &target)| {
         self.vix(vid).map(|current| current < target).unwrap_or(false)
       })
       .count();
 
-    // Need at least one worker
-    let num_workers = upward_movers.max(1);
-    let mut swarm: Swarm<Q,R,SwapWorker> = Swarm::new_with_threads(num_workers);
+    if upward_movers == 0 { return }
+
+    let mut swarm: Swarm<Q,R,SwapWorker> = Swarm::new_with_threads(upward_movers);
     let mut alarm: HashMap<VID,WID> = HashMap::new();
     let _:Option<()> = swarm.run(|wid,qid,r|->SwarmCmd<Q,()> {
       match qid {
         QID::INIT => { // assign next task to the worker
           let (vu, mut work) = self.next_regroup_task(&plan);
-          if vu == NOV {
-            // No work available - check if we're done
-            if plan.is_empty() { SwarmCmd::Return(()) }
-            else { SwarmCmd::Pass }
-          }
+          if vu == NOV { SwarmCmd::Pass }
           else { match work.len() {
             1 => {
               if let Some(vd) = self.vid_above(vu) {
@@ -653,19 +656,19 @@ impl VhlScaffold {
 
             // complete one swap in the move:
             R::PutRD{vu, vd, rd, dnew, umov, dels, refs} => {
-              self.swarm_put_rd(&mut plan, &groups, &mut alarm, wid, vu, vd, rd, dnew, umov, dels, refs) },
+              self.swarm_put_rd(&plan, &mut alarm, wid, vu, vd, rd, dnew, umov, dels, refs) },
 
             // finish the move for this vid
             R::PutRU{vu, ru} => {
-              // Note: vu might not be in the updated plan if it just reached its target
+              debug_assert!(plan.contains_key(&vu), "got back vu:{:?} that wasn't in the plan", vu);
               debug_assert!(self.locked.contains(&vu), "vu:{} wasn't locked!", vu);
               self.locked.remove(&vu);
               self.rows.insert(vu, ru);
               self.apply_drcd(&vu);
               self.complete.insert(vu, wid);
 
-              // Check if there are any more variables that need to move
-              if plan.is_empty() {
+              if self.complete.len() == upward_movers {
+                debug_assert!(alarm.is_empty(), "last worker died but we still have alarms: {:?}", alarm);
                 SwarmCmd::Return(()) }
               else { SwarmCmd::Pass }}}},
 
@@ -702,7 +705,7 @@ impl VhlScaffold {
 
   /// called whenever a worker returns a downward-moving row to the scaffold
   #[allow(clippy::too_many_arguments)]
-  fn swarm_put_rd(&mut self, plan:&mut HashMap<VID,usize>, groups:&[HashSet<VID>], alarm:&mut HashMap<VID,WID>,
+  fn swarm_put_rd(&mut self, plan:&HashMap<VID,usize>, alarm:&mut HashMap<VID,WID>,
     wid:WID, vu:VID, vd:VID, rd:VhlRow, dnew:Vec<Mod>, umov:Vec<Mod>, dels:Vec<usize>, refs:HashMap<NID,i64>
   )->SwarmCmd<Q,()> {
     // replace and unlock the downward-moving row:
@@ -743,9 +746,6 @@ impl VhlScaffold {
     //println!("\x1b[36mswapped vu:{} -> vd:{} => {:?}\x1b[0m", vu, vd, self.vids);
     //self.validate(format!("after swapping vd:{:?} with vu:{:?}", vd, vu).as_str());
 
-    // Recalculate the plan based on the new ordering
-    *plan = self.plan_regroup(groups);
-
     let mut work:Vec<(WID, Q)> = vec![];
 
     // tell anyone waiting on rd that they can resume work
@@ -767,24 +767,18 @@ impl VhlScaffold {
       // the alarm goes on the upward-moving row
       alarm.insert(vu, w); }
 
-    // Check if vu has reached its target
+    // Check if vu still needs to move up
     let current_pos = self.vix(vu).unwrap();
-    let at_target = !plan.contains_key(&vu) || current_pos == plan[&vu];
+    let needs_to_move = plan.get(&vu).map(|&target| current_pos < target).unwrap_or(false);
 
-    if at_target {
+    if !needs_to_move {
       work.push((wid, Q::Stop));
     } else {
       // Continue moving - start or schedule the next swap
       if let Some(vd) = self.vid_above(vu) {
-        // Use should_swap to check if this swap is allowed
-        if self.should_swap(vu, vd, plan) {
-          if let Some(rd) = self.take_row(&vd) {
-            work.push((wid, Q::Step{vd, rd}));
-          } else {
-            alarm.insert(vd, wid);
-          }
+        if let Some(rd) = self.take_row(&vd) {
+          work.push((wid, Q::Step{vd, rd}));
         } else {
-          // Can't swap with this variable - set alarm and wait
           alarm.insert(vd, wid);
         }
       } else {
