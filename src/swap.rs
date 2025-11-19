@@ -532,7 +532,7 @@ impl VhlScaffold {
 
   /// Check if vu should be allowed to swap past vd.
   /// Implements Grok's algorithm: only swap if directions differ and total distance decreases.
-  fn should_swap(&self, vu: VID, vd: VID, plan: &HashMap<VID, usize>) -> bool {
+  pub(crate) fn should_swap(&self, vu: VID, vd: VID, plan: &HashMap<VID, usize>) -> bool {
     let current_vu = self.vix(vu).unwrap();
     let current_vd = self.vix(vd).unwrap();
 

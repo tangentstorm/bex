@@ -284,3 +284,179 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   assert_eq!(xs.vids, expected_order,
     "Bug #12: regroup() failed on interleaved pattern");
 }
+
+/// Unit tests for the should_swap function
+/// Tests all the edge cases of the swap decision logic
+#[test] fn test_should_swap_both_moving_up() {
+  // When both variables are moving up, should NOT swap (prevents infinite loop)
+  let mut xs = VhlScaffold::new();
+  let v0 = VID::var(0);
+  let v1 = VID::var(1);
+  let v2 = VID::var(2);
+  let v3 = VID::var(3);
+
+  // Push in order [v0, v1, v2, v3] (bottom to top)
+  for &v in &[v0, v1, v2, v3] {
+    xs.push(v);
+    xs.add(v, nid::I, nid::O, true);
+  }
+
+  // Plan: v0 wants to go from 0→2, v1 wants to go from 1→3
+  // Both moving up
+  let mut plan = HashMap::new();
+  plan.insert(v0, 2);
+  plan.insert(v1, 3);
+
+  // v0 (at 0, wants 2) trying to swap with v1 (at 1, wants 3) - both up
+  assert!(!xs.should_swap(v0, v1, &plan),
+    "Both moving up: should NOT swap");
+}
+
+#[test] fn test_should_swap_both_moving_down() {
+  // When both variables are moving down, should NOT swap
+  let mut xs = VhlScaffold::new();
+  let v0 = VID::var(0);
+  let v1 = VID::var(1);
+  let v2 = VID::var(2);
+  let v3 = VID::var(3);
+
+  for &v in &[v0, v1, v2, v3] {
+    xs.push(v);
+    xs.add(v, nid::I, nid::O, true);
+  }
+
+  // Plan: v2 wants to go from 2→0, v3 wants to go from 3→1
+  // Both moving down
+  let mut plan = HashMap::new();
+  plan.insert(v2, 0);
+  plan.insert(v3, 1);
+
+  // v2 (at 2, wants 0) trying to swap with v3 (at 3, wants 1) - both down
+  assert!(!xs.should_swap(v2, v3, &plan),
+    "Both moving down: should NOT swap");
+}
+
+#[test] fn test_should_swap_opposite_directions_improves() {
+  // When moving opposite directions and swap improves distance, should swap
+  let mut xs = VhlScaffold::new();
+  let v0 = VID::var(0);
+  let v1 = VID::var(1);
+  let v2 = VID::var(2);
+  let v3 = VID::var(3);
+
+  for &v in &[v0, v1, v2, v3] {
+    xs.push(v);
+    xs.add(v, nid::I, nid::O, true);
+  }
+
+  // Plan: v1 wants to go from 1→3 (up), v2 wants to go from 2→0 (down)
+  // Opposite directions, swap helps both
+  let mut plan = HashMap::new();
+  plan.insert(v1, 3);
+  plan.insert(v2, 0);
+
+  // v1 at 1 wants 3 (distance 2), v2 at 2 wants 0 (distance 2) - total 4
+  // After swap: v1 at 2 wants 3 (distance 1), v2 at 1 wants 0 (distance 1) - total 2
+  assert!(xs.should_swap(v1, v2, &plan),
+    "Opposite directions with improved distance: should swap");
+}
+
+#[test] fn test_should_swap_opposite_directions_no_improvement() {
+  // When moving opposite directions but swap doesn't improve distance, should NOT swap
+  let mut xs = VhlScaffold::new();
+  let v0 = VID::var(0);
+  let v1 = VID::var(1);
+  let v2 = VID::var(2);
+  let v3 = VID::var(3);
+
+  for &v in &[v0, v1, v2, v3] {
+    xs.push(v);
+    xs.add(v, nid::I, nid::O, true);
+  }
+
+  // Plan: v0 wants to go from 0→1 (up by 1), v3 wants to go from 3→2 (down by 1)
+  // But they're not adjacent, so let's test v1 and v2 with targets that don't help
+  // v1 at 1 wants 2 (up), v2 at 2 wants 1 (down)
+  // Before: v1 distance 1, v2 distance 1, total 2
+  // After swap: v1 at 2 wants 2 (distance 0), v2 at 1 wants 1 (distance 0), total 0
+  // This actually improves! Let me construct a case that doesn't improve.
+
+  // v1 at 1 wants 3 (distance 2), v2 at 2 wants 3 (distance 1)
+  // Wait, that's both moving up.
+
+  // Let's do: v1 at 1 wants 0 (down, distance 1), v2 at 2 wants 3 (up, distance 1), total 2
+  // After swap: v1 at 2 wants 0 (distance 2), v2 at 1 wants 3 (distance 2), total 4
+  // Swap makes it worse!
+  let mut plan = HashMap::new();
+  plan.insert(v1, 0);  // v1 wants to go down
+  plan.insert(v2, 3);  // v2 wants to go up
+
+  assert!(!xs.should_swap(v1, v2, &plan),
+    "Opposite directions but swap increases distance: should NOT swap");
+}
+
+#[test] fn test_should_swap_vd_staying() {
+  // When vd is staying (not in plan or at target), should allow vu to pass
+  let mut xs = VhlScaffold::new();
+  let v0 = VID::var(0);
+  let v1 = VID::var(1);
+  let v2 = VID::var(2);
+
+  for &v in &[v0, v1, v2] {
+    xs.push(v);
+    xs.add(v, nid::I, nid::O, true);
+  }
+
+  // Plan: only v0 wants to move up to 2
+  // v1 is not in the plan (staying)
+  let mut plan = HashMap::new();
+  plan.insert(v0, 2);
+
+  // v0 at 0 wants 2 (moving up), v1 at 1 not in plan (staying)
+  assert!(xs.should_swap(v0, v1, &plan),
+    "vd staying: should allow vu to pass through");
+}
+
+#[test] fn test_should_swap_vu_staying() {
+  // When vu is staying but vd is moving, should allow swap
+  let mut xs = VhlScaffold::new();
+  let v0 = VID::var(0);
+  let v1 = VID::var(1);
+  let v2 = VID::var(2);
+
+  for &v in &[v0, v1, v2] {
+    xs.push(v);
+    xs.add(v, nid::I, nid::O, true);
+  }
+
+  // Plan: only v1 wants to move down to 0
+  // v0 is not in the plan (staying)
+  let mut plan = HashMap::new();
+  plan.insert(v1, 0);
+
+  // v0 at 0 not in plan (staying), v1 at 1 wants 0 (moving down)
+  assert!(xs.should_swap(v0, v1, &plan),
+    "vu staying, vd moving: should allow swap");
+}
+
+#[test] fn test_should_swap_both_staying() {
+  // When both are staying (neither in plan), directions are both 0
+  // This hits the "same direction" check but with dir=0
+  let mut xs = VhlScaffold::new();
+  let v0 = VID::var(0);
+  let v1 = VID::var(1);
+
+  for &v in &[v0, v1] {
+    xs.push(v);
+    xs.add(v, nid::I, nid::O, true);
+  }
+
+  // Empty plan - both staying
+  let plan = HashMap::new();
+
+  // Both at their "target" (current position), dir_vu = 0, dir_vd = 0
+  // The code checks dir_vd == 0 first and returns true
+  assert!(xs.should_swap(v0, v1, &plan),
+    "Both staying: should allow (vd==0 case triggers first)");
+}
+
