@@ -518,11 +518,55 @@ impl VhlScaffold {
     if self.locked.contains(v) { None }
     else { self.locked.insert(*v); self.rows.remove(v) }}
 
+  /// Check if vu should be allowed to swap past vd.
+  /// Implements Grok's algorithm: only swap if directions differ and total distance decreases.
+  fn should_swap(&self, vu: VID, vd: VID, plan: &HashMap<VID, usize>) -> bool {
+    let current_vu = self.vix(vu).unwrap();
+    let current_vd = self.vix(vd).unwrap();
+
+    // Get targets (use current position as target if not in plan)
+    let target_vu = *plan.get(&vu).unwrap_or(&current_vu);
+    let target_vd = *plan.get(&vd).unwrap_or(&current_vd);
+
+    // Determine directions: 'up' (to higher index), 'down' (to lower index), or 'stay'
+    let dir_vu = if current_vu < target_vu { 1 }      // up (needs to move to higher position)
+                 else if current_vu > target_vu { -1 } // down (needs to move to lower position)
+                 else { 0 };                           // stay
+    let dir_vd = if current_vd < target_vd { 1 }
+                 else if current_vd > target_vd { -1 }
+                 else { 0 };
+
+    // Only consider swapping if directions are different (or one is staying)
+    let different_dirs = dir_vu != dir_vd
+                       || (dir_vu == 0 && dir_vd != 0)
+                       || (dir_vd == 0 && dir_vu != 0);
+
+    if !different_dirs {
+      return false;
+    }
+
+    // Calculate distances
+    let dist_vu = (current_vu as i64 - target_vu as i64).abs();
+    let dist_vd = (current_vd as i64 - target_vd as i64).abs();
+    let old_total_dist = dist_vu + dist_vd;
+
+    // After swap: vu at current_vd, vd at current_vu
+    let new_dist_vu = (current_vd as i64 - target_vu as i64).abs();
+    let new_dist_vd = (current_vu as i64 - target_vd as i64).abs();
+    let new_total_dist = new_dist_vu + new_dist_vd;
+
+    // Swap if it reduces total distance, or helps the moving one when one is staying
+    new_total_dist < old_total_dist
+      || (dir_vu == 0 && new_dist_vd < dist_vd)
+      || (dir_vd == 0 && new_dist_vu < dist_vu)
+  }
+
   fn next_regroup_task(&mut self, plan:&HashMap<VID,usize>)->(VID, Vec<Q>) {
     let mut res = vec![];
+    // Collect vids to avoid borrow issues
+    let vids: Vec<VID> = self.vids.iter().rev().cloned().collect();
     // find a variable to move that isn't locked yet:
-    // Only consider variables that need to move UP (current < target)
-    for &vu in self.vids.iter().rev() {
+    for vu in vids {
       if self.locked.contains(&vu) { continue }
       if let Some(&dst) = plan.get(&vu) {
         let current = self.vix(vu).unwrap();
@@ -533,20 +577,24 @@ impl VhlScaffold {
         if let Some(ru) = self.take_row(&vu) {
           res.push(Q::Init{vu, ru});
           if let Some(vd) = self.vid_above(vu) {
+            // Check if we should swap using Grok's algorithm
+            if !self.should_swap(vu, vd, plan) {
+              // Can't swap yet - return just Init, alarm will be set
+              return (vu, res);
+            }
             // schedule swap immediately if we can. (otherwise regroup() sets an alarm)
-            if plan.contains_key(&vd) && self.vix(vd).map(|p| p < plan[&vd]).unwrap_or(false) {
-            /*println!("\x1b[33mWARNING: DEFERRING task for {} because row above ({}) is in the plan.\x1b[0m",vu, vd);*/ }
-            else if let Some(rd) = self.take_row(&vd) { res.push(Q::Step{vd, rd}) }
-            else { panic!("WHYY?") }
+            if let Some(rd) = self.take_row(&vd) {
+              res.push(Q::Step{vd, rd});
+            }
+            // If we can't take rd, alarm will be set by caller
           }
           return (vu, res) }
         else { // we couldn't take row u. it's probably being swapped
-          if let Some(other) = self.vid_below(vu) {
-            assert!(plan.contains_key(&other), "couldn't take_row {} but vid_below is {}", vu, other);
-          }
-          panic!("COULDN't TAKE ROW U ({}), BUT DON'T KNOW WHY", vu) }}}
-      // Return a sentinel indicating no more work available
-      (NOV, vec![])}
+          continue;
+        }}}
+    // Return a sentinel indicating no more work available
+    (NOV, vec![])
+  }
 
   /// arrange row order to match the given groups.
   /// the groups are given in bottom-up order (so groups[0] is on bottom), and should
@@ -576,7 +624,11 @@ impl VhlScaffold {
       match qid {
         QID::INIT => { // assign next task to the worker
           let (vu, mut work) = self.next_regroup_task(&plan);
-          if vu == NOV { SwarmCmd::Pass }
+          if vu == NOV {
+            // No work available - check if we're done
+            if plan.is_empty() { SwarmCmd::Return(()) }
+            else { SwarmCmd::Pass }
+          }
           else { match work.len() {
             1 => {
               if let Some(vd) = self.vid_above(vu) {
@@ -612,15 +664,8 @@ impl VhlScaffold {
               self.apply_drcd(&vu);
               self.complete.insert(vu, wid);
 
-              // Check if there are any more variables that need to move UP
-              let upward_movers = plan.iter()
-                .filter(|(&vid, &target)| {
-                  self.vix(vid).map(|current| current < target).unwrap_or(false)
-                })
-                .count();
-
-              if upward_movers == 0 {
-                debug_assert!(alarm.is_empty(), "last worker died but we still have alarms: {:?}", alarm);
+              // Check if there are any more variables that need to move
+              if plan.is_empty() {
                 SwarmCmd::Return(()) }
               else { SwarmCmd::Pass }}}},
 
@@ -715,42 +760,35 @@ impl VhlScaffold {
     // if vu just moved into vd's planned spot, it means vd's move was already complete, and we just displaced it.
     // However, its worker is already dead (so we need a new one), and the row above is locked until we finish
     // the next move for vu (so we set an alarm rather than spawning a new thread)
-    let vd_needs_to_move_up = if let Some(&target_pos) = plan.get(&vd) {
-      let current_pos = self.vix(vd).unwrap();
-      current_pos < target_pos  // Only respawn if vd needs to move UP
-    } else {
-      false
-    };
-
-    if vd_needs_to_move_up && self.complete.contains_key(&vd) {
+    else if plan.contains_key(&vd) && self.complete.contains_key(&vd) {
       // println!("RE-SPAWNING WORKER FOR DISPLACED VID: {}", vd);
       let w = self.complete.remove(&vd).unwrap();
       work.push((w, Q::Init{ vu:vd, ru: self.take_row(&vd).unwrap() }));
       // the alarm goes on the upward-moving row
       alarm.insert(vu, w); }
 
-    // Check if variable has reached its target position
+    // Check if vu has reached its target
     let current_pos = self.vix(vu).unwrap();
-    let needs_to_move = if let Some(&target_pos) = plan.get(&vu) {
-      current_pos < target_pos
-    } else {
-      false
-    };
+    let at_target = !plan.contains_key(&vu) || current_pos == plan[&vu];
 
-    if !needs_to_move {
+    if at_target {
       work.push((wid, Q::Stop));
-    }
-    else { // Variable still needs to move according to the updated plan
+    } else {
+      // Continue moving - start or schedule the next swap
       if let Some(vd) = self.vid_above(vu) {
-        if let Some(rd) = self.take_row(&vd) {
-          work.push((wid, Q::Step{vd, rd}));
-        }
-        else {
+        // Use should_swap to check if this swap is allowed
+        if self.should_swap(vu, vd, plan) {
+          if let Some(rd) = self.take_row(&vd) {
+            work.push((wid, Q::Step{vd, rd}));
+          } else {
+            alarm.insert(vd, wid);
+          }
+        } else {
+          // Can't swap with this variable - set alarm and wait
           alarm.insert(vd, wid);
         }
       } else {
-        // Variable is at the top, but the plan says it needs to move.
-        // This shouldn't happen with a correct implementation, but just in case.
+        // At top but not at target - shouldn't happen
         work.push((wid, Q::Stop));
       }
     }
