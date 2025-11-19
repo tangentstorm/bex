@@ -517,7 +517,8 @@ fn plan_regroup(vids:&[VID], groups:&[HashSet<VID>])->HashMap<VID,usize> {
         saw_misplaced=true }}
     //println!("i: {} v: {} g:{}, saw_misplaced: {}, curs:{:?}, plan:{:?}" , i, v, g, saw_misplaced, curs, plan);
   }
-  plan}
+  plan
+}
 
 // functions for performing the distributed regroup()
 impl VhlScaffold {
@@ -529,28 +530,78 @@ impl VhlScaffold {
     if self.locked.contains(v) { None }
     else { self.locked.insert(*v); self.rows.remove(v) }}
 
+  /// Check if vu should be allowed to swap past vd.
+  /// Implements Grok's algorithm: only swap if directions differ and total distance decreases.
+  pub(crate) fn should_swap(&self, vu: VID, vd: VID, plan: &HashMap<VID, usize>) -> bool {
+    let current_vu = self.vix(vu).unwrap();
+    let current_vd = self.vix(vd).unwrap();
+
+    // Get targets (use current position as target if not in plan)
+    let target_vu = *plan.get(&vu).unwrap_or(&current_vu);
+    let target_vd = *plan.get(&vd).unwrap_or(&current_vd);
+
+    // Determine directions: positive = up, negative = down, 0 = stay
+    let dir_vu = (target_vu as i64 - current_vu as i64).signum();
+    let dir_vd = (target_vd as i64 - current_vd as i64).signum();
+
+    // If both moving in same non-zero direction, don't swap (prevents infinite loop)
+    if dir_vu == dir_vd && dir_vu != 0 {
+      return false;
+    }
+
+    // If vd is staying, always allow vu to pass
+    if dir_vd == 0 {
+      return true;
+    }
+
+    // If vu is staying but vd is moving, allow swap
+    if dir_vu == 0 {
+      return true;
+    }
+
+    // Both moving in opposite directions - check if total distance improves
+    let dist_before = (current_vu as i64 - target_vu as i64).abs()
+                    + (current_vd as i64 - target_vd as i64).abs();
+    let dist_after = (current_vd as i64 - target_vu as i64).abs()
+                   + (current_vu as i64 - target_vd as i64).abs();
+
+    dist_after < dist_before
+  }
+
   fn next_regroup_task(&mut self, plan:&HashMap<VID,usize>)->(VID, Vec<Q>) {
     let mut res = vec![];
+    // Collect vids to avoid borrow issues
+    let vids: Vec<VID> = self.vids.iter().rev().cloned().collect();
     // find a variable to move that isn't locked yet:
-    for &vu in self.vids.iter().rev() {
+    for vu in vids {
       if self.locked.contains(&vu) { continue }
       if let Some(&dst) = plan.get(&vu) {
-        if self.vix(vu).unwrap() == dst { continue }
+        let current = self.vix(vu).unwrap();
+        if current == dst { continue }
+        // Only assign work to variables that need to move UP
+        if current >= dst { continue }
         // we lock all the moving variables so they never cross each other
         if let Some(ru) = self.take_row(&vu) {
           res.push(Q::Init{vu, ru});
-          let vd = self.vid_above(vu).unwrap();
-          // schedule swap immediately if we can. (otherwise regroup() sets an alarm)
-          if plan.contains_key(&vd) {
-          /*println!("\x1b[33mWARNING: DEFERRING task for {} because row above ({}) is in the plan.\x1b[0m",vu, vd);*/ }
-          else if let Some(rd) = self.take_row(&vd) { res.push(Q::Step{vd, rd}) }
-          else { panic!("WHYY?") }
+          if let Some(vd) = self.vid_above(vu) {
+            // Check if we should swap using Grok's algorithm
+            if !self.should_swap(vu, vd, plan) {
+              // Can't swap yet - return just Init, alarm will be set
+              return (vu, res);
+            }
+            // schedule swap immediately if we can. (otherwise regroup() sets an alarm)
+            if let Some(rd) = self.take_row(&vd) {
+              res.push(Q::Step{vd, rd});
+            }
+            // If we can't take rd, alarm will be set by caller
+          }
           return (vu, res) }
         else { // we couldn't take row u. it's probably being swapped
-          let other = &self.vid_below(vu).unwrap();
-          assert!(plan.contains_key(other), "couldn't take_row {} but vid_below is {}", vu, other);
-          panic!("COULDN't TAKE ROW U ({}), BUT DON'T KNOW WHY", vu) }}}
-      panic!("SPAWNED A THREAD WITH NOTHING TO DO")}
+          continue;
+        }}}
+    // Return a sentinel indicating no more work available
+    (NOV, vec![])
+  }
 
   /// arrange row order to match the given groups.
   /// the groups are given in bottom-up order (so groups[0] is on bottom), and should
@@ -563,18 +614,31 @@ impl VhlScaffold {
     // (var, ix) pairs, where plan is to lift var to row ix
     let plan = self.plan_regroup(&groups);
     if plan.is_empty() { return }
-    // println!("current order: {:?}", self.vids);
-    // println!("goal grouping: {:?}", groups);
-    // println!("regroup plan: {:?}", plan);
-    let mut swarm: Swarm<Q,R,SwapWorker> = Swarm::new_with_threads(plan.len());
+
+    // Count only variables that need to move UP (current < target)
+    // These are the ones that will get workers
+    let upward_movers: usize = plan.iter()
+      .filter(|(&vid, &target)| {
+        self.vix(vid).map(|current| current < target).unwrap_or(false)
+      })
+      .count();
+
+    if upward_movers == 0 { return }
+
+    let mut swarm: Swarm<Q,R,SwapWorker> = Swarm::new_with_threads(upward_movers);
     let mut alarm: HashMap<VID,WID> = HashMap::new();
     let _:Option<()> = swarm.run(|wid,qid,r|->SwarmCmd<Q,()> {
       match qid {
         QID::INIT => { // assign next task to the worker
-          let (vu, mut work) =  self.next_regroup_task(&plan);
+          let (vu, mut work) = self.next_regroup_task(&plan);
           if vu == NOV { SwarmCmd::Pass }
           else { match work.len() {
-            1 => { alarm.insert(self.vid_above(vu).unwrap(), wid); SwarmCmd::Send(work.pop().unwrap()) },
+            1 => {
+              if let Some(vd) = self.vid_above(vu) {
+                alarm.insert(vd, wid);
+              }
+              SwarmCmd::Send(work.pop().unwrap())
+            },
             2 => SwarmCmd::Batch(work.into_iter().map(move |q| (wid, q)).collect()),
             // TODO: assign extra workers to swaps with more nodes?
             // this also happens when we spawn a new thread to work on a formerly completed vid that got displaced
@@ -603,7 +667,7 @@ impl VhlScaffold {
               self.apply_drcd(&vu);
               self.complete.insert(vu, wid);
 
-              if self.complete.len() == plan.len() {
+              if self.complete.len() == upward_movers {
                 debug_assert!(alarm.is_empty(), "last worker died but we still have alarms: {:?}", alarm);
                 SwarmCmd::Return(()) }
               else { SwarmCmd::Pass }}}},
@@ -640,7 +704,7 @@ impl VhlScaffold {
       for (&nid, &drc) in drcd.iter() { self.add_ref_ix_or_defer(nid, drc)} }}
 
   /// called whenever a worker returns a downward-moving row to the scaffold
-  #[allow(clippy::too_many_arguments)] // TODO fix this!
+  #[allow(clippy::too_many_arguments)]
   fn swarm_put_rd(&mut self, plan:&HashMap<VID,usize>, alarm:&mut HashMap<VID,WID>,
     wid:WID, vu:VID, vd:VID, rd:VhlRow, dnew:Vec<Mod>, umov:Vec<Mod>, dels:Vec<usize>, refs:HashMap<NID,i64>
   )->SwarmCmd<Q,()> {
@@ -703,12 +767,25 @@ impl VhlScaffold {
       // the alarm goes on the upward-moving row
       alarm.insert(vu, w); }
 
-    // are we there yet? :)
-    if new_uix == plan[&vu] { work.push((wid, Q::Stop)); }
-    else { // start or schedule the next swap
-      let vd = self.vid_above(vu).unwrap();
-      if let Some(rd) = self.take_row(&vd) { work.push((wid, Q::Step{vd, rd})); }
-      else { alarm.insert(vd, wid); }}
+    // Check if vu still needs to move up
+    let current_pos = self.vix(vu).unwrap();
+    let needs_to_move = plan.get(&vu).map(|&target| current_pos < target).unwrap_or(false);
+
+    if !needs_to_move {
+      work.push((wid, Q::Stop));
+    } else {
+      // Continue moving - start or schedule the next swap
+      if let Some(vd) = self.vid_above(vu) {
+        if let Some(rd) = self.take_row(&vd) {
+          work.push((wid, Q::Step{vd, rd}));
+        } else {
+          alarm.insert(vd, wid);
+        }
+      } else {
+        // At top but not at target - shouldn't happen
+        work.push((wid, Q::Stop));
+      }
+    }
 
     SwarmCmd::Batch(work) }}
 
