@@ -74,8 +74,39 @@ To see larger advantages, test with:
 - **Related functions**: Variants of the same algorithm with different parameters
 - **Hierarchical designs**: Where smaller functions are building blocks for larger ones
 
+## Truth Table Encoding Simulation
+
+An additional analysis examined how many nodes actually depend on a small number of variables, simulating the potential reduction from encoding ≤5-variable subfunctions as truth tables directly in NIDs.
+
+### Results (Bex Ordering)
+
+**Variable Dependency Analysis:**
+- Nodes depending on 6+ variables: **11,038 nodes**
+- Nodes depending on ≤5 variables: **16,783 nodes**
+- **Potential reduction: 60.32%** (from 27,821 to 11,038 nodes)
+
+### Interpretation
+
+This shows that even though we have functions with up to 16 variables:
+- Most of the graph consists of small subfunctions (≤5 variables)
+- These could be encoded as 32-bit truth tables stored directly in NIDs
+- The remaining "complex" nodes (6+ variables) are only 40% of the total
+
+### Why So Many Small Subfunctions?
+
+1. **Shannon expansion**: Breaking down functions creates many small subproblems
+2. **Node sharing**: Small, common patterns get reused extensively
+3. **Bottom-up structure**: With bex ordering, low-variable functions accumulate at the bottom
+4. **Natural decomposition**: Boolean functions often have simpler subfunctions
+
+This validates the planned optimization of storing ≤5-variable functions as truth tables in NIDs, which would provide a **60% reduction in node count** for this test set.
+
 ## Conclusion
 
 **Bex's ordering is vindicated!** When functions of different sizes share a BddBase, placing LSBs at the bottom (x0, x1, x2...) results in more node sharing than placing MSBs at the top. The 2.94% advantage with diverse test functions suggests the benefit would be even larger with related arithmetic or hierarchical functions.
 
-The key insight: **Variable ordering affects not just individual BDD size, but the degree of node sharing in a shared base. Aligning the end with more natural structural similarity (LSBs) wins.**
+**Truth table encoding is highly promising!** 60% of nodes depend on ≤5 variables and could be encoded directly as truth tables, potentially reducing the graph from 27,821 to 11,038 nodes.
+
+The key insights:
+1. **Variable ordering affects node sharing in a shared base**: Aligning the end with more natural structural similarity (LSBs) wins.
+2. **Most BDD nodes are small subfunctions**: The planned truth-table-in-NID optimization would provide massive space savings.

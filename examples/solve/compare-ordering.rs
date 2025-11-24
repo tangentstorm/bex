@@ -119,6 +119,69 @@ fn count_all_nodes(base: &mut BddBase, roots: &[NID]) -> usize {
     visited.len()
 }
 
+/// Compute the support (set of variables) that a node depends on
+fn compute_support(base: &mut BddBase, n: NID, cache: &mut std::collections::HashMap<NID, std::collections::HashSet<VID>>) -> std::collections::HashSet<VID> {
+    use std::collections::HashSet;
+
+    // Remove inversion bit for caching
+    let n_abs = if n.is_inv() { !n } else { n };
+
+    // Check cache
+    if let Some(support) = cache.get(&n_abs) {
+        return support.clone();
+    }
+
+    // Base case: constants have empty support
+    if n.is_const() {
+        let empty = HashSet::new();
+        cache.insert(n_abs, empty.clone());
+        return empty;
+    }
+
+    // Get the variable at this node
+    let v = n.vid();
+    let mut support = HashSet::new();
+    support.insert(v);
+
+    // Recursively get support from children
+    let lo = base.when_lo(v, n);
+    let hi = base.when_hi(v, n);
+
+    let lo_support = compute_support(base, lo, cache);
+    let hi_support = compute_support(base, hi, cache);
+
+    // Union all supports
+    support.extend(lo_support);
+    support.extend(hi_support);
+
+    cache.insert(n_abs, support.clone());
+    support
+}
+
+/// Count nodes that depend on N or more variables (simulates truth-table encoding threshold)
+fn count_nodes_above_threshold(base: &mut BddBase, roots: &[NID], threshold: usize) -> usize {
+    use std::collections::{HashSet, HashMap};
+
+    let mut visited = HashSet::new();
+    let mut support_cache = HashMap::new();
+    let mut count = 0;
+
+    // Collect all reachable nodes
+    for &root in roots {
+        count_nodes_aux(base, root, &mut visited);
+    }
+
+    // For each node, compute support and check threshold
+    for &n_abs in &visited {
+        let support = compute_support(base, n_abs, &mut support_cache);
+        if support.len() >= threshold {
+            count += 1;
+        }
+    }
+
+    count
+}
+
 /// Read truth table from file
 fn read_truth_table<P: AsRef<Path>>(path: P) -> std::io::Result<Vec<u8>> {
     let mut file = File::open(path)?;
@@ -202,6 +265,14 @@ fn main() {
     let total_nodes_normal = count_all_nodes(&mut base_normal, &roots_normal);
     println!("  Total unique nodes: {}", total_nodes_normal);
 
+    // Analyze variable dependencies for bex ordering
+    println!();
+    println!("Analyzing variable dependencies (bex ordering only)...");
+    let nodes_6plus = count_nodes_above_threshold(&mut base_normal, &roots_normal, 6);
+    println!("  Nodes depending on 6+ variables: {}", nodes_6plus);
+    println!("  Nodes depending on ≤5 variables: {}", total_nodes_normal - nodes_6plus);
+    println!("  (If ≤5-var nodes were encoded as truth tables in NIDs: {} nodes remain)", nodes_6plus);
+
     println!();
     println!("Building BDDs with traditional ordering (v-vars, v0 at top)...");
 
@@ -248,4 +319,19 @@ fn main() {
         println!("This means both orderings result in the same amount of node");
         println!("sharing for these particular functions.");
     }
+
+    println!();
+    println!("{}", "=".repeat(80));
+    println!("TRUTH TABLE ENCODING SIMULATION (bex ordering):");
+    println!("{}", "=".repeat(80));
+    println!();
+    println!("If functions with ≤5 variables were encoded as truth tables in NIDs:");
+    println!("  Nodes with 6+ variable dependencies: {}", nodes_6plus);
+    println!("  Nodes with ≤5 variable dependencies: {}", total_nodes_normal - nodes_6plus);
+    println!("  Reduction: {} nodes ({:.2}%)",
+             total_nodes_normal - nodes_6plus,
+             100.0 * (total_nodes_normal - nodes_6plus) as f64 / total_nodes_normal as f64);
+    println!();
+    println!("This simulates storing small subfunctions directly as truth tables,");
+    println!("which would reduce the graph from {} to {} nodes.", total_nodes_normal, nodes_6plus);
 }
