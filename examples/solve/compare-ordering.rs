@@ -20,12 +20,19 @@ use bex::nid::{NID, O, I};
 use bex::vid::VID;
 
 /// Build a BDD from a truth table using recursive ITE construction
-fn build_bdd_from_tt(base: &mut BddBase, tt: &[u8], var_fn: fn(usize) -> VID) -> NID {
-    build_bdd_aux(base, tt, 0, var_fn)
+/// The truth table is indexed so that tt[i] = f(bit0(i), bit1(i), ..., bitN(i))
+/// where bit0 is the LSB and bitN is the MSB.
+///
+/// For bex ordering (x0 at bottom), x0 should correspond to LSB, x(N-1) to MSB
+/// For traditional ordering (v0 at top), v0 should correspond to MSB, v(N-1) to LSB
+fn build_bdd_from_tt(base: &mut BddBase, tt: &[u8], use_vars: bool) -> NID {
+    let nvars = (tt.len() as f64).log2() as usize;
+    build_bdd_aux(base, tt, 0, nvars, use_vars)
 }
 
 /// Recursive helper for building BDD from truth table
-fn build_bdd_aux(base: &mut BddBase, tt: &[u8], var_idx: usize, var_fn: fn(usize) -> VID) -> NID {
+/// depth: 0 = top of tree (MSB), increases going down
+fn build_bdd_aux(base: &mut BddBase, tt: &[u8], depth: usize, nvars: usize, use_vars: bool) -> NID {
     // Base case: if all bits are the same, return constant
     if tt.is_empty() {
         return O;
@@ -37,12 +44,14 @@ fn build_bdd_aux(base: &mut BddBase, tt: &[u8], var_idx: usize, var_fn: fn(usize
     }
 
     // Recursive case: split truth table and build ITE
+    // The first half has the current bit = 0, second half has bit = 1
+    // This bit is the MSB of the remaining bits
     let mid = tt.len() / 2;
     let lo_half = &tt[0..mid];
     let hi_half = &tt[mid..];
 
-    let lo = build_bdd_aux(base, lo_half, var_idx + 1, var_fn);
-    let hi = build_bdd_aux(base, hi_half, var_idx + 1, var_fn);
+    let lo = build_bdd_aux(base, lo_half, depth + 1, nvars, use_vars);
+    let hi = build_bdd_aux(base, hi_half, depth + 1, nvars, use_vars);
 
     // If lo and hi are the same, no need for ITE
     if lo == hi {
@@ -50,7 +59,25 @@ fn build_bdd_aux(base: &mut BddBase, tt: &[u8], var_idx: usize, var_fn: fn(usize
     }
 
     // Create ITE node with current variable
-    let var = var_fn(var_idx);
+    // Both vars and virs use bex ordering by default (x0/v0 at bottom)
+    // With tradord feature, virs use traditional ordering (v0 at top)
+    let var = if use_vars {
+        // vars always use bex ordering: x0 at bottom
+        VID::var((nvars - 1 - depth) as u32) // x(N-1) at top, x0 at bottom
+    } else {
+        // virs ordering depends on tradord feature
+        #[cfg(feature = "tradord")]
+        {
+            // With tradord: v0 at top (traditional)
+            VID::vir(depth as u32)
+        }
+        #[cfg(not(feature = "tradord"))]
+        {
+            // Without tradord: v0 at bottom (bex ordering)
+            VID::vir((nvars - 1 - depth) as u32)
+        }
+    };
+
     let var_nid = NID::from_vid(var);
     base.ite(var_nid, hi, lo)
 }
@@ -137,12 +164,12 @@ fn main() {
 
                 // Build with normal ordering (using vars: x0, x1, ...)
                 let mut base_normal = BddBase::new();
-                let root_normal = build_bdd_from_tt(&mut base_normal, &tt, |i| VID::var(i as u32));
+                let root_normal = build_bdd_from_tt(&mut base_normal, &tt, true);
                 let size_normal = count_nodes(&mut base_normal, root_normal);
 
                 // Build with traditional ordering (using virs: v0, v1, ...)
                 let mut base_trad = BddBase::new();
-                let root_trad = build_bdd_from_tt(&mut base_trad, &tt, |i| VID::vir(i as u32));
+                let root_trad = build_bdd_from_tt(&mut base_trad, &tt, false);
                 let size_trad = count_nodes(&mut base_trad, root_trad);
 
                 println!("  Normal ordering (x-vars):      {} nodes", size_normal);

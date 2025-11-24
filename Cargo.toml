@@ -36,6 +36,10 @@ path = "examples/solve/factor-p.rs"
 name = "compare-ordering"
 path = "examples/solve/compare-ordering.rs"
 
+[[bin]]
+name = "generate-truthtables"
+path = "examples/solve/generate-truthtables.rs"
+
 [features]
 default = ["sql"]
 sql = []
