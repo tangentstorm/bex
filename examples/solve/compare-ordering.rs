@@ -1,9 +1,7 @@
-//! Compare BDD sizes between normal (x0 at bottom) and traditional (v0 at top) ordering.
+//! Compare BDD sizes between bex ordering (x0 at bottom) and traditional ordering (v0 at top).
 //!
-//! This program reads binary files containing truth tables (2^n bits each) and builds
-//! BDDs using two different variable orderings:
-//! 1. Normal bex ordering: vars (x0 at bottom)
-//! 2. Traditional ordering: virs (v0 at top when tradord feature is enabled)
+//! This program tests node sharing by building ALL truth tables into a SINGLE BddBase
+//! and comparing the total number of unique nodes between the two orderings.
 //!
 //! Usage: compare-ordering <file1> [file2] [file3] ...
 //!
@@ -109,6 +107,18 @@ fn count_nodes_aux(base: &mut BddBase, n: NID, visited: &mut std::collections::H
     count_nodes_aux(base, hi, visited);
 }
 
+/// Count all unique nodes in a BddBase by traversing from multiple roots
+fn count_all_nodes(base: &mut BddBase, roots: &[NID]) -> usize {
+    use std::collections::HashSet;
+    let mut visited = HashSet::new();
+
+    for &root in roots {
+        count_nodes_aux(base, root, &mut visited);
+    }
+
+    visited.len()
+}
+
 /// Read truth table from file
 fn read_truth_table<P: AsRef<Path>>(path: P) -> std::io::Result<Vec<u8>> {
     let mut file = File::open(path)?;
@@ -145,51 +155,25 @@ fn main() {
         eprintln!();
         eprintln!("Each file should contain a truth table as bytes (0 or 1).");
         eprintln!("File size must be a power of 2.");
+        eprintln!();
+        eprintln!("This tool tests node sharing by building ALL truth tables into a");
+        eprintln!("SINGLE BddBase and comparing total node counts between orderings.");
         std::process::exit(1);
     }
 
-    println!("Comparing BDD sizes: normal ordering (x0 at bottom) vs traditional ordering (v0 at top)");
+    println!("Comparing BDD node sharing: bex ordering (x0 at bottom) vs traditional (v0 at top)");
     println!("{}", "=".repeat(80));
+    println!();
+    println!("Loading truth tables...");
 
-    let mut total_normal = 0;
-    let mut total_trad = 0;
-    let mut file_count = 0;
-
+    // Load all truth tables first
+    let mut truth_tables = Vec::new();
     for filename in &args[1..] {
         match read_truth_table(filename) {
             Ok(tt) => {
                 let num_vars = (tt.len() as f64).log2() as usize;
-                println!("\nFile: {}", filename);
-                println!("  Truth table size: {} bits ({} variables)", tt.len(), num_vars);
-
-                // Build with normal ordering (using vars: x0, x1, ...)
-                let mut base_normal = BddBase::new();
-                let root_normal = build_bdd_from_tt(&mut base_normal, &tt, true);
-                let size_normal = count_nodes(&mut base_normal, root_normal);
-
-                // Build with traditional ordering (using virs: v0, v1, ...)
-                let mut base_trad = BddBase::new();
-                let root_trad = build_bdd_from_tt(&mut base_trad, &tt, false);
-                let size_trad = count_nodes(&mut base_trad, root_trad);
-
-                println!("  Normal ordering (x-vars):      {} nodes", size_normal);
-                println!("  Traditional ordering (v-vars): {} nodes", size_trad);
-
-                if size_normal < size_trad {
-                    println!("  → Normal is smaller by {} nodes ({:.1}%)",
-                             size_trad - size_normal,
-                             100.0 * (size_trad - size_normal) as f64 / size_trad as f64);
-                } else if size_trad < size_normal {
-                    println!("  → Traditional is smaller by {} nodes ({:.1}%)",
-                             size_normal - size_trad,
-                             100.0 * (size_normal - size_trad) as f64 / size_normal as f64);
-                } else {
-                    println!("  → Both orderings have the same size");
-                }
-
-                total_normal += size_normal;
-                total_trad += size_trad;
-                file_count += 1;
+                println!("  {} - {} bits ({} variables)", filename, tt.len(), num_vars);
+                truth_tables.push((filename.clone(), tt));
             }
             Err(e) => {
                 eprintln!("Error reading {}: {}", filename, e);
@@ -197,21 +181,71 @@ fn main() {
         }
     }
 
-    if file_count > 1 {
-        println!("\n{}", "=".repeat(80));
-        println!("Summary:");
-        println!("  Total nodes (normal):      {}", total_normal);
-        println!("  Total nodes (traditional): {}", total_trad);
-        if total_normal < total_trad {
-            println!("  → Normal is smaller overall by {} nodes ({:.1}%)",
-                     total_trad - total_normal,
-                     100.0 * (total_trad - total_normal) as f64 / total_trad as f64);
-        } else if total_trad < total_normal {
-            println!("  → Traditional is smaller overall by {} nodes ({:.1}%)",
-                     total_normal - total_trad,
-                     100.0 * (total_normal - total_trad) as f64 / total_normal as f64);
-        } else {
-            println!("  → Both orderings have the same total size");
-        }
+    if truth_tables.is_empty() {
+        eprintln!("No valid truth tables loaded!");
+        std::process::exit(1);
+    }
+
+    println!();
+    println!("Building BDDs with bex ordering (x-vars, x0 at bottom)...");
+
+    // Build all functions into a SINGLE BddBase using x-vars
+    let mut base_normal = BddBase::new();
+    let mut roots_normal = Vec::new();
+
+    for (filename, tt) in &truth_tables {
+        let root = build_bdd_from_tt(&mut base_normal, tt, true);
+        roots_normal.push(root);
+        println!("  Built {}", filename);
+    }
+
+    let total_nodes_normal = count_all_nodes(&mut base_normal, &roots_normal);
+    println!("  Total unique nodes: {}", total_nodes_normal);
+
+    println!();
+    println!("Building BDDs with traditional ordering (v-vars, v0 at top)...");
+
+    // Build all functions into a SINGLE BddBase using v-vars
+    let mut base_trad = BddBase::new();
+    let mut roots_trad = Vec::new();
+
+    for (filename, tt) in &truth_tables {
+        let root = build_bdd_from_tt(&mut base_trad, tt, false);
+        roots_trad.push(root);
+        println!("  Built {}", filename);
+    }
+
+    let total_nodes_trad = count_all_nodes(&mut base_trad, &roots_trad);
+    println!("  Total unique nodes: {}", total_nodes_trad);
+
+    println!();
+    println!("{}", "=".repeat(80));
+    println!("RESULTS:");
+    println!("{}", "=".repeat(80));
+    println!();
+    println!("Functions tested: {}", truth_tables.len());
+    println!("Total nodes (bex ordering):         {} nodes", total_nodes_normal);
+    println!("Total nodes (traditional ordering): {} nodes", total_nodes_trad);
+    println!();
+
+    if total_nodes_normal < total_nodes_trad {
+        let saved = total_nodes_trad - total_nodes_normal;
+        let percent = 100.0 * saved as f64 / total_nodes_trad as f64;
+        println!("✓ Bex ordering is SMALLER by {} nodes ({:.2}%)", saved, percent);
+        println!();
+        println!("This means bex's ordering (x0=LSB at bottom) results in more");
+        println!("node sharing between functions, confirming the hypothesis!");
+    } else if total_nodes_trad < total_nodes_normal {
+        let saved = total_nodes_normal - total_nodes_trad;
+        let percent = 100.0 * saved as f64 / total_nodes_normal as f64;
+        println!("✗ Traditional ordering is SMALLER by {} nodes ({:.2}%)", saved, percent);
+        println!();
+        println!("This suggests traditional ordering (v0=MSB at top) results in");
+        println!("more node sharing for these particular functions.");
+    } else {
+        println!("= Both orderings have IDENTICAL node counts");
+        println!();
+        println!("This means both orderings result in the same amount of node");
+        println!("sharing for these particular functions.");
     }
 }
