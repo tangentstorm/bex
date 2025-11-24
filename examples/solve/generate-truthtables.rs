@@ -1,7 +1,10 @@
 //! Generate truth tables for testing variable ordering in BDDs.
 //!
-//! This tool generates 16-variable truth tables (2^16 = 65536 bits) using various methods
+//! This tool generates truth tables of varying sizes (10-16 variables) using various methods
 //! to create interesting Boolean functions with different structural properties.
+//!
+//! The size variation is key: it allows testing whether LSB alignment (bex) or MSB alignment
+//! (traditional) results in more node sharing when functions of different sizes coexist.
 //!
 //! Usage: generate-truthtables <output-dir>
 
@@ -13,9 +16,6 @@ use bex::nid::{NID, O, I};
 use bex::vid::VID;
 use bex::ast::RawASTBase;
 use bex::base::Base;
-
-const NVARS: usize = 16;
-const TABLE_SIZE: usize = 1 << NVARS; // 65536
 
 /// Check if a number is prime using trial division
 fn is_prime(n: usize) -> bool {
@@ -31,25 +31,28 @@ fn is_prime(n: usize) -> bool {
 }
 
 /// Generate truth table where f(i) = 1 if i is prime
-fn generate_primality() -> Vec<u8> {
-    (0..TABLE_SIZE).map(|i| if is_prime(i) { 1 } else { 0 }).collect()
+fn generate_primality(nvars: usize) -> Vec<u8> {
+    let size = 1 << nvars;
+    (0..size).map(|i| if is_prime(i) { 1 } else { 0 }).collect()
 }
 
 /// Generate truth table where f(i) = 1 if i mod k is in the set
-fn generate_modulo(k: usize, set: &[usize]) -> Vec<u8> {
-    (0..TABLE_SIZE).map(|i| if set.contains(&(i % k)) { 1 } else { 0 }).collect()
+fn generate_modulo(nvars: usize, k: usize, set: &[usize]) -> Vec<u8> {
+    let size = 1 << nvars;
+    (0..size).map(|i| if set.contains(&(i % k)) { 1 } else { 0 }).collect()
 }
 
 /// Generate truth table using SHA-256 from a seed string
-fn generate_sha256(seed: &str) -> Vec<u8> {
+fn generate_sha256(nvars: usize, seed: &str) -> Vec<u8> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
-    let mut result = Vec::with_capacity(TABLE_SIZE);
+    let size = 1 << nvars;
+    let mut result = Vec::with_capacity(size);
     let mut current = seed.to_string();
 
-    // Generate 65536 bits using a simple hash chain
-    for _ in 0..(TABLE_SIZE / 64) {
+    // Generate bits using a simple hash chain
+    while result.len() < size {
         let mut hasher = DefaultHasher::new();
         current.hash(&mut hasher);
         let hash = hasher.finish();
@@ -57,7 +60,9 @@ fn generate_sha256(seed: &str) -> Vec<u8> {
 
         // Extract 64 bits from the hash
         for j in 0..64 {
-            result.push(((hash >> j) & 1) as u8);
+            if result.len() < size {
+                result.push(((hash >> j) & 1) as u8);
+            }
         }
     }
 
@@ -65,7 +70,7 @@ fn generate_sha256(seed: &str) -> Vec<u8> {
 }
 
 /// Generate a random Boolean expression AST with n nodes
-fn generate_random_ast(num_nodes: usize, seed: u64) -> Vec<u8> {
+fn generate_random_ast(nvars: usize, num_nodes: usize, seed: u64) -> Vec<u8> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
@@ -74,7 +79,7 @@ fn generate_random_ast(num_nodes: usize, seed: u64) -> Vec<u8> {
     seed.hash(&mut hasher);
 
     // Start with variables
-    let mut nodes: Vec<NID> = (0..NVARS).map(|i| NID::from_vid(VID::var(i as u32))).collect();
+    let mut nodes: Vec<NID> = (0..nvars).map(|i| NID::from_vid(VID::var(i as u32))).collect();
 
     // Build random expression tree
     for i in 0..num_nodes {
@@ -98,11 +103,12 @@ fn generate_random_ast(num_nodes: usize, seed: u64) -> Vec<u8> {
 
     // Evaluate the final expression for all input combinations
     let root = *nodes.last().unwrap();
-    let mut result = Vec::with_capacity(TABLE_SIZE);
+    let size = 1 << nvars;
+    let mut result = Vec::with_capacity(size);
 
-    for i in 0..TABLE_SIZE {
+    for i in 0..size {
         let mut vals = std::collections::HashMap::new();
-        for v in 0..NVARS {
+        for v in 0..nvars {
             let bit = (i >> v) & 1;
             vals.insert(VID::var(v as u32), if bit == 1 { I } else { O });
         }
@@ -115,13 +121,14 @@ fn generate_random_ast(num_nodes: usize, seed: u64) -> Vec<u8> {
 
 /// Generate truth table for primorial factorization
 /// f(i) = 1 if i can be expressed as a product of first n primes
-fn generate_primorial_divisible(n: usize) -> Vec<u8> {
+fn generate_primorial_divisible(nvars: usize, n: usize) -> Vec<u8> {
     let primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47];
     let primorial: usize = primes.iter().take(n).product();
+    let size = 1 << nvars;
 
-    if primorial >= TABLE_SIZE {
+    if primorial >= size {
         // If primorial is too large, check divisibility instead
-        (0..TABLE_SIZE).map(|i| {
+        (0..size).map(|i| {
             if i == 0 { 0 }
             else {
                 let is_div = primes.iter().take(n).any(|&p| i % p == 0);
@@ -129,15 +136,16 @@ fn generate_primorial_divisible(n: usize) -> Vec<u8> {
             }
         }).collect()
     } else {
-        (0..TABLE_SIZE).map(|i| if i % primorial == 0 { 1 } else { 0 }).collect()
+        (0..size).map(|i| if i % primorial == 0 { 1 } else { 0 }).collect()
     }
 }
 
 /// Generate truth table for "has n prime factors"
-fn generate_num_prime_factors(target: usize) -> Vec<u8> {
+fn generate_num_prime_factors(nvars: usize, target: usize) -> Vec<u8> {
     let primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47];
+    let size = 1 << nvars;
 
-    (0..TABLE_SIZE).map(|mut i| {
+    (0..size).map(|mut i| {
         if i == 0 || i == 1 { return 0; }
 
         let mut count = 0;
@@ -166,22 +174,30 @@ fn main() {
     if args.len() < 2 {
         eprintln!("Usage: {} <output-dir>", args[0]);
         eprintln!();
-        eprintln!("Generates 16-variable truth tables (65536 bits each) using various methods.");
+        eprintln!("Generates truth tables of varying sizes (10-16 variables) using various methods.");
+        eprintln!("Size variation allows testing LSB vs MSB alignment in node sharing.");
         std::process::exit(1);
     }
 
     let output_dir = &args[1];
     create_dir_all(output_dir).expect("Failed to create output directory");
 
-    println!("Generating 16-variable truth tables ({} bits each)...", TABLE_SIZE);
+    println!("Generating truth tables with varying sizes (10-16 variables)...");
+    println!("This creates a \"ramp\" of sizes to test LSB vs MSB node sharing.");
     println!();
 
+    // Create a ramp of sizes from 10 to 16 variables
+    // Distribute different function types across the range
+    let var_sizes = [10, 11, 11, 12, 12, 13, 13, 14, 14, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16];
+    let mut idx = 0;
+
     // 1. Primality test
-    println!("Generating primality test...");
-    let tt = generate_primality();
+    println!("Generating primality tests...");
+    let nvars = var_sizes[idx]; idx += 1;
+    let tt = generate_primality(nvars);
     let ones = tt.iter().filter(|&&b| b == 1).count();
-    write_tt(format!("{}/prime-16vars.tt", output_dir), &tt).unwrap();
-    println!("  prime-16vars.tt: {} ones ({:.2}%)", ones, 100.0 * ones as f64 / TABLE_SIZE as f64);
+    write_tt(format!("{}/prime-{}vars.tt", output_dir, nvars), &tt).unwrap();
+    println!("  prime-{}vars.tt: {} bits, {} ones ({:.2}%)", nvars, tt.len(), ones, 100.0 * ones as f64 / tt.len() as f64);
 
     // 2. Modulo tests
     println!("\nGenerating modulo tests...");
@@ -189,14 +205,15 @@ fn main() {
         (3, "mod3-eq0", vec![0]),
         (3, "mod3-ne0", vec![1, 2]),
         (7, "mod7-eq0", vec![0]),
-        (7, "mod7-prime", vec![1, 2, 3, 4, 6]), // Non-zero mod 7
+        (7, "mod7-prime", vec![1, 2, 3, 4, 6]),
         (16, "mod16-pow2", vec![0, 1, 2, 4, 8]),
         (256, "mod256-low", vec![0, 1, 2, 3, 4, 5, 6, 7]),
     ] {
-        let tt = generate_modulo(k, &set);
+        let nvars = var_sizes[idx]; idx += 1;
+        let tt = generate_modulo(nvars, k, &set);
         let ones = tt.iter().filter(|&&b| b == 1).count();
-        write_tt(format!("{}/{}-16vars.tt", output_dir, name), &tt).unwrap();
-        println!("  {}-16vars.tt: {} ones ({:.2}%)", name, ones, 100.0 * ones as f64 / TABLE_SIZE as f64);
+        write_tt(format!("{}/{}-{}vars.tt", output_dir, name, nvars), &tt).unwrap();
+        println!("  {}-{}vars.tt: {} bits, {} ones ({:.2}%)", name, nvars, tt.len(), ones, 100.0 * ones as f64 / tt.len() as f64);
     }
 
     // 3. SHA-256 based (pseudo-random but deterministic)
@@ -206,10 +223,11 @@ fn main() {
         ("ordering", "sha-ordering"),
         ("test123", "sha-test"),
     ] {
-        let tt = generate_sha256(seed);
+        let nvars = var_sizes[idx]; idx += 1;
+        let tt = generate_sha256(nvars, seed);
         let ones = tt.iter().filter(|&&b| b == 1).count();
-        write_tt(format!("{}/{}-16vars.tt", output_dir, name), &tt).unwrap();
-        println!("  {}-16vars.tt: {} ones ({:.2}%)", name, ones, 100.0 * ones as f64 / TABLE_SIZE as f64);
+        write_tt(format!("{}/{}-{}vars.tt", output_dir, name, nvars), &tt).unwrap();
+        println!("  {}-{}vars.tt: {} bits, {} ones ({:.2}%)", name, nvars, tt.len(), ones, 100.0 * ones as f64 / tt.len() as f64);
     }
 
     // 4. Random AST generation
@@ -219,33 +237,36 @@ fn main() {
         (20, 123),
         (50, 999),
     ] {
-        let tt = generate_random_ast(nodes, seed);
+        let nvars = var_sizes[idx]; idx += 1;
+        let tt = generate_random_ast(nvars, nodes, seed);
         let ones = tt.iter().filter(|&&b| b == 1).count();
         let name = format!("ast-n{}-s{}", nodes, seed);
-        write_tt(format!("{}/{}-16vars.tt", output_dir, name), &tt).unwrap();
-        println!("  {}-16vars.tt: {} ones ({:.2}%)", name, ones, 100.0 * ones as f64 / TABLE_SIZE as f64);
+        write_tt(format!("{}/{}-{}vars.tt", output_dir, name, nvars), &tt).unwrap();
+        println!("  {}-{}vars.tt: {} bits, {} ones ({:.2}%)", name, nvars, tt.len(), ones, 100.0 * ones as f64 / tt.len() as f64);
     }
 
     // 5. Primorial-based functions
     println!("\nGenerating primorial-based truth tables...");
     for n in [3, 4, 5, 6] {
-        let tt = generate_primorial_divisible(n);
+        let nvars = var_sizes[idx]; idx += 1;
+        let tt = generate_primorial_divisible(nvars, n);
         let ones = tt.iter().filter(|&&b| b == 1).count();
-        write_tt(format!("{}/primorial-div-p{}-16vars.tt", output_dir, n), &tt).unwrap();
-        println!("  primorial-div-p{}-16vars.tt: {} ones ({:.2}%)", n, ones, 100.0 * ones as f64 / TABLE_SIZE as f64);
+        write_tt(format!("{}/primorial-div-p{}-{}vars.tt", output_dir, n, nvars), &tt).unwrap();
+        println!("  primorial-div-p{}-{}vars.tt: {} bits, {} ones ({:.2}%)", n, nvars, tt.len(), ones, 100.0 * ones as f64 / tt.len() as f64);
     }
 
     // 6. Number of prime factors
     println!("\nGenerating prime factor count truth tables...");
     for target in [1, 2, 3, 4] {
-        let tt = generate_num_prime_factors(target);
+        let nvars = var_sizes[idx]; idx += 1;
+        let tt = generate_num_prime_factors(nvars, target);
         let ones = tt.iter().filter(|&&b| b == 1).count();
-        write_tt(format!("{}/num-factors-{}-16vars.tt", output_dir, target), &tt).unwrap();
-        println!("  num-factors-{}-16vars.tt: {} ones ({:.2}%)", target, ones, 100.0 * ones as f64 / TABLE_SIZE as f64);
+        write_tt(format!("{}/num-factors-{}-{}vars.tt", output_dir, target, nvars), &tt).unwrap();
+        println!("  num-factors-{}-{}vars.tt: {} bits, {} ones ({:.2}%)", target, nvars, tt.len(), ones, 100.0 * ones as f64 / tt.len() as f64);
     }
 
     println!("\nAll truth tables generated successfully in {}/", output_dir);
-    println!("Total files: {} (approximately {} MB)",
-             std::fs::read_dir(output_dir).unwrap().count(),
-             (TABLE_SIZE * std::fs::read_dir(output_dir).unwrap().count()) / (1024 * 1024));
+    let total_files = std::fs::read_dir(output_dir).unwrap().count();
+    println!("Total files: {}", total_files);
+    println!("Sizes range from 2^10 (1KB) to 2^16 (64KB)");
 }
