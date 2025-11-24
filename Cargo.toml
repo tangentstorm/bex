@@ -32,10 +32,15 @@ path = "examples/solve/bdd-solve.rs"
 name = "factor-p"
 path = "examples/solve/factor-p.rs"
 
+[[bin]]
+name = "compare-ordering"
+path = "examples/solve/compare-ordering.rs"
+
 [features]
 default = ["sql"]
 sql = []
 slowtests = []
+tradord = []
 
 [workspace]
 members = ["py", "api", "ffi"]

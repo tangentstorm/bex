@@ -34,6 +34,18 @@ fn cmp_depth_idx(x:u32, y:&u32)->VidOrdering {
     Ordering::Equal => VidOrdering::Level,
     Ordering::Greater => VidOrdering::Above }}
 
+#[cfg(feature = "tradord")]
+fn cmp_depth_idx_vir(x:u32, y:&u32)->VidOrdering {
+  // For tradord feature, reverse the ordering so v0 is at the top
+  match x.cmp(y) {
+    Ordering::Less => VidOrdering::Above,
+    Ordering::Equal => VidOrdering::Level,
+    Ordering::Greater => VidOrdering::Below }}
+
+#[cfg(not(feature = "tradord"))]
+fn cmp_depth_idx_vir(x:u32, y:&u32)->VidOrdering {
+  cmp_depth_idx(x, y) }
+
 impl VID {
   pub fn cmp_depth(&self, other: &Self) -> VidOrdering {
     use self::VidOrdering::*;
@@ -49,7 +61,7 @@ impl VID {
         NoV|T => Above },
       Vir(x) => match other.v {
         Var(_) => Above,
-        Vir(y) => cmp_depth_idx(x,&y),
+        Vir(y) => cmp_depth_idx_vir(x,&y),
         NoV|T => Above }}}}
 
 pub fn topmost(x:VID, y:VID)->VID { if x.is_above(&y) { x } else { y }}
