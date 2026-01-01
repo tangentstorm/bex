@@ -115,7 +115,25 @@ impl Reg {
   fn mask_last_cell(&mut self) {
     let rem = self.nbits % USIZE;
     let mask = if rem == 0 { !0 } else { (1 << rem) - 1 };
-    if let Some(last) = self.data.last_mut() { *last &= mask; }}}
+    if let Some(last) = self.data.last_mut() { *last &= mask; }}
+
+  /// Create a register with all bits set to 1
+  pub fn ones(nbits: usize) -> Self {
+    let mut reg = Reg::new(nbits);
+    for cell in &mut reg.data { *cell = !0usize; }
+    reg.mask_last_cell();
+    reg }
+
+  /// Check if all bits are zero
+  pub fn is_zero(&self) -> bool {
+    self.data.iter().all(|&x| x == 0) }
+
+  /// Find the index of the first (lowest) set bit, or None if all zeros
+  pub fn first_set_bit(&self) -> Option<usize> {
+    for (chunk_idx, &chunk) in self.data.iter().enumerate() {
+      if chunk != 0 {
+        return Some(chunk_idx * USIZE + chunk.trailing_zeros() as usize); }}
+    None }}
 
 impl<'b> BitAnd<&'b Reg> for &Reg {
   type Output = Reg;
