@@ -14,7 +14,7 @@ pub mod base;   pub use crate::base::{Base, GraphViz};
 pub mod vid;
 pub mod nid;    pub use crate::nid::{NID,I,O};
 pub mod fun;    pub use crate::fun::Fun;
-pub mod reg;    pub use crate::reg::Reg;
+pub mod reg;    pub use crate::reg::{Reg, RegOps, RegView};
 pub mod vhl;
 pub mod wip;
 pub mod ops;

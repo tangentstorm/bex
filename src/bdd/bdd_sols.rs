@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 use crate::vhl::{HiLo, HiLoBase, Walkable};
-use crate::{vid::VID, nid::{NID,I,O}, bdd::BddBase, reg::Reg};
+use crate::{vid::VID, nid::{NID,I,O}, bdd::BddBase, reg::{Reg, RegOps}};
 use crate::cur::{Cursor, CursorPlan};
 
 

@@ -3,18 +3,109 @@ use std::fmt;
 use crate::vid::VID;
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
-
+const USIZE:usize = usize::BITS as usize;
+
+// === RegOps trait: common read-only operations ===
+
+/// Trait for read-only bit-vector operations, implemented by both Reg and RegView.
+pub trait RegOps {
+  /// Access the underlying data as a slice
+  fn data(&self) -> &[usize];
+
+  /// Return the number of bits in the register
+  fn len(&self) -> usize;
+
+  /// True when the number of bits is 0
+  fn is_empty(&self) -> bool { self.len() == 0 }
+
+  /// Fetch value of a bit by index
+  fn get(&self, ix: usize) -> bool {
+    0 < (self.data()[ix/USIZE] & 1 << (ix%USIZE)) }
+
+  /// Fetch value of bit with the given variable's index
+  fn var_get(&self, v: VID) -> bool {
+    self.get(v.var_ix()) }
+
+  /// Build a usize from the least significant bits of the register
+  fn as_usize(&self) -> usize { self.data()[0] }
+
+  /// Build a usize from the least significant bits in reverse order
+  fn as_usize_rev(&self) -> usize {
+    assert!(self.len() <= 64, "usize_rev only works for <= 64 bits!");
+    let mut tmp = self.as_usize(); let mut res = 0;
+    for _ in 0..self.len() {
+      res <<= 1;
+      res += tmp & 1;
+      tmp >>= 1; }
+    res }
+
+  /// Check if all bits are zero
+  fn is_zero(&self) -> bool {
+    self.data().iter().all(|&x| x == 0) }
+
+  /// Find the index of the first (lowest) set bit, or None if all zeros
+  fn first_set_bit(&self) -> Option<usize> {
+    for (chunk_idx, &chunk) in self.data().iter().enumerate() {
+      if chunk != 0 {
+        return Some(chunk_idx * USIZE + chunk.trailing_zeros() as usize); }}
+    None }
+
+  /// Return the high bits of the register as a vector of indices
+  fn hi_bits(&self) -> Vec<usize> {
+    let mut res = vec![];
+    for (j, &raw) in self.data().iter().enumerate() {
+      let mut bits = raw;
+      let offset = j * USIZE;
+      for i in 0..USIZE {
+        if (bits & 1) == 1 { res.push(offset + i) }
+        bits >>= 1 }}
+    res }
+}
+
+// === RegView: borrowed view into bit data ===
+
+/// A borrowed view into register data. Zero-cost abstraction for read-only access.
+#[derive(Clone, Copy)]
+pub struct RegView<'a> {
+  nbits: usize,
+  data: &'a [usize],
+}
+
+impl<'a> RegView<'a> {
+  /// Create a RegView from a slice
+  pub fn new(nbits: usize, data: &'a [usize]) -> Self {
+    RegView { nbits, data }
+  }
+}
+
+impl RegOps for RegView<'_> {
+  fn data(&self) -> &[usize] { self.data }
+  fn len(&self) -> usize { self.nbits }
+}
+
+// === Reg: owned register ===
+
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Reg { nbits: usize, pub(crate) data: Vec<usize> }
 
-const USIZE:usize = usize::BITS as usize;
+impl RegOps for Reg {
+  fn data(&self) -> &[usize] { &self.data }
+  fn len(&self) -> usize { self.nbits }
+}
 
-
 impl Reg {
 
   /// create a new register with the given number of bits
   pub fn new( nbits: usize )-> Self {
     Reg { nbits, data: vec![0; (nbits as f64 / USIZE as f64).ceil() as usize ]}}
+
+  /// Mutable access to underlying data
+  pub fn data_mut(&mut self) -> &mut [usize] { &mut self.data }
+
+  /// Create a RegView borrowing this Reg's data
+  pub fn as_view(&self) -> RegView<'_> {
+    RegView { nbits: self.nbits, data: &self.data }
+  }
 
   /// constructor that takes the indices of the high bits
   pub fn from_bits( nbits:usize, hi_bits: &[usize] )->Self {
@@ -24,22 +115,6 @@ impl Reg {
       else { res.put(bit, true) }}
     res}
 
-  /// return the high bits of the register as a vector of indices.
-  pub fn hi_bits(&self)->Vec<usize> {
-    let mut res = vec![];
-    for (j, &raw) in self.data.iter().enumerate() {
-      let mut bits = raw;
-      let offset = j * USIZE;
-      for i in 0..USIZE {
-        if (bits & 1) == 1 { res.push(offset + i) }
-        bits >>= 1 }}
-    res}
-
-
-  /// fetch value of a bit by index
-  pub fn get(&self, ix: usize )->bool {
-    0 < (self.data[ix/USIZE] & 1 << (ix%USIZE)) }
-
   /// assign value of a bit by index
   pub fn put(&mut self, ix:usize, v:bool) {
     let i = ix/USIZE; let x = self.data[i];
@@ -47,37 +122,10 @@ impl Reg {
       if v { x |  (1 << (ix%USIZE)) }
       else { x & !(1 << (ix%USIZE)) }}
 
-  /// fetch value of bit with the given variable's index
-  pub fn var_get(&self, v:VID)->bool {
-    let ix = v.var_ix();
-    self.get(ix) }
-
   /// assign value of bit with the given variable's index
   pub fn var_put(&mut self, v:VID, val:bool) {
     let ix = v.var_ix();
     self.put(ix, val) }
-
-  /// return the number of bits in the register.
-  pub fn len(&self)->usize { self.nbits }
-
-  /// true when the number of bits is 0.
-  /// (mostly because clippy complains about len() without is_empty())
-  pub fn is_empty(&self)->bool { self.nbits == 0 }
-
-
-
-  /// build a usize from the least significant bits of the register.
-  pub fn as_usize(&self)->usize { self.data[0] }
-
-  /// build a usize from the least significant bits of the register, in reverse order.
-  pub fn as_usize_rev(&self)->usize {
-    assert!(self.nbits <= 64, "usize_rev only works for <= 64 bits!");
-    let mut tmp = self.as_usize(); let mut res = 0;
-    for _ in 0..self.nbits {
-      res <<= 1;
-      res += tmp & 1;
-      tmp >>= 1;}
-    res }
 
   // permute the bits according to the given permutation vector.
   // b=pv[i] means to grab bit b from x and move to position i in the result.
@@ -86,7 +134,7 @@ impl Reg {
     for (i,b) in pv.iter().enumerate() { res.put(i, self.get(*b)); }
     res}
 
-
+
   /// ripple add with carry within the region specified by start and end
   /// (inclusive), returning Some position where a 0 became a 1, or None on overflow.
   pub fn ripple(&mut self, start:usize, end:usize)->Option<usize> {
@@ -108,7 +156,7 @@ impl Reg {
 
 } // impl Reg
 
-
+
 // -- bitwise operations --------------------------------------------
 
 impl Reg {
@@ -123,17 +171,7 @@ impl Reg {
     for cell in &mut reg.data { *cell = !0usize; }
     reg.mask_last_cell();
     reg }
-
-  /// Check if all bits are zero
-  pub fn is_zero(&self) -> bool {
-    self.data.iter().all(|&x| x == 0) }
-
-  /// Find the index of the first (lowest) set bit, or None if all zeros
-  pub fn first_set_bit(&self) -> Option<usize> {
-    for (chunk_idx, &chunk) in self.data.iter().enumerate() {
-      if chunk != 0 {
-        return Some(chunk_idx * USIZE + chunk.trailing_zeros() as usize); }}
-    None }}
+}
 
 impl<'b> BitAnd<&'b Reg> for &Reg {
   type Output = Reg;
@@ -170,7 +208,7 @@ impl Not for &Reg {
     res.mask_last_cell();
     res }}
 
-
+
 /// display the bits of the register and the usize
 /// e.g. reg[11o=06]
 impl fmt::Display for Reg {
@@ -183,7 +221,7 @@ impl fmt::Display for Reg {
 /// Same as fmt::Display.
 impl fmt::Debug for Reg { // for test suite output
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result { write!(f, "{}", self) }}
-
+
 #[test] #[allow(clippy::bool_assert_comparison)]
 fn test_reg_mut() {
   let mut reg = Reg::new(66);
@@ -200,7 +238,7 @@ fn test_reg_mut() {
   reg.put(1, true);
   assert_eq!(reg.data[0], 3);
   assert_eq!(reg.get(1), true); }
-
+
 #[test] fn test_reg_inc_hitop() {
   let mut reg = Reg::new(2);
   assert_eq!(0, reg.as_usize());
@@ -212,7 +250,7 @@ fn test_reg_mut() {
   assert_eq!(3, reg.as_usize());
   assert_eq!(None, reg.increment(), "11 -> 00"); }
 
-
+
 #[test] fn test_bits() {
   let ten = Reg::from_bits(4, &[3,1]);
   assert_eq!(ten.as_usize(), 0b1010, "reg with bits 3 and 1 set should equal 10");
