@@ -8,6 +8,31 @@ This is a python binding for the `bex` crate, a library for boolean expression m
 pip install tangentstorm-bex
 ```
 
+## Local Development
+
+To install from a local clone of the repository:
+
+```bash
+# Install maturin if you don't have it
+pip install maturin
+
+# Build and install in development mode
+cd py
+maturin develop
+
+# Or for an optimized release build
+maturin develop --release
+```
+
+Alternatively, use pip directly:
+
+```bash
+cd py
+pip install .
+```
+
+There's also a `go.sh` script that builds, installs, and runs the tests.
+
 ## Usage
 
 Here's a simple example of how to use the `bex` module:
