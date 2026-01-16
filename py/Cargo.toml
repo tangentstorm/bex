@@ -16,5 +16,5 @@ bex = { path = ".." }
 fxhash = "0.2.1"
 
 [dependencies.pyo3]
-version = "0.23.4"
+version = "0.27.1"
 features = ["extension-module"]
