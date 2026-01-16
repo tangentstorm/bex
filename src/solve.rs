@@ -21,7 +21,7 @@ use crate::base::Base;
 use crate::nid::NID;
 use crate::vid::VID;
 use crate::ops::Ops;
-use crate::reg::{Reg, RegOps};
+use crate::reg::Reg;
 use crate::{GraphViz, ast::{ASTBase, RawASTBase}, int::{GBASE,BInt,BaseBit}};
 
 

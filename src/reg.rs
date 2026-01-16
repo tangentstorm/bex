@@ -8,58 +8,18 @@ const USIZE:usize = usize::BITS as usize;
 // === RegOps trait: common read-only operations ===
 
 /// Trait for read-only bit-vector operations, implemented by both Reg and RegView.
+/// Note: All methods are also available directly on Reg and RegView without importing this trait.
 pub trait RegOps {
-  /// Access the underlying data as a slice
   fn data(&self) -> &[usize];
-
-  /// Return the number of bits in the register
   fn len(&self) -> usize;
-
-  /// True when the number of bits is 0
-  fn is_empty(&self) -> bool { self.len() == 0 }
-
-  /// Fetch value of a bit by index
-  fn get(&self, ix: usize) -> bool {
-    0 < (self.data()[ix/USIZE] & 1 << (ix%USIZE)) }
-
-  /// Fetch value of bit with the given variable's index
-  fn var_get(&self, v: VID) -> bool {
-    self.get(v.var_ix()) }
-
-  /// Build a usize from the least significant bits of the register
-  fn as_usize(&self) -> usize { self.data()[0] }
-
-  /// Build a usize from the least significant bits in reverse order
-  fn as_usize_rev(&self) -> usize {
-    assert!(self.len() <= 64, "usize_rev only works for <= 64 bits!");
-    let mut tmp = self.as_usize(); let mut res = 0;
-    for _ in 0..self.len() {
-      res <<= 1;
-      res += tmp & 1;
-      tmp >>= 1; }
-    res }
-
-  /// Check if all bits are zero
-  fn is_zero(&self) -> bool {
-    self.data().iter().all(|&x| x == 0) }
-
-  /// Find the index of the first (lowest) set bit, or None if all zeros
-  fn first_set_bit(&self) -> Option<usize> {
-    for (chunk_idx, &chunk) in self.data().iter().enumerate() {
-      if chunk != 0 {
-        return Some(chunk_idx * USIZE + chunk.trailing_zeros() as usize); }}
-    None }
-
-  /// Return the high bits of the register as a vector of indices
-  fn hi_bits(&self) -> Vec<usize> {
-    let mut res = vec![];
-    for (j, &raw) in self.data().iter().enumerate() {
-      let mut bits = raw;
-      let offset = j * USIZE;
-      for i in 0..USIZE {
-        if (bits & 1) == 1 { res.push(offset + i) }
-        bits >>= 1 }}
-    res }
+  fn is_empty(&self) -> bool;
+  fn get(&self, ix: usize) -> bool;
+  fn var_get(&self, v: VID) -> bool;
+  fn as_usize(&self) -> usize;
+  fn as_usize_rev(&self) -> usize;
+  fn is_zero(&self) -> bool;
+  fn first_set_bit(&self) -> Option<usize>;
+  fn hi_bits(&self) -> Vec<usize>;
 }
 
 // === RegView: borrowed view into bit data ===
@@ -76,11 +36,69 @@ impl<'a> RegView<'a> {
   pub fn new(nbits: usize, data: &'a [usize]) -> Self {
     RegView { nbits, data }
   }
+
+  /// Access the underlying data as a slice
+  pub fn data(&self) -> &[usize] { self.data }
+
+  /// Return the number of bits in the register
+  pub fn len(&self) -> usize { self.nbits }
+
+  /// True when the number of bits is 0
+  pub fn is_empty(&self) -> bool { self.len() == 0 }
+
+  /// Fetch value of a bit by index
+  pub fn get(&self, ix: usize) -> bool {
+    0 < (self.data()[ix/USIZE] & 1 << (ix%USIZE)) }
+
+  /// Fetch value of bit with the given variable's index
+  pub fn var_get(&self, v: VID) -> bool { self.get(v.var_ix()) }
+
+  /// Build a usize from the least significant bits of the register
+  pub fn as_usize(&self) -> usize { self.data()[0] }
+
+  /// Build a usize from the least significant bits in reverse order
+  pub fn as_usize_rev(&self) -> usize {
+    assert!(self.len() <= 64, "usize_rev only works for <= 64 bits!");
+    let mut tmp = self.as_usize(); let mut res = 0;
+    for _ in 0..self.len() {
+      res <<= 1;
+      res += tmp & 1;
+      tmp >>= 1; }
+    res }
+
+  /// Check if all bits are zero
+  pub fn is_zero(&self) -> bool { self.data().iter().all(|&x| x == 0) }
+
+  /// Find the index of the first (lowest) set bit, or None if all zeros
+  pub fn first_set_bit(&self) -> Option<usize> {
+    for (chunk_idx, &chunk) in self.data().iter().enumerate() {
+      if chunk != 0 {
+        return Some(chunk_idx * USIZE + chunk.trailing_zeros() as usize); }}
+    None }
+
+  /// Return the high bits of the register as a vector of indices
+  pub fn hi_bits(&self) -> Vec<usize> {
+    let mut res = vec![];
+    for (j, &raw) in self.data().iter().enumerate() {
+      let mut bits = raw;
+      let offset = j * USIZE;
+      for i in 0..USIZE {
+        if (bits & 1) == 1 { res.push(offset + i) }
+        bits >>= 1 }}
+    res }
 }
 
 impl RegOps for RegView<'_> {
-  fn data(&self) -> &[usize] { self.data }
-  fn len(&self) -> usize { self.nbits }
+  fn data(&self) -> &[usize] { self.data() }
+  fn len(&self) -> usize { self.len() }
+  fn is_empty(&self) -> bool { self.is_empty() }
+  fn get(&self, ix: usize) -> bool { self.get(ix) }
+  fn var_get(&self, v: VID) -> bool { self.var_get(v) }
+  fn as_usize(&self) -> usize { self.as_usize() }
+  fn as_usize_rev(&self) -> usize { self.as_usize_rev() }
+  fn is_zero(&self) -> bool { self.is_zero() }
+  fn first_set_bit(&self) -> Option<usize> { self.first_set_bit() }
+  fn hi_bits(&self) -> Vec<usize> { self.hi_bits() }
 }
 
 // === Reg: owned register ===
@@ -89,8 +107,16 @@ impl RegOps for RegView<'_> {
 pub struct Reg { nbits: usize, pub(crate) data: Vec<usize> }
 
 impl RegOps for Reg {
-  fn data(&self) -> &[usize] { &self.data }
-  fn len(&self) -> usize { self.nbits }
+  fn data(&self) -> &[usize] { self.data() }
+  fn len(&self) -> usize { self.len() }
+  fn is_empty(&self) -> bool { self.is_empty() }
+  fn get(&self, ix: usize) -> bool { self.get(ix) }
+  fn var_get(&self, v: VID) -> bool { self.var_get(v) }
+  fn as_usize(&self) -> usize { self.as_usize() }
+  fn as_usize_rev(&self) -> usize { self.as_usize_rev() }
+  fn is_zero(&self) -> bool { self.is_zero() }
+  fn first_set_bit(&self) -> Option<usize> { self.first_set_bit() }
+  fn hi_bits(&self) -> Vec<usize> { self.hi_bits() }
 }
 
 impl Reg {
@@ -98,6 +124,56 @@ impl Reg {
   /// create a new register with the given number of bits
   pub fn new( nbits: usize )-> Self {
     Reg { nbits, data: vec![0; (nbits as f64 / USIZE as f64).ceil() as usize ]}}
+
+  /// Access the underlying data as a slice
+  pub fn data(&self) -> &[usize] { &self.data }
+
+  /// Return the number of bits in the register
+  pub fn len(&self) -> usize { self.nbits }
+
+  /// True when the number of bits is 0
+  pub fn is_empty(&self) -> bool { self.len() == 0 }
+
+  /// Fetch value of a bit by index
+  pub fn get(&self, ix: usize) -> bool {
+    0 < (self.data()[ix/USIZE] & 1 << (ix%USIZE)) }
+
+  /// Fetch value of bit with the given variable's index
+  pub fn var_get(&self, v: VID) -> bool { self.get(v.var_ix()) }
+
+  /// Build a usize from the least significant bits of the register
+  pub fn as_usize(&self) -> usize { self.data()[0] }
+
+  /// Build a usize from the least significant bits in reverse order
+  pub fn as_usize_rev(&self) -> usize {
+    assert!(self.len() <= 64, "usize_rev only works for <= 64 bits!");
+    let mut tmp = self.as_usize(); let mut res = 0;
+    for _ in 0..self.len() {
+      res <<= 1;
+      res += tmp & 1;
+      tmp >>= 1; }
+    res }
+
+  /// Check if all bits are zero
+  pub fn is_zero(&self) -> bool { self.data().iter().all(|&x| x == 0) }
+
+  /// Find the index of the first (lowest) set bit, or None if all zeros
+  pub fn first_set_bit(&self) -> Option<usize> {
+    for (chunk_idx, &chunk) in self.data().iter().enumerate() {
+      if chunk != 0 {
+        return Some(chunk_idx * USIZE + chunk.trailing_zeros() as usize); }}
+    None }
+
+  /// Return the high bits of the register as a vector of indices
+  pub fn hi_bits(&self) -> Vec<usize> {
+    let mut res = vec![];
+    for (j, &raw) in self.data().iter().enumerate() {
+      let mut bits = raw;
+      let offset = j * USIZE;
+      for i in 0..USIZE {
+        if (bits & 1) == 1 { res.push(offset + i) }
+        bits >>= 1 }}
+    res }
 
   /// Mutable access to underlying data
   pub fn data_mut(&mut self) -> &mut [usize] { &mut self.data }

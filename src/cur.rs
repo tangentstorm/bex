@@ -1,6 +1,6 @@
 //! Cursors (register + stack and scope) for navigating vhl-graphs (Bdd, Anf, etc)
 
-use crate::reg::{Reg, RegOps};
+use crate::reg::Reg;
 use crate::{nid,nid::NID};
 use crate::vid::VID;
 use crate::vhl::{HiLoPart, HiLoBase};

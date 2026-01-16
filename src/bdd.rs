@@ -2,7 +2,7 @@
 extern crate num_cpus;
 use std::collections::{HashMap,HashSet};
 use crate::base::Base;
-use crate::reg::{Reg, RegOps};
+use crate::reg::Reg;
 use crate::vhl::Walkable;
 use crate::nid::{NID,O,I};
 use crate::vid::{VID,VidOrdering,topmost_of3};

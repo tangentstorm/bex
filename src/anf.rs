@@ -18,7 +18,7 @@ use crate::simp;
 use crate::{nid, nid::{NID,I,O}};
 use crate::vid::{VID,VidOrdering};
 use crate::cur::{Cursor, CursorPlan};
-use crate::reg::{Reg, RegOps};
+use crate::reg::Reg;
 use crate::vhl::{Vhl, HiLo, HiLoBase, Walkable};
 use crate::bdd::BddBase; // for solutions
 #[cfg(test)] use crate::vid::{topmost, botmost};
