@@ -117,11 +117,39 @@ impl PyBddBase {
 
 #[pymethods]
 impl PyReg {
+  #[new]
+  #[pyo3(signature = (nbits, hi_bits=None))]
+  fn __new__(nbits: usize, hi_bits: Option<Vec<usize>>) -> Self {
+    match hi_bits {
+      Some(bits) => PyReg(Reg::from_bits(nbits, &bits)),
+      None => PyReg(Reg::new(nbits)) }}
+
   #[getter]
   fn len(&self) -> usize { self.0.len() }
+  fn is_empty(&self) -> bool { self.0.is_empty() }
+  fn is_zero(&self) -> bool { self.0.is_zero() }
+  fn get(&self, ix: usize) -> bool { self.0.get(ix) }
+  fn put(&mut self, ix: usize, v: bool) { self.0.put(ix, v) }
   fn as_usize(&self) -> usize { self.0.as_usize() }
   fn as_usize_rev(&self) -> usize { self.0.as_usize_rev() }
-  fn hi_bits(&self) -> Vec<usize> { self.0.hi_bits() }}
+  fn hi_bits(&self) -> Vec<usize> { self.0.hi_bits() }
+  fn first_set_bit(&self) -> Option<usize> { self.0.first_set_bit() }
+  fn increment(&mut self) -> Option<usize> { self.0.increment() }
+
+  #[staticmethod]
+  fn ones(nbits: usize) -> PyReg { PyReg(Reg::ones(nbits)) }
+
+  fn __and__(&self, other: &PyReg) -> PyReg { PyReg(&self.0 & &other.0) }
+  fn __or__(&self, other: &PyReg) -> PyReg { PyReg(&self.0 | &other.0) }
+  fn __xor__(&self, other: &PyReg) -> PyReg { PyReg(&self.0 ^ &other.0) }
+  fn __invert__(&self) -> PyReg { PyReg(!&self.0) }
+
+  fn __eq__(&self, other: &PyReg) -> bool { self.0 == other.0 }
+  fn __str__(&self) -> String { self.0.to_string() }
+  fn __repr__(&self) -> String { format!("<Reg({})>", self.0) }
+  fn __len__(&self) -> usize { self.0.len() }
+  fn __getitem__(&self, ix: usize) -> bool { self.0.get(ix) }
+  fn __setitem__(&mut self, ix: usize, v: bool) { self.0.put(ix, v) }}
 
 #[pymethods]
 impl PyCursor {
