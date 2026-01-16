@@ -1,7 +1,17 @@
-import dd_bex as _bdd
+import bex.dd as _bdd
 
 # these are in the 'tests' directory in the dd package.
-# (i just added that directory to my PYTHONPATH for now)
+# automatically add it to sys.path if dd is installed
+import sys
+from pathlib import Path
+try:
+    import dd
+    dd_tests = Path(dd.__file__).parent.parent / 'tests'
+    if dd_tests.exists() and str(dd_tests) not in sys.path:
+        sys.path.insert(0, str(dd_tests))
+except ImportError:
+    pass
+
 import common
 import common_bdd
 
