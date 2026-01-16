@@ -25,7 +25,6 @@ pub mod bdd;    pub use crate::bdd::BddBase;
 pub mod solve;
 pub mod apl;
 pub mod int;
-pub mod io;
 #[cfg(feature = "sql")]
 pub mod sql;
 pub mod anf;
