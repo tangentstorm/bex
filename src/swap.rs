@@ -230,10 +230,6 @@ impl VhlScaffold {
     if let Some(x) = self.vix(v) { self.vids.get(x+1).cloned() }
     else { panic!("vid_above(v:{}): v not in the scaffold.", v) }}
 
-  fn vid_below(&self, v:VID)->Option<VID> {
-     if let Some(x) = self.vix(v) { if x>0 { self.vids.get(x-1).cloned()} else { None }}
-     else { panic!("vid_below(v:{}): v not in the scaffold.", v) }}
-
   /// add a new vid to the top of the stack. return its position.
   pub fn push(&mut self, v:VID)->usize {
     if self.vix(v).is_some() { panic!("pushed variable that was already in the scaffold: {:?}", v) }
