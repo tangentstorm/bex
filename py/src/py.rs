@@ -84,6 +84,8 @@ impl PyBddBase {
     let base = self.0.lock().unwrap();
     let mut s = String::new(); base.write_dot(x.0, &mut s); s }
   fn to_json(&self, x:&PyNID)->String { self.0.lock().unwrap().to_json(&[x.0]) }
+  fn load_json(&mut self, s:&str)->Vec<PyNID> {
+    self.0.lock().unwrap().load_json(s).iter().map(|&nid| PyNID(nid)).collect() }
   fn solution_count(&mut self, x: &PyNID) -> u64 {
     let mut base = self.0.lock().unwrap();
     base.solution_count(x.0) }

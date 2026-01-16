@@ -25,7 +25,10 @@ impl BddBase {
               .expect("failed to push to vhls"); });}}
 
     let keep: Vec<i32> = nids.iter().filter(|&&n| !n.is_const())
-      .map(|&n| { let node = n.raw(); mapping[&node] as i32 }).collect();
+      .map(|&n| {
+        let idx = mapping[&n.raw()] as i32;
+        if n.is_inv() { -idx } else { idx }
+      }).collect();
 
     let out = json::object!{
       "format": "bex-bdd-0.01",
@@ -34,38 +37,48 @@ impl BddBase {
     out.dump()
   }
 
-  pub fn from_json(s: &str) -> (Self, Vec<NID>) {
+  /// Load nodes from JSON into this BddBase, returning the root NIDs
+  pub fn load_json(&mut self, s: &str) -> Vec<NID> {
     let data = json::parse(s).unwrap();
     assert_eq!(data["format"].as_str().unwrap(), "bex-bdd-0.01");
     let vhls_arr = data["vhls"].members().collect::<Vec<_>>();
     let mut mapping: HashMap<usize, NID> = HashMap::new();
-    let mut base = BddBase::new();
 
     let parse_child = |child: &json::JsonValue, mapping: &HashMap<usize, NID>| -> NID {
-      let s = child.as_str().unwrap();
-      if let Ok(nid) = s.parse::<NID>() { nid }
-      else if child.is_number() {
+      if let Some(s) = child.as_str() {
+        s.parse::<NID>().expect("failed to parse NID from string")
+      } else if child.is_number() {
         let idx_i32 = child.as_i32().unwrap();
         let idx: usize = idx_i32.abs() as usize;
-        mapping[&idx].inv_if(idx_i32 < 0)}
-      else { panic!("unexpected value type: {}", child) }};
+        mapping[&idx].inv_if(idx_i32 < 0)
+      } else { panic!("unexpected value type: {}", child) }};
 
     for i in 1..vhls_arr.len() {
       let node = &vhls_arr[i];
       let nv = node[0].as_str().unwrap().parse::<NID>().unwrap();
       let hi = parse_child(&node[1], &mapping);
       let lo = parse_child(&node[2], &mapping);
-      let nid = base.ite(nv, hi, lo);
-      mapping.insert(i, nid);}
+      let nid = self.ite(nv, hi, lo);
+      mapping.insert(i, nid);
+    }
 
-    let nids: Vec<NID> = data["keep"].members()
-      .map(|idx| { let i = idx.as_i32().unwrap() as usize; mapping[&i]})
-      .collect();
+    data["keep"].members()
+      .map(|idx| {
+        let i = idx.as_i32().unwrap();
+        let nid = mapping[&(i.abs() as usize)];
+        if i < 0 { !nid } else { nid }
+      }).collect()
+  }
 
-    (base, nids)}}
+  /// Create a new BddBase from JSON
+  pub fn from_json(s: &str) -> (Self, Vec<NID>) {
+    let mut base = BddBase::new();
+    let nids = base.load_json(s);
+    (base, nids)
+  }}
 
 
-#[test] fn test_json() {
+#[test] fn test_json_from_json() {
   use crate::nid::named::{x0, x1};
   let mut base = BddBase::new();
   let n = base.xor(x0, x1);
@@ -78,4 +91,34 @@ impl BddBase {
   assert_eq!(nids.len(), 1);
   let n2 = nids[0];
   assert_eq!(base.len(), base2.len());
-  assert_eq!(base.tt(n, 3), base2.tt(n2, 3));}
+  assert_eq!(base.tt(n, 3), base2.tt(n2, 3));
+}
+
+#[test] fn test_json_load_json() {
+  use crate::nid::named::{x0, x1};
+  let mut base = BddBase::new();
+  let n = base.xor(x0, x1);
+  let s = base.to_json(&[n]);
+  // load into a new base using load_json
+  let mut base2 = BddBase::new();
+  let nids = base2.load_json(&s);
+  assert_eq!(nids.len(), 1);
+  assert_eq!(base.tt(n, 3), base2.tt(nids[0], 3));
+}
+
+#[test] fn test_json_inverted_root() {
+  use crate::nid::named::{x0, x1};
+  let mut base = BddBase::new();
+  let n = base.xor(x0, x1);
+  let inv_n = !n;  // inverted root
+  let s = base.to_json(&[inv_n]);
+  println!("json with inverted root: {}", s);
+  // keep should have a negative index for inverted root
+  assert!(s.contains(r#""keep":[-1]"#), "inverted root should have negative keep index");
+  let (mut base2, nids) = BddBase::from_json(&s);
+  assert_eq!(nids.len(), 1);
+  // the loaded node should match the inverted original
+  assert_eq!(base.tt(inv_n, 3), base2.tt(nids[0], 3));
+  // and should NOT match the non-inverted original
+  assert_ne!(base.tt(n, 3), base2.tt(nids[0], 3));
+}

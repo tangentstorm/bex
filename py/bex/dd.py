@@ -301,7 +301,7 @@ class BDD:
                     f.write(dot_code)
             else:
                 cmd = ['dot', f'-T{filetype}', '-o', filename]
-                subprocess.run(cmd, encoding='utf8', input=dot_code, capture_output=True, check=True)
+                subprocess.run(cmd, input=dot_code.encode('utf-8'), check=True)
         elif filetype == 'json':
             assert len(roots) == 1, "json dump only supports a single root"
             json_code = self.base.to_json(roots[0].nid)
@@ -310,9 +310,14 @@ class BDD:
         else:
             raise ValueError(f"unsupported filetype for dump: {filetype}")
 
-    def load(self, filename: str, levels: bool = True) -> Union[List['BDDNode']]:
+    def load(self, filename: str, levels: bool = True) -> List['BDDNode']:
         """Load a BDD from a file."""
-        return []
+        if not levels:
+            warnings.warn("load(levels=False) is not supported; levels parameter is ignored")
+        with open(filename, 'r', encoding='utf-8') as f:
+            json_str = f.read()
+        nids = self.base.load_json(json_str)
+        return [self._nidref(nid) for nid in nids]
 
     def reorder(self, order: Optional[Dict[str, int]] = None):
         """Reorder the variables in the BDD."""
