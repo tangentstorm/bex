@@ -1,1 +1,1 @@
-PYTHONPATH=/d/src/dd/tests pytest.exe --exitfirst dd_bex_tests.py
+PYTHONPATH=/d/src/dd/tests pytest.exe --exitfirst dd_bex_tests.py ${1:+-k "$1"}
