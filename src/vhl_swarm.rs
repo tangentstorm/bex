@@ -11,7 +11,7 @@ use std::sync::mpsc::Sender;
 use std::{fmt, hash::Hash};
 use std::sync::Arc;
 use concurrent_queue::{ConcurrentQueue,PopError};
-use crate::vhl::HiLoPart;
+use crate::vhl::VhlSlots;
 use crate::vid::VID;
 use crate::wip::Answer;
 use crate::NID;
@@ -84,9 +84,9 @@ impl<J,H> VhlWorker<J, H> where J:JobKey, H:VhlJobHandler<J,W=Self> {
     self.state.as_ref().unwrap().resolve_nid(q, n) }
   pub fn add_wip(&mut self, q:&J, vid:VID, invert:bool)->Option<Answer<NID>> {
     self.state.as_ref().unwrap().add_wip(q, vid, invert) }
-  pub fn resolve_part(&mut self, q:&J, part:HiLoPart, nid:NID, invert:bool)->Option<Answer<NID>> {
-    self.state.as_ref().unwrap().resolve_part(q, part, nid, invert) }
-  pub fn add_dep(&mut self, q:&J, idep:wip::Dep<J>)->(bool, Option<Answer<NID>>) {
+  pub fn resolve_slot(&mut self, q:&J, slot:VhlSlots, nid:NID, invert:bool)->Option<Answer<NID>> {
+    self.state.as_ref().unwrap().resolve_slot(q, slot, nid, invert) }
+  pub fn add_dep(&mut self, q:&J, idep:wip::Dep<J, VhlSlots>)->(bool, Option<Answer<NID>>) {
     self.state.as_ref().unwrap().add_dep(q, idep) }
   pub fn get_done(&self, q:&J)->Option<NID> {
     self.state.as_ref().unwrap().get_done(q) }

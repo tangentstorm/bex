@@ -9,10 +9,9 @@
 //! Inside the `WorkState`, each `K` is mapped to a `Work<V, WipRef<K,P>>`.
 //! - [`Work`] is either `Todo(WipRef<K,P>)` or `Done(V)`.
 //! - [`WipRef`] is really just `Wip<K,P>`.
-//! - [`Wip<K,P>`] has `parts: P` and `deps: Vec<Dep<K>>`.
-//! - [`Dep<K>`] tracks which other queries are dependent on this one. It has
-//!     a `HiLoPart` and an `invert` flag. (TODO: explicit use of invert and
-//!     HiloPart should probably be in a `VhlDep` struct.)
+//! - [`Wip<K,P>`] has `parts: P` and `deps: Vec<Dep<K,P::Slot>>`.
+//! - [`Dep<K,S>`] tracks which other queries are dependent on this one. It has
+//!     a slot selector and an `invert` flag.
 //!
 //! With this framework, we can track the progress of a distributed computation.
 //!
@@ -35,7 +34,7 @@ use std::hash::Hash;
 use std::sync::Mutex;
 use crate::nid::NID;
 use crate::vid::VID;
-use crate::vhl::{HiLo, HiLoPart, VhlParts, HiLoCache};
+use crate::vhl::{HiLo, VhlSlots, VhlParts, HiLoCache};
 use crate::bdd::{Norm, NormIteKey};
 use dashmap::DashMap;
 
@@ -48,13 +47,36 @@ thread_local!{
 
 pub type WIPHashMap<K,V> = HashMap<K,V,fxhash::FxBuildHasher>;
 
-#[derive(Debug,Copy,Clone)]
-pub struct Dep<K> { pub dep: K, pub part: HiLoPart, pub invert: bool }
-impl<K> Dep<K>{
-  pub fn new(dep: K, part: HiLoPart, invert: bool)->Dep<K> { Dep{dep, part, invert} }}
+pub trait Parts {
+  type Slot: Copy + Eq + Debug;
 
-#[derive(Debug, Default)]
-pub struct Wip<K=NormIteKey, P=VhlParts> { pub parts : P, pub deps : Vec<Dep<K>> }
+  fn set_slot(&mut self, slot: Self::Slot, nid: Option<NID>);
+}
+
+impl Parts for VhlParts {
+  type Slot = VhlSlots;
+
+  fn set_slot(&mut self, slot: Self::Slot, nid: Option<NID>) {
+    self.set_slot(slot, nid)
+  }
+}
+
+#[derive(Debug,Copy,Clone)]
+pub struct Dep<K, S> { pub dep: K, pub slot: S, pub invert: bool }
+impl<K,S> Dep<K,S>{
+  pub fn new(dep: K, slot: S, invert: bool)->Dep<K,S> { Dep{dep, slot, invert} }}
+
+#[derive(Debug)]
+pub struct Wip<K=NormIteKey, P=VhlParts> where P:Parts {
+  pub parts : P,
+  pub deps : Vec<Dep<K, P::Slot>>
+}
+
+impl<K, P> Default for Wip<K, P> where P:Parts + Default {
+  fn default() -> Self {
+    Wip { parts: P::default(), deps: vec![] }
+  }
+}
 
 // TODO: wrap this with a smart pointer so Work::Done and Work::Todo are both usizes.
 type WipRef<K=NormIteKey, P=VhlParts> = Wip<K, P>;
@@ -91,7 +113,7 @@ pub struct Answer<T>(pub T); // TODO: nopub
 /// Thread-safe map of queries->results, including results
 /// that are currently under construction.
 #[derive(Debug, Default)]
-pub struct WorkState<K=NormIteKey, V=NID, P=VhlParts> where K:Eq+Hash+Debug {
+pub struct WorkState<K=NormIteKey, V=NID, P=VhlParts> where K:Eq+Hash+Debug, P:Parts {
   _kvp: PhantomData<(K,V,P)>,
   /// this is a kludge. it locks entire swarm from taking in new
   /// queries until an answer is found, because it's the only place
@@ -103,7 +125,7 @@ pub struct WorkState<K=NormIteKey, V=NID, P=VhlParts> where K:Eq+Hash+Debug {
   // TODO: make .cache private
   pub cache: DashMap<K, Work<V, WipRef<K,P>>, fxhash::FxBuildHasher> }
 
-impl<K:Eq+Hash+Debug,V:Clone> WorkState<K,V> {
+impl<K:Eq+Hash+Debug,V:Clone,P:Parts> WorkState<K,V,P> {
 
   pub fn len(&self)->usize { self.hilos.len() }
   #[must_use] pub fn is_empty(&self) -> bool { self.len() == 0 }
@@ -139,7 +161,7 @@ impl<K:Eq+Hash+Debug,V:Clone> WorkState<K,V> {
     else { let hilo = self.get_hilo(n); (hilo.hi, hilo.lo) }} }
 
 // TODO: nopub these methods
-impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID> {
+impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID,VhlParts> {
   pub fn resolve_nid(&self, q:&K, nid:NID)->Option<Answer<NID>> {
     let mut ideps = vec![];
     { // update work_cache and extract the ideps
@@ -154,7 +176,7 @@ impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID> {
     else {
       let mut res = None;
       for d in ideps {
-        if let Some(Answer(a)) = self.resolve_part(&d.dep, d.part, nid, d.invert) {
+        if let Some(Answer(a)) = self.resolve_slot(&d.dep, d.slot, nid, d.invert) {
           res =Some(Answer(a)) }}
       res }}
 
@@ -170,14 +192,14 @@ impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID> {
        !self.vhl_to_nid(vv.vid(), hi, lo)};
     self.resolve_nid(q, nid) }
 
-  pub fn resolve_part(&self, q:&K, part:HiLoPart, nid:NID, invert:bool)->Option<Answer<NID>> {
+  pub fn resolve_slot(&self, q:&K, slot:VhlSlots, nid:NID, invert:bool)->Option<Answer<NID>> {
     let mut parts = VhlParts::default();
     { // -- new way --
       let mut v = self.cache.get_mut(q).unwrap();
       match v.value_mut() {
         Work::Todo(w) => {
           let n = if invert { !nid } else { nid };
-          w.borrow_mut().parts.set_part(part, Some(n));
+          w.borrow_mut().parts.set_slot(slot, Some(n));
           parts = w.borrow_mut().parts }
         Work::Done(x) => { warn!("got part for K:{:?} ->Work::Done({:?})", q, x) } }}
 
@@ -200,7 +222,7 @@ impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID> {
       res }
 
     // returns true if the query is new to the system
-    pub fn add_dep(&self, q:&K, idep:Dep<K>)->(bool, Option<Answer<NID>>) {
+    pub fn add_dep(&self, q:&K, idep:Dep<K, VhlSlots>)->(bool, Option<Answer<NID>>) {
       COUNT_CACHE_TESTS.with(|c| *c.borrow_mut() += 1);
       let mut old_done = None; let mut was_empty = false; let mut answer = None;
       { // -- new way -- add_sub_task
@@ -213,7 +235,7 @@ impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID> {
           Work::Todo(w) => w.borrow_mut().deps.push(idep),
           Work::Done(n) => old_done=Some(*n) }}
       if let Some(nid)=old_done {
-        answer = self.resolve_part(&idep.dep, idep.part, nid, idep.invert); }
+        answer = self.resolve_slot(&idep.dep, idep.slot, nid, idep.invert); }
       (was_empty, answer) }}
 
 

@@ -24,8 +24,8 @@ impl HiLo {
   /// apply the not() operator to both branches
   #[inline] pub fn invert(self)-> HiLo { HiLo{ hi: !self.hi, lo: !self.lo }}
 
-  pub fn get_part(&self, which:HiLoPart)->NID {
-    if which == HiLoPart::HiPart { self.hi } else { self.lo }} }
+  pub fn get_part(&self, which:VhlSlots)->NID {
+    if which == VhlSlots::Hi { self.hi } else { self.lo }} }
 
 impl std::ops::Not for HiLo {
   type Output = HiLo;
@@ -46,8 +46,8 @@ impl std::ops::Not for Vhl {
 
 
 /// Enum for referring to the parts of a HiLo (for WIP).
-#[derive(PartialEq,Debug,Copy,Clone)]
-pub enum HiLoPart { HiPart, LoPart }
+#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+pub enum VhlSlots { Hi, Lo }
 
 /// a deconstructed Vhl (for WIP)
 #[derive(Default,PartialEq,Debug,Copy,Clone)]
@@ -61,8 +61,8 @@ pub struct VhlParts{
     pub fn hilo(&self)->Option<HiLo> {
       if let (Some(hi), Some(lo)) = (self.hi, self.lo) { Some(HiLo{hi,lo}) }
       else { None }}
-    pub fn set_part(&mut self, part:HiLoPart, v:Option<NID>) {
-      if part == HiLoPart::HiPart { self.hi = v }
+    pub fn set_slot(&mut self, part:VhlSlots, v:Option<NID>) {
+      if part == VhlSlots::Hi { self.hi = v }
       else { self.lo = v }}}
 
 

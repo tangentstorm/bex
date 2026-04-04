@@ -1,4 +1,4 @@
-use crate::{vhl::HiLoPart, wip::{Answer, Dep, ResStep}};
+use crate::{vhl::VhlSlots, wip::{Answer, Dep, ResStep}};
 use crate::nid::NID;
 use crate::bdd::{ITE, NormIteKey, Norm};
 use crate::vhl_swarm::{JobKey, VhlJobHandler, VhlSwarm, VhlWorker};
@@ -17,12 +17,12 @@ impl VhlJobHandler<NormIteKey> for BddJobHandler {
       ResStep::Wip { v, hi, lo, invert } => {
         let mut res = w.add_wip(&q, v, invert);
         if res.is_none() {
-          for &(xx, part) in &[(hi,HiLoPart::HiPart), (lo,HiLoPart::LoPart)] {
+          for &(xx, slot) in &[(hi,VhlSlots::Hi), (lo,VhlSlots::Lo)] {
             match xx {
-            Norm::Nid(nid) => { res = w.resolve_part(&q, part, nid, false) },
+            Norm::Nid(nid) => { res = w.resolve_slot(&q, slot, nid, false) },
             Norm::Ite(ite) |
             Norm::Not(ite) => {
-              let (was_new, answer) = w.add_dep(&ite, Dep::new(q, part, xx.is_inv()));
+              let (was_new, answer) = w.add_dep(&ite, Dep::new(q, slot, xx.is_inv()));
               if was_new { w.delegate(ite) }
               res = answer }}}}
         res }};

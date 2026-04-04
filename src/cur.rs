@@ -3,7 +3,7 @@
 use crate::reg::Reg;
 use crate::{nid,nid::NID};
 use crate::vid::VID;
-use crate::vhl::{HiLoPart, HiLoBase};
+use crate::vhl::{VhlSlots, HiLoBase};
 
 pub trait CursorPlan : HiLoBase {
   /// is the given (leaf) node a solution, given the current inversion state?
@@ -69,14 +69,14 @@ impl Cursor {
 
   pub fn at_top(&self)->bool { self.nstack.is_empty() }
 
-  fn step_down(&mut self, base: &dyn CursorPlan, which:HiLoPart) {
+  fn step_down(&mut self, base: &dyn CursorPlan, which:VhlSlots) {
     let hl = base.get_hilo(self.node).expect("node not found for step_down");
     self.push_node(hl.get_part(which)); }
 
   pub fn put_step(&mut self, base:&dyn CursorPlan, val:bool) {
    self.scope.var_put(self.node.vid(), val);
-   if val { self.step_down(base, HiLoPart::HiPart) }
-   else { self.step_down(base, HiLoPart::LoPart) }}
+   if val { self.step_down(base, VhlSlots::Hi) }
+   else { self.step_down(base, VhlSlots::Lo) }}
 
   pub fn dontcares(&self)->Vec<usize> {
     println!("self.can_skip = {:?}", self.can_skip);
