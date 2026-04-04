@@ -220,9 +220,6 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
 #[cfg(test)] macro_rules! s {
   { } => { HashSet::new() };
   {$( $x:expr ),+ } => {{ let mut tmp = HashSet::new(); $( tmp.insert($x); )* tmp }};}
-#[cfg(test)] macro_rules! d {
-  { } => { HashMap::new() };
-  {$( $k:ident : $v:expr ),+ }=> {{ let mut tmp = HashMap::new(); $( tmp.insert($k,$v); )* tmp }};}
 // Test for plan_regroup disabled - uses original algorithm with complex cursor logic
 // #[test] fn test_plan_regroup() { ... }
 
@@ -459,4 +456,3 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
   assert!(xs.should_swap(v0, v1, &plan),
     "Both staying: should allow (vd==0 case triggers first)");
 }
-
