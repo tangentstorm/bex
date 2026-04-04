@@ -149,6 +149,9 @@ impl BddBase {
 
   // Add solution_count method
   pub fn solution_count(&mut self, n: NID) -> u64 {
+    if n.is_const() {
+      return if n == I { 1 } else { 0 };
+    }
     let mut counts = std::collections::HashMap::new();
     self.walk_up(n, &mut |nid, vid, hi, lo| {
       let level = vid.var_ix();

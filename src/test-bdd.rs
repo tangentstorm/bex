@@ -152,6 +152,11 @@ fn hs<T: Eq+Hash>(xs: Vec<T>)->HashSet<T> { <HashSet<T>>::from_iter(xs) }
   let n = expr![base, (x0 & (x1 | x2))];
   assert_eq!(base.solution_count(n), 3);}
 
+#[test] fn test_solution_count_constants() {
+  let mut base = BddBase::new();
+  assert_eq!(base.solution_count(I), 1);
+  assert_eq!(base.solution_count(O), 0);}
+
 #[test] fn test_solution_count_complex() {
   use crate::nid::named::{x0, x1, x2};
   let mut base = BddBase::new();
