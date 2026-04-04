@@ -82,8 +82,8 @@ impl<J,H> VhlWorker<J, H> where J:JobKey, H:VhlJobHandler<J,W=Self> {
     self.state.as_ref().unwrap().vhl_to_nid(v, hi, lo) }
   pub fn resolve_job(&mut self, q:&J, n:NID)->Option<Answer<NID>> {
     self.state.as_ref().unwrap().resolve_job(q, n) }
-  pub fn add_wip(&mut self, q:&J, vid:VID, invert:bool)->Option<Answer<NID>> {
-    self.state.as_ref().unwrap().add_wip(q, vid, invert) }
+  pub fn add_wip(&mut self, q:&J, parts:VhlParts)->Option<Answer<NID>> {
+    self.state.as_ref().unwrap().add_wip(q, parts) }
   pub fn resolve_part(&mut self, q:&J, slot:VhlSlots, nid:NID, invert:bool)->Option<Answer<NID>> {
     self.state.as_ref().unwrap().resolve_part(q, slot, nid, invert) }
   pub fn add_dep(&mut self, q:&J, idep:wip::Dep<J, VhlSlots>)->(bool, Option<Answer<NID>>) {

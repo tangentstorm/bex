@@ -229,6 +229,20 @@ impl<K:Eq+Hash+Debug+Copy,P:Parts,B:WipBase<P>> WorkState<K,P,B> {
     }
     (was_empty, answer)
   }
+
+  pub fn add_wip(&self, q:&K, parts:P)->Option<Answer<NID>> {
+    let mut res = None;
+    if self.cache.contains_key(q) {
+      self.cache.alter(q, |_k, v| match v {
+        Work::Todo(Wip{parts:_,deps}) => Work::Todo(Wip{parts, deps}),
+        Work::Done(nid) => {
+          res = Some(Answer(nid));
+          Work::Done(nid)
+        }
+      });
+    } else { panic!("got wip for unknown task"); }
+    res
+  }
 }
 
 // TODO: nopub these methods
@@ -248,19 +262,6 @@ impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,VhlParts,VhlBase> {
   #[inline] pub fn tup(&self, n:NID)-> (NID, NID) {
     self.base.tup(n) }
 
-    /// set the branch variable and invert flag on the work in progress value
-    pub fn add_wip(&self, q:&K, vid:VID, invert:bool)->Option<Answer<NID>> {
-      let mut res = None;
-      if self.cache.contains_key(q) {
-        self.cache.alter(q, |_k, v| match v {
-          Work::Todo(Wip{parts,deps}) => {
-            let mut p = parts; p.v = vid; p.invert = invert;
-            Work::Todo(Wip{parts:p,deps})},
-          Work::Done(nid) => {
-            res = Some(Answer(nid));
-            Work::Done(nid) }});}
-        else { panic!("got wip for unknown task");}
-      res }
 }
 
 
