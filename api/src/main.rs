@@ -3,6 +3,7 @@ use dotenv::dotenv;
 use std::env;
 use lazy_static::lazy_static;
 use std::sync::Mutex;
+use warp::http::StatusCode;
 use bex::bdd::BddBase;
 use bex::nid::NID;
 use bex::base::Base;
@@ -60,11 +61,16 @@ fn routes() -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
 
     let nid = warp::path!("nid" / NID)
         .map(|nid: NID| {
-            if nid.is_lit() || nid.is_const() || nid.is_fun() { format!("{nid}") }
+            if nid.is_lit() || nid.is_const() || nid.is_fun() {
+                warp::reply::with_status(format!("{nid}"), StatusCode::OK)
+            }
             else {
                 let bdd_base = BDD_BASE.lock().unwrap();
-                let (v, hi, lo) = bdd_base.get_vhl(nid);
-                format!("v: {v} hi: {hi} lo: {lo}")
+                if let Ok((v, hi, lo)) = std::panic::catch_unwind(|| bdd_base.get_vhl(nid)) {
+                    warp::reply::with_status(format!("v: {v} hi: {hi} lo: {lo}"), StatusCode::OK)
+                } else {
+                    warp::reply::with_status(format!("unknown nid: {nid}"), StatusCode::NOT_FOUND)
+                }
             }
         });
 
@@ -76,8 +82,6 @@ mod tests {
     use super::*;
     use warp::test::request;
     use warp::http::StatusCode;
-    use bex::nid::NID;
-
     #[tokio::test]
     async fn test_xor_plain() {
         let api = routes();
@@ -115,6 +119,13 @@ mod tests {
         let api = routes();
         // lowercase hex should fail to parse and thus return 404 from warp
         let resp = request().method("GET").path("/xor/xf/x1").reply(&api).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn test_unknown_nid_returns_not_found() {
+        let api = routes();
+        let resp = request().method("GET").path("/nid/@FFFF").reply(&api).await;
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 }
