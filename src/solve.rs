@@ -196,7 +196,6 @@ pub fn solve<S:SubSolver>(dst:&mut S, src0:&RawASTBase, sn:NID)->DstNid {
   // If it's already a const or a VID::var, though, there's nothing to do.
   if sn.is_lit() { DstNid{n:sn} }
   else {
-    dst.init(sn.vid());
     // renumber and garbage collect, leaving only the AST nodes reachable from sn
     let (src, top) = sort_by_cost(src0, SrcNid{n:sn});
 
@@ -313,6 +312,38 @@ pub fn find_factors<T0:BInt, T1:BInt, S:SubSolver>(dest:&mut S, k:usize, expecte
 #[test] pub fn test_multi_anf() {
   use crate::{anf::ANFBase, int::{X4,X8}};
   find_factors::<X4, X8, ANFBase>(&mut ANFBase::new(), 30, vec![(2,15), (3,10), (5,6)]); }
+
+#[test] pub fn test_solve_calls_init_once() {
+  use crate::{ast::ASTBase, base::Base, vid::VID};
+
+  #[derive(Default)]
+  struct CountingSolver { init_calls: usize, init_arg: Option<VID> }
+
+  impl SubSolver for CountingSolver {
+    fn init(&mut self, top: VID)->NID {
+      self.init_calls += 1;
+      self.init_arg = Some(top);
+      NID::from_vid(top)
+    }
+
+    fn subst(&mut self, _ctx:NID, _vid:VID, _ops:&Ops)->NID { crate::O }
+
+    fn get_all(&self, _ctx:NID, _nvars:usize)->HashSet<Reg> { HashSet::new() }
+  }
+
+  let mut ast = ASTBase::empty();
+  let x = ast.def("x".to_string(), VID::var(0));
+  let y = ast.def("y".to_string(), VID::var(1));
+  let top = ast.and(x, y);
+  let raw = ast.raw_ast();
+
+  let mut solver = CountingSolver::default();
+  let answer = solve(&mut solver, raw, top);
+
+  assert_eq!(solver.init_calls, 1);
+  assert!(solver.init_arg.is_some());
+  assert_eq!(answer.n, crate::O);
+}
 
 /// same as tiny test, but multiply 2 bytes to get 210. There are 8 distinct answers.
 /// this was intended as a unit test but is *way* too slow.
