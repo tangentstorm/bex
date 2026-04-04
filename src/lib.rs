@@ -28,6 +28,7 @@ pub mod int;
 #[cfg(feature = "sql")]
 pub mod sql;
 pub mod anf;
+pub mod anf_swarm;
 pub mod swap;
 pub mod swarm;
 pub mod vhl_swarm;

@@ -283,6 +283,11 @@ pub fn find_factors<T0:BInt, T1:BInt, S:SubSolver>(dest:&mut S, k:usize, expecte
   use crate::{anf::ANFBase, int::{X2,X4}};
   find_factors::<X2,X4,ANFBase>(&mut ANFBase::new(), 6, vec![(2,3)]); }
 
+/// nano test case for swarm-backed ANF: factor (*/2 3)=6 into two bitpairs.
+#[test] pub fn test_nano_anf_swarm() {
+  use crate::{anf_swarm::AnfSwarmBase, int::{X2,X4}};
+  find_factors::<X2,X4,AnfSwarmBase>(&mut AnfSwarmBase::new(), 6, vec![(2,3)]); }
+
 /// nano test case for swap solver: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
 #[test] pub fn test_nano_swap() {
   use crate::{swap::SwapSolver, int::{X2,X4}};
@@ -297,6 +302,11 @@ pub fn find_factors<T0:BInt, T1:BInt, S:SubSolver>(dest:&mut S, k:usize, expecte
 #[test] pub fn test_tiny_anf() {
   use crate::{anf::ANFBase, int::{X4,X8}};
   find_factors::<X4, X8, ANFBase>(&mut ANFBase::new(), 210, vec![(14,15)]); }
+
+/// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles with swarm-backed ANF.
+#[test] pub fn test_tiny_anf_swarm() {
+  use crate::{anf_swarm::AnfSwarmBase, int::{X4,X8}};
+  find_factors::<X4, X8, AnfSwarmBase>(&mut AnfSwarmBase::new(), 210, vec![(14,15)]); }
 
 /// tiny test case: factor (*/2 3 5 7)=210 into 2 nibbles. The only answer is 14,15.
 #[test] pub fn test_tiny_swap() {

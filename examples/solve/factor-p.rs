@@ -2,6 +2,16 @@
 //! into two factors x,y where that x<y.
 //! primorial n is the product of the first n primes.
 
+/// Product of the first 2 primes: 2 3 (3 bits, but treat as 16-bit)
+const P2 : usize = 6;
+fn p2_factors()->Vec<(u64,u64)> {
+  vec![(1,6), (2,3)]}
+
+/// Product of the first 3 primes: 2 3 5 (5 bits, but treat as 16-bit)
+const P3 : usize = 30;
+fn p3_factors()->Vec<(u64,u64)> {
+  vec![(1,30), (2,15), (3,10), (5,6)]}
+
 /// Product of the first 4 primes: 2 3 5 7 (8 bits, but treat as 16-bit)
 const P4 : usize = 210;
 fn p4_factors()->Vec<(u64,u64)> {
@@ -22,6 +32,7 @@ fn p6_factors()->Vec<(u64,u64)> {
 
 extern crate bex;
 use bex::{Base, solve::find_factors, anf::ANFBase, bdd::BddBase, int::{X8,X16}, swap::SwapSolver};
+use bex::anf_swarm::AnfSwarmBase;
 
 include!(concat!(env!("OUT_DIR"), "/bex-build-info.rs"));
 
@@ -30,6 +41,7 @@ enum SolverKind {
   Bdd,
   Swap,
   Anf,
+  AnfSwarm,
 }
 
 impl SolverKind {
@@ -38,6 +50,7 @@ impl SolverKind {
       Self::Bdd => "sub solver",
       Self::Swap => "swap solver",
       Self::Anf => "anf solver",
+      Self::AnfSwarm => "anf swarm solver",
     }
   }
 
@@ -60,6 +73,7 @@ where
 {
   let mut use_swap = false;
   let mut use_anf = false;
+  let mut use_anf_swarm = false;
   let mut get_which = false; let mut which = 4;
   let mut get_threads = false; let mut num_threads = 0;
   for a in args {
@@ -71,12 +85,15 @@ where
       "-p" => get_which = true,
       "swap" => use_swap = true,
       "anf" => use_anf = true,
+      "anf-swarm" => use_anf_swarm = true,
       _ => { /* ignore for now */} }}}
 
-  if use_swap && use_anf { panic!("choose either 'swap' or 'anf'"); }
+  let mode_count = [use_swap, use_anf, use_anf_swarm].into_iter().filter(|x| *x).count();
+  if mode_count > 1 { panic!("choose only one of 'swap', 'anf', or 'anf-swarm'"); }
   Config {
     solver: if use_swap { SolverKind::Swap }
             else if use_anf { SolverKind::Anf }
+            else if use_anf_swarm { SolverKind::AnfSwarm }
             else { SolverKind::Bdd },
     which,
     num_threads,
@@ -88,13 +105,15 @@ pub fn main() {
   let Config { solver, which, num_threads } = parse_args(std::env::args());
 
   let (k, expected) = match which {
+    2 => (P2, p2_factors()),
+    3 => (P3, p3_factors()),
     4 => (P4, p4_factors()),
     5 => (P5, p5_factors()),
     6 => (P6, p6_factors()),
-    _ => { panic!("the available primorials are: 4,5,6") }};
+    _ => { panic!("the available primorials are: 2,3,4,5,6") }};
 
   // -- print current configuration ---
-  println!("[bex {BEX_VERSION} -O{BEX_OPT_LEVEL}] factor-p4 -t {num_threads} -p {which} ({})",
+  println!("[bex {BEX_VERSION} -O{BEX_OPT_LEVEL}] factor-p -t {num_threads} -p {which} ({})",
     solver.label());
 
   // ---- run the requested solver
@@ -106,6 +125,8 @@ pub fn main() {
       find_factors::<X8, X16, SwapSolver>(&mut SwapSolver::new(), k, expected),
     SolverKind::Anf =>
       find_factors::<X8, X16, ANFBase>(&mut ANFBase::new(), k, expected),
+    SolverKind::AnfSwarm =>
+      find_factors::<X8, X16, AnfSwarmBase>(&mut AnfSwarmBase::new_with_threads(num_threads), k, expected),
     SolverKind::Bdd =>
       find_factors::<X8, X16, BddBase>(&mut BddBase::new_with_threads(num_threads), k, expected),
   }}
