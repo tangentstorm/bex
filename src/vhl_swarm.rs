@@ -11,7 +11,7 @@ use std::sync::mpsc::Sender;
 use std::{fmt, hash::Hash};
 use std::sync::Arc;
 use concurrent_queue::{ConcurrentQueue,PopError};
-use crate::vhl::VhlSlots;
+use crate::vhl::{VhlBase, VhlParts, VhlSlots};
 use crate::vid::VID;
 use crate::wip::Answer;
 use crate::NID;
@@ -47,7 +47,7 @@ pub enum VhlQ<J> where J:JobKey {
   /// The main recursive operation: convert ITE triple to a BDD.
   Job(J),
   /// Initialize worker with its "hive mind".
-  Init(Arc<WorkState<J>>, Arc<JobQueue<J>>),
+  Init(Arc<WorkState<J, VhlParts, VhlBase>>, Arc<JobQueue<J>>),
   /// ask for stats about cache
   Stats }
 
@@ -72,7 +72,7 @@ pub struct VhlWorker<J, H> where J:JobKey, H:VhlJobHandler<J,W=Self> {
   /// quick access to the next job in the queue
   next: Option<J>,
   /// shared state for all workers
-  state:Option<Arc<WorkState<J>>>,
+  state:Option<Arc<WorkState<J, VhlParts, VhlBase>>>,
   queue:Option<Arc<JobQueue<J>>>,
   handler: H }
 
@@ -80,12 +80,12 @@ pub struct VhlWorker<J, H> where J:JobKey, H:VhlJobHandler<J,W=Self> {
 impl<J,H> VhlWorker<J, H> where J:JobKey, H:VhlJobHandler<J,W=Self> {
   pub fn vhl_to_nid(&self, v:VID, hi:NID, lo:NID)->NID {
     self.state.as_ref().unwrap().vhl_to_nid(v, hi, lo) }
-  pub fn resolve_nid(&mut self, q:&J, n:NID)->Option<Answer<NID>> {
-    self.state.as_ref().unwrap().resolve_nid(q, n) }
+  pub fn resolve_job(&mut self, q:&J, n:NID)->Option<Answer<NID>> {
+    self.state.as_ref().unwrap().resolve_job(q, n) }
   pub fn add_wip(&mut self, q:&J, vid:VID, invert:bool)->Option<Answer<NID>> {
     self.state.as_ref().unwrap().add_wip(q, vid, invert) }
-  pub fn resolve_slot(&mut self, q:&J, slot:VhlSlots, nid:NID, invert:bool)->Option<Answer<NID>> {
-    self.state.as_ref().unwrap().resolve_slot(q, slot, nid, invert) }
+  pub fn resolve_part(&mut self, q:&J, slot:VhlSlots, nid:NID, invert:bool)->Option<Answer<NID>> {
+    self.state.as_ref().unwrap().resolve_part(q, slot, nid, invert) }
   pub fn add_dep(&mut self, q:&J, idep:wip::Dep<J, VhlSlots>)->(bool, Option<Answer<NID>>) {
     self.state.as_ref().unwrap().add_dep(q, idep) }
   pub fn get_done(&self, q:&J)->Option<NID> {
@@ -144,7 +144,7 @@ impl<J,H> Worker<VhlQ<J>, R, J> for VhlWorker<J,H> where J:JobKey, H:VhlJobHandl
 #[derive(Debug, Default)]
 pub struct VhlSwarm<J, H> where J:JobKey, H:VhlJobHandler<J,W=VhlWorker<J,H>>{
   swarm: Swarm<VhlQ<J>, R, VhlWorker<J, H>, J>,
-  state: Arc<WorkState<J>>,
+  state: Arc<WorkState<J, VhlParts, VhlBase>>,
   queue: Arc<JobQueue<J>>}
 
 impl<J,H> VhlSwarm<J,H> where J:JobKey, H:VhlJobHandler<J,W=VhlWorker<J,H>> {

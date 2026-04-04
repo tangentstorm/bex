@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 use crate::nid::NID;
 use crate::vid::VID;
+use crate::wip::WipBase;
 
 #[derive(Debug,Default)]
 struct VhlVec<T>{ pub vec: boxcar::Vec<T> }
@@ -103,7 +104,32 @@ pub trait Walkable {
 pub trait HiLoBase {
   fn get_hilo(&self, n:NID)->Option<HiLo>; }
 
-
+
+#[derive(Debug, Default)]
+pub struct VhlBase {
+  hilos: HiLoCache,
+}
+
+impl VhlBase {
+  pub fn len(&self)->usize { self.hilos.len() }
+  #[must_use] pub fn is_empty(&self) -> bool { self.len() == 0 }
+
+  pub fn get_cached_nid(&self, v:VID, hi:NID, lo:NID)->Option<NID> {
+    self.hilos.get_node(v, HiLo{hi,lo})}
+
+  pub fn vhl_to_nid(&self, v:VID, hi:NID, lo:NID)->NID {
+    match self.hilos.get_node(v, HiLo{hi,lo}) {
+      Some(n) => n,
+      None => { self.hilos.insert(v, HiLo{hi, lo}) }}}
+
+  pub fn get_hilo(&self, n:NID)->HiLo { self.hilos.get_hilo(n) }
+
+  #[inline] pub fn tup(&self, n:NID)-> (NID, NID) {
+    use crate::nid::{I,O};
+    if n.is_const() { if n==I { (I, O) } else { (O, I) } }
+    else if n.is_vid() { if n.is_inv() { (O, I) } else { (I, O) }}
+    else { let hilo = self.get_hilo(n); (hilo.hi, hilo.lo) }}}
+
 #[derive(Debug, Default)]
 struct HiLoCacheInner {
   /// variable-agnostic hi/lo pairs for individual bdd nodes.
@@ -155,3 +181,16 @@ impl HiLoCache {
         ix };
     let res = NID::from_vid_idx(v, ix);
     if inv { !res } else { res } }}
+
+impl WipBase<VhlParts> for VhlBase {
+  fn resolve_job(&self, parts:VhlParts)->NID {
+    use crate::bdd::{ITE, Norm, NormIteKey};
+    let HiLo{hi:h0, lo:l0} = parts.hilo().expect("resolve_job needs complete VhlParts");
+    let (h1,l1) = if parts.invert { (!h0, !l0) } else { (h0, l0) };
+    match ITE::norm(NID::from_vid(parts.v), h1, l1) {
+      Norm::Nid(n) => n,
+      Norm::Ite(NormIteKey(ITE{i:vv,t:hi,e:lo})) =>
+        self.vhl_to_nid(vv.vid(), hi, lo),
+      Norm::Not(NormIteKey(ITE{i:vv,t:hi,e:lo})) =>
+       !self.vhl_to_nid(vv.vid(), hi, lo)}}
+}

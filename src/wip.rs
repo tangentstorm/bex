@@ -34,7 +34,7 @@ use std::hash::Hash;
 use std::sync::Mutex;
 use crate::nid::NID;
 use crate::vid::VID;
-use crate::vhl::{HiLo, VhlSlots, VhlParts, HiLoCache};
+use crate::vhl::{HiLo, VhlBase, VhlSlots, VhlParts};
 use crate::bdd::{Norm, NormIteKey};
 use dashmap::DashMap;
 
@@ -47,10 +47,11 @@ thread_local!{
 
 pub type WIPHashMap<K,V> = HashMap<K,V,fxhash::FxBuildHasher>;
 
-pub trait Parts {
+pub trait Parts: Copy + Default {
   type Slot: Copy + Eq + Debug;
 
   fn set_slot(&mut self, slot: Self::Slot, nid: Option<NID>);
+  fn is_ready(&self)->bool;
 }
 
 impl Parts for VhlParts {
@@ -59,6 +60,12 @@ impl Parts for VhlParts {
   fn set_slot(&mut self, slot: Self::Slot, nid: Option<NID>) {
     self.set_slot(slot, nid)
   }
+
+  fn is_ready(&self)->bool { self.hi.is_some() && self.lo.is_some() }
+}
+
+pub trait WipBase<P:Parts> : Debug + Default + Send + Sync {
+  fn resolve_job(&self, parts:P)->NID;
 }
 
 #[derive(Debug,Copy,Clone)]
@@ -72,7 +79,7 @@ pub struct Wip<K=NormIteKey, P=VhlParts> where P:Parts {
   pub deps : Vec<Dep<K, P::Slot>>
 }
 
-impl<K, P> Default for Wip<K, P> where P:Parts + Default {
+impl<K, P> Default for Wip<K, P> where P:Parts {
   fn default() -> Self {
     Wip { parts: P::default(), deps: vec![] }
   }
@@ -112,100 +119,134 @@ pub struct Answer<T>(pub T); // TODO: nopub
 
 /// Thread-safe map of queries->results, including results
 /// that are currently under construction.
-#[derive(Debug, Default)]
-pub struct WorkState<K=NormIteKey, V=NID, P=VhlParts> where K:Eq+Hash+Debug, P:Parts {
-  _kvp: PhantomData<(K,V,P)>,
+#[derive(Debug)]
+pub struct WorkState<K=NormIteKey, P=VhlParts, B=VhlBase>
+where K:Eq+Hash+Debug, P:Parts, B:WipBase<P> {
+  _kvp: PhantomData<(K,P)>,
   /// this is a kludge. it locks entire swarm from taking in new
   /// queries until an answer is found, because it's the only place
   /// we currently have to remember the query id. (since there's only
   /// one slot, we can only have one top level query at a time)
   pub qid:Mutex<Option<crate::swarm::QID>>, // pub so BddWorker can see it
-  /// cache of hi,lo pairs.
-  hilos: HiLoCache,
+  pub base: B,
   // TODO: make .cache private
-  pub cache: DashMap<K, Work<V, WipRef<K,P>>, fxhash::FxBuildHasher> }
+  pub cache: DashMap<K, Work<NID, WipRef<K,P>>, fxhash::FxBuildHasher> }
 
-impl<K:Eq+Hash+Debug,V:Clone,P:Parts> WorkState<K,V,P> {
+impl<K,P,B> Default for WorkState<K,P,B>
+where K:Eq+Hash+Debug, P:Parts, B:WipBase<P> {
+  fn default() -> Self {
+    Self {
+      _kvp: PhantomData,
+      qid: Mutex::new(None),
+      base: B::default(),
+      cache: DashMap::with_hasher(fxhash::FxBuildHasher::default()),
+    }
+  }
+}
 
-  pub fn len(&self)->usize { self.hilos.len() }
-  #[must_use] pub fn is_empty(&self) -> bool { self.len() == 0 }
+impl<K:Eq+Hash+Debug+Copy,P:Parts,B:WipBase<P>> WorkState<K,P,B> {
 
   /// If the key exists in the cache AND the work is
   /// done, return the completed value, otherwise
   /// return None.
-  pub fn get_done(&self, k:&K)->Option<V> {
+  pub fn get_done(&self, k:&K)->Option<NID> {
     COUNT_CACHE_TESTS.with(|c| *c.borrow_mut() += 1);
     if let Some(w) = self.cache.get(k) {
       match w.value() {
         Work::Todo(_) => None,
         Work::Done(v) => {
           COUNT_CACHE_HITS.with(|c| *c.borrow_mut() += 1);
-          Some(v.clone())}}}
+          Some(*v)}}}
     else { None }}
 
-  pub fn get_cached_nid(&self, v:VID, hi:NID, lo:NID)->Option<NID> {
-    self.hilos.get_node(v, HiLo{hi,lo})}
-
-  pub fn vhl_to_nid(&self, v:VID, hi:NID, lo:NID)->NID {
-    match self.hilos.get_node(v, HiLo{hi,lo}) {
-      Some(n) => n,
-      None => { self.hilos.insert(v, HiLo{hi, lo}) }}}
-
-  pub fn get_hilo(&self, n:NID)->HiLo { self.hilos.get_hilo(n) }
-
-  /// return (hi, lo) pair for the given nid. used internally
-  #[inline] pub fn tup(&self, n:NID)-> (NID, NID) {
-    use crate::nid::{I,O};
-    if n.is_const() { if n==I { (I, O) } else { (O, I) } }
-    else if n.is_vid() { if n.is_inv() { (O, I) } else { (I, O) }}
-    else { let hilo = self.get_hilo(n); (hilo.hi, hilo.lo) }} }
-
-// TODO: nopub these methods
-impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID,VhlParts> {
-  pub fn resolve_nid(&self, q:&K, nid:NID)->Option<Answer<NID>> {
+  pub fn resolve_job(&self, q:&K, nid:NID)->Option<Answer<NID>> {
     let mut ideps = vec![];
-    { // update work_cache and extract the ideps
+    {
       let mut v = self.cache.get_mut(q).unwrap();
       if let Work::Done(old) = v.value() {
         warn!("resolving an already resolved nid for {:?}", q);
-        assert_eq!(*old, nid, "old and new resolutions didn't match!") }
-      else {
+        assert_eq!(*old, nid, "old and new resolutions didn't match!");
+      } else {
         ideps = std::mem::take(&mut v.value_mut().wip_mut().deps);
-        *v = Work::Done(nid) }}
+        *v = Work::Done(nid);
+      }
+    }
     if ideps.is_empty() { Some(Answer(nid)) }
     else {
       let mut res = None;
       for d in ideps {
-        if let Some(Answer(a)) = self.resolve_slot(&d.dep, d.slot, nid, d.invert) {
-          res =Some(Answer(a)) }}
-      res }}
+        if let Some(Answer(a)) = self.resolve_part(&d.dep, d.slot, nid, d.invert) {
+          res = Some(Answer(a));
+        }
+      }
+      res
+    }
+  }
 
-  pub fn resolve_vhl(&self, q:&K, v:VID, h0:NID, l0:NID, invert:bool)->Option<Answer<NID>> {
-    use crate::bdd::ITE; // TODO: normalization strategy might need to be generic
-    // we apply invert first so it normalizes correctly.
-    let (h1,l1) = if invert { (!h0, !l0) } else { (h0, l0) };
-    let nid = match ITE::norm(NID::from_vid(v), h1, l1) {
-      Norm::Nid(n) => n,
-      Norm::Ite(NormIteKey(ITE{i:vv,t:hi,e:lo})) =>
-        self.vhl_to_nid(vv.vid(), hi, lo),
-      Norm::Not(NormIteKey(ITE{i:vv,t:hi,e:lo})) =>
-       !self.vhl_to_nid(vv.vid(), hi, lo)};
-    self.resolve_nid(q, nid) }
-
-  pub fn resolve_slot(&self, q:&K, slot:VhlSlots, nid:NID, invert:bool)->Option<Answer<NID>> {
-    let mut parts = VhlParts::default();
-    { // -- new way --
+  pub fn resolve_part(&self, q:&K, slot:P::Slot, nid:NID, invert:bool)->Option<Answer<NID>> {
+    let mut parts = None;
+    {
       let mut v = self.cache.get_mut(q).unwrap();
       match v.value_mut() {
         Work::Todo(w) => {
           let n = if invert { !nid } else { nid };
           w.borrow_mut().parts.set_slot(slot, Some(n));
-          parts = w.borrow_mut().parts }
-        Work::Done(x) => { warn!("got part for K:{:?} ->Work::Done({:?})", q, x) } }}
+          let new_parts = w.borrow_mut().parts;
+          if new_parts.is_ready() { parts = Some(new_parts) }
+        }
+        Work::Done(x) => {
+          warn!("got part for K:{:?} ->Work::Done({:?})", q, x);
+        }
+      }
+    }
 
-    if let Some(HiLo{hi, lo}) = parts.hilo() {
-      self.resolve_vhl(q, parts.v, hi, lo, parts.invert) }
-    else { None}}
+    if let Some(parts) = parts {
+      self.resolve_job(q, self.base.resolve_job(parts))
+    } else {
+      None
+    }
+  }
+
+  // returns true if the query is new to the system
+  pub fn add_dep(&self, q:&K, idep:Dep<K, P::Slot>)->(bool, Option<Answer<NID>>) {
+    COUNT_CACHE_TESTS.with(|c| *c.borrow_mut() += 1);
+    let mut old_done = None;
+    let mut was_empty = false;
+    let mut answer = None;
+    {
+      let mut v = self.cache.entry(*q).or_insert_with(|| {
+        was_empty = true;
+        Work::default()
+      });
+      if !was_empty { COUNT_CACHE_HITS.with(|c| *c.borrow_mut() += 1) }
+      match v.value_mut() {
+        Work::Todo(w) => w.borrow_mut().deps.push(idep),
+        Work::Done(n) => old_done = Some(*n),
+      }
+    }
+    if let Some(nid)=old_done {
+      answer = self.resolve_part(&idep.dep, idep.slot, nid, idep.invert);
+    }
+    (was_empty, answer)
+  }
+}
+
+// TODO: nopub these methods
+impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,VhlParts,VhlBase> {
+  pub fn len(&self)->usize { self.base.len() }
+  #[must_use] pub fn is_empty(&self) -> bool { self.len() == 0 }
+
+  pub fn get_cached_nid(&self, v:VID, hi:NID, lo:NID)->Option<NID> {
+    self.base.get_cached_nid(v, hi, lo)}
+
+  pub fn vhl_to_nid(&self, v:VID, hi:NID, lo:NID)->NID {
+    self.base.vhl_to_nid(v, hi, lo)}
+
+  pub fn get_hilo(&self, n:NID)->HiLo { self.base.get_hilo(n) }
+
+  /// return (hi, lo) pair for the given nid. used internally
+  #[inline] pub fn tup(&self, n:NID)-> (NID, NID) {
+    self.base.tup(n) }
 
     /// set the branch variable and invert flag on the work in progress value
     pub fn add_wip(&self, q:&K, vid:VID, invert:bool)->Option<Answer<NID>> {
@@ -220,23 +261,7 @@ impl<K:Eq+Hash+Debug+Default+Copy> WorkState<K,NID,VhlParts> {
             Work::Done(nid) }});}
         else { panic!("got wip for unknown task");}
       res }
-
-    // returns true if the query is new to the system
-    pub fn add_dep(&self, q:&K, idep:Dep<K, VhlSlots>)->(bool, Option<Answer<NID>>) {
-      COUNT_CACHE_TESTS.with(|c| *c.borrow_mut() += 1);
-      let mut old_done = None; let mut was_empty = false; let mut answer = None;
-      { // -- new way -- add_sub_task
-        // this handles both the occupied and vacant cases:
-        let mut v = self.cache.entry(*q).or_insert_with(|| {
-          was_empty = true;
-          Work::default()});
-        if !was_empty { COUNT_CACHE_HITS.with(|c| *c.borrow_mut() += 1) }
-        match v.value_mut() {
-          Work::Todo(w) => w.borrow_mut().deps.push(idep),
-          Work::Done(n) => old_done=Some(*n) }}
-      if let Some(nid)=old_done {
-        answer = self.resolve_slot(&idep.dep, idep.slot, nid, idep.invert); }
-      (was_empty, answer) }}
+}
 
 
 

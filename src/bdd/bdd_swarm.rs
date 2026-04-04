@@ -13,13 +13,13 @@ impl VhlJobHandler<NormIteKey> for BddJobHandler {
 
   fn work_job(&mut self, w: &mut Self::W, q:NormIteKey) {
     let res = match self.ite_norm(w, q) {
-      ResStep::Nid(n) => w.resolve_nid(&q, n),
+      ResStep::Nid(n) => w.resolve_job(&q, n),
       ResStep::Wip { v, hi, lo, invert } => {
         let mut res = w.add_wip(&q, v, invert);
         if res.is_none() {
           for &(xx, slot) in &[(hi,VhlSlots::Hi), (lo,VhlSlots::Lo)] {
             match xx {
-            Norm::Nid(nid) => { res = w.resolve_slot(&q, slot, nid, false) },
+            Norm::Nid(nid) => { res = w.resolve_part(&q, slot, nid, false) },
             Norm::Ite(ite) |
             Norm::Not(ite) => {
               let (was_new, answer) = w.add_dep(&ite, Dep::new(q, slot, xx.is_inv()));
