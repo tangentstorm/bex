@@ -1,13 +1,11 @@
 //! (Var, Hi, Lo) triples
 use std::collections::BinaryHeap;
 use std::collections::HashSet;
-use dashmap::DashMap;
+use std::sync::Mutex;
 use crate::nid::NID;
 use crate::vid::VID;
 
-type VhlHashMap<K,V> = DashMap<K,V,fxhash::FxBuildHasher>;
-
-#[derive(Debug,Default,Clone)]
+#[derive(Debug,Default)]
 struct VhlVec<T>{ pub vec: boxcar::Vec<T> }
 
 
@@ -106,48 +104,54 @@ pub trait HiLoBase {
   fn get_hilo(&self, n:NID)->Option<HiLo>; }
 
 
-#[derive(Debug, Default, Clone)]
-pub struct HiLoCache {
+#[derive(Debug, Default)]
+struct HiLoCacheInner {
   /// variable-agnostic hi/lo pairs for individual bdd nodes.
   hilos: VhlVec<HiLo>,
   /// reverse map for hilos.
-  index: VhlHashMap<HiLo, usize>}
+  index: std::collections::HashMap<HiLo, usize, fxhash::FxBuildHasher>}
+
+#[derive(Debug, Default)]
+pub struct HiLoCache {
+  inner: Mutex<HiLoCacheInner>}
 
 
 impl HiLoCache {
 
   pub fn new()->Self { Self::default() }
 
-  pub fn len(&self)->usize { self.hilos.vec.len() }
+  pub fn len(&self)->usize { self.inner.lock().unwrap().hilos.vec.len() }
   #[must_use] pub fn is_empty(&self) -> bool { self.len() == 0 }
 
   // TODO: ->Option<HiLo>, and then impl HiLoBase
   #[inline] pub fn get_hilo(&self, n:NID)->HiLo {
     assert!(!n.is_lit());
-    let res = self.hilos.vec[n.idx()];
+    let res = self.inner.lock().unwrap().hilos.vec[n.idx()];
     if n.is_inv() { res.invert() } else { res }}
 
   #[inline] pub fn get_node(&self, v:VID, hl0:HiLo)-> Option<NID> {
     let inv = hl0.lo.is_inv();
     let hl1 = if inv { hl0.invert() } else { hl0 };
-    if let Some(x) = self.index.get(&hl1) {
+    let inner = self.inner.lock().unwrap();
+    if let Some(&x) = inner.index.get(&hl1) {
       // !! maybe this should be an assertion, and callers
       //   should be adjusted to avoid asking for ill-formed Vhl triples?
       // (without this check, we potentially break the contract of always
       //  returning a NID that represents a valid Bdd)
       if hl1.hi.vid().is_below(&v) && hl1.lo.vid().is_below(&v) {
-        let nid = NID::from_vid_idx(v, *x);
+        let nid = NID::from_vid_idx(v, x);
         return Some(if inv { !nid  } else { nid }) }}
     None }
 
   #[inline] pub fn insert(&self, v:VID, hl0:HiLo)->NID {
     let inv = hl0.lo.is_inv();
     let hilo = if inv { hl0.invert() } else { hl0 };
+    let mut inner = self.inner.lock().unwrap();
     let ix:usize =
-      if let Some(ix) = self.index.get(&hilo) { *ix }
+      if let Some(&ix) = inner.index.get(&hilo) { ix }
       else {
-        let ix = self.hilos.vec.push(hilo);
-        self.index.insert(hilo, ix);
+        let ix = inner.hilos.vec.push(hilo);
+        inner.index.insert(hilo, ix);
         ix };
     let res = NID::from_vid_idx(v, ix);
     if inv { !res } else { res } }}
