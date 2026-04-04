@@ -1,26 +1,23 @@
 extern crate bex as bex_rs;
 use bex_rs::{Base, BddBase, ast::ASTBase, swap::SwapSolver, nid::{NID, I, O}, vid::VID};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::{Arc, Mutex};
 
 macro_rules! bex_bdd_op_body {
     ($bdd:ident, $method:ident, $($param:ident),*) => {
-        unsafe {
-            let base_ptr = (*$bdd).base as *mut Arc<Mutex<BddBase>>;
-            let mut base = (*base_ptr).lock().unwrap();
+        with_bdd_mut($bdd, |base| {
             $(let $param = NID::_from_u64($param.nid);)*
             bex_nid_t { nid: base.$method($($param),*)._to_u64() }
-        }
+        })
     };
 }
 
 macro_rules! bex_ast_op_body {
     ($ast:ident, $method:ident, $($param:ident),*) => {
-        unsafe {
-            let base_ptr = (*$ast).base as *mut Arc<Mutex<ASTBase>>;
-            let mut base = (*base_ptr).lock().unwrap();
+        with_ast_mut($ast, |base| {
             $(let $param = NID::_from_u64($param.nid);)*
             bex_nid_t { nid: base.$method($($param),*)._to_u64() }
-        }
+        })
     };
 }
 
@@ -48,6 +45,77 @@ pub struct bex_nid_t {
 #[repr(C)]
 pub struct bex_vid_t {
     vid: u32,
+}
+
+fn ffi_nid_default() -> bex_nid_t {
+    bex_nid_t { nid: O._to_u64() }
+}
+
+fn ffi_u64_default() -> u64 { 0 }
+
+fn ffi_bool_default() -> bool { false }
+
+fn ffi_usize_default() -> usize { 0 }
+
+fn ffi_guard<T, F>(default: T, f: F) -> T
+where
+    F: FnOnce() -> T,
+{
+    catch_unwind(AssertUnwindSafe(f)).unwrap_or(default)
+}
+
+fn with_bdd_mut<F>(bdd: *mut bex_bdd_t, f: F) -> bex_nid_t
+where
+    F: FnOnce(&mut BddBase) -> bex_nid_t,
+{
+    ffi_guard(ffi_nid_default(), move || unsafe {
+        let Some(bdd_ref) = bdd.as_ref() else { return ffi_nid_default() };
+        let base_ptr = bdd_ref.base as *mut Arc<Mutex<BddBase>>;
+        let Some(base_arc) = base_ptr.as_ref() else { return ffi_nid_default() };
+        let Ok(mut base) = base_arc.lock() else { return ffi_nid_default() };
+        f(&mut base)
+    })
+}
+
+fn with_bdd_ref<F, R>(bdd: *mut bex_bdd_t, default: R, f: F) -> R
+where
+    F: FnOnce(&BddBase) -> R,
+    R: Copy,
+{
+    ffi_guard(default, move || unsafe {
+        let Some(bdd_ref) = bdd.as_ref() else { return default };
+        let base_ptr = bdd_ref.base as *mut Arc<Mutex<BddBase>>;
+        let Some(base_arc) = base_ptr.as_ref() else { return default };
+        let Ok(base) = base_arc.lock() else { return default };
+        f(&base)
+    })
+}
+
+fn with_ast_mut<F>(ast: *mut bex_ast_t, f: F) -> bex_nid_t
+where
+    F: FnOnce(&mut ASTBase) -> bex_nid_t,
+{
+    ffi_guard(ffi_nid_default(), move || unsafe {
+        let Some(ast_ref) = ast.as_ref() else { return ffi_nid_default() };
+        let base_ptr = ast_ref.base as *mut Arc<Mutex<ASTBase>>;
+        let Some(base_arc) = base_ptr.as_ref() else { return ffi_nid_default() };
+        let Ok(mut base) = base_arc.lock() else { return ffi_nid_default() };
+        f(&mut base)
+    })
+}
+
+fn with_ast_ref<F, R>(ast: *mut bex_ast_t, default: R, f: F) -> R
+where
+    F: FnOnce(&ASTBase) -> R,
+    R: Copy,
+{
+    ffi_guard(default, move || unsafe {
+        let Some(ast_ref) = ast.as_ref() else { return default };
+        let base_ptr = ast_ref.base as *mut Arc<Mutex<ASTBase>>;
+        let Some(base_arc) = base_ptr.as_ref() else { return default };
+        let Ok(base) = base_arc.lock() else { return default };
+        f(&base)
+    })
 }
 
 #[no_mangle]
@@ -145,28 +213,30 @@ pub extern "C" fn bex_ast_ite(ast: *mut bex_ast_t, i: bex_nid_t, t: bex_nid_t, e
 
 #[no_mangle]
 pub extern "C" fn bex_not(n: bex_nid_t) -> bex_nid_t {
-    let nid = NID::_from_u64(n.nid);
-    bex_nid_t { nid: (!nid)._to_u64() }
+    ffi_guard(ffi_nid_default(), move || {
+        let nid = NID::_from_u64(n.nid);
+        bex_nid_t { nid: (!nid)._to_u64() }
+    })
 }
 
 #[no_mangle]
 pub extern "C" fn bex_bdd_node_count(bdd: *mut bex_bdd_t, n: bex_nid_t) -> u64 {
-    unsafe {
-        let base_ptr = (*bdd).base as *mut Arc<Mutex<BddBase>>;
-        let base = (*base_ptr).lock().unwrap();
+    with_bdd_ref(bdd, ffi_u64_default(), |base| {
         let nid = NID::_from_u64(n.nid);
         base.node_count(nid) as u64
-    }
+    })
 }
 
 #[no_mangle]
 pub extern "C" fn bex_bdd_solution_count(bdd: *mut bex_bdd_t, n: bex_nid_t) -> u64 {
-    unsafe {
-        let base_ptr = (*bdd).base as *mut Arc<Mutex<BddBase>>;
-        let mut base = (*base_ptr).lock().unwrap();
+    ffi_guard(ffi_u64_default(), move || unsafe {
+        let Some(bdd_ref) = bdd.as_ref() else { return ffi_u64_default() };
+        let base_ptr = bdd_ref.base as *mut Arc<Mutex<BddBase>>;
+        let Some(base_arc) = base_ptr.as_ref() else { return ffi_u64_default() };
+        let Ok(mut base) = base_arc.lock() else { return ffi_u64_default() };
         let nid = NID::_from_u64(n.nid);
         base.solution_count(nid)
-    }
+    })
 }
 
 #[no_mangle]
@@ -190,63 +260,97 @@ pub extern "C" fn bex_swap_free(swap: *mut bex_swap_t) {
 
 #[no_mangle]
 pub extern "C" fn bex_subsolve(ast: *mut bex_ast_t, bdd: *mut bex_bdd_t, n: bex_nid_t) -> bex_nid_t {
-    unsafe {
-        let ast_ptr = (*ast).base as *mut Arc<Mutex<ASTBase>>;
-        let bdd_ptr = (*bdd).base as *mut Arc<Mutex<BddBase>>;
-        let ast_base = (*ast_ptr).lock().unwrap();
-        let mut bdd_base = (*bdd_ptr).lock().unwrap();
+    ffi_guard(ffi_nid_default(), move || unsafe {
+        let Some(ast_ref) = ast.as_ref() else { return ffi_nid_default() };
+        let Some(bdd_ref) = bdd.as_ref() else { return ffi_nid_default() };
+        let ast_ptr = ast_ref.base as *mut Arc<Mutex<ASTBase>>;
+        let bdd_ptr = bdd_ref.base as *mut Arc<Mutex<BddBase>>;
+        let Some(ast_arc) = ast_ptr.as_ref() else { return ffi_nid_default() };
+        let Some(bdd_arc) = bdd_ptr.as_ref() else { return ffi_nid_default() };
+        let Ok(ast_base) = ast_arc.lock() else { return ffi_nid_default() };
+        let Ok(mut bdd_base) = bdd_arc.lock() else { return ffi_nid_default() };
         let nid = NID::_from_u64(n.nid);
 
-        // Convert AST to BDD using SubSolver
         let result_nid = bex_rs::solve::solve(&mut *bdd_base, ast_base.raw_ast(), nid);
         bex_nid_t { nid: result_nid.n._to_u64() }
-    }
+    })
 }
 
 #[no_mangle]
 pub extern "C" fn bex_swapsolve(ast: *mut bex_ast_t, swap: *mut bex_swap_t, n: bex_nid_t) -> bex_nid_t {
-    unsafe {
-        let ast_ptr = (*ast).base as *mut Arc<Mutex<ASTBase>>;
-        let swap_ptr = (*swap).base as *mut Arc<Mutex<SwapSolver>>;
-        let ast_base = (*ast_ptr).lock().unwrap();
-        let mut swap_solver = (*swap_ptr).lock().unwrap();
+    ffi_guard(ffi_nid_default(), move || unsafe {
+        let Some(ast_ref) = ast.as_ref() else { return ffi_nid_default() };
+        let Some(swap_ref) = swap.as_ref() else { return ffi_nid_default() };
+        let ast_ptr = ast_ref.base as *mut Arc<Mutex<ASTBase>>;
+        let swap_ptr = swap_ref.base as *mut Arc<Mutex<SwapSolver>>;
+        let Some(ast_arc) = ast_ptr.as_ref() else { return ffi_nid_default() };
+        let Some(swap_arc) = swap_ptr.as_ref() else { return ffi_nid_default() };
+        let Ok(ast_base) = ast_arc.lock() else { return ffi_nid_default() };
+        let Ok(mut swap_solver) = swap_arc.lock() else { return ffi_nid_default() };
         let nid = NID::_from_u64(n.nid);
 
-        // Convert AST to BDD using SwapSolver
         let result_nid = bex_rs::solve::solve(&mut *swap_solver, ast_base.raw_ast(), nid);
         bex_nid_t { nid: result_nid.n._to_u64() }
-    }
+    })
 }
 
 #[no_mangle]
 pub extern "C" fn bex_is_vid(n: bex_nid_t) -> bool {
-    let nid = NID::_from_u64(n.nid);
-    nid.is_var()
+    ffi_guard(ffi_bool_default(), move || {
+        let nid = NID::_from_u64(n.nid);
+        nid.is_var()
+    })
 }
 
 #[no_mangle]
 pub extern "C" fn bex_is_lit(n: bex_nid_t) -> bool {
-    let nid = NID::_from_u64(n.nid);
-    nid.is_lit()
+    ffi_guard(ffi_bool_default(), move || {
+        let nid = NID::_from_u64(n.nid);
+        nid.is_lit()
+    })
 }
 
 #[no_mangle]
 pub extern "C" fn bex_is_const(n: bex_nid_t) -> bool {
-    let nid = NID::_from_u64(n.nid);
-    nid.is_const()
+    ffi_guard(ffi_bool_default(), move || {
+        let nid = NID::_from_u64(n.nid);
+        nid.is_const()
+    })
 }
 
 #[no_mangle]
 pub extern "C" fn bex_is_ast(n: bex_nid_t) -> bool {
-    let nid = NID::_from_u64(n.nid);
-    nid.is_ixn()
+    ffi_guard(ffi_bool_default(), move || {
+        let nid = NID::_from_u64(n.nid);
+        nid.is_ixn()
+    })
 }
 
 #[no_mangle]
 pub extern "C" fn bex_ast_len(ast: *mut bex_ast_t) -> usize {
-    unsafe {
-        let base_ptr = (*ast).base as *mut Arc<Mutex<ASTBase>>;
-        let base = (*base_ptr).lock().unwrap();
+    with_ast_ref(ast, ffi_usize_default(), |base| {
         base.raw_ast().len()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn null_bdd_handle_returns_default_values() {
+        let n = bex_bdd_and(std::ptr::null_mut(), bex_top(), bex_bot());
+        assert_eq!(n.nid, O._to_u64());
+        assert_eq!(bex_bdd_node_count(std::ptr::null_mut(), bex_top()), 0);
+        assert_eq!(bex_bdd_solution_count(std::ptr::null_mut(), bex_top()), 0);
+    }
+
+    #[test]
+    fn null_ast_and_swap_handles_return_default_values() {
+        let ast_n = bex_ast_and(std::ptr::null_mut(), bex_top(), bex_bot());
+        assert_eq!(ast_n.nid, O._to_u64());
+        assert_eq!(bex_ast_len(std::ptr::null_mut()), 0);
+        let solved = bex_swapsolve(std::ptr::null_mut(), std::ptr::null_mut(), bex_top());
+        assert_eq!(solved.nid, O._to_u64());
     }
 }
