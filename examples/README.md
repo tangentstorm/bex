@@ -8,7 +8,7 @@
 This is my main benchmark:
 
     # run from top level directory
-    $ cargo run --bin bdd-solve
+    $ cargo run --example bdd-solve
 
 **NOTE**: this might take years to run. get ready to press ^C.
 

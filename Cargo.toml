@@ -24,11 +24,11 @@ path = "examples/shell/bex-shell.rs"
 name = "swarm-shell"
 path = "examples/shell/swarm-shell.rs"
 
-[[bin]]
+[[example]]
 name = "bdd-solve"
 path = "examples/solve/bdd-solve.rs"
 
-[[bin]]
+[[example]]
 name = "factor-p"
 path = "examples/solve/factor-p.rs"
 

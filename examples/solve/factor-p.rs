@@ -21,23 +21,71 @@ fn p6_factors()->Vec<(u64,u64)> {
 
 
 extern crate bex;
-use bex::{solve::find_factors, bdd::BddBase, int::{X8,X16}, swap::SwapSolver};
+use bex::{Base, solve::find_factors, anf::ANFBase, bdd::BddBase, int::{X8,X16}, swap::SwapSolver};
 
 include!(concat!(env!("OUT_DIR"), "/bex-build-info.rs"));
 
-pub fn main() {
-  // -- parse arguments ----
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SolverKind {
+  Bdd,
+  Swap,
+  Anf,
+}
+
+impl SolverKind {
+  fn label(self)->&'static str {
+    match self {
+      Self::Bdd => "sub solver",
+      Self::Swap => "swap solver",
+      Self::Anf => "anf solver",
+    }
+  }
+
+  fn ignores_threads(self)->bool {
+    matches!(self, Self::Swap | Self::Anf)
+  }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Config {
+  solver: SolverKind,
+  which: usize,
+  num_threads: usize,
+}
+
+fn parse_args<I, S>(args:I)->Config
+where
+  I: IntoIterator<Item=S>,
+  S: AsRef<str>,
+{
   let mut use_swap = false;
+  let mut use_anf = false;
   let mut get_which = false; let mut which = 4;
   let mut get_threads = false; let mut num_threads = 0;
-  for a in std::env::args() {
+  for a in args {
+    let a = a.as_ref();
     if get_threads { num_threads = a.parse().expect("bad -t parameter"); get_threads=false; }
     else if get_which { which = a.parse().expect("bad -p parameter"); get_which=false; }
-    else { match a.as_str() {
+    else { match a {
       "-t" => get_threads = true,
       "-p" => get_which = true,
       "swap" => use_swap = true,
+      "anf" => use_anf = true,
       _ => { /* ignore for now */} }}}
+
+  if use_swap && use_anf { panic!("choose either 'swap' or 'anf'"); }
+  Config {
+    solver: if use_swap { SolverKind::Swap }
+            else if use_anf { SolverKind::Anf }
+            else { SolverKind::Bdd },
+    which,
+    num_threads,
+  }
+}
+
+pub fn main() {
+  // -- parse arguments ----
+  let Config { solver, which, num_threads } = parse_args(std::env::args());
 
   let (k, expected) = match which {
     4 => (P4, p4_factors()),
@@ -47,10 +95,46 @@ pub fn main() {
 
   // -- print current configuration ---
   println!("[bex {BEX_VERSION} -O{BEX_OPT_LEVEL}] factor-p4 -t {num_threads} -p {which} ({})",
-    if use_swap { "swap solver" } else { "sub solver" });
+    solver.label());
 
   // ---- run the requested solver
-  if use_swap {
-    if num_threads != 0 { println!("note: swap solver ignores -t parameter"); }
-    find_factors::<X8, X16, SwapSolver>(&mut SwapSolver::new(), k, expected); }
-  else { find_factors::<X8, X16, BddBase>(&mut BddBase::new_with_threads(num_threads), k, expected); }}
+  if solver.ignores_threads() && num_threads != 0 {
+    println!("note: {} ignores -t parameter", solver.label());
+  }
+  match solver {
+    SolverKind::Swap =>
+      find_factors::<X8, X16, SwapSolver>(&mut SwapSolver::new(), k, expected),
+    SolverKind::Anf =>
+      find_factors::<X8, X16, ANFBase>(&mut ANFBase::new(), k, expected),
+    SolverKind::Bdd =>
+      find_factors::<X8, X16, BddBase>(&mut BddBase::new_with_threads(num_threads), k, expected),
+  }}
+
+#[cfg(test)]
+mod tests {
+  use super::{Config, SolverKind, parse_args};
+
+  #[test]
+  fn parse_defaults_to_bdd() {
+    assert_eq!(parse_args(["factor-p"]),
+      Config { solver: SolverKind::Bdd, which: 4, num_threads: 0 });
+  }
+
+  #[test]
+  fn parse_anf_mode() {
+    assert_eq!(parse_args(["factor-p", "anf", "-p", "6"]),
+      Config { solver: SolverKind::Anf, which: 6, num_threads: 0 });
+  }
+
+  #[test]
+  fn parse_swap_mode_with_threads() {
+    assert_eq!(parse_args(["factor-p", "swap", "-t", "8"]),
+      Config { solver: SolverKind::Swap, which: 4, num_threads: 8 });
+  }
+
+  #[test]
+  #[should_panic(expected = "choose either 'swap' or 'anf'")]
+  fn parse_rejects_multiple_solver_flags() {
+    parse_args(["factor-p", "swap", "anf"]);
+  }
+}
