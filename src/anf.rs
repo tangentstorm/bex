@@ -334,10 +334,8 @@ impl ANFBase {
     for t in self.terms(n.raw()) {
       let mut term = I;
       for v in t.hi_bits() {
-        term = dest.and(term, NID::var(v as u32));
-        println!("term: {}", term) }
-      sum = dest.xor(sum, term);
-      println!("sum: {}", sum) }
+        term = dest.and(term, NID::var(v as u32)); }
+      sum = dest.xor(sum, term); }
     sum }}
 
 
