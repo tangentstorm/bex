@@ -32,6 +32,10 @@ path = "examples/solve/bdd-solve.rs"
 name = "factor-p"
 path = "examples/solve/factor-p.rs"
 
+[[example]]
+name = "factor-p-tiny"
+path = "examples/solve/factor-p-tiny.rs"
+
 [features]
 default = ["sql"]
 sql = []
