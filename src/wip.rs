@@ -64,14 +64,28 @@ impl Parts for VhlParts {
   fn is_ready(&self)->bool { self.hi.is_some() && self.lo.is_some() }
 }
 
-pub trait WipBase<P:Parts> : Debug + Default + Send + Sync {
-  fn resolve_job(&self, parts:P)->NID;
+pub enum JobResult<K> {
+  Done(NID),
+  Follow(K),
+}
+
+pub trait WipBase<K, P:Parts> : Debug + Default + Send + Sync {
+  fn resolve_job(&self, parts:P)->JobResult<K>;
+}
+
+#[derive(Debug,Copy,Clone,PartialEq,Eq)]
+pub enum DepTarget<S> {
+  Slot(S),
+  Result,
 }
 
 #[derive(Debug,Copy,Clone)]
-pub struct Dep<K, S> { pub dep: K, pub slot: S, pub invert: bool }
+pub struct Dep<K, S> { pub dep: K, pub target: DepTarget<S>, pub invert: bool }
 impl<K,S> Dep<K,S>{
-  pub fn new(dep: K, slot: S, invert: bool)->Dep<K,S> { Dep{dep, slot, invert} }}
+  pub fn new(dep: K, slot: S, invert: bool)->Dep<K,S> {
+    Dep{dep, target:DepTarget::Slot(slot), invert} }
+  pub fn result(dep:K)->Dep<K,S> {
+    Dep{dep, target:DepTarget::Result, invert:false} }}
 
 #[derive(Debug)]
 pub struct Wip<K=NormIteKey, P=VhlParts> where P:Parts {
@@ -115,13 +129,37 @@ impl<V,W> Work<V,W> {
 
 /// Wrapper class to indicate a value is the final result
 /// to the distributed problem we're solving.
+#[derive(Debug)]
 pub struct Answer<T>(pub T); // TODO: nopub
+
+#[derive(Debug)]
+pub struct WorkResult<K> {
+  pub answer: Option<Answer<NID>>,
+  pub jobs: Vec<K>,
+}
+
+impl<K> WorkResult<K> {
+  pub fn with_answer(nid:NID)->Self {
+    Self { answer: Some(Answer(nid)), jobs: vec![] }
+  }
+
+  pub fn push_job(&mut self, job:K) { self.jobs.push(job) }
+
+  pub fn merge(&mut self, mut other:WorkResult<K>) {
+    if other.answer.is_some() { self.answer = other.answer.take() }
+    self.jobs.append(&mut other.jobs);
+  }
+}
+
+impl<K> Default for WorkResult<K> {
+  fn default()->Self { Self { answer: None, jobs: vec![] } }
+}
 
 /// Thread-safe map of queries->results, including results
 /// that are currently under construction.
 #[derive(Debug)]
 pub struct WorkState<K=NormIteKey, P=VhlParts, B=VhlBase>
-where K:Eq+Hash+Debug, P:Parts, B:WipBase<P> {
+where K:Eq+Hash+Debug, P:Parts, B:WipBase<K,P> {
   _kvp: PhantomData<(K,P)>,
   /// this is a kludge. it locks entire swarm from taking in new
   /// queries until an answer is found, because it's the only place
@@ -133,7 +171,7 @@ where K:Eq+Hash+Debug, P:Parts, B:WipBase<P> {
   pub cache: DashMap<K, Work<NID, WipRef<K,P>>, fxhash::FxBuildHasher> }
 
 impl<K,P,B> Default for WorkState<K,P,B>
-where K:Eq+Hash+Debug, P:Parts, B:WipBase<P> {
+where K:Eq+Hash+Debug, P:Parts, B:WipBase<K,P> {
   fn default() -> Self {
     Self {
       _kvp: PhantomData,
@@ -144,7 +182,7 @@ where K:Eq+Hash+Debug, P:Parts, B:WipBase<P> {
   }
 }
 
-impl<K:Eq+Hash+Debug+Copy,P:Parts,B:WipBase<P>> WorkState<K,P,B> {
+impl<K:Eq+Hash+Debug+Copy,P:Parts,B:WipBase<K,P>> WorkState<K,P,B> {
 
   /// If the key exists in the cache AND the work is
   /// done, return the completed value, otherwise
@@ -159,7 +197,7 @@ impl<K:Eq+Hash+Debug+Copy,P:Parts,B:WipBase<P>> WorkState<K,P,B> {
           Some(*v)}}}
     else { None }}
 
-  pub fn resolve_job(&self, q:&K, nid:NID)->Option<Answer<NID>> {
+  pub fn resolve_job(&self, q:&K, nid:NID)->WorkResult<K> {
     let mut ideps = vec![];
     {
       let mut v = self.cache.get_mut(q).unwrap();
@@ -171,19 +209,24 @@ impl<K:Eq+Hash+Debug+Copy,P:Parts,B:WipBase<P>> WorkState<K,P,B> {
         *v = Work::Done(nid);
       }
     }
-    if ideps.is_empty() { Some(Answer(nid)) }
-    else {
-      let mut res = None;
-      for d in ideps {
-        if let Some(Answer(a)) = self.resolve_part(&d.dep, d.slot, nid, d.invert) {
-          res = Some(Answer(a));
-        }
+    let mut res = if ideps.is_empty() { WorkResult::with_answer(nid) } else { WorkResult::default() };
+    for d in ideps {
+      res.merge(self.resolve_dep(d, nid));
+    }
+    res
+  }
+
+  fn resolve_dep(&self, d:Dep<K, P::Slot>, nid:NID)->WorkResult<K> {
+    match d.target {
+      DepTarget::Slot(slot) => self.resolve_part(&d.dep, slot, nid, d.invert),
+      DepTarget::Result => {
+        let n = if d.invert { !nid } else { nid };
+        self.resolve_job(&d.dep, n)
       }
-      res
     }
   }
 
-  pub fn resolve_part(&self, q:&K, slot:P::Slot, nid:NID, invert:bool)->Option<Answer<NID>> {
+  pub fn resolve_part(&self, q:&K, slot:P::Slot, nid:NID, invert:bool)->WorkResult<K> {
     let mut parts = None;
     {
       let mut v = self.cache.get_mut(q).unwrap();
@@ -201,18 +244,25 @@ impl<K:Eq+Hash+Debug+Copy,P:Parts,B:WipBase<P>> WorkState<K,P,B> {
     }
 
     if let Some(parts) = parts {
-      self.resolve_job(q, self.base.resolve_job(parts))
+      match self.base.resolve_job(parts) {
+        JobResult::Done(nid) => self.resolve_job(q, nid),
+        JobResult::Follow(job) => {
+          let (was_new, mut res) = self.add_dep(&job, Dep::result(*q));
+          if was_new { res.push_job(job) }
+          res
+        }
+      }
     } else {
-      None
+      WorkResult::default()
     }
   }
 
   // returns true if the query is new to the system
-  pub fn add_dep(&self, q:&K, idep:Dep<K, P::Slot>)->(bool, Option<Answer<NID>>) {
+  pub fn add_dep(&self, q:&K, idep:Dep<K, P::Slot>)->(bool, WorkResult<K>) {
     COUNT_CACHE_TESTS.with(|c| *c.borrow_mut() += 1);
     let mut old_done = None;
     let mut was_empty = false;
-    let mut answer = None;
+    let mut res = WorkResult::default();
     {
       let mut v = self.cache.entry(*q).or_insert_with(|| {
         was_empty = true;
@@ -225,12 +275,12 @@ impl<K:Eq+Hash+Debug+Copy,P:Parts,B:WipBase<P>> WorkState<K,P,B> {
       }
     }
     if let Some(nid)=old_done {
-      answer = self.resolve_part(&idep.dep, idep.slot, nid, idep.invert);
+      res = self.resolve_dep(idep, nid);
     }
-    (was_empty, answer)
+    (was_empty, res)
   }
 
-  pub fn add_wip(&self, q:&K, parts:P)->Option<Answer<NID>> {
+  pub fn add_wip(&self, q:&K, parts:P)->WorkResult<K> {
     let mut res = None;
     if self.cache.contains_key(q) {
       self.cache.alter(q, |_k, v| match v {
@@ -241,7 +291,7 @@ impl<K:Eq+Hash+Debug+Copy,P:Parts,B:WipBase<P>> WorkState<K,P,B> {
         }
       });
     } else { panic!("got wip for unknown task"); }
-    res
+    WorkResult { answer: res, jobs: vec![] }
   }
 }
 

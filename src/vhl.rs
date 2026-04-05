@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 use crate::nid::NID;
 use crate::vid::VID;
-use crate::wip::WipBase;
+use crate::wip::{JobResult, WipBase};
 
 #[derive(Debug,Default)]
 struct VhlVec<T>{ pub vec: boxcar::Vec<T> }
@@ -182,15 +182,15 @@ impl HiLoCache {
     let res = NID::from_vid_idx(v, ix);
     if inv { !res } else { res } }}
 
-impl WipBase<VhlParts> for VhlBase {
-  fn resolve_job(&self, parts:VhlParts)->NID {
+impl<K> WipBase<K, VhlParts> for VhlBase {
+  fn resolve_job(&self, parts:VhlParts)->JobResult<K> {
     use crate::bdd::{ITE, Norm, NormIteKey};
     let HiLo{hi:h0, lo:l0} = parts.hilo().expect("resolve_job needs complete VhlParts");
     let (h1,l1) = if parts.invert { (!h0, !l0) } else { (h0, l0) };
-    match ITE::norm(NID::from_vid(parts.v), h1, l1) {
+    JobResult::Done(match ITE::norm(NID::from_vid(parts.v), h1, l1) {
       Norm::Nid(n) => n,
       Norm::Ite(NormIteKey(ITE{i:vv,t:hi,e:lo})) =>
         self.vhl_to_nid(vv.vid(), hi, lo),
       Norm::Not(NormIteKey(ITE{i:vv,t:hi,e:lo})) =>
-       !self.vhl_to_nid(vv.vid(), hi, lo)}}
+       !self.vhl_to_nid(vv.vid(), hi, lo)})}
 }

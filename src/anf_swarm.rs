@@ -4,6 +4,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::mpsc::Sender;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use concurrent_queue::{ConcurrentQueue, PopError};
 
@@ -16,12 +17,31 @@ use crate::simp;
 use crate::swarm::{QID, RMsg as SwarmRMsg, Swarm, Worker, WID};
 use crate::vhl::{HiLo, HiLoBase, Vhl, Walkable};
 use crate::vid::{VID, VidOrdering};
-use crate::wip::{self, Answer, Dep, Parts, WorkState, WipBase, COUNT_CACHE_HITS, COUNT_CACHE_TESTS};
+use crate::wip::{self, Dep, JobResult, Parts, WorkResult, WorkState, WipBase, COUNT_CACHE_HITS, COUNT_CACHE_TESTS};
+
+static COUNT_JOB_XOR: AtomicU64 = AtomicU64::new(0);
+static COUNT_JOB_AND: AtomicU64 = AtomicU64::new(0);
+static COUNT_JOB_SUB: AtomicU64 = AtomicU64::new(0);
+static COUNT_SUB_CALLS: AtomicU64 = AtomicU64::new(0);
+static COUNT_TO_BASE_CALLS: AtomicU64 = AtomicU64::new(0);
+static COUNT_TO_BASE_TERMS: AtomicU64 = AtomicU64::new(0);
+static COUNT_SOLUTION_SET_CALLS: AtomicU64 = AtomicU64::new(0);
+
+fn reset_anf_stats() {
+  COUNT_JOB_XOR.store(0, Ordering::Relaxed);
+  COUNT_JOB_AND.store(0, Ordering::Relaxed);
+  COUNT_JOB_SUB.store(0, Ordering::Relaxed);
+  COUNT_SUB_CALLS.store(0, Ordering::Relaxed);
+  COUNT_TO_BASE_CALLS.store(0, Ordering::Relaxed);
+  COUNT_TO_BASE_TERMS.store(0, Ordering::Relaxed);
+  COUNT_SOLUTION_SET_CALLS.store(0, Ordering::Relaxed);
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum AnfJob {
   Xor(NID, NID),
   And(NID, NID),
+  Sub(VID, NID, NID),
 }
 
 impl Default for AnfJob {
@@ -48,6 +68,7 @@ pub enum AnfParts {
   Xor { v:VID, hi:Option<NID>, lo:Option<NID> },
   AndAbove { v:VID, hi:Option<NID>, lo:Option<NID> },
   AndLevel { v:VID, bq:Option<NID>, br:Option<NID>, cq:Option<NID>, cr:Option<NID> },
+  SubBelow { v:VID, hi:Option<NID>, lo:Option<NID> },
 }
 
 impl Parts for AnfParts {
@@ -55,7 +76,8 @@ impl Parts for AnfParts {
 
   fn set_slot(&mut self, slot: Self::Slot, nid: Option<NID>) {
     match self {
-      AnfParts::Xor { hi, lo, .. } | AnfParts::AndAbove { hi, lo, .. } => {
+      AnfParts::Xor { hi, lo, .. } |
+      AnfParts::AndAbove { hi, lo, .. } => {
         if slot == AnfSlot::Hi { *hi = nid } else if slot == AnfSlot::Lo { *lo = nid }
       }
       AnfParts::AndLevel { bq, br, cq, cr, .. } => match slot {
@@ -65,6 +87,11 @@ impl Parts for AnfParts {
         AnfSlot::Cr => *cr = nid,
         _ => {}
       },
+      AnfParts::SubBelow { hi, lo, .. } => match slot {
+        AnfSlot::Hi => *hi = nid,
+        AnfSlot::Lo => *lo = nid,
+        _ => {}
+      },
       AnfParts::Empty => {}
     }
   }
@@ -72,7 +99,9 @@ impl Parts for AnfParts {
   fn is_ready(&self)->bool {
     match self {
       AnfParts::Empty => false,
-      AnfParts::Xor { hi, lo, .. } | AnfParts::AndAbove { hi, lo, .. } => hi.is_some() && lo.is_some(),
+      AnfParts::Xor { hi, lo, .. } |
+      AnfParts::AndAbove { hi, lo, .. } |
+      AnfParts::SubBelow { hi, lo, .. } => hi.is_some() && lo.is_some(),
       AnfParts::AndLevel { bq, br, cq, cr, .. } => bq.is_some() && br.is_some() && cq.is_some() && cr.is_some(),
     }
   }
@@ -105,7 +134,7 @@ impl AnfStore {
     let (hi, lo) = (hi0, lo0.raw());
     let mut inner = self.inner.lock().unwrap();
     let res =
-      if let Some(&nid) = inner.cache.get(&Vhl{v, hi, lo}) { nid }
+    if let Some(&nid) = inner.cache.get(&Vhl{v, hi, lo}) { nid }
       else {
         let anf = Vhl{ v, hi, lo };
         let nid = NID::from_vid_idx(v, inner.nodes.len());
@@ -227,20 +256,23 @@ impl AnfStore {
       }
     }
   }
+
 }
 
-impl WipBase<AnfParts> for AnfStore {
-  fn resolve_job(&self, parts:AnfParts)->NID {
+impl WipBase<AnfJob, AnfParts> for AnfStore {
+  fn resolve_job(&self, parts:AnfParts)->JobResult<AnfJob> {
     match parts {
       AnfParts::Empty => panic!("resolve_job on Empty"),
       AnfParts::Xor { v, hi:Some(hi), lo:Some(lo) } =>
-        self.vhl(v, hi, lo),
+        JobResult::Done(self.vhl(v, hi, lo)),
       AnfParts::AndAbove { v, hi:Some(hi), lo:Some(lo) } =>
-        self.vhl(v, hi, lo),
+        JobResult::Done(self.vhl(v, hi, lo)),
       AnfParts::AndLevel { v, bq:Some(bq), br:Some(br), cq:Some(cq), cr:Some(cr) } => {
         let hi = self.xor_sync(self.xor_sync(bq, br), cq);
-        self.vhl(v, hi, cr)
+        JobResult::Done(self.vhl(v, hi, cr))
       }
+      AnfParts::SubBelow { v, hi:Some(hi), lo:Some(lo) } =>
+        JobResult::Done(self.xor_sync(self.and(NID::from_vid(v), hi), lo)),
       _ => panic!("resolve_job called before AnfParts were complete"),
     }
   }
@@ -305,7 +337,21 @@ impl AnfWorker {
 
   fn delegate(&mut self, job:AnfJob) { self.queue_push(job) }
 
-  fn attach_child(&mut self, parent:&AnfJob, slot:AnfSlot, child:Core)->Option<Answer<NID>> {
+  fn handle_result(&mut self, mut res:WorkResult<AnfJob>)->Option<NID> {
+    for job in res.jobs.drain(..) { self.delegate(job) }
+    res.answer.map(|wip::Answer(nid)| nid)
+  }
+
+  fn attach_children(&mut self, parent:&AnfJob, children:Vec<(AnfSlot, Core)>)->WorkResult<AnfJob> {
+    let mut res = WorkResult::default();
+    for (slot, child) in children {
+      if res.answer.is_some() { break }
+      res.merge(self.attach_child(parent, slot, child));
+    }
+    res
+  }
+
+  fn attach_child(&mut self, parent:&AnfJob, slot:AnfSlot, child:Core)->WorkResult<AnfJob> {
     match child {
       Core::Nid(nid) => self.state.as_ref().unwrap().resolve_part(parent, slot, nid, false),
       Core::Job(job) => {
@@ -319,32 +365,38 @@ impl AnfWorker {
   fn work_job(&mut self, job:AnfJob) {
     let state = self.state.as_ref().unwrap();
     let res = match job {
-      AnfJob::Xor(x, y) => match self.xor_step(x, y) {
+      AnfJob::Xor(x, y) => {
+        COUNT_JOB_XOR.fetch_add(1, Ordering::Relaxed);
+        match self.xor_step(x, y) {
         CoreStep::Nid(n) => state.resolve_job(&job, n),
         CoreStep::Parts(parts, children) => {
           let mut res = state.add_wip(&job, parts);
-          if res.is_none() {
-            for (slot, child) in children {
-              res = self.attach_child(&job, slot, child);
-            }
-          }
+          if res.answer.is_none() { res.merge(self.attach_children(&job, children)) }
           res
         }
-      },
-      AnfJob::And(x, y) => match self.and_step(x, y) {
+      }},
+      AnfJob::And(x, y) => {
+        COUNT_JOB_AND.fetch_add(1, Ordering::Relaxed);
+        match self.and_step(x, y) {
         CoreStep::Nid(n) => state.resolve_job(&job, n),
         CoreStep::Parts(parts, children) => {
           let mut res = state.add_wip(&job, parts);
-          if res.is_none() {
-            for (slot, child) in children {
-              res = self.attach_child(&job, slot, child);
-            }
-          }
+          if res.answer.is_none() { res.merge(self.attach_children(&job, children)) }
           res
         }
-      }
+      }},
+      AnfJob::Sub(v, n, ctx) => {
+        COUNT_JOB_SUB.fetch_add(1, Ordering::Relaxed);
+        match self.sub_step(v, n, ctx) {
+        CoreStep::Nid(n) => state.resolve_job(&job, n),
+        CoreStep::Parts(parts, children) => {
+          let mut res = state.add_wip(&job, parts);
+          if res.answer.is_none() { res.merge(self.attach_children(&job, children)) }
+          res
+        }
+      }},
     };
-    if let Some(Answer(nid)) = res { self.send_answer(nid) }
+    if let Some(nid) = self.handle_result(res) { self.send_answer(nid) }
   }
 
   fn xor_core(&self, x:NID, y:NID)->Core {
@@ -355,6 +407,11 @@ impl AnfWorker {
   fn and_core(&self, x:NID, y:NID)->Core {
     if let Some(n) = simp::and(x, y) { Core::Nid(n) }
     else { Core::Job(AnfJob::and(x, y)) }
+  }
+
+  fn sub_core(&self, v:VID, n:NID, ctx:NID)->Core {
+    if !ctx.might_depend_on(v) { Core::Nid(ctx) }
+    else { Core::Job(AnfJob::Sub(v, n, ctx)) }
   }
 
   fn xor_step(&self, x:NID, y:NID)->CoreStep {
@@ -417,6 +474,24 @@ impl AnfWorker {
       }
     }
   }
+
+  fn sub_step(&self, v:VID, n:NID, ctx:NID)->CoreStep {
+    let store = &self.state.as_ref().unwrap().base;
+    if !ctx.might_depend_on(v) { return CoreStep::Nid(ctx) }
+    let Vhl{v:cv, hi, lo} = store.fetch(ctx);
+    if v == cv {
+      CoreStep::Nid(store.xor_sync(store.and(n, hi), lo))
+    } else {
+      CoreStep::Parts(
+        AnfParts::SubBelow{ v:cv, hi:None, lo:None },
+        vec![
+          (AnfSlot::Hi, self.sub_core(v, n, hi)),
+          (AnfSlot::Lo, self.sub_core(v, n, lo)),
+        ]
+      )
+    }
+  }
+
 }
 
 impl Worker<AnfQ, wip::RMsg, AnfJob> for AnfWorker {
@@ -456,7 +531,9 @@ impl Worker<AnfQ, wip::RMsg, AnfJob> for AnfWorker {
   }
 }
 
+#[derive(Clone, Copy)]
 enum Core { Nid(NID), Job(AnfJob) }
+
 enum CoreStep { Nid(NID), Parts(AnfParts, Vec<(AnfSlot, Core)>) }
 
 #[derive(Debug, Default)]
@@ -467,7 +544,14 @@ pub struct AnfSwarm {
 }
 
 impl AnfSwarm {
-  pub fn new()->Self { let mut me = Self::default(); me.reset(); me }
+  pub fn new()->Self {
+    let mut me = Self {
+      swarm: Swarm::new_with_threads(1),
+      ..Default::default()
+    };
+    me.reset();
+    me
+  }
   pub fn new_with_threads(n:usize)->Self {
     let mut me = Self { swarm: Swarm::new_with_threads(n), ..Default::default() };
     me.reset();
@@ -487,8 +571,26 @@ impl AnfSwarm {
     }
     result.unwrap()
   }
+
+  pub fn get_stats(&mut self) {
+    self.swarm.send_to_all(&AnfQ::Stats);
+    let (mut tests, mut hits, mut reports) = (0, 0, 0);
+    while reports < self.swarm.num_workers() {
+      let SwarmRMsg{wid:_, qid:_, r} =
+        self.swarm.recv().expect("still expecting an Rmsg::CacheStats");
+      if let Some(wip::RMsg::CacheStats{ tests:t, hits:h }) = r {
+        reports += 1; tests += t; hits += h;
+      } else {
+        println!("extraneous rmsg from swarm after Q::Stats: {:?}", r)
+      }
+    }
+    COUNT_CACHE_TESTS.with(|c| *c.borrow_mut() += tests);
+    COUNT_CACHE_HITS.with(|c| *c.borrow_mut() += hits);
+  }
+
   pub fn xor(&mut self, x:NID, y:NID)->NID { self.run_job(AnfJob::xor(x,y)) }
   pub fn and(&mut self, x:NID, y:NID)->NID { self.run_job(AnfJob::and(x,y)) }
+  pub fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID { self.run_job(AnfJob::Sub(v, n, ctx)) }
 }
 
 #[derive(Debug)]
@@ -535,9 +637,11 @@ impl AnfSwarmBase {
   }
 
   pub fn to_base(&self, n:NID, dest: &mut dyn Base)->NID {
+    COUNT_TO_BASE_CALLS.fetch_add(1, Ordering::Relaxed);
     let mut sum = nid::O;
     if n.is_inv() { sum = nid::I }
     for t in self.terms(n.raw()) {
+      COUNT_TO_BASE_TERMS.fetch_add(1, Ordering::Relaxed);
       let mut term = I;
       for v in t.hi_bits() { term = dest.and(term, NID::var(v as u32)); }
       sum = dest.xor(sum, term);
@@ -650,12 +754,40 @@ impl Base for AnfSwarmBase {
     }
   }
 
-  fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID { self.swarm.state.base.sub(v, n, ctx) }
+  fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID {
+    COUNT_SUB_CALLS.fetch_add(1, Ordering::Relaxed);
+    self.swarm.sub(v, n, ctx)
+  }
 
   fn solution_set(&self, n: NID, nvars: usize)->HashSet<Reg> {
+    COUNT_SOLUTION_SET_CALLS.fetch_add(1, Ordering::Relaxed);
     let mut bdd = BddBase::new();
     let bnid = self.to_base(n, &mut bdd);
     bdd.solution_set(bnid, nvars)
+  }
+
+  fn init_stats(&mut self) {
+    wip::COUNT_CACHE_TESTS.with(|c| c.replace(0));
+    wip::COUNT_CACHE_HITS.with(|c| c.replace(0));
+    reset_anf_stats();
+  }
+
+  fn print_stats(&mut self) {
+    self.swarm.get_stats();
+    let tests = COUNT_CACHE_TESTS.with(|c| *c.borrow());
+    let hits = COUNT_CACHE_HITS.with(|c| *c.borrow());
+    let hit_rate = if tests == 0 { 0.0 } else { (hits as f64/tests as f64) * 100.0 };
+    println!("ANF swarm stats:");
+    println!("cache: {hits} hits / {tests} tests ({hit_rate:.1}%)");
+    println!("jobs: xor={} and={} sub={}",
+      COUNT_JOB_XOR.load(Ordering::Relaxed),
+      COUNT_JOB_AND.load(Ordering::Relaxed),
+      COUNT_JOB_SUB.load(Ordering::Relaxed));
+    println!("sub: {} calls", COUNT_SUB_CALLS.load(Ordering::Relaxed));
+    println!("solutions: solution_set={} to_base={} terms={}",
+      COUNT_SOLUTION_SET_CALLS.load(Ordering::Relaxed),
+      COUNT_TO_BASE_CALLS.load(Ordering::Relaxed),
+      COUNT_TO_BASE_TERMS.load(Ordering::Relaxed));
   }
 }
 
@@ -705,4 +837,178 @@ impl Iterator for AnfTermIterator<'_> {
   let t1 = a1.xor(x0, x1);
   let n1 = a1.and(t1, x2);
   assert_eq!(a0.solution_set(n0, 3), a1.solution_set(n1, 3));
+}
+
+#[test] fn test_swarm_anf_and_inv_vir() {
+  let mut a0 = crate::anf::ANFBase::new();
+  let mut a1 = AnfSwarmBase::new();
+  let v0 = NID::from_vid(VID::vir(0));
+  let v1 = NID::from_vid(VID::vir(1));
+  let (x0, x1, x2, x3, x4) = (NID::var(0), NID::var(1), NID::var(2), NID::var(3), NID::var(4));
+  let n0 = a0.and(v0, !v1);
+  let n1 = a1.and(v0, !v1);
+  let d00 = crate::expr![a0, ((x0 & x1) ^ x2)];
+  let d10 = crate::expr![a0, ((x2 & x3) ^ x4)];
+  let d01 = crate::expr![a1, ((x0 & x1) ^ x2)];
+  let d11 = crate::expr![a1, ((x2 & x3) ^ x4)];
+  let t0 = a0.sub(v1.vid(), d10, n0);
+  let t1 = a1.sub(v1.vid(), d11, n1);
+  let s0 = a0.sub(v0.vid(), d00, t0);
+  let s1 = a1.sub(v0.vid(), d01, t1);
+  assert_eq!(a0.solution_set(s0, 5), a1.solution_set(s1, 5));
+}
+
+#[test] fn test_swarm_anf_or_vir() {
+  let mut a0 = crate::anf::ANFBase::new();
+  let mut a1 = AnfSwarmBase::new();
+  let v = NID::from_vid(VID::vir(0));
+  let x = NID::var(0); let y = NID::var(1); let z = NID::var(2);
+  let p = NID::var(3); let q = NID::var(4); let r = NID::var(5);
+  let l0 = crate::expr![a0, ((v & x) ^ y)];
+  let r0 = crate::expr![a0, ((v & y) ^ z)];
+  let l1 = crate::expr![a1, ((v & x) ^ y)];
+  let r1 = crate::expr![a1, ((v & y) ^ z)];
+  let d0 = crate::expr![a0, ((p & q) ^ r)];
+  let d1 = crate::expr![a1, ((p & q) ^ r)];
+  let n0 = a0.or(l0, r0);
+  let n1 = a1.or(l1, r1);
+  let s0 = a0.sub(v.vid(), d0, n0);
+  let s1 = a1.sub(v.vid(), d1, n1);
+  assert_eq!(a0.solution_set(s0, 6), a1.solution_set(s1, 6));
+}
+
+#[test] fn test_swarm_anf_or_plain_virs() {
+  let mut a0 = crate::anf::ANFBase::new();
+  let mut a1 = AnfSwarmBase::new();
+  let v0 = NID::from_vid(VID::vir(0));
+  let v1 = NID::from_vid(VID::vir(1));
+  let (x0, x1, x2, x3, x4, x5) =
+    (NID::var(0), NID::var(1), NID::var(2), NID::var(3), NID::var(4), NID::var(5));
+  let n0 = a0.or(v0, v1);
+  let n1 = a1.or(v0, v1);
+  let d00 = crate::expr![a0, ((x0 & x1) ^ x2)];
+  let d10 = crate::expr![a0, ((x3 & x4) ^ x5)];
+  let d01 = crate::expr![a1, ((x0 & x1) ^ x2)];
+  let d11 = crate::expr![a1, ((x3 & x4) ^ x5)];
+  let t0 = a0.sub(v1.vid(), d10, n0);
+  let t1 = a1.sub(v1.vid(), d11, n1);
+  let s0 = a0.sub(v0.vid(), d00, t0);
+  let s1 = a1.sub(v0.vid(), d01, t1);
+  assert_eq!(a0.solution_set(s0, 6), a1.solution_set(s1, 6));
+}
+
+#[test] fn test_swarm_anf_or_formula_plain_virs() {
+  let mut a0 = crate::anf::ANFBase::new();
+  let mut a1 = AnfSwarmBase::new();
+  let v0 = NID::from_vid(VID::vir(0));
+  let v1 = NID::from_vid(VID::vir(1));
+  let (x0, x1, x2, x3, x4, x5) =
+    (NID::var(0), NID::var(1), NID::var(2), NID::var(3), NID::var(4), NID::var(5));
+  let n0 = crate::expr![a0, ((v0 & v1) ^ (v0 ^ v1))];
+  let n1 = crate::expr![a1, ((v0 & v1) ^ (v0 ^ v1))];
+  let d00 = crate::expr![a0, ((x0 & x1) ^ x2)];
+  let d10 = crate::expr![a0, ((x3 & x4) ^ x5)];
+  let d01 = crate::expr![a1, ((x0 & x1) ^ x2)];
+  let d11 = crate::expr![a1, ((x3 & x4) ^ x5)];
+  let t0 = a0.sub(v1.vid(), d10, n0);
+  let t1 = a1.sub(v1.vid(), d11, n1);
+  let s0 = a0.sub(v0.vid(), d00, t0);
+  let s1 = a1.sub(v0.vid(), d01, t1);
+  assert_eq!(a0.solution_set(s0, 6), a1.solution_set(s1, 6));
+}
+
+#[test] fn test_swarm_anf_and_plain_virs() {
+  let mut a0 = crate::anf::ANFBase::new();
+  let mut a1 = AnfSwarmBase::new();
+  let v0 = NID::from_vid(VID::vir(0));
+  let v1 = NID::from_vid(VID::vir(1));
+  let (x0, x1, x2, x3, x4, x5) =
+    (NID::var(0), NID::var(1), NID::var(2), NID::var(3), NID::var(4), NID::var(5));
+  let n0 = a0.and(v0, v1);
+  let n1 = a1.and(v0, v1);
+  let d00 = crate::expr![a0, ((x0 & x1) ^ x2)];
+  let d10 = crate::expr![a0, ((x3 & x4) ^ x5)];
+  let d01 = crate::expr![a1, ((x0 & x1) ^ x2)];
+  let d11 = crate::expr![a1, ((x3 & x4) ^ x5)];
+  let t0 = a0.sub(v1.vid(), d10, n0);
+  let t1 = a1.sub(v1.vid(), d11, n1);
+  let s0 = a0.sub(v0.vid(), d00, t0);
+  let s1 = a1.sub(v0.vid(), d01, t1);
+  assert_eq!(a0.solution_set(s0, 6), a1.solution_set(s1, 6));
+}
+
+#[test] fn test_swarm_anf_xor_plain_virs() {
+  let mut a0 = crate::anf::ANFBase::new();
+  let mut a1 = AnfSwarmBase::new();
+  let v0 = NID::from_vid(VID::vir(0));
+  let v1 = NID::from_vid(VID::vir(1));
+  let (x0, x1, x2, x3, x4, x5) =
+    (NID::var(0), NID::var(1), NID::var(2), NID::var(3), NID::var(4), NID::var(5));
+  let n0 = a0.xor(v0, v1);
+  let n1 = a1.xor(v0, v1);
+  let d00 = crate::expr![a0, ((x0 & x1) ^ x2)];
+  let d10 = crate::expr![a0, ((x3 & x4) ^ x5)];
+  let d01 = crate::expr![a1, ((x0 & x1) ^ x2)];
+  let d11 = crate::expr![a1, ((x3 & x4) ^ x5)];
+  let t0 = a0.sub(v1.vid(), d10, n0);
+  let t1 = a1.sub(v1.vid(), d11, n1);
+  let s0 = a0.sub(v0.vid(), d00, t0);
+  let s1 = a1.sub(v0.vid(), d01, t1);
+  assert_eq!(a0.solution_set(s0, 6), a1.solution_set(s1, 6));
+}
+
+
+#[test] fn test_swarm_anf_ite_vir() {
+  let mut a0 = crate::anf::ANFBase::new();
+  let mut a1 = AnfSwarmBase::new();
+  let i = NID::from_vid(VID::vir(0));
+  let (x0, x1, x2, x3) = (NID::var(0), NID::var(1), NID::var(2), NID::var(3));
+  let (x4, x5, x6) = (NID::var(4), NID::var(5), NID::var(6));
+  let t0 = crate::expr![a0, ((x0 & x1) ^ x2)];
+  let e0 = crate::expr![a0, ((x1 & x2) ^ x3)];
+  let t1 = crate::expr![a1, ((x0 & x1) ^ x2)];
+  let e1 = crate::expr![a1, ((x1 & x2) ^ x3)];
+  let d0 = crate::expr![a0, ((x4 & x5) ^ x6)];
+  let d1 = crate::expr![a1, ((x4 & x5) ^ x6)];
+  let n0 = a0.ite(i, t0, e0);
+  let n1 = a1.ite(i, t1, e1);
+  let s0 = a0.sub(i.vid(), d0, n0);
+  let s1 = a1.sub(i.vid(), d1, n1);
+  assert_eq!(a0.solution_set(s0, 7), a1.solution_set(s1, 7));
+}
+
+#[test] fn test_swarm_anf_sub() {
+  let mut base = AnfSwarmBase::new();
+  let a = NID::var(0); let b = NID::var(1); let c = NID::var(2);
+  let x = NID::var(3); let y = NID::var(4); let z = NID::var(5);
+  let ctx = crate::expr![base, ((a & b) ^ c) ];
+  let xyz = crate::expr![base, ((x & y) ^ z) ];
+  assert_eq!(base.sub(a.vid(), xyz, ctx), crate::expr![base, ((xyz & b) ^ c)]);
+  assert_eq!(base.sub(b.vid(), xyz, ctx), crate::expr![base, ((a & xyz) ^ c)]);
+}
+
+#[test] fn test_swarm_anf_sub_inv() {
+  let mut base = AnfSwarmBase::new(); let nv = NID::var;
+  let (v1,v2,v4,v6) = (nv(1), nv(2), nv(4), nv(6));
+  let ctx = crate::expr![base, (v1 & v6) ];
+  let top = crate::expr![base, ((I^v4) & v2)];
+  let expect = crate::expr![base, ((v2 & (v4 & v6)) ^ (v2 & v6))];
+  let actual = base.sub(v1.vid(), top, ctx);
+  assert_eq!(expect, actual);
+}
+
+#[test] fn test_swarm_anf_sub_vir() {
+  let mut a0 = crate::anf::ANFBase::new();
+  let mut a1 = AnfSwarmBase::new();
+  let v = VID::vir(0);
+  let vv = NID::from_vid(v);
+  let a = NID::var(0); let b = NID::var(1); let c = NID::var(2);
+  let x = NID::var(3); let y = NID::var(4);
+  let ctx0 = crate::expr![a0, ((vv & a) ^ b)];
+  let def0 = crate::expr![a0, ((x & y) ^ c)];
+  let ctx1 = crate::expr![a1, ((vv & a) ^ b)];
+  let def1 = crate::expr![a1, ((x & y) ^ c)];
+  let r0 = a0.sub(v, def0, ctx0);
+  let r1 = a1.sub(v, def1, ctx1);
+  assert_eq!(a0.solution_set(r0, 5), a1.solution_set(r1, 5));
 }

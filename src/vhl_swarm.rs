@@ -13,9 +13,8 @@ use std::sync::Arc;
 use concurrent_queue::{ConcurrentQueue,PopError};
 use crate::vhl::{VhlBase, VhlParts, VhlSlots};
 use crate::vid::VID;
-use crate::wip::Answer;
 use crate::NID;
-use crate::{wip, wip::{WorkState, COUNT_CACHE_HITS, COUNT_CACHE_TESTS}};
+use crate::{wip, wip::{WorkResult, WorkState, COUNT_CACHE_HITS, COUNT_CACHE_TESTS}};
 use crate::swarm::{RMsg, Swarm, SwarmCmd, Worker, QID, WID};
 
 type R = wip::RMsg;
@@ -80,13 +79,13 @@ pub struct VhlWorker<J, H> where J:JobKey, H:VhlJobHandler<J,W=Self> {
 impl<J,H> VhlWorker<J, H> where J:JobKey, H:VhlJobHandler<J,W=Self> {
   pub fn vhl_to_nid(&self, v:VID, hi:NID, lo:NID)->NID {
     self.state.as_ref().unwrap().vhl_to_nid(v, hi, lo) }
-  pub fn resolve_job(&mut self, q:&J, n:NID)->Option<Answer<NID>> {
+  pub fn resolve_job(&mut self, q:&J, n:NID)->WorkResult<J> {
     self.state.as_ref().unwrap().resolve_job(q, n) }
-  pub fn add_wip(&mut self, q:&J, parts:VhlParts)->Option<Answer<NID>> {
+  pub fn add_wip(&mut self, q:&J, parts:VhlParts)->WorkResult<J> {
     self.state.as_ref().unwrap().add_wip(q, parts) }
-  pub fn resolve_part(&mut self, q:&J, slot:VhlSlots, nid:NID, invert:bool)->Option<Answer<NID>> {
+  pub fn resolve_part(&mut self, q:&J, slot:VhlSlots, nid:NID, invert:bool)->WorkResult<J> {
     self.state.as_ref().unwrap().resolve_part(q, slot, nid, invert) }
-  pub fn add_dep(&mut self, q:&J, idep:wip::Dep<J, VhlSlots>)->(bool, Option<Answer<NID>>) {
+  pub fn add_dep(&mut self, q:&J, idep:wip::Dep<J, VhlSlots>)->(bool, WorkResult<J>) {
     self.state.as_ref().unwrap().add_dep(q, idep) }
   pub fn get_done(&self, q:&J)->Option<NID> {
     self.state.as_ref().unwrap().get_done(q) }
@@ -105,6 +104,10 @@ impl<J,H> VhlWorker<J,H> where J:JobKey, H:VhlJobHandler<J,W=Self> {
     self.send_msg(qid, Some(R::Ret(nid))) }
   pub fn delegate(&mut self, job:J) {
     self.queue_push(job)}
+  pub fn handle_result(&mut self, mut res:WorkResult<J>)->Option<NID> {
+    for job in res.jobs.drain(..) { self.delegate(job) }
+    res.answer.map(|wip::Answer(nid)| nid)
+  }
   pub fn send_msg(&self, qid:QID, r:Option<R>) {
     self.tx.as_ref().unwrap().send(RMsg{wid:self.wid, qid, r}).unwrap() }}
 
