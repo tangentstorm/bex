@@ -3,10 +3,9 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::mpsc::Sender;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use concurrent_queue::{ConcurrentQueue, PopError};
+use crossbeam_channel::{Receiver, RecvError, Sender, select, unbounded};
 
 use crate::base::Base;
 use crate::bdd::BddBase;
@@ -279,19 +278,13 @@ impl WipBase<AnfJob, AnfParts> for AnfStore {
 }
 
 #[derive(Debug)]
-pub struct JobQueue<J> { q: ConcurrentQueue<J> }
+pub struct JobQueue<J> { tx: Sender<J>, rx: Receiver<J> }
 impl<J> Default for JobQueue<J> {
-  fn default()->Self { JobQueue{ q: ConcurrentQueue::unbounded() }}
+  fn default()->Self { let (tx, rx) = unbounded(); JobQueue{ tx, rx }}
 }
 impl<J:fmt::Debug> JobQueue<J> {
-  pub fn push(&self, job:J) { self.q.push(job).unwrap() }
-  pub fn pop(&self)->Option<J> {
-    match self.q.pop() {
-      Ok(k) => Some(k),
-      Err(PopError::Empty) => None,
-      Err(PopError::Closed) => panic!("JobQueue was closed!"),
-    }
-  }
+  pub fn push(&self, job:J) { self.tx.send(job).unwrap() }
+  pub fn pop(&self)->Option<J> { self.rx.try_recv().ok() }
 }
 
 #[derive(Clone)]
@@ -506,6 +499,15 @@ impl Worker<AnfQ, wip::RMsg, AnfJob> for AnfWorker {
   fn queue_push(&mut self, job:AnfJob) {
     if self.next.is_none() { self.next = Some(job) }
     else { self.queue.as_ref().unwrap().push(job) }
+  }
+  fn wait(&mut self, rx:&Receiver<Option<crate::swarm::QMsg<AnfQ>>>)
+    ->Result<crate::swarm::WorkWait<AnfQ, AnfJob>, RecvError> {
+    if self.next.is_some() { return Ok(crate::swarm::WorkWait::Item(self.next.take().unwrap())) }
+    let Some(q) = self.queue.as_ref() else { return rx.recv().map(crate::swarm::WorkWait::Msg) };
+    select! {
+      recv(rx) -> msg => msg.map(crate::swarm::WorkWait::Msg),
+      recv(q.rx) -> item => item.map(crate::swarm::WorkWait::Item),
+    }
   }
   fn work_item(&mut self, job:AnfJob) { self.work_job(job) }
   fn work_step(&mut self, qid:&QID, q:AnfQ)->Option<wip::RMsg> {

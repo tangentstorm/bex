@@ -1,8 +1,8 @@
 //! mini-framework for multicore programming.
 use std::{marker::PhantomData, thread};
-use std::sync::mpsc::{Sender, Receiver, channel, SendError, RecvError};
 use std::fmt::Debug;
 use std::collections::HashMap;
+use crossbeam_channel::{Receiver, RecvError, SendError, Sender, select, unbounded};
 use rand::seq::SliceRandom;
 
 /// query id
@@ -12,6 +12,11 @@ pub enum QID { #[default] INIT, STEP(usize), DONE }
 pub struct QMsg<Q> { qid:QID, q: Q }
 #[derive(Debug)]
 pub struct RMsg<R> { pub wid: WID, pub qid:QID, pub r:Option<R> }
+
+pub enum WorkWait<Q,I> {
+  Msg(Option<QMsg<Q>>),
+  Item(I),
+}
 
 /// worker id
 #[derive(Debug,Default,PartialEq,Eq,Hash,Clone,Copy)]
@@ -52,16 +57,19 @@ pub trait Worker<Q,R,I=()> where R:Debug, Q:Clone {
     let msg = self.work_init(wid); self.send_msg(tx, QID::INIT, msg);
     loop {
       if let Some(item) = self.queue_pop() { self.work_item(item) }
-      match rx.try_recv() {
-        Ok(None) => break,
-        Ok(Some(QMsg{qid, q})) => {
+      else {
+        match self.wait(rx) {
+        Err(_) | Ok(WorkWait::Msg(None)) => break,
+        Ok(WorkWait::Msg(Some(QMsg{qid, q}))) => {
           if let QID::STEP(_) = qid {
             let msg = self.work_step(&qid, q); self.send_msg(tx, qid, msg); }
           else { panic!("Worker {:?} got unexpected qid instead of STEP: {:?}", wid, qid)}}
-        Err(e) => match e {
-          std::sync::mpsc::TryRecvError::Empty => {} // no problem!
-          std::sync::mpsc::TryRecvError::Disconnected => break }}}
+        Ok(WorkWait::Item(item)) => self.work_item(item) }}}
     let msg = self.work_done(); self.send_msg(tx, QID::DONE, msg); }
+
+  fn wait(&mut self, rx:&Receiver<Option<QMsg<Q>>>)->Result<WorkWait<Q,I>, RecvError> {
+    rx.recv().map(WorkWait::Msg)
+  }
 
   /// What to do if a message send fails. By default, just print to stdout.
   fn on_work_send_err(&self, err:SendError<RMsg<R>>) {
@@ -131,7 +139,8 @@ impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:Debug+Clone, R:Debug, W:Worker<Q, R,I> {
 
   pub fn kill(&mut self, w:WID) {
     if let Some(h) = self.whs.remove(&w) {
-      if h.send(None).is_err() { panic!("couldn't kill worker") }}
+      let _ = h.send(None);
+    }
     else { panic!("worker was already gone") }}}
 
 impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+Debug, W:Worker<Q, R, I> {
@@ -139,8 +148,8 @@ impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+De
   pub fn new()->Self { Self::default() }
 
   pub fn new_with_threads(n:usize)->Self {
-    let (tx, rx) = channel();
-    let (qtx, qrx) = channel();
+    let (tx, rx) = unbounded();
+    let (qtx, qrx) = unbounded();
     let mut me = Self { nq: 0, me:tx, rx, qtx, qrx, whs:HashMap::new(), nw:0,
        _w:PhantomData, _i:PhantomData, threads:vec![]};
     me.start(n); me }
@@ -153,7 +162,7 @@ impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+De
   fn spawn(&mut self)->WID {
     let wid = WID{ n: self.nw }; self.nw+=1;
     let me2 = self.me.clone();
-    let (wtx, wrx) = channel();
+    let (wtx, wrx) = unbounded();
     self.threads.push(thread::spawn(move || { W::new(wid).work_loop(wid, &wrx, &me2) }));
     self.whs.insert(wid, wtx);
     wid }
@@ -192,8 +201,12 @@ impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+De
     where V:Debug, F:FnMut(WID, &QID, Option<R>)->SwarmCmd<Q,V> {
     let mut res = None;
     loop {
-      if let Ok(q) = self.qrx.try_recv() { self.add_query(q); }
-      if let Ok(rmsg) = self.rx.try_recv() {
+      select! {
+      recv(self.qrx) -> q => match q {
+        Ok(q) => { self.add_query(q); }
+        Err(_) => {}
+      },
+      recv(self.rx) -> rmsg => if let Ok(rmsg) = rmsg {
         let RMsg { wid, qid, r } = rmsg;
         let cmd = on_msg(wid, &qid, r);
         match cmd {
@@ -203,5 +216,6 @@ impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+De
           SwarmCmd::Send(q) => { self.send(wid, q); },
           SwarmCmd::Batch(wqs) => for (wid, q) in wqs { self.send(wid, q); },
           SwarmCmd::Panic(msg) => panic!("{}", msg),
-          SwarmCmd::Return(v) => { res = Some(v); break }}}}
+          SwarmCmd::Return(v) => { res = Some(v); break }}}
+      }}
       res}}

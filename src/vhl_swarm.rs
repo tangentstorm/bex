@@ -7,10 +7,9 @@
 //!
 //! For a complete example, see [`bdd_swarm`](crate::bdd::bdd_swarm).
 
-use std::sync::mpsc::Sender;
 use std::{fmt, hash::Hash};
 use std::sync::Arc;
-use concurrent_queue::{ConcurrentQueue,PopError};
+use crossbeam_channel::{Receiver, Sender, RecvError, select, unbounded};
 use crate::vhl::{VhlBase, VhlParts, VhlSlots};
 use crate::vid::VID;
 use crate::NID;
@@ -26,16 +25,13 @@ pub trait JobKey : 'static + Copy+Clone+Default+std::fmt::Debug+Eq+Hash+Send+Syn
 /// which is some kind of message indicating a request to (eventually)
 /// construct a VHL.
 #[derive(Debug)]
-pub struct JobQueue<J> { q: ConcurrentQueue<J> }
+pub struct JobQueue<J> { tx: Sender<J>, rx: Receiver<J> }
 impl<J> Default for JobQueue<J> {
-  fn default()->Self { JobQueue{ q: ConcurrentQueue::unbounded() }}}
+  fn default()->Self { let (tx, rx) = unbounded(); JobQueue{ tx, rx }}}
 impl<J> JobQueue<J> where J:std::fmt::Debug {
-  pub fn push(&self, job:J) { self.q.push(job).unwrap() }
-  pub fn pop(&self)->Option<J> {
-    match self.q.pop() {
-      Ok(k) => Some(k),
-      Err(PopError::Empty) => None,
-      Err(PopError::Closed) => panic!("JobQueue was closed!") }}}
+  pub fn push(&self, job:J) { self.tx.send(job).unwrap() }
+  pub fn pop(&self)->Option<J> { self.rx.try_recv().ok() }
+}
 
 /// Query messages used by the swarm. There are several general
 /// messages (Init, Stats) that we want for all implementations.
@@ -122,6 +118,15 @@ impl<J,H> Worker<VhlQ<J>, R, J> for VhlWorker<J,H> where J:JobKey, H:VhlJobHandl
   fn queue_push(&mut self, job:J) {
     if self.next.is_none() { self.next = Some(job) }
     else { self.queue.as_ref().unwrap().push(job) }}
+  fn wait(&mut self, rx:&Receiver<Option<crate::swarm::QMsg<VhlQ<J>>>>)
+    ->Result<crate::swarm::WorkWait<VhlQ<J>, J>, RecvError> {
+    if self.next.is_some() { return Ok(crate::swarm::WorkWait::Item(self.next.take().unwrap())) }
+    let Some(q) = self.queue.as_ref() else { return rx.recv().map(crate::swarm::WorkWait::Msg) };
+    select! {
+      recv(rx) -> msg => msg.map(crate::swarm::WorkWait::Msg),
+      recv(q.rx) -> item => item.map(crate::swarm::WorkWait::Item),
+    }
+  }
   fn work_item(&mut self, job:J) {
     // swap the handler out of self so it can borrow us mutably
     let mut h = std::mem::take(&mut self.handler);
