@@ -4,6 +4,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 use crossbeam_channel::{Receiver, RecvError, Sender, select, unbounded};
 
@@ -25,6 +26,11 @@ static COUNT_SUB_CALLS: AtomicU64 = AtomicU64::new(0);
 static COUNT_TO_BASE_CALLS: AtomicU64 = AtomicU64::new(0);
 static COUNT_TO_BASE_TERMS: AtomicU64 = AtomicU64::new(0);
 static COUNT_SOLUTION_SET_CALLS: AtomicU64 = AtomicU64::new(0);
+static COUNT_VHL_REUSE: AtomicU64 = AtomicU64::new(0);
+static COUNT_VHL_INSERT: AtomicU64 = AtomicU64::new(0);
+static COUNT_SUB_NS: AtomicU64 = AtomicU64::new(0);
+static COUNT_TO_BASE_NS: AtomicU64 = AtomicU64::new(0);
+static COUNT_SOLUTION_SET_NS: AtomicU64 = AtomicU64::new(0);
 
 fn reset_anf_stats() {
   COUNT_JOB_XOR.store(0, Ordering::Relaxed);
@@ -34,6 +40,11 @@ fn reset_anf_stats() {
   COUNT_TO_BASE_CALLS.store(0, Ordering::Relaxed);
   COUNT_TO_BASE_TERMS.store(0, Ordering::Relaxed);
   COUNT_SOLUTION_SET_CALLS.store(0, Ordering::Relaxed);
+  COUNT_VHL_REUSE.store(0, Ordering::Relaxed);
+  COUNT_VHL_INSERT.store(0, Ordering::Relaxed);
+  COUNT_SUB_NS.store(0, Ordering::Relaxed);
+  COUNT_TO_BASE_NS.store(0, Ordering::Relaxed);
+  COUNT_SOLUTION_SET_NS.store(0, Ordering::Relaxed);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -67,7 +78,6 @@ pub enum AnfParts {
   Xor { v:VID, hi:Option<NID>, lo:Option<NID> },
   AndAbove { v:VID, hi:Option<NID>, lo:Option<NID> },
   AndLevel { v:VID, bq:Option<NID>, br:Option<NID>, cq:Option<NID>, cr:Option<NID> },
-  SubBelow { v:VID, hi:Option<NID>, lo:Option<NID> },
 }
 
 impl Parts for AnfParts {
@@ -86,11 +96,6 @@ impl Parts for AnfParts {
         AnfSlot::Cr => *cr = nid,
         _ => {}
       },
-      AnfParts::SubBelow { hi, lo, .. } => match slot {
-        AnfSlot::Hi => *hi = nid,
-        AnfSlot::Lo => *lo = nid,
-        _ => {}
-      },
       AnfParts::Empty => {}
     }
   }
@@ -99,8 +104,7 @@ impl Parts for AnfParts {
     match self {
       AnfParts::Empty => false,
       AnfParts::Xor { hi, lo, .. } |
-      AnfParts::AndAbove { hi, lo, .. } |
-      AnfParts::SubBelow { hi, lo, .. } => hi.is_some() && lo.is_some(),
+      AnfParts::AndAbove { hi, lo, .. } => hi.is_some() && lo.is_some(),
       AnfParts::AndLevel { bq, br, cq, cr, .. } => bq.is_some() && br.is_some() && cq.is_some() && cr.is_some(),
     }
   }
@@ -133,8 +137,12 @@ impl AnfStore {
     let (hi, lo) = (hi0, lo0.raw());
     let mut inner = self.inner.lock().unwrap();
     let res =
-    if let Some(&nid) = inner.cache.get(&Vhl{v, hi, lo}) { nid }
+    if let Some(&nid) = inner.cache.get(&Vhl{v, hi, lo}) {
+      COUNT_VHL_REUSE.fetch_add(1, Ordering::Relaxed);
+      nid
+    }
       else {
+        COUNT_VHL_INSERT.fetch_add(1, Ordering::Relaxed);
         let anf = Vhl{ v, hi, lo };
         let nid = NID::from_vid_idx(v, inner.nodes.len());
         inner.cache.insert(anf, nid);
@@ -270,8 +278,6 @@ impl WipBase<AnfJob, AnfParts> for AnfStore {
         let hi = self.xor_sync(self.xor_sync(bq, br), cq);
         JobResult::Done(self.vhl(v, hi, cr))
       }
-      AnfParts::SubBelow { v, hi:Some(hi), lo:Some(lo) } =>
-        JobResult::Done(self.xor_sync(self.and(NID::from_vid(v), hi), lo)),
       _ => panic!("resolve_job called before AnfParts were complete"),
     }
   }
@@ -402,11 +408,6 @@ impl AnfWorker {
     else { Core::Job(AnfJob::and(x, y)) }
   }
 
-  fn sub_core(&self, v:VID, n:NID, ctx:NID)->Core {
-    if !ctx.might_depend_on(v) { Core::Nid(ctx) }
-    else { Core::Job(AnfJob::Sub(v, n, ctx)) }
-  }
-
   fn xor_step(&self, x:NID, y:NID)->CoreStep {
     let store = &self.state.as_ref().unwrap().base;
     let (xv, yv) = (x.vid(), y.vid());
@@ -470,19 +471,7 @@ impl AnfWorker {
 
   fn sub_step(&self, v:VID, n:NID, ctx:NID)->CoreStep {
     let store = &self.state.as_ref().unwrap().base;
-    if !ctx.might_depend_on(v) { return CoreStep::Nid(ctx) }
-    let Vhl{v:cv, hi, lo} = store.fetch(ctx);
-    if v == cv {
-      CoreStep::Nid(store.xor_sync(store.and(n, hi), lo))
-    } else {
-      CoreStep::Parts(
-        AnfParts::SubBelow{ v:cv, hi:None, lo:None },
-        vec![
-          (AnfSlot::Hi, self.sub_core(v, n, hi)),
-          (AnfSlot::Lo, self.sub_core(v, n, lo)),
-        ]
-      )
-    }
+    CoreStep::Nid(store.sub(v, n, ctx))
   }
 
 }
@@ -639,6 +628,7 @@ impl AnfSwarmBase {
   }
 
   pub fn to_base(&self, n:NID, dest: &mut dyn Base)->NID {
+    let t0 = Instant::now();
     COUNT_TO_BASE_CALLS.fetch_add(1, Ordering::Relaxed);
     let mut sum = nid::O;
     if n.is_inv() { sum = nid::I }
@@ -648,6 +638,7 @@ impl AnfSwarmBase {
       for v in t.hi_bits() { term = dest.and(term, NID::var(v as u32)); }
       sum = dest.xor(sum, term);
     }
+    COUNT_TO_BASE_NS.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
     sum
   }
 }
@@ -757,15 +748,21 @@ impl Base for AnfSwarmBase {
   }
 
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID {
+    let t0 = Instant::now();
     COUNT_SUB_CALLS.fetch_add(1, Ordering::Relaxed);
-    self.swarm.sub(v, n, ctx)
+    let res = self.swarm.sub(v, n, ctx);
+    COUNT_SUB_NS.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+    res
   }
 
   fn solution_set(&self, n: NID, nvars: usize)->HashSet<Reg> {
+    let t0 = Instant::now();
     COUNT_SOLUTION_SET_CALLS.fetch_add(1, Ordering::Relaxed);
     let mut bdd = BddBase::new();
     let bnid = self.to_base(n, &mut bdd);
-    bdd.solution_set(bnid, nvars)
+    let res = bdd.solution_set(bnid, nvars);
+    COUNT_SOLUTION_SET_NS.fetch_add(t0.elapsed().as_nanos() as u64, Ordering::Relaxed);
+    res
   }
 
   fn init_stats(&mut self) {
@@ -790,6 +787,13 @@ impl Base for AnfSwarmBase {
       COUNT_SOLUTION_SET_CALLS.load(Ordering::Relaxed),
       COUNT_TO_BASE_CALLS.load(Ordering::Relaxed),
       COUNT_TO_BASE_TERMS.load(Ordering::Relaxed));
+    println!("nodes: vhl_reuse={} vhl_insert={}",
+      COUNT_VHL_REUSE.load(Ordering::Relaxed),
+      COUNT_VHL_INSERT.load(Ordering::Relaxed));
+    println!("time_ms: sub={} to_base={} solution_set={}",
+      COUNT_SUB_NS.load(Ordering::Relaxed) / 1_000_000,
+      COUNT_TO_BASE_NS.load(Ordering::Relaxed) / 1_000_000,
+      COUNT_SOLUTION_SET_NS.load(Ordering::Relaxed) / 1_000_000);
   }
 }
 
