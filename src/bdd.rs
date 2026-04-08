@@ -6,6 +6,7 @@ use crate::reg::Reg;
 use crate::vhl::Walkable;
 use crate::nid::{NID,O,I};
 use crate::vid::{VID,VidOrdering,topmost_of3};
+use crate::Fun;
 use crate::wip;
 
 mod bdd_sols;
@@ -342,6 +343,16 @@ impl Base for BddBase {
 
   /// nid of y when x is high
   fn when_hi(&mut self, x:VID, y:NID)->NID {
+    if y.is_fun() {
+      if let Some(f) = y.to_fun() {
+        if let Some(pos) = f.var_position(x) {
+          let reduced = f.when(pos, true);
+          let (ar, vs) = f.vars();
+          let mut new_vars: Vec<u32> = vs[..ar as usize].to_vec();
+          new_vars.remove(pos as usize);
+          let result = crate::tbl::nidfun_to_nid(&reduced, &new_vars);
+          return if y.is_inv() { !result } else { result };
+        } else { return y; }}}
     let yv = y.vid();
     match x.cmp_depth(&yv) {
       VidOrdering::Level => self.tup(y).0,  // x ∧ if(x,th,_) → th
@@ -353,6 +364,16 @@ impl Base for BddBase {
 
   /// nid of y when x is low
   fn when_lo(&mut self, x:VID, y:NID)->NID {
+    if y.is_fun() {
+      if let Some(f) = y.to_fun() {
+        if let Some(pos) = f.var_position(x) {
+          let reduced = f.when(pos, false);
+          let (ar, vs) = f.vars();
+          let mut new_vars: Vec<u32> = vs[..ar as usize].to_vec();
+          new_vars.remove(pos as usize);
+          let result = crate::tbl::nidfun_to_nid(&reduced, &new_vars);
+          return if y.is_inv() { !result } else { result };
+        } else { return y; }}}
     let yv = y.vid();
     match x.cmp_depth(&yv) {
       VidOrdering::Level => self.tup(y).1,  // ¬x ∧ if(x,_,el) → el

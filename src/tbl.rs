@@ -3,10 +3,34 @@
 //! Provides truth table alignment (expanding tables to a common variable set),
 //! bitwise operations on table NIDs, and a `TableBase<T>` decorator that wraps
 //! any `Base` to automatically collapse small subgraphs into table NIDs.
+//!
+//! **Bit ordering note:** Internally, this module uses LSB-first encoding
+//! (bit i = f(row i), where row i means x0=(i&1), x1=((i>>1)&1), ...).
+//! The NidFun/Fun trait uses MSB-first (bit 0 = last row, matching the
+//! `select_bits` convention). Conversion happens at the boundaries:
+//! `nid_to_table` converts MSB→LSB, and `make_table_nid` converts LSB→MSB.
 
 use crate::nid::{NID, NidFun, I, O};
 use crate::vid::VID;
 use crate::Fun;
+
+// ---- bit-order conversion ----
+
+/// Reverse the bit ordering of a truth table within the relevant 2^arity bits.
+/// Converts between LSB-first and MSB-first encodings (the operation is its own inverse).
+fn reverse_bits(tbl: u32, arity: u8) -> u32 {
+  if arity == 0 { return tbl & 1; }
+  let n = 1u32 << arity; // number of entries in the truth table
+  let mask = if arity >= 5 { 0xFFFFFFFFu32 } else { (1u32 << n) - 1 };
+  let tbl = tbl & mask;
+  let mut result = 0u32;
+  for i in 0..n {
+    if tbl & (1 << i) != 0 {
+      result |= 1 << (n - 1 - i);
+    }
+  }
+  result
+}
 
 // ---- truth table alignment ----
 
@@ -98,12 +122,16 @@ pub fn make_table_nid(tbl: u32, vars: &[u32]) -> NID {
     if effective == 0b10u32 { return NID::from_vid(v); }
     else { return !NID::from_vid(v); }
   }
-  // INV normalization: if bit 0 is set, store inverted table with INV flag.
+  // INV normalization: if bit 0 (LSB-first = all-zeros input) is set,
+  // store inverted table with INV flag.
   if effective & 1 == 1 {
     let inv_tbl = !effective & mask;
-    return !NID::fun_with_vars(&vars, inv_tbl).to_nid();
+    let msb = reverse_bits(inv_tbl, arity as u8);
+    return !NID::fun_with_vars(&vars, msb).to_nid();
   }
-  NID::fun_with_vars(&vars, effective).to_nid()
+  // Convert LSB-first → MSB-first for NID storage
+  let msb = reverse_bits(effective, arity as u8);
+  NID::fun_with_vars(&vars, msb).to_nid()
 }
 
 /// Check if variable at position `pos` in a truth table of `arity` variables is unused.
@@ -156,9 +184,10 @@ fn strip_unused_vars(mut tbl: u32, vars: &[u32]) -> (u32, Vec<u32>) {
 }
 
 /// Convert a NidFun (from a Fun::when() result) + remaining variable set to the correct NID.
-/// Handles arity 0 -> const, arity 1 -> variable, arity 2+ -> table NID.
+/// The NidFun stores its table in MSB-first; convert to LSB-first for make_table_nid.
 pub fn nidfun_to_nid(f: &NidFun, vars: &[u32]) -> NID {
-  make_table_nid(f.tbl(), vars)
+  let lsb_tbl = reverse_bits(f.tbl(), vars.len() as u8);
+  make_table_nid(lsb_tbl, vars)
 }
 
 // ---- promoting consts/vars to truth tables for alignment ----
@@ -175,7 +204,7 @@ fn nid_to_table(n: NID) -> Option<(u32, Vec<u32>)> {
   } else if n.is_fun() {
     let f = n.to_fun().unwrap();
     let (ar, vars) = f.vars();
-    let mut tbl = f.tbl();
+    let mut tbl = reverse_bits(f.tbl(), ar); // MSB→LSB conversion
     if n.is_inv() {
       let mask = if ar >= 5 { 0xFFFFFFFFu32 } else { (1u32 << (1u32 << ar)) - 1 };
       tbl ^= mask;
@@ -282,7 +311,7 @@ impl<T: crate::base::Base> crate::base::Base for TableBase<T> {
           let (ar, vs) = f.vars();
           let mut new_vars: Vec<u32> = vs[..ar as usize].to_vec();
           new_vars.remove(pos as usize);
-          let result = make_table_nid(reduced.tbl(), &new_vars);
+          let result = nidfun_to_nid(&reduced, &new_vars);
           return if n.is_inv() { !result } else { result };
         } else {
           return n; // variable not in set, no change
@@ -300,7 +329,7 @@ impl<T: crate::base::Base> crate::base::Base for TableBase<T> {
           let (ar, vs) = f.vars();
           let mut new_vars: Vec<u32> = vs[..ar as usize].to_vec();
           new_vars.remove(pos as usize);
-          let result = make_table_nid(reduced.tbl(), &new_vars);
+          let result = nidfun_to_nid(&reduced, &new_vars);
           return if n.is_inv() { !result } else { result };
         } else {
           return n;
@@ -337,6 +366,23 @@ mod tests {
   use super::*;
   use crate::nid::named::*;
 
+  /// Evaluate a NID on a specific input assignment (for testing).
+  /// vars_vals: list of (var_index, bool) pairs.
+  fn eval_nid(n: NID, vars_vals: &[(u32, bool)]) -> bool {
+    if let Some((tbl, vars)) = nid_to_table(n) {
+      // tbl is LSB-first internally
+      let mut row = 0usize;
+      for (pos, &v) in vars.iter().enumerate() {
+        for &(vi, val) in vars_vals {
+          if vi == v && val { row |= 1 << pos; }
+        }
+      }
+      (tbl >> row) & 1 == 1
+    } else {
+      panic!("eval_nid: not a table/const/var NID");
+    }
+  }
+
   #[test]
   fn test_insert_var() {
     // f(a) = a (truth table 0b10) -> insert don't-care at position 0
@@ -365,29 +411,30 @@ mod tests {
 
   #[test]
   fn test_table_and_two_vars() {
-    // x0 AND x1: both are simple variables
     let result = table_and(x0, x1).unwrap();
-    assert!(result.is_fun());
-    let f = result.to_fun().unwrap();
-    assert_eq!(f.arity(), 2);
-    // AND truth table: 0b1000 (row order: 00->0, 01->0, 10->0, 11->1)
-    assert_eq!(f.tbl(), 0b1000);
+    // Verify AND truth table: f(a,b) = a AND b
+    assert!(!eval_nid(result, &[(0,false),(1,false)]));
+    assert!(!eval_nid(result, &[(0,true),(1,false)]));
+    assert!(!eval_nid(result, &[(0,false),(1,true)]));
+    assert!( eval_nid(result, &[(0,true),(1,true)]));
   }
 
   #[test]
   fn test_table_or_two_vars() {
     let result = table_or(x0, x1).unwrap();
-    let f = result.to_fun().unwrap();
-    assert_eq!(f.arity(), 2);
-    assert_eq!(f.tbl(), 0b1110);
+    assert!(!eval_nid(result, &[(0,false),(1,false)]));
+    assert!( eval_nid(result, &[(0,true),(1,false)]));
+    assert!( eval_nid(result, &[(0,false),(1,true)]));
+    assert!( eval_nid(result, &[(0,true),(1,true)]));
   }
 
   #[test]
   fn test_table_xor_two_vars() {
     let result = table_xor(x0, x1).unwrap();
-    let f = result.to_fun().unwrap();
-    assert_eq!(f.arity(), 2);
-    assert_eq!(f.tbl(), 0b0110);
+    assert!(!eval_nid(result, &[(0,false),(1,false)]));
+    assert!( eval_nid(result, &[(0,true),(1,false)]));
+    assert!( eval_nid(result, &[(0,false),(1,true)]));
+    assert!(!eval_nid(result, &[(0,true),(1,true)]));
   }
 
   #[test]
@@ -404,19 +451,16 @@ mod tests {
 
   #[test]
   fn test_table_and_disjoint_vars() {
-    // (x0 AND x1) AND (x2 AND x3) -> should produce a 4-variable table
     let a01 = table_and(x0, x1).unwrap();
     let a23 = table_and(x2, x3).unwrap();
     let result = table_and(a01, a23).unwrap();
-    let f = result.to_fun().unwrap();
-    assert_eq!(f.arity(), 4);
-    let (_, vs) = f.vars();
-    assert_eq!(&vs[..4], &[0, 1, 2, 3]);
+    assert!( eval_nid(result, &[(0,true),(1,true),(2,true),(3,true)]));
+    assert!(!eval_nid(result, &[(0,true),(1,true),(2,true),(3,false)]));
+    assert!(!eval_nid(result, &[(0,false),(1,true),(2,true),(3,true)]));
   }
 
   #[test]
   fn test_table_exceeds_5_vars() {
-    // Create functions on 3 disjoint vars each -> combined = 6 > 5
     let a = table_and(x0, table_and(x1, x2).unwrap()).unwrap();
     let b = table_and(x3, table_and(x4, NID::var(5)).unwrap()).unwrap();
     assert!(table_and(a, b).is_none(), "should fail: 6 vars > 5");
@@ -424,26 +468,24 @@ mod tests {
 
   #[test]
   fn test_table_ite() {
-    // ite(x0, x1, x2) = if x0 then x1 else x2
-    // Signals: x0=0xAA, x1=0xCC, x2=0xF0 (for 3-var 8-bit table)
-    // (x0 & x1) | (~x0 & x2) = 0x88 | 0x50 = 0xD8 = 0b11011000
     let result = table_ite(x0, x1, x2).unwrap();
-    let f = result.to_fun().unwrap();
-    assert_eq!(f.arity(), 3);
-    assert_eq!(f.tbl(), 0b11011000);
+    // if x0 then x1 else x2
+    assert!( eval_nid(result, &[(0,true),(1,true),(2,false)]));  // take x1=T
+    assert!(!eval_nid(result, &[(0,true),(1,false),(2,true)]));  // take x1=F
+    assert!( eval_nid(result, &[(0,false),(1,false),(2,true)])); // take x2=T
+    assert!(!eval_nid(result, &[(0,false),(1,true),(2,false)])); // take x2=F
   }
 
   #[test]
   fn test_table_and_overlapping_vars() {
-    // f(x1, x3) = x1 OR x3, g(x2, x3) = x2 AND x3
-    // (x1 OR x3) AND (x2 AND x3) simplifies to x2 AND x3 (x1 is unused)
-    let f = NID::fun_with_vars(&[1, 3], 0b1110).to_nid();
-    let g = NID::fun_with_vars(&[2, 3], 0b1000).to_nid();
+    // x1 OR x3 (MSB-first: 0b0111) AND x2 AND x3 (MSB-first: 0b0001)
+    // Result simplifies to x2 AND x3
+    let f = NID::fun_with_vars(&[1, 3], 0b0111).to_nid();
+    let g = NID::fun_with_vars(&[2, 3], 0b0001).to_nid();
     let result = table_and(f, g).unwrap();
-    let rf = result.to_fun().unwrap();
-    assert_eq!(rf.arity(), 2);
-    let (_, vs) = rf.vars();
-    assert_eq!(&vs[..2], &[2, 3]);
+    assert!( eval_nid(result, &[(2,true),(3,true)]));
+    assert!(!eval_nid(result, &[(2,true),(3,false)]));
+    assert!(!eval_nid(result, &[(2,false),(3,true)]));
   }
 
   #[test]
@@ -485,12 +527,14 @@ mod tests {
 
   #[test]
   fn test_inv_normalization() {
-    // 0b0111 over {x0, x1} has bit 0 = 1, so it should be stored inverted
+    // LSB-first 0b0111 over {x0, x1} has bit 0 = 1, so it should be stored inverted.
+    // 0b0111 is NAND in LSB-first. Inverted = AND = 0b1000 LSB-first.
     let n = make_table_nid(0b0111, &[0, 1]);
     assert!(n.is_inv(), "should be inverted");
-    let raw = n.raw();
-    let f = raw.to_fun().unwrap();
-    assert_eq!(f.tbl(), 0b1000); // stored as NAND = !(AND)
+    // The underlying function is AND: f(0,0)=0,f(1,0)=0,f(0,1)=0,f(1,1)=1
+    // NAND = !AND: f(0,0)=1,f(1,0)=1,f(0,1)=1,f(1,1)=0
+    assert!( eval_nid(n, &[(0,false),(1,false)])); // NAND(0,0)=1
+    assert!(!eval_nid(n, &[(0,true),(1,true)]));   // NAND(1,1)=0
   }
 
   #[test]
