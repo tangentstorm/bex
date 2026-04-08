@@ -23,7 +23,46 @@ use crate::Fun;
 #[inline] fn tbl_mask(arity: u8) -> u32 {
   if arity >= 5 { 0xFFFFFFFF } else { (1u32 << n_entries(arity)) - 1 }}
 
-// ---- truth table alignment ----
+// ---- stack-allocated small table ----
+
+/// A truth table with its variable set, fully stack-allocated.
+#[derive(Clone, Copy)]
+struct SmallTbl {
+  tbl: u32,
+  vars: [u32; 5],
+  arity: u8,
+}
+
+impl SmallTbl {
+  #[inline] fn var_slice(&self) -> &[u32] { &self.vars[..self.arity as usize] }
+}
+
+/// Quick arity of a NID (0 for const, 1 for var, arity for fun, 6 for BDD nodes).
+#[inline] fn quick_arity(n: NID) -> u8 {
+  if n.is_const() { 0 }
+  else if n.is_var() { 1 }   // real variables only, not virtual
+  else if n.is_fun() { n.to_fun().unwrap().arity() }
+  else { 6 }
+}
+
+/// Extract a SmallTbl from a NID.  Returns None for BDD nodes and virtual variables.
+#[inline] fn nid_to_small(n: NID) -> Option<SmallTbl> {
+  if n.is_const() {
+    Some(SmallTbl { tbl: if n == I { 0xFFFFFFFF } else { 0 }, vars: [0;5], arity: 0 })
+  } else if n.is_var() {   // real variables only
+    let vi = n.vid().var_ix() as u32;
+    let tbl = if n.is_inv() { 0b10u32 } else { 0b01u32 };
+    Some(SmallTbl { tbl, vars: [vi, 0, 0, 0, 0], arity: 1 })
+  } else if n.is_fun() {
+    let f = n.to_fun().unwrap();
+    let (ar, vars) = f.vars();
+    let mut tbl = f.tbl();
+    if n.is_inv() { tbl ^= tbl_mask(ar); }
+    Some(SmallTbl { tbl, vars, arity: ar })
+  } else { None }
+}
+
+// ---- truth table alignment (no heap allocation) ----
 
 /// Insert a "don't care" variable at position `pos` in a truth table of `arity`
 /// variables (MSB-first).  Returns the expanded table (arity+1 variables).
@@ -32,7 +71,6 @@ fn insert_var(tbl: u32, arity: u8, pos: u8) -> u32 {
   let n_new = n_old << 1;
   let mut result: u32 = 0;
   for j in 0..n_new {
-    // Remove bit at position `pos` from entry index j to get original index.
     let hi = (j >> (pos + 1)) << pos;
     let lo = j & ((1 << pos) - 1);
     let orig = hi | lo;
@@ -42,8 +80,7 @@ fn insert_var(tbl: u32, arity: u8, pos: u8) -> u32 {
   result
 }
 
-/// Expand a truth table's variable set to a target variable set (MSB-first).
-/// `src_vars` must be a subset of `dst_vars` (both sorted ascending).
+/// Expand a truth table from `src_vars` to `dst_vars` (MSB-first).
 fn expand_table(tbl: u32, src_vars: &[u32], dst_vars: &[u32]) -> u32 {
   let mut result = tbl;
   let mut current_arity = src_vars.len() as u8;
@@ -59,26 +96,45 @@ fn expand_table(tbl: u32, src_vars: &[u32], dst_vars: &[u32]) -> u32 {
   result
 }
 
-/// Align two table NIDs to a common variable set.
-/// Returns None if the combined variable count exceeds 5.
-pub fn align_tables(a: &NidFun, b: &NidFun) -> Option<(u32, u32, Vec<u32>)> {
-  let (ar_a, vars_a) = a.vars();
-  let (ar_b, vars_b) = b.vars();
-  let va = &vars_a[..ar_a as usize];
-  let vb = &vars_b[..ar_b as usize];
-  let mut combined = Vec::with_capacity(5);
+/// Merge two sorted variable slices into a fixed-size array.
+/// Returns (merged_vars, merged_len) or None if len > 5.
+#[inline] fn merge_small(va: &[u32], vb: &[u32]) -> Option<([u32; 5], u8)> {
+  let mut out = [0u32; 5];
+  let mut len = 0u8;
   let (mut ia, mut ib) = (0, 0);
   while ia < va.len() && ib < vb.len() {
-    if va[ia] < vb[ib] { combined.push(va[ia]); ia += 1; }
-    else if va[ia] > vb[ib] { combined.push(vb[ib]); ib += 1; }
-    else { combined.push(va[ia]); ia += 1; ib += 1; }
+    if len >= 5 && va[ia] != vb[ib] { return None; }
+    if va[ia] < vb[ib] { out[len as usize] = va[ia]; ia += 1; }
+    else if va[ia] > vb[ib] { out[len as usize] = vb[ib]; ib += 1; }
+    else { out[len as usize] = va[ia]; ia += 1; ib += 1; }
+    len += 1;
   }
-  while ia < va.len() { combined.push(va[ia]); ia += 1; }
-  while ib < vb.len() { combined.push(vb[ib]); ib += 1; }
-  if combined.len() > 5 { return None; }
-  let ta = expand_table(a.tbl(), va, &combined);
-  let tb = expand_table(b.tbl(), vb, &combined);
-  Some((ta, tb, combined))
+  while ia < va.len() { if len > 5 { return None; } out[len as usize] = va[ia]; ia += 1; len += 1; }
+  while ib < vb.len() { if len > 5 { return None; } out[len as usize] = vb[ib]; ib += 1; len += 1; }
+  if len > 5 { None } else { Some((out, len)) }
+}
+
+/// Align two SmallTbls to a common variable set.
+fn align2(a: &SmallTbl, b: &SmallTbl) -> Option<(u32, u32, [u32; 5], u8)> {
+  let (vars, len) = merge_small(a.var_slice(), b.var_slice())?;
+  let dst = &vars[..len as usize];
+  let ta = expand_table(a.tbl, a.var_slice(), dst);
+  let tb = expand_table(b.tbl, b.var_slice(), dst);
+  Some((ta, tb, vars, len))
+}
+
+/// Align three SmallTbls to a common variable set.
+fn align3(a: &SmallTbl, b: &SmallTbl, c: &SmallTbl)
+  -> Option<(u32, u32, u32, [u32; 5], u8)>
+{
+  // merge a+b first, then merge with c
+  let (ab_vars, ab_len) = merge_small(a.var_slice(), b.var_slice())?;
+  let (vars, len) = merge_small(&ab_vars[..ab_len as usize], c.var_slice())?;
+  let dst = &vars[..len as usize];
+  let ta = expand_table(a.tbl, a.var_slice(), dst);
+  let tb = expand_table(b.tbl, b.var_slice(), dst);
+  let tc = expand_table(c.tbl, c.var_slice(), dst);
+  Some((ta, tb, tc, vars, len))
 }
 
 // ---- constructing result table NIDs from raw truth tables ----
@@ -89,7 +145,6 @@ pub fn align_tables(a: &NidFun, b: &NidFun) -> Option<(u32, u32, Vec<u32>)> {
 /// - otherwise → table NID (with INV normalisation)
 pub fn make_table_nid(tbl: u32, vars: &[u32]) -> NID {
   if vars.is_empty() {
-    // arity 0: bit 0 = the single entry
     return if tbl & 1 == 0 { O } else { I }; }
   let (tbl, vars) = strip_unused_vars(tbl, vars);
   let arity = vars.len() as u8;
@@ -97,10 +152,8 @@ pub fn make_table_nid(tbl: u32, vars: &[u32]) -> NID {
   let effective = tbl & mask;
   if effective == 0 { return O; }
   if effective == mask { return I; }
-  // single variable?
   if arity == 1 {
     let v = VID::var(vars[0]);
-    // MSB-first arity-1: identity = 0b01, negation = 0b10
     return if effective == 0b01 { NID::from_vid(v) } else { !NID::from_vid(v) };
   }
   // INV normalisation: if f(0,0,…,0) = 1 (MSB is set), store ¬f and set INV.
@@ -119,11 +172,8 @@ pub fn nidfun_to_nid(f: &NidFun, vars: &[u32]) -> NID {
 
 // ---- degenerate variable detection (MSB-first) ----
 
-/// Is variable at position `pos` unused in a truth table of `arity` variables?
 fn var_is_unused(tbl: u32, arity: u8, pos: u8) -> bool {
   let n = n_entries(arity);
-  // For every pair of entries (i, i ^ (1<<pos)), check that they agree.
-  // We only need to check entries where bit `pos` is 0.
   for i in 0..n {
     if (i >> pos) & 1 == 0 {
       let j = i | (1 << pos);
@@ -135,7 +185,6 @@ fn var_is_unused(tbl: u32, arity: u8, pos: u8) -> bool {
   true
 }
 
-/// Remove variable at position `pos` from a truth table (MSB-first).
 fn remove_var(tbl: u32, arity: u8, pos: u8) -> u32 {
   let n_old = n_entries(arity);
   let n_new = n_old >> 1;
@@ -151,7 +200,6 @@ fn remove_var(tbl: u32, arity: u8, pos: u8) -> u32 {
   result
 }
 
-/// Strip unused variables from a truth table, returning the reduced table and variable list.
 fn strip_unused_vars(mut tbl: u32, vars: &[u32]) -> (u32, Vec<u32>) {
   let mut remaining: Vec<u32> = vars.to_vec();
   let mut pos = 0u8;
@@ -166,92 +214,57 @@ fn strip_unused_vars(mut tbl: u32, vars: &[u32]) -> (u32, Vec<u32>) {
   (tbl, remaining)
 }
 
-// ---- promoting consts/vars to truth tables for alignment ----
-
-/// Get the truth table (MSB-first) and variable set for any "small" NID.
-/// Returns None for BDD nodes.
-fn nid_to_table(n: NID) -> Option<(u32, Vec<u32>)> {
-  if n.is_const() {
-    Some((if n == I { 0xFFFFFFFF } else { 0 }, vec![]))
-  } else if n.is_var() {
-    let vi = n.vid().var_ix() as u32;
-    // MSB-first arity-1: identity = 0b01
-    let tbl = if n.is_inv() { 0b10u32 } else { 0b01u32 };
-    Some((tbl, vec![vi]))
-  } else if n.is_fun() {
-    let f = n.to_fun().unwrap();
-    let (ar, vars) = f.vars();
-    let mut tbl = f.tbl();  // already MSB-first
-    if n.is_inv() { tbl ^= tbl_mask(ar); }
-    Some((tbl, vars[..ar as usize].to_vec()))
-  } else {
-    None
-  }
-}
-
-/// Merge two sorted variable lists.
-fn merge_vars(va: &[u32], vb: &[u32]) -> Vec<u32> {
-  let mut combined = Vec::with_capacity(va.len() + vb.len());
-  let (mut ia, mut ib) = (0, 0);
-  while ia < va.len() && ib < vb.len() {
-    if va[ia] < vb[ib] { combined.push(va[ia]); ia += 1; }
-    else if va[ia] > vb[ib] { combined.push(vb[ib]); ib += 1; }
-    else { combined.push(va[ia]); ia += 1; ib += 1; }
-  }
-  while ia < va.len() { combined.push(va[ia]); ia += 1; }
-  while ib < vb.len() { combined.push(vb[ib]); ib += 1; }
-  combined
-}
-
-/// Align two NIDs to a common variable set. Returns None if either is a BDD
-/// node or combined vars > 5.
-fn align_nids(a: NID, b: NID) -> Option<(u32, u32, Vec<u32>)> {
-  let (ta, va) = nid_to_table(a)?;
-  let (tb, vb) = nid_to_table(b)?;
-  let combined = merge_vars(&va, &vb);
-  if combined.len() > 5 { return None; }
-  Some((expand_table(ta, &va, &combined),
-        expand_table(tb, &vb, &combined),
-        combined))
-}
-
-/// Align three NIDs to a common variable set.
-fn align_three(i: NID, t: NID, e: NID) -> Option<(u32, u32, u32, Vec<u32>)> {
-  let (ti, vi) = nid_to_table(i)?;
-  let (tt, vt) = nid_to_table(t)?;
-  let (te, ve) = nid_to_table(e)?;
-  let combined = merge_vars(&merge_vars(&vi, &vt), &ve);
-  if combined.len() > 5 { return None; }
-  Some((expand_table(ti, &vi, &combined),
-        expand_table(tt, &vt, &combined),
-        expand_table(te, &ve, &combined),
-        combined))
-}
-
 // ---- table-level operations ----
 
 /// Compute AND of two NIDs entirely via truth tables.
 pub fn table_and(x: NID, y: NID) -> Option<NID> {
-  let (tx, ty, vars) = align_nids(x, y)?;
-  Some(make_table_nid(tx & ty, &vars))
+  if quick_arity(x) + quick_arity(y) > 5 { return None; }
+  let a = nid_to_small(x)?;
+  let b = nid_to_small(y)?;
+  let (ta, tb, vars, len) = align2(&a, &b)?;
+  Some(make_table_nid(ta & tb, &vars[..len as usize]))
 }
 
 /// Compute XOR of two NIDs entirely via truth tables.
 pub fn table_xor(x: NID, y: NID) -> Option<NID> {
-  let (tx, ty, vars) = align_nids(x, y)?;
-  Some(make_table_nid(tx ^ ty, &vars))
+  if quick_arity(x) + quick_arity(y) > 5 { return None; }
+  let a = nid_to_small(x)?;
+  let b = nid_to_small(y)?;
+  let (ta, tb, vars, len) = align2(&a, &b)?;
+  Some(make_table_nid(ta ^ tb, &vars[..len as usize]))
 }
 
 /// Compute OR of two NIDs entirely via truth tables.
 pub fn table_or(x: NID, y: NID) -> Option<NID> {
-  let (tx, ty, vars) = align_nids(x, y)?;
-  Some(make_table_nid(tx | ty, &vars))
+  if quick_arity(x) + quick_arity(y) > 5 { return None; }
+  let a = nid_to_small(x)?;
+  let b = nid_to_small(y)?;
+  let (ta, tb, vars, len) = align2(&a, &b)?;
+  Some(make_table_nid(ta | tb, &vars[..len as usize]))
 }
 
 /// Compute ITE(i, t, e) entirely via truth tables.
 pub fn table_ite(i: NID, t: NID, e: NID) -> Option<NID> {
-  let (ti, tt, te, vars) = align_three(i, t, e)?;
-  Some(make_table_nid((ti & tt) | (!ti & te), &vars))
+  if quick_arity(i) + quick_arity(t) + quick_arity(e) > 5 { return None; }
+  let si = nid_to_small(i)?;
+  let st = nid_to_small(t)?;
+  let se = nid_to_small(e)?;
+  let (ti, tt, te, vars, len) = align3(&si, &st, &se)?;
+  Some(make_table_nid((ti & tt) | (!ti & te), &vars[..len as usize]))
+}
+
+
+// ---- public helpers for external callers (vhl.rs, bdd.rs) ----
+
+/// Align two table NIDs to a common variable set.
+/// Returns None if the combined variable count exceeds 5.
+pub fn align_tables(a: &NidFun, b: &NidFun) -> Option<(u32, u32, Vec<u32>)> {
+  let (ar_a, vars_a) = a.vars();
+  let (ar_b, vars_b) = b.vars();
+  let sa = SmallTbl { tbl: a.tbl(), vars: vars_a, arity: ar_a };
+  let sb = SmallTbl { tbl: b.tbl(), vars: vars_b, arity: ar_b };
+  let (ta, tb, vars, len) = align2(&sa, &sb)?;
+  Some((ta, tb, vars[..len as usize].to_vec()))
 }
 
 
@@ -321,18 +334,15 @@ mod tests {
 
   /// Evaluate a NID on a specific input assignment (MSB-first convention).
   fn eval_nid(n: NID, vars_vals: &[(u32, bool)]) -> bool {
-    if let Some((tbl, vars)) = nid_to_table(n) {
-      let nn = n_entries(vars.len() as u8);
-      let mut row = 0u32;
-      for (pos, &v) in vars.iter().enumerate() {
-        for &(vi, val) in vars_vals {
-          if vi == v && val { row |= 1 << pos; }
-        }
+    let s = nid_to_small(n).expect("eval_nid: not a table/const/var NID");
+    let nn = n_entries(s.arity);
+    let mut row = 0u32;
+    for (pos, &v) in s.var_slice().iter().enumerate() {
+      for &(vi, val) in vars_vals {
+        if vi == v && val { row |= 1 << pos; }
       }
-      (tbl >> (nn - 1 - row)) & 1 == 1
-    } else {
-      panic!("eval_nid: not a table/const/var NID");
     }
+    (s.tbl >> (nn - 1 - row)) & 1 == 1
   }
 
   #[test]
@@ -493,5 +503,19 @@ mod tests {
     assert_eq!(table_xor(x0, x0).unwrap(), O);
     let a = table_and(x0, x1).unwrap();
     assert_eq!(table_xor(a, a).unwrap(), O);
+  }
+
+  #[test]
+  fn test_early_bailout() {
+    // BDD nodes (not const/var/fun) should return None instantly
+    let bdd_nid = NID::from_vid_idx(VID::var(0), 42);
+    assert!(table_and(bdd_nid, x0).is_none());
+    assert!(table_ite(bdd_nid, x0, x1).is_none());
+
+    // Arity sum > 5 should bail before any real work
+    let big = table_and(x0, table_and(x1, x2).unwrap()).unwrap(); // arity 3
+    let big2 = table_and(x3, table_and(x4, NID::var(5)).unwrap()).unwrap(); // arity 3
+    // 3 + 3 = 6 > 5, bails at the arity check
+    assert!(table_and(big, big2).is_none());
   }
 }
