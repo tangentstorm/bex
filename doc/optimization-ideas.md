@@ -121,6 +121,12 @@ Added `get_or_insert` method that tries a read lock first, only upgrading
 to write lock on cache miss. Combined these avoid double-locking in
 `vhl_to_nid`. ~7% improvement (34s avg vs 37s baseline).
 
+### DashMap: increase shard count from 16 to 128 + pre-size to 16K entries
+The default 16 shards meant high contention per shard with 40M operations.
+128 shards dramatically reduces lock contention. Pre-sizing avoids early
+rehashing. ~14% improvement over previous (30s avg vs 34s). Cumulative
+~19% improvement vs original baseline (30s vs 37s).
+
 ## Rejected Ideas
 
 ### 1. Single-threaded BDD solver

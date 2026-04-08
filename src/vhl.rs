@@ -149,7 +149,7 @@ impl HiLoCache {
 
   // TODO: ->Option<HiLo>, and then impl HiLoBase
   #[inline] pub fn get_hilo(&self, n:NID)->HiLo {
-    assert!(!n.is_lit());
+    debug_assert!(!n.is_lit());
     let res = self.inner.read().unwrap().hilos.vec[n.idx()];
     if n.is_inv() { res.invert() } else { res }}
 
