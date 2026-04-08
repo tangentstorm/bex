@@ -150,6 +150,15 @@ No clear improvement (within noise). The allocation overhead is from the
 sheer number of allocations, not allocator inefficiency.
 
 ### 3. Pre-size DashMap / SmallVec for deps and jobs
-No clear improvement. DashMap pre-sizing doesn't help because the bottleneck
-is per-operation cost, not rehashing. SmallVec for deps made entries larger,
-potentially hurting cache performance.
+SmallVec for deps made entries larger, potentially hurting cache performance.
+DashMap pre-sizing at 16K was too small — eventually helped at 256K (see above).
+
+### 14. Replace boxcar::Vec with plain Vec + RwLock
+Tested: boxcar::Vec is actually better because it never relocates data during
+growth (chunk-based), while Vec must copy everything on resize. With 15.4M
+nodes, Vec relocation overhead outweighed the atomic-access overhead of boxcar.
+
+### VID #[inline(always)] + parking_lot RwLock
+Both within noise. Compiler already inlines small VID functions in release.
+parking_lot's faster lock implementation doesn't help because lock *frequency*
+is the bottleneck, not lock *implementation*.
