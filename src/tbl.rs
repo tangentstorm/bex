@@ -245,7 +245,12 @@ pub fn table_or(x: NID, y: NID) -> Option<NID> {
 
 /// Compute ITE(i, t, e) entirely via truth tables.
 pub fn table_ite(i: NID, t: NID, e: NID) -> Option<NID> {
-  if quick_arity(i) + quick_arity(t) + quick_arity(e) > 5 { return None; }
+  // Bail early if we can't possibly fit in 5 vars.
+  // Use max(at,ae)+ai as a tighter bound than at+ae+ai since t and e often
+  // share variables (e.g. xor(a,b) = ite(a,!b,b) where t and e overlap fully).
+  let ai = quick_arity(i); let at = quick_arity(t); let ae = quick_arity(e);
+  let upper = ai + at.max(ae);
+  if upper > 5 { return None; }
   let si = nid_to_small(i)?;
   let st = nid_to_small(t)?;
   let se = nid_to_small(e)?;
