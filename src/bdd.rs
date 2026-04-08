@@ -96,14 +96,16 @@ impl ITE {
 pub struct BddBase {
   /// allows us to give user-friendly names to specific nodes in the base.
   pub tags: HashMap<String, NID>,
-  pub swarm: BddSwarm} // TODO: nopub
+  pub swarm: BddSwarm, // TODO: nopub
+  /// if true, try to resolve ite() calls via truth tables before entering the swarm.
+  pub table_shortcircuit: bool}
 
 impl BddBase {
 
-  pub fn new()->BddBase { BddBase{swarm: BddSwarm::new(), tags:HashMap::new()}}
+  pub fn new()->BddBase { BddBase{swarm: BddSwarm::new(), tags:HashMap::new(), table_shortcircuit: false}}
 
   pub fn new_with_threads(n:usize)->BddBase {
-    BddBase{swarm: BddSwarm::new_with_threads(n), tags:HashMap::new()}}
+    BddBase{swarm: BddSwarm::new_with_threads(n), tags:HashMap::new(), table_shortcircuit: false}}
 
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)->(NID,NID) { self.swarm.tup(n) }
@@ -124,7 +126,10 @@ impl BddBase {
   pub fn  lt(&mut self, x:NID, y:NID)->NID { self.ite(x, O, y) }
 
   /// all-purpose node creation/lookup
-  #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID { self.swarm.ite(f,g,h) }
+  #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
+    if self.table_shortcircuit {
+      if let Some(r) = crate::tbl::table_ite(f,g,h) { return r; }}
+    self.swarm.ite(f,g,h) }
 
 
   /// swap input variables x and y within bdd n
@@ -333,7 +338,7 @@ impl Default for BddBase { fn default() -> Self { Self::new() }}
 
 impl Base for BddBase {
 
-  fn new()->BddBase { BddBase{swarm: BddSwarm::new(), tags:HashMap::new()}}
+  fn new()->BddBase { BddBase{swarm: BddSwarm::new(), tags:HashMap::new(), table_shortcircuit: false}}
 
   /// nid of y when x is high
   fn when_hi(&mut self, x:VID, y:NID)->NID {

@@ -83,6 +83,9 @@ pub fn align_tables(a: &NidFun, b: &NidFun) -> Option<(u32, u32, Vec<u32>)> {
 /// - single-variable -> var NID or !var NID
 /// - otherwise -> table NID
 pub fn make_table_nid(tbl: u32, vars: &[u32]) -> NID {
+  if vars.is_empty() { return if tbl & 1 == 0 { O } else { I }; }
+  // Strip degenerate variables then normalize.
+  let (tbl, vars) = strip_unused_vars(tbl, vars);
   let arity = vars.len();
   let mask = if arity >= 5 { 0xFFFFFFFFu32 } else { (1u32 << (1u32 << arity)) - 1 };
   let effective = tbl & mask;
@@ -92,12 +95,64 @@ pub fn make_table_nid(tbl: u32, vars: &[u32]) -> NID {
   // single variable?
   if arity == 1 {
     let v = VID::var(vars[0]);
-    let var_pattern = 0b10u32; // truth table for identity: f(x)=x
-    if effective == var_pattern { return NID::from_vid(v); }
+    if effective == 0b10u32 { return NID::from_vid(v); }
     else { return !NID::from_vid(v); }
   }
-  // general table NID
-  NID::fun_with_vars(vars, effective).to_nid()
+  // INV normalization: if bit 0 is set, store inverted table with INV flag.
+  if effective & 1 == 1 {
+    let inv_tbl = !effective & mask;
+    return !NID::fun_with_vars(&vars, inv_tbl).to_nid();
+  }
+  NID::fun_with_vars(&vars, effective).to_nid()
+}
+
+/// Check if variable at position `pos` in a truth table of `arity` variables is unused.
+/// A variable is unused if setting it to 0 or 1 gives the same result.
+fn var_is_unused(tbl: u32, arity: u8, pos: u8) -> bool {
+  let block = 1u32 << pos;
+  // Mask that selects every other group of `block` bits
+  let mut lo_mask: u32 = 0;
+  let n = 1u32 << arity;
+  let mut i = 0u32;
+  while i < n {
+    // bits i..i+block have the variable = 0
+    for j in 0..block { lo_mask |= 1 << (i + j); }
+    i += 2 * block;
+  }
+  let lo_val = tbl & lo_mask;
+  let hi_val = (tbl >> block) & lo_mask;
+  lo_val == hi_val
+}
+
+/// Strip unused variables from a truth table, returning the reduced table and variable list.
+fn strip_unused_vars(mut tbl: u32, vars: &[u32]) -> (u32, Vec<u32>) {
+  let mut remaining: Vec<u32> = vars.to_vec();
+  let mut pos = 0u8;
+  while (pos as usize) < remaining.len() {
+    if var_is_unused(tbl, remaining.len() as u8, pos) {
+      // Remove variable at this position: collapse the table
+      let block = 1u32 << pos;
+      let arity = remaining.len() as u8;
+      let n = 1u32 << arity;
+      let mut new_tbl: u32 = 0;
+      let mut src = 0u32;
+      let mut dst = 0u32;
+      while src < n {
+        for _ in 0..block {
+          new_tbl |= ((tbl >> src) & 1) << dst;
+          src += 1;
+          dst += 1;
+        }
+        src += block; // skip the duplicate block
+      }
+      tbl = new_tbl;
+      remaining.remove(pos as usize);
+      // Don't increment pos: the next variable shifted into this position
+    } else {
+      pos += 1;
+    }
+  }
+  (tbl, remaining)
 }
 
 /// Convert a NidFun (from a Fun::when() result) + remaining variable set to the correct NID.
@@ -380,14 +435,15 @@ mod tests {
 
   #[test]
   fn test_table_and_overlapping_vars() {
-    // f(x1, x3) AND g(x2, x3) -> combined {x1, x2, x3}, 3 vars
-    let f = NID::fun_with_vars(&[1, 3], 0b1110).to_nid(); // x1 OR x3
-    let g = NID::fun_with_vars(&[2, 3], 0b1000).to_nid(); // x2 AND x3
+    // f(x1, x3) = x1 OR x3, g(x2, x3) = x2 AND x3
+    // (x1 OR x3) AND (x2 AND x3) simplifies to x2 AND x3 (x1 is unused)
+    let f = NID::fun_with_vars(&[1, 3], 0b1110).to_nid();
+    let g = NID::fun_with_vars(&[2, 3], 0b1000).to_nid();
     let result = table_and(f, g).unwrap();
     let rf = result.to_fun().unwrap();
-    assert_eq!(rf.arity(), 3);
+    assert_eq!(rf.arity(), 2);
     let (_, vs) = rf.vars();
-    assert_eq!(&vs[..3], &[1, 2, 3]);
+    assert_eq!(&vs[..2], &[2, 3]);
   }
 
   #[test]
@@ -400,5 +456,49 @@ mod tests {
     assert_eq!(make_table_nid(0b10, &[3]), NID::var(3));
     // single var inverted
     assert_eq!(make_table_nid(0b01, &[3]), !NID::var(3));
+  }
+
+  #[test]
+  fn test_strip_unused_vars() {
+    // x0 AND x1 = 0b1000. Table truly depends on both -> no change.
+    let (tbl, vars) = strip_unused_vars(0b1000, &[0, 1]);
+    assert_eq!(vars, vec![0, 1]);
+    assert_eq!(tbl, 0b1000);
+
+    // Table 0b1010 over {x0, x1} = just x0 (doesn't depend on x1)
+    let (tbl, vars) = strip_unused_vars(0b1010, &[0, 1]);
+    assert_eq!(vars, vec![0]);
+    assert_eq!(tbl, 0b10); // reduced to 1-var table for x0
+
+    // Table 0b1100 over {x0, x1} = just x1 (doesn't depend on x0)
+    let (tbl, vars) = strip_unused_vars(0b1100, &[0, 1]);
+    assert_eq!(vars, vec![1]);
+    assert_eq!(tbl, 0b10);
+  }
+
+  #[test]
+  fn test_make_table_nid_removes_unused() {
+    // make_table_nid should detect that 0b1010 over {x0, x1} only depends on x0
+    let n = make_table_nid(0b1010, &[0, 1]);
+    assert_eq!(n, x0);
+  }
+
+  #[test]
+  fn test_inv_normalization() {
+    // 0b0111 over {x0, x1} has bit 0 = 1, so it should be stored inverted
+    let n = make_table_nid(0b0111, &[0, 1]);
+    assert!(n.is_inv(), "should be inverted");
+    let raw = n.raw();
+    let f = raw.to_fun().unwrap();
+    assert_eq!(f.tbl(), 0b1000); // stored as NAND = !(AND)
+  }
+
+  #[test]
+  fn test_table_xor_degenerate_result() {
+    // x0 XOR x0 = O (via table operation)
+    assert_eq!(table_xor(x0, x0).unwrap(), O);
+    // (x0 AND x1) XOR (x0 AND x1) = O
+    let a = table_and(x0, x1).unwrap();
+    assert_eq!(table_xor(a, a).unwrap(), O);
   }
 }
