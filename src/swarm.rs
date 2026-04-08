@@ -3,7 +3,7 @@ use std::{marker::PhantomData, thread};
 use std::fmt::Debug;
 use std::collections::HashMap;
 use crossbeam_channel::{Receiver, RecvError, SendError, Sender, select, unbounded};
-use rand::seq::SliceRandom;
+
 
 /// query id
 #[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
@@ -167,12 +167,11 @@ impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+De
     self.whs.insert(wid, wtx);
     wid }
 
-  /// send query to an arbitrary worker.
+  /// send query to an arbitrary worker (round-robin).
   pub fn add_query(&mut self, q:Q)->QID {
-    // let wid = self.whs.keys().collect::<Vec<_>>()[0];
-    let &wid = self.whs.keys().collect::<Vec<_>>()
-       .choose(&mut rand::thread_rng()).unwrap();
-    self.send(*wid, q)}
+    let wid = self.whs.keys().nth(self.nq % self.whs.len())
+      .copied().unwrap();
+    self.send(wid, q)}
 
   pub fn send(&mut self, wid:WID, q:Q)->QID {
     let qid = QID::STEP(self.nq); self.nq+=1;

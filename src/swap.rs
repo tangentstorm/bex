@@ -37,6 +37,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
+type FxHashMap<K, V> = HashMap<K, V, fxhash::FxBuildHasher>;
 use crate::base::GraphViz;
 use crate::vid::{VID, NOV, TOP};
 use crate::{solve::SubSolver, reg::Reg, nid::NID, ops::Ops};
@@ -74,31 +75,31 @@ We need to map:
   we'll call this VhlRow
 */
 #[derive(Clone, Debug)]
-struct VhlRow { hm: HashMap<HiLo, IxRc> }
+struct VhlRow { hm: FxHashMap<HiLo, IxRc> }
 impl VhlRow {
-  fn new()->Self {VhlRow{ hm: HashMap::new() }}
+  fn new()->Self {VhlRow{ hm: FxHashMap::default() }}
   /// build a reverse index, mapping of nids to hilo pairs
-  fn xid_map(&self)->HashMap<NID,HiLo> { self.hm.iter().map(|(hl,ixrc)|(ixrc.ix,*hl)).collect() }}
+  fn xid_map(&self)->FxHashMap<NID,HiLo> { self.hm.iter().map(|(hl,ixrc)|(ixrc.ix,*hl)).collect() }}
 
 /// The scaffold itself contains the master list of records (vhls) and the per-row index
 #[derive(Clone)]
 pub struct VhlScaffold {
   vids: Vec<VID>,
   vhls: Vec<Vhl>,
-  rows: HashMap<VID, VhlRow>,
+  rows: FxHashMap<VID, VhlRow>,
   /// tracks whether all workers have completed their work
-  complete: HashMap<VID,WID>,
+  complete: FxHashMap<VID,WID>,
   /// tracks rows that are locked during the distributed regroup() operation
   locked: HashSet<VID>,
   /// tracks refcount changes that are pending for locked rows ("deferred refcount delta")
-  drcd: HashMap<VID,HashMap<NID, i64>> }
+  drcd: FxHashMap<VID,FxHashMap<NID, i64>> }
 
 // snapshot used for debugging
 thread_local! { static SNAPSHOT : RefCell<VhlScaffold> = RefCell::new(VhlScaffold::new()) }
 
 impl VhlScaffold {
   pub fn new()->Self { VhlScaffold{
-    vids:vec![], vhls:vec![VHL_O], rows: HashMap::new(), locked:HashSet::new(), drcd:HashMap::new(), complete:HashMap::new() } }
+    vids:vec![], vhls:vec![VHL_O], rows: FxHashMap::default(), locked:HashSet::new(), drcd:FxHashMap::default(), complete:FxHashMap::default() } }
 
   pub fn dump(&self, msg:&str) {
     println!("@dump: {}", msg);
@@ -604,8 +605,8 @@ impl VhlScaffold {
   /// completely partition the scaffold vids.
   pub fn regroup(&mut self, groups:Vec<HashSet<VID>>) {
     assert!(self.locked.is_empty());
-    self.complete = HashMap::new();
-    self.drcd = HashMap::new();
+    self.complete = FxHashMap::default();
+    self.drcd = FxHashMap::default();
     self.validate("before regroup()");
     // (var, ix) pairs, where plan is to lift var to row ix
     let plan = self.plan_regroup(&groups);
@@ -702,7 +703,7 @@ impl VhlScaffold {
   /// called whenever a worker returns a downward-moving row to the scaffold
   #[allow(clippy::too_many_arguments)]
   fn swarm_put_rd(&mut self, plan:&HashMap<VID,usize>, alarm:&mut HashMap<VID,WID>,
-    wid:WID, vu:VID, vd:VID, rd:VhlRow, dnew:Vec<Mod>, umov:Vec<Mod>, dels:Vec<usize>, refs:HashMap<NID,i64>
+    wid:WID, vu:VID, vd:VID, rd:VhlRow, dnew:Vec<Mod>, umov:Vec<Mod>, dels:Vec<usize>, refs:FxHashMap<NID,i64>
   )->SwarmCmd<Q,()> {
     // replace and unlock the downward-moving row:
     debug_assert_eq!(vd, self.vid_above(vu).unwrap(), "row d isn't the row that was above row u!?!");
@@ -795,14 +796,14 @@ enum Q {
   Init{ vu:VID, ru: VhlRow },
   Step{ vd:VID, rd: VhlRow },
   Stop,
-  DRcD( HashMap<NID,i64> ),
+  DRcD( FxHashMap<NID,i64> ),
   Xids( Vec<usize> )}
 
 #[derive(Debug)]
 enum R {
   DRcD{ vu:VID },
   Alloc{ needed:usize },
-  PutRD{ vu:VID, vd:VID, rd: VhlRow, dnew:Vec<Mod>, umov:Vec<Mod>, dels:Vec<usize>, refs:HashMap<NID, i64> },
+  PutRD{ vu:VID, vd:VID, rd: VhlRow, dnew:Vec<Mod>, umov:Vec<Mod>, dels:Vec<usize>, refs:FxHashMap<NID, i64> },
   PutRU{ vu:VID, ru: VhlRow }}
 
 // -- graphviz ----------------------------------------------------------
@@ -884,29 +885,29 @@ struct SwapWorker {
   /// row d is the row that moves downward.
   rd:VhlRow,
   /// external reference counts to change
-  refs: HashMap<NID, i64>,
+  refs: FxHashMap<NID, i64>,
   /// track any nodes we've deleted (so scaffold can recycle them)
   dels: Vec<usize>,
   /// indices we've recycled ourselves
   mods: Vec<usize>,
   // reverse map for row u (so we can see if a branch from d points to row u)
-  ru_map:HashMap<NID,HiLo>,
+  ru_map:FxHashMap<NID,HiLo>,
   // reverse map for row d (to detect when we need a new ref from a umov to an existing node on row d)
-  rd_map:HashMap<NID,HiLo>,
+  rd_map:FxHashMap<NID,HiLo>,
   /// wip for nodes moving to row u.
   umov: Vec<(IxRc,XWIP1,XWIP1)>,
   // next (fake/tmp) xid to assign
   next:i64,
   /// new parent nodes to create on row d
-  dnew: HashMap<(NID,NID), IxRc> }
+  dnew: FxHashMap<(NID,NID), IxRc> }
 
 impl Worker<Q,R> for SwapWorker {
 
   fn new(wid:WID)->SwapWorker {
     SwapWorker{ wid, next:0,
-      vu:VID::nov(), ru:VhlRow::new(), ru_map:HashMap::new(),
-      vd:VID::nov(), rd:VhlRow::new(), rd_map:HashMap::new(),
-      refs:HashMap::new(), dels:vec![], mods:vec![], umov:vec![], dnew:HashMap::new() }}
+      vu:VID::nov(), ru:VhlRow::new(), ru_map:FxHashMap::default(),
+      vd:VID::nov(), rd:VhlRow::new(), rd_map:FxHashMap::default(),
+      refs:FxHashMap::default(), dels:vec![], mods:vec![], umov:vec![], dnew:FxHashMap::default() }}
 
   fn get_wid(&self)->WID { self.wid }
 
@@ -943,7 +944,7 @@ impl SwapWorker {
     // self.refs = HashMap::new();
     // self.dels = vec![]; - don't replace this because we call gc(row::U) in set_ru (before we call this).
     self.umov = vec![];
-    self.dnew = HashMap::new();
+    self.dnew = FxHashMap::default();
     self.next = 0;
     self }
 
@@ -960,7 +961,7 @@ impl SwapWorker {
   /// garbage collect nodes on one of the rows:
   fn gc(&mut self, which:Row) {
     let mut dels = vec![];
-    let mut refs: HashMap::<NID, i64> = HashMap::new();
+    let mut refs: FxHashMap::<NID, i64> = FxHashMap::default();
     let row = match which { Row::U => &mut self.ru, Row::D => &mut self.rd };
     row.hm.retain(|hl, ixrc| {
       if ixrc.rc() == 0 {
