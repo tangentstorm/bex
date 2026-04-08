@@ -273,63 +273,6 @@ pub fn align_tables(a: &NidFun, b: &NidFun) -> Option<(u32, u32, Vec<u32>)> {
 }
 
 
-// ---- TableBase decorator ----
-
-/// A decorator around any `Base` that automatically computes operations
-/// on table NIDs (and constants/variables) without entering the BDD pipeline.
-pub struct TableBase<T: crate::base::Base> { pub base: T }
-
-impl<T: crate::base::Base> crate::base::Base for TableBase<T> {
-  crate::inherit![new, def, tag, get, sub, dot];
-
-  fn when_hi(&mut self, v:VID, n:NID)->NID {
-    if n.is_fun() {
-      if let Some(f) = n.to_fun() {
-        if let Some(pos) = f.var_position(v) {
-          let reduced = f.when(pos, true);
-          let (ar, vs) = f.vars();
-          let mut new_vars: Vec<u32> = vs[..ar as usize].to_vec();
-          new_vars.remove(pos as usize);
-          let result = nidfun_to_nid(&reduced, &new_vars);
-          return if n.is_inv() { !result } else { result };
-        } else { return n; }}}
-    self.base.when_hi(v, n)
-  }
-
-  fn when_lo(&mut self, v:VID, n:NID)->NID {
-    if n.is_fun() {
-      if let Some(f) = n.to_fun() {
-        if let Some(pos) = f.var_position(v) {
-          let reduced = f.when(pos, false);
-          let (ar, vs) = f.vars();
-          let mut new_vars: Vec<u32> = vs[..ar as usize].to_vec();
-          new_vars.remove(pos as usize);
-          let result = nidfun_to_nid(&reduced, &new_vars);
-          return if n.is_inv() { !result } else { result };
-        } else { return n; }}}
-    self.base.when_lo(v, n)
-  }
-
-  fn and(&mut self, x:NID, y:NID)->NID {
-    if let Some(r) = table_and(x, y) { return r; }
-    self.base.and(x, y)
-  }
-
-  fn xor(&mut self, x:NID, y:NID)->NID {
-    if let Some(r) = table_xor(x, y) { return r; }
-    self.base.xor(x, y)
-  }
-
-  fn or(&mut self, x:NID, y:NID)->NID {
-    if let Some(r) = table_or(x, y) { return r; }
-    self.base.or(x, y)
-  }
-
-  fn ite(&mut self, i:NID, t:NID, e:NID)->NID {
-    if let Some(r) = table_ite(i, t, e) { return r; }
-    self.base.ite(i, t, e)
-  }
-}
 
 
 #[cfg(test)]
