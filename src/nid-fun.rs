@@ -22,8 +22,38 @@ fn select_bits(x:u32, pv:&[u8])->u32 {
   r }
 
 impl NidFun {
-  pub fn tbl(&self)->u32 { self.nid.tbl().unwrap() }
-  pub fn to_nid(&self)->NID { self.nid }}
+  pub fn tbl(&self)->u32 { self.nid.raw().tbl().unwrap() }
+  pub fn to_nid(&self)->NID { self.nid }
+
+  /// The raw combinadic index stored in bits 58-32.
+  /// Masks off all flag bits (INV, VAR, T, RVAR, F) to get just the 27-bit mid-field.
+  #[inline] pub fn combinadic(&self)->u32 {
+    const COMB_MASK: u64 = ((1u64 << 27) - 1) << 32; // bits 58..32
+    ((self.nid.n & COMB_MASK) >> 32) as u32 }
+
+  /// Decode the variable set from the combinadic.
+  pub fn vars(&self)->(u8, [u32; 5]) { crate::comb::decode(self.combinadic()) }
+
+  /// The top (highest-index) variable in this function's variable set.
+  #[inline] pub fn top_vid(&self)->vid::VID {
+    vid::VID::var(crate::comb::top_var_of(self.combinadic())) }
+
+  /// Does this function depend on the given variable?
+  pub fn contains_var(&self, v:vid::VID)->bool {
+    if !v.is_var() { return false }
+    let vi = v.var_ix();
+    let (arity, vs) = self.vars();
+    vs[..arity as usize].contains(&(vi as u32))
+  }
+
+  /// Position of the given variable in the sorted variable set (0 = lowest).
+  pub fn var_position(&self, v:vid::VID)->Option<u8> {
+    if !v.is_var() { return None }
+    let vi = v.var_ix();
+    let (arity, vs) = self.vars();
+    vs[..arity as usize].iter().position(|&x| x == vi as u32).map(|p| p as u8)
+  }
+}
 
 use std::fmt::{Formatter,Debug,Error};
 impl Debug for NidFun {
@@ -50,7 +80,7 @@ impl Fun for NidFun {
   // 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31
 
   #[inline(always)] fn arity(&self)->u8 {
-    (self.nid.n >> 32 & 0xff) as u8 }
+    crate::comb::arity_of(self.combinadic()) }
 
   /// given a function, return the function you'd get if you inverted one or more of the input bits.
   /// bits is a bitmap where setting the (2^i)'s-place bit means to invert the `i`th input.

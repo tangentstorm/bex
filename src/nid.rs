@@ -229,7 +229,12 @@ impl NID {
 
   #[inline(always)] pub fn from_vid(v:vid::VID)->Self { nv(vid_to_bits(v)) }
   #[inline(always)] pub fn from_vid_idx(v:vid::VID, i:usize)->Self { nvi(vid_to_bits(v), i) }
-  #[inline(always)] pub fn vid(&self)->vid::VID { bits_to_vid(vid_bits(*self)) }
+  #[inline(always)] pub fn vid(&self)->vid::VID {
+    if self.is_fun() {
+      const COMB_MASK: u64 = ((1u64 << 27) - 1) << 32;
+      let comb_idx = ((self.n & COMB_MASK) >> 32) as u32;
+      vid::VID::var(crate::comb::top_var_of(comb_idx))
+    } else { bits_to_vid(vid_bits(*self)) }}
   // return a nid that is not tied to a variable
   #[inline(always)] pub fn ixn(ix:usize)->Self { nvi(NOVAR, ix) }
 
@@ -266,8 +271,21 @@ impl NID {
   #[inline(always)] pub fn raw(self)->NID { NID{ n: self.n & !INV }}
 
   /// construct a NID holding a truth table for up to 5 input bits.
+  /// Variables are implicitly x0..x(arity-1).
   #[inline(always)] pub const fn fun(arity:u8, tbl:u32)->NidFun {
-    NidFun { nid: NID { n:F+(((1<<(1<<arity)) -1) & tbl as u64)+((arity as u64)<< 32)}} }
+    let comb_idx = crate::comb::OFFSET[arity as usize];
+    let shift = 1u32 << (arity as u32);
+    let tbl_mask = (1u64 << shift) - 1;
+    NidFun { nid: NID { n: F + (tbl_mask & tbl as u64) + ((comb_idx as u64) << 32) }}}
+
+  /// construct a NID holding a truth table for a function of the given variables.
+  /// `vars` must be sorted ascending, length 2..=5, all values < comb::MAX_VAR.
+  pub fn fun_with_vars(vars:&[u32], tbl:u32)->NidFun {
+    let arity = vars.len() as u8;
+    let comb_idx = crate::comb::encode(vars);
+    let shift = 1u32 << (arity as u32);
+    let tbl_mask = (1u64 << shift) - 1;
+    NidFun { nid: NID { n: F + (tbl_mask & tbl as u64) + ((comb_idx as u64) << 32) }}}
 
   /// is this NID a function (truth table)?
   #[inline(always)] pub fn is_fun(&self)->bool { self.n & F == F }
@@ -281,6 +299,9 @@ impl NID {
   #[inline] pub fn might_depend_on(&self, v:vid::VID)->bool {
     if self.is_const() { false }
     else if self.is_vid() { self.vid() == v }
+    else if self.is_fun() {
+      if let Some(f) = self.to_fun() { f.contains_var(v) } else { false }
+    }
     else { let sv = self.vid(); sv == v || sv.is_above(&v) }}
 
   // -- int conversions used by the dd python package
