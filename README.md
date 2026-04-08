@@ -46,6 +46,11 @@ and the smaller tests in [src/solve.rs](src/solve.rs)
   - Only `!` for negation (remove `~` and `not`).
   - Only `O` and `I` for constants (remove lowercase aliases).
 - API: no response format change; endpoints still return plain text, but paths now accept the updated NID syntax (uppercase hex, `@…`, extended `t…`, `fX`).
+- Performance: ~22% speedup on BDD factoring benchmark (`small`):
+  - Replace `HiLoCache` `Mutex` with `RwLock` + combined `get_or_insert` method
+  - Increase DashMap shard count from 16 to 128
+  - Pre-size hash tables to reduce rehash cascades
+  - See [doc/optimization-ideas.md](doc/optimization-ideas.md) for full profiling notes
 
 ## Release versions
 
