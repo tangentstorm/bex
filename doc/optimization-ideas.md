@@ -162,3 +162,21 @@ nodes, Vec relocation overhead outweighed the atomic-access overhead of boxcar.
 Both within noise. Compiler already inlines small VID functions in release.
 parking_lot's faster lock implementation doesn't help because lock *frequency*
 is the bottleneck, not lock *implementation*.
+
+### 5. AST HashMap → FxHashMap
+No improvement. AST construction is a tiny fraction of the total solve time.
+The hot path is ITE computation, not AST building.
+
+### 11. Pre-allocate boxcar::Vec capacity
+No improvement. boxcar::Vec already allocates efficiently in fixed-size chunks.
+
+### 13. Pack VID into numeric type for faster comparison
+No improvement for `small`. VID comparison (1.75% of runtime) is too small
+a fraction and the compiler already optimizes the enum match well.
+
+### Split DashMap into done-cache + WIP-cache
+Deadlocked. Moving entries between two concurrent maps introduces a window
+where the entry exists in neither, causing workers to miss it and block.
+Would require atomic cross-map transfers or a different synchronization scheme.
+The Work enum (72 bytes per entry, but only 8 bytes when Done) wastes space
+but the consistency model requires single-map atomicity.
