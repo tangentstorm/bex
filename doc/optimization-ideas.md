@@ -127,6 +127,13 @@ The default 16 shards meant high contention per shard with 40M operations.
 rehashing. ~14% improvement over previous (30s avg vs 34s). Cumulative
 ~19% improvement vs original baseline (30s vs 37s).
 
+### Pre-size HiLoCache and DashMap to 256K entries
+Massif profiling showed 65% of heap went to DashMap rehashing and 25%
+to HiLoCache HashMap rehashing. The BDD creates 15.4M nodes, causing
+massive rehashing. Pre-sizing both to 256K (2^18) reduces early rehash
+overhead while keeping good cache locality. ~22% cumulative improvement
+(29s avg vs 37s baseline).
+
 ## Rejected Ideas
 
 ### 1. Single-threaded BDD solver

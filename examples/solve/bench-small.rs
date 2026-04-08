@@ -15,6 +15,7 @@ fn main() {
   let mut base = if threads > 0 { BddBase::new_with_threads(threads) } else { BddBase::new() };
   find_factors::<X8, X16, BddBase>(&mut base, 210, expected);
   let elapsed = t.elapsed();
+  eprintln!("bdd nodes: {}", base.len());
   GBASE.with(|gb| gb.replace(ASTBase::empty()));
   eprintln!("small: {:.3}s (threads: {})", elapsed.as_secs_f64(),
     if threads == 0 { "default".to_string() } else { threads.to_string() });

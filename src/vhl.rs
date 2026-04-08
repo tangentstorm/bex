@@ -128,12 +128,21 @@ impl VhlBase {
     else if n.is_vid() { if n.is_inv() { (O, I) } else { (I, O) }}
     else { let hilo = self.get_hilo(n); (hilo.hi, hilo.lo) }}}
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct HiLoCacheInner {
   /// variable-agnostic hi/lo pairs for individual bdd nodes.
   hilos: VhlVec<HiLo>,
   /// reverse map for hilos.
   index: std::collections::HashMap<HiLo, usize, fxhash::FxBuildHasher>}
+
+impl Default for HiLoCacheInner {
+  fn default() -> Self {
+    HiLoCacheInner {
+      hilos: VhlVec::default(),
+      index: std::collections::HashMap::with_capacity_and_hasher(1 << 18, fxhash::FxBuildHasher::default()),
+    }
+  }
+}
 
 #[derive(Debug, Default)]
 pub struct HiLoCache {

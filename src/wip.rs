@@ -177,7 +177,7 @@ where K:Eq+Hash+Debug, P:Parts, B:WipBase<K,P> {
       _kvp: PhantomData,
       qid: Mutex::new(None),
       base: B::default(),
-      cache: DashMap::with_capacity_and_hasher_and_shard_amount(1 << 14, fxhash::FxBuildHasher::default(), 128),
+      cache: DashMap::with_capacity_and_hasher_and_shard_amount(1 << 18, fxhash::FxBuildHasher::default(), 128),
     }
   }
 }
