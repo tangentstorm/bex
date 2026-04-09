@@ -25,6 +25,7 @@ and the smaller tests in [src/solve.rs](src/solve.rs)
 
 ## Changes in main branch (upcoming version)
 
+- **Table NIDs with named variables:** truth tables of up to 5 inputs are now stored directly in the NID, with the variable set encoded via a combinadic index. `BddBase::ite()` automatically uses truth table operations for small subexpressions before entering the BDD swarm. New modules: `comb` (combinadic encoding), `tbl` (table alignment and operations). New display format: `T{x3,x7:1110}`.
 - add C ffi for use with https://github.com/SSoelvsten/bdd-benchmark (bex adapter is at https://github.com/tangentforks/bdd-benchmark for now)
 - add `ite` to the Base trait
 - Removed `XID` type from `swap.rs`, as it is equivalent to `NID::ixn()` and required duplicating (or genericizing) `Hilo` and `Vhl` types.

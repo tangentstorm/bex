@@ -98,11 +98,23 @@ impl fmt::Display for NID {
     if self.is_const() { if self.is_inv() { write!(f, "I") } else { write!(f, "O") } }
     else if self.is_fun() {
       let fnid = self.to_fun().unwrap();
-      let ar:u8 = fnid.arity(); // 2..5 inclusive
-      // !! arity of 1 would just be ID or NOT, which are redundant because of the INV bit
+      let ar:u8 = fnid.arity();
       let ft:u32 = fnid.tbl();
-      if ar == 2 { write!(f, "t{:04b}", ft) }
-      else { write!(f, "f{}.{:X}", ar, ft) }}
+      let (_, vs) = fnid.vars();
+      let va = &vs[..ar as usize];
+      // check if vars are the implicit default [0, 1, ..., ar-1]
+      let is_default = va.iter().enumerate().all(|(i, &v)| v == i as u32);
+      if is_default {
+        if ar == 2 { write!(f, "t{:04b}", ft) }
+        else { write!(f, "f{}.{:X}", ar, ft) }}
+      else {
+        // named-variable format: T{x3,x7:1110} (binary for ar 2, hex otherwise)
+        write!(f, "T{{")?;
+        for (i, &v) in va.iter().enumerate() {
+          if i > 0 { write!(f, ",")?; }
+          write!(f, "x{}", v)?; }
+        if ar == 2 { write!(f, ":{:0width$b}}}", ft, width = 1 << ar) }
+        else { write!(f, ":{:X}}}", ft) }}}
     else {
       if self.is_inv() { write!(f, "!")?; }
       if self.is_vid() { write!(f, "{}", self.vid()) }
@@ -185,6 +197,31 @@ impl FromStr for NID {
               let tb = usize::from_str_radix(&bits, 2).map_err(|_| format!("bad table: {}", word))?;
               Ok(NID::fun(ar as u8, tb as u32).to_nid().inv_if(inv))
             }
+        'T' => {
+            // named-variable format: T{x3,x7:1110} or T{x1,x3,x5:FC}
+            let rest = ch.collect::<String>();
+            if !rest.starts_with('{') || !rest.ends_with('}') {
+              return Err(format!("bad named table (expect T{{...}}): {}", word)); }
+            let inner = &rest[1..rest.len()-1];
+            let colon = inner.find(':').ok_or_else(|| format!("bad named table (no ':'): {}", word))?;
+            let var_part = &inner[..colon];
+            let tbl_part = &inner[colon+1..];
+            let mut vars: Vec<u32> = Vec::new();
+            for vstr in var_part.split(',') {
+              let vstr = vstr.trim();
+              if !vstr.starts_with('x') { return Err(format!("bad var in named table: {}", vstr)); }
+              let vi: u32 = vstr[1..].parse().map_err(|_| format!("bad var index: {}", vstr))?;
+              vars.push(vi); }
+            let ar = vars.len();
+            if ar < 2 || ar > 5 { return Err(format!("bad arity {} in named table", ar)); }
+            let tb = if ar == 2 {
+              usize::from_str_radix(tbl_part, 2).map_err(|_| format!("bad binary table: {}", tbl_part))?
+            } else {
+              if !is_upper_hex(tbl_part) { return Err(format!("hex must be uppercase: {}", tbl_part)); }
+              usize::from_str_radix(tbl_part, 16).map_err(|_| format!("bad hex table: {}", tbl_part))?
+            };
+            Ok(NID::fun_with_vars(&vars, tb as u32).to_nid().inv_if(inv))
+          }
         _ => Err(format!("{}?", word))}}}}}}
 
 
@@ -229,7 +266,12 @@ impl NID {
 
   #[inline(always)] pub fn from_vid(v:vid::VID)->Self { nv(vid_to_bits(v)) }
   #[inline(always)] pub fn from_vid_idx(v:vid::VID, i:usize)->Self { nvi(vid_to_bits(v), i) }
-  #[inline(always)] pub fn vid(&self)->vid::VID { bits_to_vid(vid_bits(*self)) }
+  #[inline(always)] pub fn vid(&self)->vid::VID {
+    if self.is_fun() {
+      const COMB_MASK: u64 = ((1u64 << 27) - 1) << 32;
+      let comb_idx = ((self.n & COMB_MASK) >> 32) as u32;
+      vid::VID::var(crate::comb::top_var_of(comb_idx))
+    } else { bits_to_vid(vid_bits(*self)) }}
   // return a nid that is not tied to a variable
   #[inline(always)] pub fn ixn(ix:usize)->Self { nvi(NOVAR, ix) }
 
@@ -266,8 +308,21 @@ impl NID {
   #[inline(always)] pub fn raw(self)->NID { NID{ n: self.n & !INV }}
 
   /// construct a NID holding a truth table for up to 5 input bits.
+  /// Variables are implicitly x0..x(arity-1).
   #[inline(always)] pub const fn fun(arity:u8, tbl:u32)->NidFun {
-    NidFun { nid: NID { n:F+(((1<<(1<<arity)) -1) & tbl as u64)+((arity as u64)<< 32)}} }
+    let comb_idx = crate::comb::OFFSET[arity as usize];
+    let shift = 1u32 << (arity as u32);
+    let tbl_mask = (1u64 << shift) - 1;
+    NidFun { nid: NID { n: F + (tbl_mask & tbl as u64) + ((comb_idx as u64) << 32) }}}
+
+  /// construct a NID holding a truth table for a function of the given variables.
+  /// `vars` must be sorted ascending, length 2..=5, all values < comb::MAX_VAR.
+  pub fn fun_with_vars(vars:&[u32], tbl:u32)->NidFun {
+    let arity = vars.len() as u8;
+    let comb_idx = crate::comb::encode(vars);
+    let shift = 1u32 << (arity as u32);
+    let tbl_mask = (1u64 << shift) - 1;
+    NidFun { nid: NID { n: F + (tbl_mask & tbl as u64) + ((comb_idx as u64) << 32) }}}
 
   /// is this NID a function (truth table)?
   #[inline(always)] pub fn is_fun(&self)->bool { self.n & F == F }
@@ -281,6 +336,9 @@ impl NID {
   #[inline] pub fn might_depend_on(&self, v:vid::VID)->bool {
     if self.is_const() { false }
     else if self.is_vid() { self.vid() == v }
+    else if self.is_fun() {
+      if let Some(f) = self.to_fun() { f.contains_var(v) } else { false }
+    }
     else { let sv = self.vid(); sv == v || sv.is_above(&v) }}
 
   // -- int conversions used by the dd python package
@@ -290,7 +348,28 @@ impl NID {
 
 #[test] fn test_tbl_fmt() {
   assert_eq!("t1110", format!("{}", NID::fun(2, 0b1110).to_nid()));
-  assert_eq!("f3.FC", format!("{}", NID::fun(3, 0xFC).to_nid()));}
+  assert_eq!("f3.FC", format!("{}", NID::fun(3, 0xFC).to_nid()));
+  // named-variable format
+  assert_eq!("T{x3,x7:1110}", format!("{}", NID::fun_with_vars(&[3, 7], 0b1110).to_nid()));
+  assert_eq!("T{x1,x3,x5:FC}", format!("{}", NID::fun_with_vars(&[1, 3, 5], 0xFC).to_nid()));
+}
+
+#[test] fn test_named_tbl_parse() {
+  let n: NID = "T{x3,x7:1110}".parse().unwrap();
+  let f = n.to_fun().unwrap();
+  assert_eq!(f.arity(), 2);
+  assert_eq!(f.tbl(), 0b1110);
+  let (_, vs) = f.vars();
+  assert_eq!(&vs[..2], &[3, 7]);
+  // round-trip
+  assert_eq!(format!("{}", n), "T{x3,x7:1110}");
+
+  let n2: NID = "T{x1,x3,x5:FC}".parse().unwrap();
+  let f2 = n2.to_fun().unwrap();
+  assert_eq!(f2.arity(), 3);
+  assert_eq!(f2.tbl(), 0xFC);
+  assert_eq!(format!("{}", n2), "T{x1,x3,x5:FC}");
+}
 
 include!("nid-fun.rs");
 

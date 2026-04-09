@@ -4,7 +4,21 @@ Bex is a rust crate for working with binary expressions.
 
 ## 0.4.0 (upcoming)
 
-Upcoming changes for 0.4.0 now live in the README section titled \"Changes in main branch (upcoming version)\".
+- **Table NIDs with named variables.** Functions of up to 5 input variables are now stored
+  directly in the NID as a truth table, with the variable set encoded using a combinatorial
+  number system (combinadic). This avoids allocating BDD nodes for small subexpressions.
+  - New `NID::fun_with_vars(&[u32], tbl)` constructor for explicit variable sets.
+  - `NidFun` gains `vars()`, `top_vid()`, `contains_var()`, `var_position()`.
+  - New `src/comb.rs` module: combinadic encode/decode for variable subsets of up to 110 variables.
+  - New `src/tbl.rs` module: truth table alignment, expansion, and bitwise operations
+    (`table_and`, `table_xor`, `table_or`, `table_ite`) with zero-allocation fast path.
+  - `BddBase::ite()` now automatically resolves small operations via truth tables before
+    entering the BDD swarm (zero overhead on large problems, avoids node allocation for small ones).
+  - `VhlBase::tup()` decomposes table NIDs into hi/lo branches transparently.
+  - Display format `T{x3,x7:1110}` for table NIDs with non-default variable sets;
+    `FromStr` round-trips the new format.
+
+Older upcoming changes for 0.4.0 live in the README section titled \"Changes in main branch (upcoming version)\".
 
 ### Performance
 - ~22% speedup on BDD factoring benchmark (`small`: factor 210 into 8x16-bit integers)

@@ -124,8 +124,20 @@ impl VhlBase {
 
   #[inline] pub fn tup(&self, n:NID)-> (NID, NID) {
     use crate::nid::{I,O};
+    use crate::Fun;
     if n.is_const() { if n==I { (I, O) } else { (O, I) } }
     else if n.is_vid() { if n.is_inv() { (O, I) } else { (I, O) }}
+    else if n.is_fun() {
+      let f = n.to_fun().unwrap();
+      let (ar, vs) = f.vars();
+      let top_pos = ar - 1; // position of top (highest) variable
+      let hi_fun = f.when(top_pos, true);
+      let lo_fun = f.when(top_pos, false);
+      let mut new_vars: Vec<u32> = vs[..ar as usize].to_vec();
+      new_vars.pop(); // remove top variable
+      let hi = crate::tbl::nidfun_to_nid(&hi_fun, &new_vars);
+      let lo = crate::tbl::nidfun_to_nid(&lo_fun, &new_vars);
+      if n.is_inv() { (!hi, !lo) } else { (hi, lo) }}
     else { let hilo = self.get_hilo(n); (hilo.hi, hilo.lo) }}}
 
 #[derive(Debug)]
