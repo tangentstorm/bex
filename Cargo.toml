@@ -59,7 +59,6 @@ debug = "line-tables-only"
 log = { version = "0.4", features = ["max_level_debug"]}
 simplelog = "0.5"
 num_cpus = "1.0"
-rand = "0.8.5"
 dashmap = { version="5.4.0"}
 boxcar = "0.1.0"
 fxhash = "0.2.1"

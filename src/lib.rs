@@ -4,7 +4,6 @@
 
 #[macro_use] extern crate log;
 extern crate simplelog;
-extern crate rand;
 extern crate dashmap;
 extern crate boxcar;
 extern crate fxhash;
