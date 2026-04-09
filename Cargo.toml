@@ -36,6 +36,10 @@ path = "examples/solve/factor-p.rs"
 name = "factor-p-tiny"
 path = "examples/solve/factor-p-tiny.rs"
 
+[[example]]
+name = "bench-small"
+path = "examples/solve/bench-small.rs"
+
 [features]
 default = ["sql"]
 sql = []

@@ -1,7 +1,7 @@
 //! (Var, Hi, Lo) triples
 use std::collections::BinaryHeap;
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::RwLock;
 use crate::nid::NID;
 use crate::vid::VID;
 use crate::wip::{JobResult, WipBase};
@@ -118,9 +118,7 @@ impl VhlBase {
     self.hilos.get_node(v, HiLo{hi,lo})}
 
   pub fn vhl_to_nid(&self, v:VID, hi:NID, lo:NID)->NID {
-    match self.hilos.get_node(v, HiLo{hi,lo}) {
-      Some(n) => n,
-      None => { self.hilos.insert(v, HiLo{hi, lo}) }}}
+    self.hilos.get_or_insert(v, HiLo{hi, lo}) }
 
   pub fn get_hilo(&self, n:NID)->HiLo { self.hilos.get_hilo(n) }
 
@@ -130,35 +128,44 @@ impl VhlBase {
     else if n.is_vid() { if n.is_inv() { (O, I) } else { (I, O) }}
     else { let hilo = self.get_hilo(n); (hilo.hi, hilo.lo) }}}
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct HiLoCacheInner {
   /// variable-agnostic hi/lo pairs for individual bdd nodes.
   hilos: VhlVec<HiLo>,
   /// reverse map for hilos.
   index: std::collections::HashMap<HiLo, usize, fxhash::FxBuildHasher>}
 
+impl Default for HiLoCacheInner {
+  fn default() -> Self {
+    HiLoCacheInner {
+      hilos: VhlVec::default(),
+      index: std::collections::HashMap::with_capacity_and_hasher(1 << 18, fxhash::FxBuildHasher::default()),
+    }
+  }
+}
+
 #[derive(Debug, Default)]
 pub struct HiLoCache {
-  inner: Mutex<HiLoCacheInner>}
+  inner: RwLock<HiLoCacheInner>}
 
 
 impl HiLoCache {
 
   pub fn new()->Self { Self::default() }
 
-  pub fn len(&self)->usize { self.inner.lock().unwrap().hilos.vec.len() }
+  pub fn len(&self)->usize { self.inner.read().unwrap().hilos.vec.len() }
   #[must_use] pub fn is_empty(&self) -> bool { self.len() == 0 }
 
   // TODO: ->Option<HiLo>, and then impl HiLoBase
   #[inline] pub fn get_hilo(&self, n:NID)->HiLo {
-    assert!(!n.is_lit());
-    let res = self.inner.lock().unwrap().hilos.vec[n.idx()];
+    debug_assert!(!n.is_lit());
+    let res = self.inner.read().unwrap().hilos.vec[n.idx()];
     if n.is_inv() { res.invert() } else { res }}
 
   #[inline] pub fn get_node(&self, v:VID, hl0:HiLo)-> Option<NID> {
     let inv = hl0.lo.is_inv();
     let hl1 = if inv { hl0.invert() } else { hl0 };
-    let inner = self.inner.lock().unwrap();
+    let inner = self.inner.read().unwrap();
     if let Some(&x) = inner.index.get(&hl1) {
       // !! maybe this should be an assertion, and callers
       //   should be adjusted to avoid asking for ill-formed Vhl triples?
@@ -169,10 +176,31 @@ impl HiLoCache {
         return Some(if inv { !nid  } else { nid }) }}
     None }
 
+  /// Combined get-or-insert: tries a read lock first, upgrades to write only on miss.
+  #[inline] pub fn get_or_insert(&self, v:VID, hl0:HiLo)->NID {
+    let inv = hl0.lo.is_inv();
+    let hl1 = if inv { hl0.invert() } else { hl0 };
+    // Fast path: read lock
+    {
+      let inner = self.inner.read().unwrap();
+      if let Some(&x) = inner.index.get(&hl1) {
+        if hl1.hi.vid().is_below(&v) && hl1.lo.vid().is_below(&v) {
+          let nid = NID::from_vid_idx(v, x);
+          return if inv { !nid } else { nid } }}}
+    // Slow path: write lock
+    let mut inner = self.inner.write().unwrap();
+    let ix = if let Some(&ix) = inner.index.get(&hl1) { ix }
+    else {
+      let ix = inner.hilos.vec.push(hl1);
+      inner.index.insert(hl1, ix);
+      ix };
+    let res = NID::from_vid_idx(v, ix);
+    if inv { !res } else { res } }
+
   #[inline] pub fn insert(&self, v:VID, hl0:HiLo)->NID {
     let inv = hl0.lo.is_inv();
     let hilo = if inv { hl0.invert() } else { hl0 };
-    let mut inner = self.inner.lock().unwrap();
+    let mut inner = self.inner.write().unwrap();
     let ix:usize =
       if let Some(&ix) = inner.index.get(&hilo) { ix }
       else {

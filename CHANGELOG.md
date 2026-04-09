@@ -6,6 +6,15 @@ Bex is a rust crate for working with binary expressions.
 
 Upcoming changes for 0.4.0 now live in the README section titled \"Changes in main branch (upcoming version)\".
 
+### Performance
+- ~22% speedup on BDD factoring benchmark (`small`: factor 210 into 8x16-bit integers)
+  - Replace `HiLoCache` `Mutex` with `RwLock` + combined `get_or_insert` to reduce lock contention
+  - Increase `DashMap` shard count from 16 to 128 for better concurrent access
+  - Pre-size `HiLoCache` HashMap and `DashMap` to 256K entries, eliminating rehash cascades
+    (Massif profiling showed 90% of heap allocations went to hash table resizing)
+  - Added `bench-small` example for quick single-run benchmarking
+  - Added [doc/optimization-ideas.md](doc/optimization-ideas.md) with 24 profiling-driven ideas (3 applied, 12 tested/rejected with rationale)
+
 
 ## 0.3.0 (2025-02-16)
 
