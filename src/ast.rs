@@ -271,9 +271,21 @@ impl Base for RawASTBase {
       self.nid(ops::vel(lo, hi)) }}
 
   fn ite(&mut self, i:NID, t:NID, e:NID)->NID {
-    if let Some(nid) = simp::ite(i,t,e) { nid }
-    else {
-      self.nid(ops::ite(i, t, e)) }}
+    use nid::{I as BI, O as BO};
+    if let Some(nid) = simp::ite(i,t,e) { return nid; }
+    // Composite reductions: if one of t/e is a constant (but not both, which
+    // simp::ite already handled), ITE collapses to a 2-input op. Dispatching
+    // back through self.and/self.or keeps the AST free of ternary nodes with
+    // constant inputs, which downstream consumers (e.g. woslbimi::def) rely on.
+    if t == BI { return self.or(i, e); }           // ite(i, 1, e) = i | e
+    if t == BO { return self.and(!i, e); }         // ite(i, 0, e) = !i & e
+    if e == BI { return self.or(!i, t); }          // ite(i, t, 1) = !i | t
+    if e == BO { return self.and(i, t); }          // ite(i, t, 0) = i & t
+    if t == i  { return self.or(i, e); }           // ite(i, i, e) = i | e
+    if e == i  { return self.and(i, t); }          // ite(i, t, i) = i & t
+    if t == !i { return self.and(!i, e); }         // ite(i, !i, e) = !i & e
+    if e == !i { return self.or(i, t); }           // ite(i, t, !i) = i | t
+    self.nid(ops::ite(i, t, e)) }
 
   fn sub(&mut self, _v:vid::VID, _n:NID, _ctx:NID)->NID { todo!("ast::sub") }
 
