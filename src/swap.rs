@@ -237,6 +237,13 @@ impl VhlScaffold {
   /// Number of distinct vids currently present in the scaffold.
   pub fn num_vids(&self)->usize { self.vids.len() }
 
+  /// Total number of (vid, hi, lo) nodes across every row in the scaffold.
+  /// This counts stale rc==0 nodes too; for a tighter measurement you'd
+  /// have to walk from a specific root.
+  pub fn num_nodes(&self)->usize {
+    self.rows.values().map(|r| r.hm.len()).sum()
+  }
+
   /// return the vid immediately above v in the scaffold, or None
   /// if v is top vid. Panics if v is not in the scaffold.
   fn vid_above(&self, v:VID)->Option<VID> {
