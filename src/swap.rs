@@ -50,6 +50,15 @@ fn vhl_is_var(vhl:&Vhl)->bool {
   vhl.v.is_var() && vhl.hi == nid::I && vhl.lo == nid::O
 }
 
+/// Helper for `copy_to_bdd`/`copy_to_bdd_keep_vids`: looks up a scaffold
+/// child nid in the XID→BDD map, honoring inversion. Scaffold node ids
+/// are stored uninverted but `Vhl::hi` may carry an inversion flag.
+fn lookup_branch(map: &HashMap<NID, NID>, child: NID, ctx: &str) -> NID {
+  let raw = child.raw();
+  let base = *map.get(&raw).unwrap_or_else(|| panic!("missing branch during {}: child={:?}", ctx, child));
+  if child.is_inv() { !base } else { base }
+}
+
 /// Dummy value to stick into vhls[0]
 const VHL_O:Vhl = Vhl{ v: NOV, hi:nid::O, lo:nid::O };
 
@@ -223,7 +232,10 @@ impl VhlScaffold {
   fn vix(&self, v:VID)->Option<usize> { self.vids.iter().position(|&x| x == v) }
 
   /// Some(top vid), or None if empty
-  fn top_vid(&self)->Option<VID> { let len = self.vids.len(); if len>0 { Some(self.vids[len-1]) } else { None }}
+  pub fn top_vid(&self)->Option<VID> { let len = self.vids.len(); if len>0 { Some(self.vids[len-1]) } else { None }}
+
+  /// Number of distinct vids currently present in the scaffold.
+  pub fn num_vids(&self)->usize { self.vids.len() }
 
   /// return the vid immediately above v in the scaffold, or None
   /// if v is top vid. Panics if v is not in the scaffold.
@@ -462,14 +474,37 @@ impl VhlScaffold {
       for (x, ixrc) in self.rows[&rv].hm.iter() {
         if ixrc.rc() > 0 || Some(rv) == self.top_vid() {
           let hilo = *x;
-          let hi = *map.get(&hilo.hi).expect("missing hi branch during copy_to_bdd");
-          let lo = *map.get(&hilo.lo).expect("missing lo branch during copy_to_bdd");
+          let hi = lookup_branch(&map, hilo.hi, "copy_to_bdd");
+          let lo = lookup_branch(&map, hilo.lo, "copy_to_bdd");
           let nid = bdd.ite(bv, hi, lo);
           map.insert(ixrc.ix, nid);
         }
       }
     }
-    nids.iter().map(|&nid| map[&nid]).collect()}
+    nids.iter().map(|&nid| lookup_branch(&map, nid, "copy_to_bdd")).collect()}
+
+  /// Like [`copy_to_bdd`] but preserves each node's **original VID** instead
+  /// of remapping scaffold row `i` to `VID::var(i)`. Use this when the
+  /// resulting BDD must share a variable namespace with other BDDs (e.g.
+  /// when ANDing BDDs from multiple scaffolds in the same `BddBase`).
+  pub fn copy_to_bdd_keep_vids(&self, bdd: &mut BddBase, nids: &[NID]) -> Vec<NID> {
+    let mut map: HashMap<NID, NID> = HashMap::new();
+    map.insert(nid::O, nid::O);
+    map.insert(nid::I, nid::I);
+    for &rv in self.vids.iter() {
+      let bv = NID::from_vid(rv);
+      for (x, ixrc) in self.rows[&rv].hm.iter() {
+        if ixrc.rc() > 0 || Some(rv) == self.top_vid() {
+          let hilo = *x;
+          let hi = lookup_branch(&map, hilo.hi, "copy_to_bdd_keep_vids");
+          let lo = lookup_branch(&map, hilo.lo, "copy_to_bdd_keep_vids");
+          let nid = bdd.ite(bv, hi, lo);
+          map.insert(ixrc.ix, nid);
+        }
+      }
+    }
+    nids.iter().map(|&nid| lookup_branch(&map, nid, "copy_to_bdd_keep_vids")).collect()
+  }
 
 }
 
@@ -1225,6 +1260,11 @@ impl SwapSolver {
     let dst = VhlScaffold::new();
     let src = VhlScaffold::new();
     SwapSolver{ dst, dx:nid::O, rv:NOV, src, sx:nid::O }}
+
+  /// Borrow the destination scaffold. Useful for advanced callers that
+  /// need to copy this solver's BDD into another base alongside BDDs from
+  /// other scaffolds (e.g. `scaffold().copy_to_bdd_keep_vids(...)`).
+  pub fn scaffold(&self) -> &VhlScaffold { &self.dst }
 
   /// Arrange the two scaffolds so that their variable orders match.
   ///  1. vids shared between src and dst (set n) are above rv
