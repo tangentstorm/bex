@@ -125,6 +125,12 @@ pub const IMP:NidFun = NID::fun(2,sig::IMP);
 pub const ITE:NidFun = NID::fun(3,sig::ITE);
 pub const ANF:NidFun = NID::fun(3,sig::ANF);
 
+/// (x0 & x1) | (x0 & x2) | (x1 & x2)  — majority of 3 inputs
+pub const MAJ:NidFun = NID::fun(3,sig::MAJ);
+
+/// x0 ^ x1 ^ x2 — parity of 3 inputs
+pub const XOR3:NidFun = NID::fun(3,sig::XOR3);
+
 /// convenience trait that allows us to mix vids and nids
 /// freely when constructing expressions.
 pub trait ToNID { fn to_nid(&self)->NID; }

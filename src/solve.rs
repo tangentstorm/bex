@@ -258,7 +258,9 @@ pub fn find_factors<T0:BInt, T1:BInt, S:SubSolver>(dest:&mut S, k:usize, expecte
     if show_ast { src.show_named(top.n, "ast"); }
     // --- now we have the ast, so solve ----
     dest.init_stats();
+    let ttc_start = SystemTime::now();
     let answer:DstNid = solve(dest, src, top.n);
+    let ttc_elapsed = ttc_start.elapsed().unwrap_or_default();
     // if show_res { dest.show_named(answer.n, "result") }
     type Factors = (u64,u64);
     let to_factors = |r:&Reg|->Factors {
@@ -270,7 +272,15 @@ pub fn find_factors<T0:BInt, T1:BInt, S:SubSolver>(dest:&mut S, k:usize, expecte
     let actual:HashSet<Factors> = actual_regs.iter().map(to_factors).collect();
     let expect:HashSet<Factors> = expected.iter().map(|&(x,y)| (x, y)).collect();
     assert_eq!(actual, expect);
-    dest.print_stats(); }
+    dest.print_stats();
+    // Time to Cover: for top-down solvers like these, the solver completes
+    // only once it has classified every point in the 2^N search space, so
+    // TTC equals the wall-clock elapsed time. See doc/time-to-cover.md.
+    let search_bits = 2 * T0::n() as usize;
+    let search_space: u128 = 1u128 << search_bits;
+    println!("search space: 2^{} = {}", search_bits, search_space);
+    println!("time-to-cover: {:.3}s (full classification complete)",
+             ttc_elapsed.as_secs_f64()); }
 
 
 /// nano test case for BDD: factor (*/2 3)=6 into two bitpairs. The only answer is 2,3.
