@@ -23,6 +23,14 @@ It covers the large factoring problems in [examples/solve/bdd-solve.rs](examples
 and the smaller tests in [src/solve.rs](src/solve.rs)
 
 
+## Benchmarking
+
+The central cross-solver metric is **Time to Cover (TTC)** — the projected
+wall-clock time for a solver to fully classify every point in the `2^N`
+search space of a problem. See [doc/time-to-cover.md](doc/time-to-cover.md)
+for the definition, formula, and how it applies to both branching and
+top-down (BDD/swap) solvers.
+
 ## Changes in main branch (upcoming version)
 
 - **Table NIDs with named variables:** truth tables of up to 5 inputs are now stored directly in the NID, with the variable set encoded via a combinadic index. `BddBase::ite()` automatically uses truth table operations for small subexpressions before entering the BDD swarm. New modules: `comb` (combinadic encoding), `tbl` (table alignment and operations). New display format: `T{x3,x7:1110}`.

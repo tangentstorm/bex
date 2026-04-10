@@ -1398,7 +1398,12 @@ impl SubSolver for SwapSolver {
   fn status(&self) -> String { "".to_string() } // TODO
   fn dump(&self, step: usize, new: NID) { self.dst.save_dot(new, format!("xvhl-{:04}.dot", step).as_str()); }
   fn init_stats(&mut self) { }
-  fn print_stats(&mut self) { println!("[swap solver does not print stats yet]"); }
+  fn print_stats(&mut self) {
+    // SwapSolver is a top-down solver: when it completes, the resulting BDD
+    // has classified every point in the 2^N search space by construction.
+    // See bex/doc/time-to-cover.md for the TTC metric this implies.
+    println!("[swap solver: TTC = elapsed on completion; see doc/time-to-cover.md]");
+  }
 
 }
 
