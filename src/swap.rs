@@ -317,6 +317,12 @@ impl VhlScaffold {
   fn get(&self, n:NID)->Option<Vhl> {
     self.vhls.get(n.idx()).map(|&y| if n.is_inv() { !y } else { y }) }
 
+  /// Public wrapper over [`get`] for external walkers that need to
+  /// traverse scaffold structure one node at a time. Returns a `Vhl`
+  /// with hi/lo NIDs pointing at the scaffold's own index space, or
+  /// `None` if the NID isn't allocated here.
+  pub fn get_vhl(&self, n:NID)->Option<Vhl> { self.get(n) }
+
   /// follow the hi or lo branch of n
   fn follow(&self, n:NID, which:bool)->NID {
     let vhl = self.get(n).unwrap();
