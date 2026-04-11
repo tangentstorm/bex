@@ -672,17 +672,56 @@ impl VhlScaffold {
         QID::DONE => { SwarmCmd::Pass }}});
 
         debug_assert!(self.locked.is_empty());
-        // println!("variables now: {:?}", self.vids);
+
+        // Drain any deferred refcount changes that may have been left behind
+        // by the parallel run (e.g. a refcount delta that got re-deferred onto
+        // a row the swarm later couldn't finish moving). In the happy path
+        // this is a no-op because apply_drcd is already called as each vid
+        // unlocks. Since self.locked is empty now, any stragglers can be
+        // applied directly.
+        let dangling_drcd: Vec<VID> = self.drcd.keys().cloned().collect();
+        for v in dangling_drcd { self.apply_drcd(&v); }
+
+        // If the parallel swarm couldn't finish the reordering — e.g. because
+        // `should_swap` blocked every pairing the planner could assign — fall
+        // back to a sequential bubble-sort via swap(). This is slower but
+        // guaranteed to terminate, and keeps `arrange_vids` from wedging the
+        // next substitution with a bogus `sg` partition. See issues #12, #22.
         let plan2 = self.plan_regroup(&groups);
-        // println!("remaining regroup plan: {:?}", plan2);
         if !plan2.is_empty() {
-          println!("------------------------------------------------");
-          println!("WARNING! reordering operation did not complete!");
-          println!("Regroup failed to make these moves: {:?}", plan2);
-          println!("------------------------------------------------");
-          println!("This is a known bug. See here for status and workarounds:");
-          println!("https://github.com/tangentstorm/bex/issues/12"); }
+          println!("note: parallel regroup left {} moves unfinished; \
+                    completing sequentially (see issue #22). remaining: {:?}",
+                   plan2.len(), plan2);
+          self.regroup_finish_sequential(&groups);
+          debug_assert!(self.plan_regroup(&groups).is_empty(),
+            "sequential regroup fallback did not complete"); }
         self.validate("after regroup()"); }
+
+  /// Sequential fallback used when the parallel regroup swarm can't finish.
+  /// Picks a concrete target ordering consistent with `groups` (preserving
+  /// the current relative order of vars within each group), then bubble-sorts
+  /// via `swap()` until `self.vids` matches that target.
+  fn regroup_finish_sequential(&mut self, groups: &[HashSet<VID>]) {
+    // Build target ordering bottom-to-top: for each group, append the vids
+    // from self.vids that belong to it (preserving their current order).
+    let mut target: Vec<VID> = Vec::with_capacity(self.vids.len());
+    for g in groups {
+      for v in self.vids.iter() {
+        if g.contains(v) { target.push(*v); }}}
+    assert_eq!(target.len(), self.vids.len(),
+      "groups don't fully partition vids in sequential regroup fallback");
+
+    // Selection-sort: for each position i from bottom to top, ensure the var
+    // at position i is target[i]. swap(v) lifts v one row up, so to move
+    // `goal` *down* we repeatedly lift the var immediately below it.
+    for i in 0..target.len() {
+      let goal = target[i];
+      loop {
+        let goal_pos = self.vix(goal)
+          .expect("target vid vanished during sequential regroup");
+        if goal_pos <= i { break; }
+        let below = self.vids[goal_pos - 1];
+        self.swap(below); }}}
 
 
   // like add_ref_ix but defers if row is locked.
