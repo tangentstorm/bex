@@ -282,6 +282,63 @@ fn check_sub(vids:&str, dst_s:&str, v:char, src_s:&str, goal:&str) {
     "Bug #12: regroup() failed on interleaved pattern");
 }
 
+/// Regression test for bug #22: the sequential fallback used by `regroup()`
+/// must be able to complete an arbitrary permutation on its own. `arrange_vids`
+/// relies on `regroup()` leaving the scaffold fully ordered; if the parallel
+/// swarm can't finish (warning-and-return path), the sequential path has to
+/// take over and finish the job. This exercises `regroup_finish_sequential`
+/// directly on a full-reverse permutation.
+#[test] fn test_regroup_finish_sequential_reverse() {
+  let mut xs = VhlScaffold::new();
+  let vars: Vec<VID> = (0..5).map(|i| VID::var(i)).collect();
+  for &v in &vars {
+    xs.push(v);
+    xs.add(v, nid::I, nid::O, true);
+  }
+  // Target: each var in its own singleton group, reversed.
+  // Current: [v0..v4] → target: [v4, v3, v2, v1, v0]
+  let groups: Vec<HashSet<VID>> = vars.iter().rev().map(|&v| s![v]).collect();
+  xs.regroup_finish_sequential(&groups);
+  let expected_order: Vec<VID> = vars.iter().rev().cloned().collect();
+  assert_eq!(xs.vids, expected_order,
+    "sequential regroup fallback did not produce the expected order");
+  // A fresh plan against the same groups should now be empty.
+  let plan_after = xs.plan_regroup(&groups);
+  assert!(plan_after.is_empty(),
+    "Bug #22: sequential fallback left {} moves unfinished: {:?}",
+    plan_after.len(), plan_after);
+}
+
+/// Regression test for bug #22: the sequential fallback must also work when
+/// the target groups contain more than one vid each (the usual `arrange_vids`
+/// pattern of `[d, {rv}, n]`).
+#[test] fn test_regroup_finish_sequential_groups() {
+  let mut xs = VhlScaffold::new();
+  let vars: Vec<VID> = (0..6).map(|i| VID::var(i)).collect();
+  for &v in &vars {
+    xs.push(v);
+    xs.add(v, nid::I, nid::O, true);
+  }
+  // Current: [v0, v1, v2, v3, v4, v5]
+  // Groups bottom-to-top: d={v1,v4}, rv={v2}, n={v0,v3,v5}
+  // Preserving current relative order inside each group:
+  //   d → [v1, v4], rv → [v2], n → [v0, v3, v5]
+  // Expected: [v1, v4, v2, v0, v3, v5]
+  let groups = vec![
+    s![vars[1], vars[4]],
+    s![vars[2]],
+    s![vars[0], vars[3], vars[5]],
+  ];
+  xs.regroup_finish_sequential(&groups);
+  let expected_order = vec![vars[1], vars[4], vars[2], vars[0], vars[3], vars[5]];
+  assert_eq!(xs.vids, expected_order,
+    "sequential regroup fallback did not produce the expected grouped order");
+  let plan_after = xs.plan_regroup(&groups);
+  assert!(plan_after.is_empty(),
+    "Bug #22: sequential fallback left {} moves unfinished: {:?}",
+    plan_after.len(), plan_after);
+}
+
 /// Unit tests for the should_swap function
 /// Tests all the edge cases of the swap decision logic
 #[test] fn test_should_swap_both_moving_up() {
