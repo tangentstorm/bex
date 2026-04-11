@@ -237,6 +237,10 @@ impl VhlScaffold {
   /// Number of distinct vids currently present in the scaffold.
   pub fn num_vids(&self)->usize { self.vids.len() }
 
+  /// Immutable view of the scaffold's vid list, from bottom to top. The
+  /// last element is the current top of the scaffold.
+  pub fn vids(&self)->&[VID] { &self.vids }
+
   /// Total number of (vid, hi, lo) nodes across every row in the scaffold.
   /// This counts stale rc==0 nodes too; for a tighter measurement you'd
   /// have to walk from a specific root.
