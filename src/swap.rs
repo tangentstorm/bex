@@ -580,7 +580,8 @@ impl VhlScaffold {
     else { self.locked.insert(*v); self.rows.remove(v) }}
 
   /// Check if vu should be allowed to swap past vd.
-  /// Implements Grok's algorithm: only swap if directions differ and total distance decreases.
+  /// Allows same-direction swaps when they improve relative ordering
+  /// toward targets (fixes deadlocks in full reversals — bex#22).
   pub(crate) fn should_swap(&self, vu: VID, vd: VID, plan: &HashMap<VID, usize>) -> bool {
     let current_vu = self.vix(vu).unwrap();
     let current_vd = self.vix(vd).unwrap();
@@ -593,8 +594,14 @@ impl VhlScaffold {
     let dir_vu = (target_vu as i64 - current_vu as i64).signum();
     let dir_vd = (target_vd as i64 - current_vd as i64).signum();
 
-    // If both moving in same non-zero direction, don't swap (prevents infinite loop)
+    // Both moving in the same non-zero direction. For UPWARD movers,
+    // allow the swap if vu needs to end up above vd — otherwise they
+    // deadlock when adjacent (bex#22). For DOWNWARD movers, swapping
+    // moves vu UP which is always the wrong direction, so never swap.
     if dir_vu == dir_vd && dir_vu != 0 {
+      if dir_vu > 0 && target_vu > target_vd {
+        return true; // vu needs to end up above vd — let it pass
+      }
       return false;
     }
 
