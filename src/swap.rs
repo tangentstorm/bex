@@ -54,10 +54,12 @@ fn vhl_is_var(vhl:&Vhl)->bool {
 /// child nid in the XID→BDD map, honoring inversion. Scaffold node ids
 /// are stored uninverted but `Vhl::hi` may carry an inversion flag.
 fn lookup_branch(map: &HashMap<NID, NID>, child: NID, ctx: &str) -> NID {
-  // Literals (bare VID references like x0, v3) and constants pass
-  // through unchanged — they don't have entries in the scaffold's
-  // internal node table and don't need mapping.
-  if child.is_lit() || child.is_fun() { return child; }
+  // Constants, NidFun truth-table nodes, and pure VID literals (with
+  // no internal index) pass through — they're leaves with no scaffold
+  // entry. vid_idx NIDs (is_vid() but idx > 0) are internal BddBase
+  // nodes that MUST be in the map.
+  if child.is_const() || child.is_fun() { return child; }
+  if child.is_vid() && child.raw().idx() == 0 { return child; }
   let raw = child.raw();
   let base = *map.get(&raw).unwrap_or_else(|| panic!("missing branch during {}: child={:?}", ctx, child));
   if child.is_inv() { !base } else { base }
@@ -309,6 +311,7 @@ impl VhlScaffold {
 
   fn add_refs_ix(&mut self, ix:NID, dirc:i64, derc:i64) {
     if ix.is_lit() { return }
+    if ix.idx() >= self.vhls.len() { return }
     let vhl = self.vhls[ix.idx()];
     if let Some(row) = self.rows.get_mut(&vhl.v) {
       if let Some(ixrc) = row.hm.get_mut(&vhl.hilo()) {
