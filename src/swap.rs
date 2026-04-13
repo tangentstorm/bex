@@ -298,7 +298,7 @@ impl VhlScaffold {
       if inv { !res } else { res }}
 
   fn add_iref_ix(&mut self, ix:NID, dirc:i64) { self.add_refs_ix(ix, dirc, 0) }
-  fn add_eref_ix(&mut self, ix:NID, derc:i64) { self.add_refs_ix(ix, 0, derc) }
+  pub fn add_eref_ix(&mut self, ix:NID, derc:i64) { self.add_refs_ix(ix, 0, derc) }
 
   fn add_refs_ix(&mut self, ix:NID, dirc:i64, derc:i64) {
     if ix.is_lit() { return }
