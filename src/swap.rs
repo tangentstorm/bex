@@ -54,6 +54,10 @@ fn vhl_is_var(vhl:&Vhl)->bool {
 /// child nid in the XID→BDD map, honoring inversion. Scaffold node ids
 /// are stored uninverted but `Vhl::hi` may carry an inversion flag.
 fn lookup_branch(map: &HashMap<NID, NID>, child: NID, ctx: &str) -> NID {
+  // Literals (bare VID references like x0, v3) and constants pass
+  // through unchanged — they don't have entries in the scaffold's
+  // internal node table and don't need mapping.
+  if child.is_lit() || child.is_fun() { return child; }
   let raw = child.raw();
   let base = *map.get(&raw).unwrap_or_else(|| panic!("missing branch during {}: child={:?}", ctx, child));
   if child.is_inv() { !base } else { base }
@@ -289,8 +293,11 @@ impl VhlScaffold {
       else { // entry was vacant:
         let alloc = self.alloc_one();
         self.vhls[alloc] = vhl;
-        let hi = self.get(vhl.hi).unwrap(); self.add_ref(hi,1,0);
-        let lo = self.get(vhl.lo).unwrap(); self.add_ref(lo,1,0);
+        // Recursively increment children's internal refcounts.
+        // Skip literals, constants, and NidFun (truth table) nodes —
+        // they don't have entries in the scaffold's vhls table.
+        if let Some(hi) = self.get(vhl.hi) { self.add_ref(hi,1,0); }
+        if let Some(lo) = self.get(vhl.lo) { self.add_ref(lo,1,0); }
         IxRc{ ix:NID::ixn(alloc), irc, erc }};
       // !! is there a way to just use row here, and still have &mut self for the new entry code?
       self.rows.get_mut(&vhl.v).unwrap().hm.insert(hl, ixrc);
@@ -426,11 +433,15 @@ impl VhlScaffold {
     // self.dump("before reclaim_nodes");
     // self.locked.remove(&vu); self.locked.remove(&vd);
 
-    // remove nodes (do these first in case the refcount changes touch umov)
-    let dels = worker.dels.len();
-    self.reclaim_swapped_nodes(std::mem::take(&mut worker.dels));
+    // TWO-PHASE COMMIT: first commit all new/moved nodes to vhls,
+    // then apply refcount changes, and ONLY THEN reclaim deleted
+    // nodes. The old code reclaimed first, which allowed alloc_one
+    // to reuse a slot whose occupant was still referenced as a
+    // child by a not-yet-committed new node.
+    let del_indices = std::mem::take(&mut worker.dels);
+    let dels = del_indices.len();
 
-    // commit changes to nodes:
+    // Phase 1: commit new and moved node entries to vhls.
     let (dnew, wipnid) = worker.dnew_mods(xids); let dnews=dnew.len();
     for (ix, hi, lo) in dnew {
       debug_assert!(hi.is_const() || hi.is_ixn(), "hi should be ixn NID: {:?}", hi);
@@ -442,8 +453,11 @@ impl VhlScaffold {
       debug_assert!(lo.is_const() || lo.is_ixn(), "lo should be ixn NID: {:?}", lo);
       self.vhls[ix] = Vhl{ v: vu, hi, lo } }
 
-    // [ commit refcount changes ]
+    // Phase 2: commit refcount changes (all vhls entries are valid).
     for (xid, dc) in worker.refs.iter() { self.add_iref_ix(*xid, *dc); }
+
+    // Phase 3: reclaim deleted slots (safe — no live node references them).
+    self.reclaim_swapped_nodes(del_indices);
 
     // finally, put the rows back where we found them:
     self.rows.insert(vu, worker.ru);
@@ -768,26 +782,19 @@ impl VhlScaffold {
     debug_assert_eq!(vd, self.vid_above(vu).unwrap(), "row d isn't the row that was above row u!?!");
     self.rows.insert(vd, rd);
 
-    // apply modifications to the vhls table
-    // TODO: probably we we should just have self.ixv : HashMap<ix,VID>  instead of vhls,
-    // and then a self.nids : std::collections::BinaryHeap for reclaimed indices.
-    // println!("vu:{} vd:{} dnew: {:?} umov:{:?} dels:{:?}", vu, vd, dnew, umov, dels);
-    self.reclaim_swapped_nodes(dels);
+    // TWO-PHASE COMMIT (same fix as swap()): commit vhls updates
+    // first, apply refcounts, THEN reclaim. Prevents alloc_one from
+    // reusing a slot whose occupant is still a live child reference.
     for (ix, hi, lo) in dnew {
-      debug_assert!(hi.is_const() || self.vhls[hi.idx()] != VHL_O, "garbage hi link in dnew: {:?}->{:?}", ix, hi);
-      debug_assert!(lo.is_const() || self.vhls[lo.idx()] != VHL_O, "garbage lo link in dnew: {:?}->{:?}", ix, lo);
       let hi_ix = if hi.is_const() { hi } else { NID::ixn(hi.idx()).inv_if(hi.is_inv()) };
       let lo_ix = if lo.is_const() { lo } else { NID::ixn(lo.idx()).inv_if(lo.is_inv()) };
       self.vhls[ix] = Vhl{ v: vd, hi: hi_ix, lo: lo_ix } }
     for (ix, hi, lo) in umov {
-      debug_assert!(hi.is_const() || self.vhls[hi.idx()] != VHL_O, "garbage hi link in umov: {:?}->{:?}", ix, hi);
-      debug_assert!(lo.is_const() || self.vhls[lo.idx()] != VHL_O, "garbage lo link in umov: {:?}->{:?}", ix, lo);
       let hi_ix = if hi.is_const() { hi } else { NID::ixn(hi.idx()).inv_if(hi.is_inv()) };
       let lo_ix = if lo.is_const() { lo } else { NID::ixn(lo.idx()).inv_if(lo.is_inv()) };
       self.vhls[ix] = Vhl{ v: vu, hi: hi_ix, lo: lo_ix } }
-    // println!("ref changes: {:?}", refs);
-    // for (nid, drc) in refs.iter() { println!("drc: {} for nid:{:?} ({:?})", *drc, *nid, self.vhls[nid.ix()] ); }
     for (nid, drc) in refs.iter() { self.add_ref_ix_or_defer(*nid, *drc) }
+    self.reclaim_swapped_nodes(dels);
 
     debug_assert!(self.locked.contains(&vd), "vd:{} wasn't locked!??", vd);
     self.locked.remove(&vd);
