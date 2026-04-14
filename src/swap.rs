@@ -50,6 +50,21 @@ fn vhl_is_var(vhl:&Vhl)->bool {
   vhl.v.is_var() && vhl.hi == nid::I && vhl.lo == nid::O
 }
 
+/// Helper for `copy_to_bdd`/`copy_to_bdd_keep_vids`: looks up a scaffold
+/// child nid in the XID→BDD map, honoring inversion. Scaffold node ids
+/// are stored uninverted but `Vhl::hi` may carry an inversion flag.
+fn lookup_branch(map: &HashMap<NID, NID>, child: NID, ctx: &str) -> NID {
+  // Constants, NidFun truth-table nodes, and pure VID literals (with
+  // no internal index) pass through — they're leaves with no scaffold
+  // entry. vid_idx NIDs (is_vid() but idx > 0) are internal BddBase
+  // nodes that MUST be in the map.
+  if child.is_const() || child.is_fun() { return child; }
+  if child.is_vid() && child.raw().idx() == 0 { return child; }
+  let raw = child.raw();
+  let base = *map.get(&raw).unwrap_or_else(|| panic!("missing branch during {}: child={:?}", ctx, child));
+  if child.is_inv() { !base } else { base }
+}
+
 /// Dummy value to stick into vhls[0]
 const VHL_O:Vhl = Vhl{ v: NOV, hi:nid::O, lo:nid::O };
 
@@ -223,7 +238,21 @@ impl VhlScaffold {
   fn vix(&self, v:VID)->Option<usize> { self.vids.iter().position(|&x| x == v) }
 
   /// Some(top vid), or None if empty
-  fn top_vid(&self)->Option<VID> { let len = self.vids.len(); if len>0 { Some(self.vids[len-1]) } else { None }}
+  pub fn top_vid(&self)->Option<VID> { let len = self.vids.len(); if len>0 { Some(self.vids[len-1]) } else { None }}
+
+  /// Number of distinct vids currently present in the scaffold.
+  pub fn num_vids(&self)->usize { self.vids.len() }
+
+  /// Immutable view of the scaffold's vid list, from bottom to top. The
+  /// last element is the current top of the scaffold.
+  pub fn vids(&self)->&[VID] { &self.vids }
+
+  /// Total number of (vid, hi, lo) nodes across every row in the scaffold.
+  /// This counts stale rc==0 nodes too; for a tighter measurement you'd
+  /// have to walk from a specific root.
+  pub fn num_nodes(&self)->usize {
+    self.rows.values().map(|r| r.hm.len()).sum()
+  }
 
   /// return the vid immediately above v in the scaffold, or None
   /// if v is top vid. Panics if v is not in the scaffold.
@@ -266,8 +295,11 @@ impl VhlScaffold {
       else { // entry was vacant:
         let alloc = self.alloc_one();
         self.vhls[alloc] = vhl;
-        let hi = self.get(vhl.hi).unwrap(); self.add_ref(hi,1,0);
-        let lo = self.get(vhl.lo).unwrap(); self.add_ref(lo,1,0);
+        // Recursively increment children's internal refcounts.
+        // Skip literals, constants, and NidFun (truth table) nodes —
+        // they don't have entries in the scaffold's vhls table.
+        if let Some(hi) = self.get(vhl.hi) { self.add_ref(hi,1,0); }
+        if let Some(lo) = self.get(vhl.lo) { self.add_ref(lo,1,0); }
         IxRc{ ix:NID::ixn(alloc), irc, erc }};
       // !! is there a way to just use row here, and still have &mut self for the new entry code?
       self.rows.get_mut(&vhl.v).unwrap().hm.insert(hl, ixrc);
@@ -275,10 +307,11 @@ impl VhlScaffold {
       if inv { !res } else { res }}
 
   fn add_iref_ix(&mut self, ix:NID, dirc:i64) { self.add_refs_ix(ix, dirc, 0) }
-  fn add_eref_ix(&mut self, ix:NID, derc:i64) { self.add_refs_ix(ix, 0, derc) }
+  pub fn add_eref_ix(&mut self, ix:NID, derc:i64) { self.add_refs_ix(ix, 0, derc) }
 
   fn add_refs_ix(&mut self, ix:NID, dirc:i64, derc:i64) {
     if ix.is_lit() { return }
+    if ix.idx() >= self.vhls.len() { return }
     let vhl = self.vhls[ix.idx()];
     if let Some(row) = self.rows.get_mut(&vhl.v) {
       if let Some(ixrc) = row.hm.get_mut(&vhl.hilo()) {
@@ -293,6 +326,12 @@ impl VhlScaffold {
   /// fetch the Vhl for the given nid (if we know it)
   fn get(&self, n:NID)->Option<Vhl> {
     self.vhls.get(n.idx()).map(|&y| if n.is_inv() { !y } else { y }) }
+
+  /// Public wrapper over [`get`] for external walkers that need to
+  /// traverse scaffold structure one node at a time. Returns a `Vhl`
+  /// with hi/lo NIDs pointing at the scaffold's own index space, or
+  /// `None` if the NID isn't allocated here.
+  pub fn get_vhl(&self, n:NID)->Option<Vhl> { self.get(n) }
 
   /// follow the hi or lo branch of n
   fn follow(&self, n:NID, which:bool)->NID {
@@ -397,11 +436,15 @@ impl VhlScaffold {
     // self.dump("before reclaim_nodes");
     // self.locked.remove(&vu); self.locked.remove(&vd);
 
-    // remove nodes (do these first in case the refcount changes touch umov)
-    let dels = worker.dels.len();
-    self.reclaim_swapped_nodes(std::mem::take(&mut worker.dels));
+    // TWO-PHASE COMMIT: first commit all new/moved nodes to vhls,
+    // then apply refcount changes, and ONLY THEN reclaim deleted
+    // nodes. The old code reclaimed first, which allowed alloc_one
+    // to reuse a slot whose occupant was still referenced as a
+    // child by a not-yet-committed new node.
+    let del_indices = std::mem::take(&mut worker.dels);
+    let dels = del_indices.len();
 
-    // commit changes to nodes:
+    // Phase 1: commit new and moved node entries to vhls.
     let (dnew, wipnid) = worker.dnew_mods(xids); let dnews=dnew.len();
     for (ix, hi, lo) in dnew {
       debug_assert!(hi.is_const() || hi.is_ixn(), "hi should be ixn NID: {:?}", hi);
@@ -413,8 +456,11 @@ impl VhlScaffold {
       debug_assert!(lo.is_const() || lo.is_ixn(), "lo should be ixn NID: {:?}", lo);
       self.vhls[ix] = Vhl{ v: vu, hi, lo } }
 
-    // [ commit refcount changes ]
+    // Phase 2: commit refcount changes (all vhls entries are valid).
     for (xid, dc) in worker.refs.iter() { self.add_iref_ix(*xid, *dc); }
+
+    // Phase 3: reclaim deleted slots (safe — no live node references them).
+    self.reclaim_swapped_nodes(del_indices);
 
     // finally, put the rows back where we found them:
     self.rows.insert(vu, worker.ru);
@@ -462,14 +508,37 @@ impl VhlScaffold {
       for (x, ixrc) in self.rows[&rv].hm.iter() {
         if ixrc.rc() > 0 || Some(rv) == self.top_vid() {
           let hilo = *x;
-          let hi = *map.get(&hilo.hi).expect("missing hi branch during copy_to_bdd");
-          let lo = *map.get(&hilo.lo).expect("missing lo branch during copy_to_bdd");
+          let hi = lookup_branch(&map, hilo.hi, "copy_to_bdd");
+          let lo = lookup_branch(&map, hilo.lo, "copy_to_bdd");
           let nid = bdd.ite(bv, hi, lo);
           map.insert(ixrc.ix, nid);
         }
       }
     }
-    nids.iter().map(|&nid| map[&nid]).collect()}
+    nids.iter().map(|&nid| lookup_branch(&map, nid, "copy_to_bdd")).collect()}
+
+  /// Like [`copy_to_bdd`] but preserves each node's **original VID** instead
+  /// of remapping scaffold row `i` to `VID::var(i)`. Use this when the
+  /// resulting BDD must share a variable namespace with other BDDs (e.g.
+  /// when ANDing BDDs from multiple scaffolds in the same `BddBase`).
+  pub fn copy_to_bdd_keep_vids(&self, bdd: &mut BddBase, nids: &[NID]) -> Vec<NID> {
+    let mut map: HashMap<NID, NID> = HashMap::new();
+    map.insert(nid::O, nid::O);
+    map.insert(nid::I, nid::I);
+    for &rv in self.vids.iter() {
+      let bv = NID::from_vid(rv);
+      for (x, ixrc) in self.rows[&rv].hm.iter() {
+        if ixrc.rc() > 0 || Some(rv) == self.top_vid() {
+          let hilo = *x;
+          let hi = lookup_branch(&map, hilo.hi, "copy_to_bdd_keep_vids");
+          let lo = lookup_branch(&map, hilo.lo, "copy_to_bdd_keep_vids");
+          let nid = bdd.ite(bv, hi, lo);
+          map.insert(ixrc.ix, nid);
+        }
+      }
+    }
+    nids.iter().map(|&nid| lookup_branch(&map, nid, "copy_to_bdd_keep_vids")).collect()
+  }
 
 }
 
@@ -528,7 +597,8 @@ impl VhlScaffold {
     else { self.locked.insert(*v); self.rows.remove(v) }}
 
   /// Check if vu should be allowed to swap past vd.
-  /// Implements Grok's algorithm: only swap if directions differ and total distance decreases.
+  /// Allows same-direction swaps when they improve relative ordering
+  /// toward targets (fixes deadlocks in full reversals — bex#22).
   pub(crate) fn should_swap(&self, vu: VID, vd: VID, plan: &HashMap<VID, usize>) -> bool {
     let current_vu = self.vix(vu).unwrap();
     let current_vd = self.vix(vd).unwrap();
@@ -541,8 +611,14 @@ impl VhlScaffold {
     let dir_vu = (target_vu as i64 - current_vu as i64).signum();
     let dir_vd = (target_vd as i64 - current_vd as i64).signum();
 
-    // If both moving in same non-zero direction, don't swap (prevents infinite loop)
+    // Both moving in the same non-zero direction. For UPWARD movers,
+    // allow the swap if vu needs to end up above vd — otherwise they
+    // deadlock when adjacent (bex#22). For DOWNWARD movers, swapping
+    // moves vu UP which is always the wrong direction, so never swap.
     if dir_vu == dir_vd && dir_vu != 0 {
+      if dir_vu > 0 && target_vu > target_vd {
+        return true; // vu needs to end up above vd — let it pass
+      }
       return false;
     }
 
@@ -748,26 +824,19 @@ impl VhlScaffold {
     debug_assert_eq!(vd, self.vid_above(vu).unwrap(), "row d isn't the row that was above row u!?!");
     self.rows.insert(vd, rd);
 
-    // apply modifications to the vhls table
-    // TODO: probably we we should just have self.ixv : HashMap<ix,VID>  instead of vhls,
-    // and then a self.nids : std::collections::BinaryHeap for reclaimed indices.
-    // println!("vu:{} vd:{} dnew: {:?} umov:{:?} dels:{:?}", vu, vd, dnew, umov, dels);
-    self.reclaim_swapped_nodes(dels);
+    // TWO-PHASE COMMIT (same fix as swap()): commit vhls updates
+    // first, apply refcounts, THEN reclaim. Prevents alloc_one from
+    // reusing a slot whose occupant is still a live child reference.
     for (ix, hi, lo) in dnew {
-      debug_assert!(hi.is_const() || self.vhls[hi.idx()] != VHL_O, "garbage hi link in dnew: {:?}->{:?}", ix, hi);
-      debug_assert!(lo.is_const() || self.vhls[lo.idx()] != VHL_O, "garbage lo link in dnew: {:?}->{:?}", ix, lo);
       let hi_ix = if hi.is_const() { hi } else { NID::ixn(hi.idx()).inv_if(hi.is_inv()) };
       let lo_ix = if lo.is_const() { lo } else { NID::ixn(lo.idx()).inv_if(lo.is_inv()) };
       self.vhls[ix] = Vhl{ v: vd, hi: hi_ix, lo: lo_ix } }
     for (ix, hi, lo) in umov {
-      debug_assert!(hi.is_const() || self.vhls[hi.idx()] != VHL_O, "garbage hi link in umov: {:?}->{:?}", ix, hi);
-      debug_assert!(lo.is_const() || self.vhls[lo.idx()] != VHL_O, "garbage lo link in umov: {:?}->{:?}", ix, lo);
       let hi_ix = if hi.is_const() { hi } else { NID::ixn(hi.idx()).inv_if(hi.is_inv()) };
       let lo_ix = if lo.is_const() { lo } else { NID::ixn(lo.idx()).inv_if(lo.is_inv()) };
       self.vhls[ix] = Vhl{ v: vu, hi: hi_ix, lo: lo_ix } }
-    // println!("ref changes: {:?}", refs);
-    // for (nid, drc) in refs.iter() { println!("drc: {} for nid:{:?} ({:?})", *drc, *nid, self.vhls[nid.ix()] ); }
     for (nid, drc) in refs.iter() { self.add_ref_ix_or_defer(*nid, *drc) }
+    self.reclaim_swapped_nodes(dels);
 
     debug_assert!(self.locked.contains(&vd), "vd:{} wasn't locked!??", vd);
     self.locked.remove(&vd);
@@ -1264,6 +1333,11 @@ impl SwapSolver {
     let dst = VhlScaffold::new();
     let src = VhlScaffold::new();
     SwapSolver{ dst, dx:nid::O, rv:NOV, src, sx:nid::O }}
+
+  /// Borrow the destination scaffold. Useful for advanced callers that
+  /// need to copy this solver's BDD into another base alongside BDDs from
+  /// other scaffolds (e.g. `scaffold().copy_to_bdd_keep_vids(...)`).
+  pub fn scaffold(&self) -> &VhlScaffold { &self.dst }
 
   /// Arrange the two scaffolds so that their variable orders match.
   ///  1. vids shared between src and dst (set n) are above rv
