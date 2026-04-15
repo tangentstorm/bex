@@ -1,8 +1,11 @@
-/*
+# swap & scaffold notes
 
+Design notes salvaged from `src/tmp.rs`. Two threads from early 2021: a
+row-swap algorithm sketch and a broader scaffold/worlds brainstorm.
+Nothing here is current code; kept for historical and conceptual
+reference.
 
-row swapping algorithm  (1/20/2021)
----------------------------------------------------
+## row swapping algorithm  (1/20/2021)
 
 Swap works on a single pair of rows at once.
 
@@ -19,7 +22,7 @@ It rewrites nodes in place, so that the branch variable of node may change.
    n2. Nodes in rv that have no references outside rw will be garbage collected.
 
 
-## Constrained Resources: cpu time, ram, xids
+### Constrained Resources: cpu time, ram, xids
   - swapping should be the most expensive task in the swap solver.
     so we don't want to stop work just to wait for an allocation of new xids.
   - but rows may become so large that ram is also a constraint.
@@ -30,7 +33,7 @@ It rewrites nodes in place, so that the branch variable of node may change.
     size of the row we're swapping.
 
 
-#. Move nodes on rw with references to rv up to rv:
+### Move nodes on rw with references to rv up to rv:
 
   We can think of two different groups of nodes on rw:
 
@@ -48,39 +51,31 @@ It rewrites nodes in place, so that the branch variable of node may change.
      These may be new nodes, or may already exist in group I.
    The old children (on row v) may see their refcounts drop to 0.
 
-  #. let mut rw' = new row
-  #. drain rw -> rw':
+  1. let mut rw' = new row
+  2. drain rw -> rw':
     - if group I: add to rw'
     - if group D:
       For each node@(nv,hi,lo): dec_ref(hi) dec_ref(lo) if node.rv == 0
 
-  #. garbage collect rv, including rv nodes whose rc was already 0.
+  3. garbage collect rv, including rv nodes whose rc was already 0.
      We are never going to throw away a node that we'll need to recreate
      here, because the only nodes added to rv will move from rw and have new
      children on rw. By observation n0, they must be completely fresh nodes.
 
-  #.
+  4.
     if node.rc==0 { rw.delete(node);  gc.push(node.xid) }
     else { for child:XID in vec![node.hi, node.lo] {}}
 
 
-
-
-
-
-
-
-
----------------------
+---
 
 Modify the substitution solver:
   init(vid) (just change nid->vid)
   subst(vid, &base, nid)
 
 
+## other ideas (1/17/2021)
 
-other ideas (1/17/2021)
-------
 the starting AST has thousands of nodes. currently, it's a binary tree labeled with boolean operators.
 
 let's mark each AST node with the highest var on which it depends, and add a second bit for whether the
@@ -200,11 +195,3 @@ leftmost cursor has already been consumed, so we never need to evaluate it. Basi
 the directly-downstream neighbors of a node have moved their cursor past configuration x, there
 is no need to ever evaluate anything to the left of x, so it might as well be erased. (This should
 be attached to the AST nodes, not the BDD)
-
-
-
-
-
-
-
-*/

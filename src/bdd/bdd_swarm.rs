@@ -1,3 +1,5 @@
+//! Swarm worker for parallel BDD `ite` reduction. Plugs `BddJobHandler`
+//! into the generic `VhlSwarm` framework defined in `vhl_swarm`.
 use crate::{vhl::{VhlParts, VhlSlots}, wip::{Dep, ResStep}};
 use crate::nid::NID;
 use crate::bdd::{ITE, NormIteKey, Norm};

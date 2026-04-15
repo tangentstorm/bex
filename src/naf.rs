@@ -1,9 +1,6 @@
-/**
- * Nested algebraic form. Represents an ANF polynomial.
- * The main difference between this and anf.rs is that this
- * version allows deferred evaluation.
- * (Note: this module is experimental and far from stable.)
- */
+//! Nested algebraic form — an ANF polynomial representation with deferred
+//! evaluation. Like `anf.rs`, but keeps the work lazy rather than eagerly
+//! reducing. Experimental and far from stable.
 use std::collections::HashSet;
 use dashmap::DashMap;
 use crate::ops::Ops;
