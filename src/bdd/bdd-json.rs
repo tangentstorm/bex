@@ -1,3 +1,5 @@
+// Included into `src/bdd.rs` — JSON import/export for BDDs
+// (format tag: `bex-bdd-0.01`).
 extern crate json;
 
 impl BddBase {

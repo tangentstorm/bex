@@ -1,3 +1,7 @@
+//! HTTP REST server exposing BDD operations. Endpoints for `ite`, `and`,
+//! `or`, `xor`, and `nid` lookup share a single `BddBase` behind a mutex.
+//! Host and port are read from `HOST`/`PORT` env vars (default
+//! `127.0.0.1:3030`).
 use warp::{Filter, Rejection, Reply};
 use dotenv::dotenv;
 use std::env;

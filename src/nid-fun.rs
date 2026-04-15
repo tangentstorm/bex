@@ -1,3 +1,5 @@
+// Included into `src/nid.rs` — `NidFun` methods and helpers for
+// truth-table nids (the `f…`/`t…`/`T{…}` forms).
 use crate::Fun;
 
 /// helper for 'fun' (function table) nids
