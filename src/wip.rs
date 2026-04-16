@@ -197,6 +197,11 @@ impl<K:Eq+Hash+Debug+Copy,P:Parts,B:WipBase<K,P>> WorkState<K,P,B> {
           Some(*v)}}}
     else { None }}
 
+  /// Store a completed result directly in the cache.
+  pub fn put_done(&self, k:K, nid:NID) {
+    self.cache.insert(k, Work::Done(nid));
+  }
+
   pub fn resolve_job(&self, q:&K, nid:NID)->WorkResult<K> {
     let mut ideps = vec![];
     {
