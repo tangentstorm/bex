@@ -153,7 +153,7 @@ fn run_swap(cfg: &Config, db_path: &str, src: &RawASTBase, _sorted_top: SrcNid, 
              solver.scaffold().num_nodes());
 
     // Auto-save
-    if cfg.save_every > 0 && steps_done % cfg.save_every == 0 {
+    if cfg.save_every > 0 && steps_done.is_multiple_of(cfg.save_every) {
       let tx = conn.transaction().unwrap();
       let sid = sql_snap::write_scaffold(&tx, SnapshotMetaInput {
         parent: parent_snap,
@@ -228,7 +228,7 @@ fn run_bdd(cfg: &Config, db_path: &str, src: &RawASTBase, _sorted_top: SrcNid, t
     println!("step {:>5}/{:<5}  vir={:<6}  {:>6}ms",
              total_steps - step, total_steps, format!("v{:X}", step), ms);
 
-    if cfg.save_every > 0 && steps_done % cfg.save_every == 0 {
+    if cfg.save_every > 0 && steps_done.is_multiple_of(cfg.save_every) {
       let tx = conn.transaction().unwrap();
       let sid = sql_snap::write_bdd(&tx, SnapshotMetaInput {
         parent: parent_snap, step: Some((total_steps - step) as u32),
@@ -279,7 +279,7 @@ fn run_anf(cfg: &Config, db_path: &str, src: &RawASTBase, _sorted_top: SrcNid, t
     println!("step {:>5}/{:<5}  vir={:<6}  {:>6}ms",
              total_steps - step, total_steps, format!("v{:X}", step), ms);
 
-    if cfg.save_every > 0 && steps_done % cfg.save_every == 0 {
+    if cfg.save_every > 0 && steps_done.is_multiple_of(cfg.save_every) {
       let tx = conn.transaction().unwrap();
       let sid = sql_snap::write_anf(&tx, SnapshotMetaInput {
         parent: parent_snap, step: Some((total_steps - step) as u32),

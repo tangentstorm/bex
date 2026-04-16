@@ -71,8 +71,8 @@ fn cmd_list(path: &str) {
     println!("(no snapshots)");
     return;
   }
-  println!("{:>4}  {:>6}  {:>8}  {:>4}  {:>6}  {:>6}  {:>5}  {}",
-           "id", "parent", "kind", "step", "rv", "#nodes", "#vids", "note");
+  println!("{:>4}  {:>6}  {:>8}  {:>4}  {:>6}  {:>6}  {:>5}  note",
+           "id", "parent", "kind", "step", "rv", "#nodes", "#vids");
   for s in &snaps {
     let parent = s.parent.map_or("-".to_string(), |p| format!("{}", p.0));
     let rv = s.rv.map_or("-".to_string(), |v| format!("{}", v));

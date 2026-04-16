@@ -21,6 +21,9 @@ use crate::bdd::BddBase;
 use crate::anf::ANFBase;
 use crate::vhl::Walkable;
 
+/// (ix, vid, hi_str, lo_str, irc, erc) — row format used by node writers
+type NodeRow = (usize, VID, String, String, Option<usize>, Option<usize>);
+
 // -----------------------------------------------------------------------
 // Public types
 // -----------------------------------------------------------------------
@@ -152,7 +155,7 @@ fn insert_snapshot_row(
       m.parent.map(|p| p.0),
       kind.as_str(),
       m.step.map(|s| s as i64),
-      m.rv.map(|v| vid_to_string(v)),
+      m.rv.map(vid_to_string),
       now_unix(),
       m.note.as_deref(),
     ],
@@ -171,7 +174,7 @@ fn insert_vids(tx: &Transaction<'_>, sid: SnapshotId, vids: &[VID]) -> Result<()
 
 fn insert_nodes(
   tx: &Transaction<'_>, sid: SnapshotId,
-  nodes: &[(usize, VID, String, String, Option<usize>, Option<usize>)],
+  nodes: &[NodeRow],
 ) -> Result<()> {
   let mut stmt = tx.prepare(
     "INSERT INTO snapshot_node(snapshot_id, ix, vid, hi, lo, irc, erc) VALUES(?1,?2,?3,?4,?5,?6,?7)")?;
@@ -229,7 +232,7 @@ pub fn write_bdd(
   // Walk all roots bottom-up, assigning snapshot-local indices.
   let mut global_to_local: HashMap<NID, usize> = HashMap::new();
   let mut local_ix: usize = 1; // 0 reserved for sentinel
-  let mut node_rows: Vec<(usize, VID, String, String, Option<usize>, Option<usize>)> = Vec::new();
+  let mut node_rows: Vec<NodeRow> = Vec::new();
   let mut vids_seen: Vec<VID> = Vec::new();
   let mut vid_set = std::collections::HashSet::new();
 
@@ -287,7 +290,7 @@ pub fn write_anf(
   // reachable nodes and assign snapshot-local indices.
   let mut global_to_local: HashMap<NID, usize> = HashMap::new();
   let mut local_ix: usize = 1;
-  let mut node_rows: Vec<(usize, VID, String, String, Option<usize>, Option<usize>)> = Vec::new();
+  let mut node_rows: Vec<NodeRow> = Vec::new();
   let mut vids_seen: Vec<VID> = Vec::new();
   let mut vid_set = std::collections::HashSet::new();
 

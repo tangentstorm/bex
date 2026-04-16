@@ -29,7 +29,39 @@ Older upcoming changes for 0.4.0 live in the README section titled \"Changes in 
   - Added `bench-small` example for quick single-run benchmarking
   - Added [doc/optimization-ideas.md](doc/optimization-ideas.md) with 24 profiling-driven ideas (3 applied, 12 tested/rejected with rationale)
 
+### Persistence
+- **Snapshot persistence for `VhlScaffold`, `BddBase`, and `ANFBase`** (bex#6).
+  Resolves the long-standing request to load and save intermediate
+  solver state. A new `sql_snap` module adds four SQLite tables
+  (`snapshot`, `snapshot_vid`, `snapshot_node`, `snapshot_root`)
+  alongside the existing AST schema; each snapshot captures the
+  graph plus its variable permutation (critical for `SwapSolver`,
+  whose scaffold reordering changes at every `subst` step).
+  Snapshots chain via `parent_id` to form a replay trace.
+  - New public API: `sql_snap::{write_scaffold, write_bdd, write_anf,
+    read_scaffold, read_bdd_into, read_anf_into, list_snapshots}`
+    plus path-based wrappers and `ensure_snap_schema`.
+  - `VhlScaffold`: new `iter_nodes`, `from_raw`, `is_mid_regroup`.
+  - `SwapSolver`: new `dx`, `rv`, `from_parts` for resume.
+  - `ANFBase`: new `nodes`, `tags`, `tags_mut`, `insert_vhl`.
+  - `sql`: new `ensure_schema_pub`, `ensure_schema_tx` helpers so
+    callers can share a transaction with snapshot writes.
+  - Schema is additive — existing AST-only `.sdb` files load
+    unchanged; `list_snapshots` returns empty for files without
+    snapshot tables.
+
 ### Tooling
+- **New binary `bex-sdb`** — CLI for inspecting snapshot databases.
+  Subcommands: `list`, `info`, `dump`, `ast`, `replay`.
+- **New binary `bex-mkproblem`** — generates AST `.sdb` files for
+  primorial factoring problems (`bex-mkproblem -p 4 -o primorial-4.sdb`).
+- **New binary `bex-solve`** — drives `SwapSolver` / `BddBase` /
+  `ANFBase` through the substitution solve loop, auto-committing a
+  snapshot to the same `.sdb` file after every N steps. Supports
+  `--solver swap|bdd|anf`, `--save-every N`, `--resume <snap-id>`,
+  `--timeout <secs>`, and `-o <output.sdb>`.
+- `solve::refine_one` is now `pub` so external drivers can call it.
+
 - Migrated `benches/bench-solve.rs` from [`bencher`](https://crates.io/crates/bencher)
   to [`divan`](https://crates.io/crates/divan) (bex#4). Benchmark output now
   includes median / mean / stddev on a tree-structured terminal report, plus
