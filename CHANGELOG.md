@@ -37,6 +37,14 @@ Older upcoming changes for 0.4.0 live in the README section titled \"Changes in 
   `divan::AllocProfiler`) — useful for catching silent allocation regressions
   in `ite` / `and` / `xor` on `BddBase`. Filtering and sample-count control
   work via the standard `cargo bench -- <filter> --sample-count N` CLI.
+  - Factoring benches are defined via a `factor_benches!` macro table: one
+    row per size (`tiny`, `small`, ...), each with its own `sample_count`.
+    Adding a new size is a one-line addition.
+  - New `ops::{and_chain, xor_chain, ite_chain}` alloc benches sweep
+    N ∈ {8, 16, 32} variables and report the heap-allocation cost of
+    reducing a chain of inputs via each primitive. `BddBase` setup and
+    teardown are excluded from the measurement (via `with_inputs` +
+    `bench_refs`), so the reported count is the marginal per-op cost.
 
 
 ## 0.3.0 (2025-02-16)
