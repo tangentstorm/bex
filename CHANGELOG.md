@@ -15,6 +15,28 @@ Bex is a rust crate for working with binary expressions.
   - `ZddSetIterator` for native family enumeration; `ZddSolIterator` for
     Boolean solution enumeration via BDD conversion.
   - Graphviz rendering via `dot`.
+- **Direct single-threaded ITE path for `BddBase`.** Opt in with
+  `BddBase::set_direct_ite(true)` (or `bex_bdd_set_direct_ite(bdd, true)` from C) to
+  bypass swarm dispatch and recurse directly with a local `FxHashMap` computed table.
+  Designed for workloads that build BDDs bottom-up via many small sequential ITE
+  calls, where channel-dispatch overhead dominates. Default is unchanged (swarm).
+  - Reduced the `bdd-benchmark` queens N=8 runtime from "hangs" to ~580 ms in the
+    bdd-benchmark adapter; unblocks tic-tac-toe, hamiltonian, and game-of-life too.
+- New FFI `bex_swap_copy_to_bdd(swap, bdd, n)` so C callers can transfer a
+  swap-solver result into a separate `BddBase` and use the normal
+  `bex_bdd_node_count` / `bex_bdd_solution_count` on it.
+- `VhlSwarm` now exposes `get_done` / `put_done` / `vhl_to_nid` so callers can
+  check the shared computed table or construct nodes without dispatching a job.
+
+### Bug fixes
+- `tbl::merge_small` wrote past the end of a 5-element array before returning
+  `None` on 6-variable ITEs, causing panics in the truth-table fast path. The
+  `len > 5` guards are now `len >= 5`.
+- `tbl::nid_to_small` accepted real-variable NIDs with an index >= `MAX_VAR`
+  and fed them into the combinatorial encoder, which panicked with an array
+  bounds error. Now it returns `None` so the caller falls back to the regular
+  BDD path. This unblocked the `bdd-benchmark` hamiltonian workload, which
+  allocates more than 110 variables.
 
 - **Table NIDs with named variables.** Functions of up to 5 input variables are now stored
   directly in the NID as a truth table, with the variable set encoded using a combinatorial
