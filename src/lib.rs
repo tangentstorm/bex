@@ -34,4 +34,5 @@ pub mod swap;
 pub mod swarm;
 pub mod vhl_swarm;
 pub mod naf;
+pub mod zdd;    pub use crate::zdd::ZddBase;
 pub mod coz_profile;
