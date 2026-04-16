@@ -14,6 +14,9 @@ impl VhlJobHandler<NormIteKey> for BddJobHandler {
   type W = VhlWorker<NormIteKey, Self>;
 
   fn work_job(&mut self, w: &mut Self::W, q:NormIteKey) {
+    // Causal-profiler progress point: one unit of ITE work dispatched
+    // to a BDD swarm worker. See `src/coz_profile.rs`.
+    crate::coz_progress!("bdd-ite");
     let res = match self.ite_norm(w, q) {
       ResStep::Nid(n) => w.resolve_job(&q, n),
       ResStep::Wip { v, hi, lo, invert } => {

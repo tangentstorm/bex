@@ -362,6 +362,9 @@ impl AnfWorker {
   }
 
   fn work_job(&mut self, job:AnfJob) {
+    // Causal-profiler progress point: one unit of ANF work dispatched
+    // to a swarm worker. See `src/coz_profile.rs`.
+    crate::coz_progress!("anf-job");
     let state = self.state.as_ref().unwrap();
     let res = match job {
       AnfJob::Xor(x, y) => {
