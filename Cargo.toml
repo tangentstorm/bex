@@ -24,6 +24,11 @@ path = "examples/shell/bex-shell.rs"
 name = "swarm-shell"
 path = "examples/shell/swarm-shell.rs"
 
+[[bin]]
+name = "bex-sdb"
+path = "src/bin/bex-sdb.rs"
+required-features = ["sql"]
+
 [[example]]
 name = "bdd-solve"
 path = "examples/solve/bdd-solve.rs"
