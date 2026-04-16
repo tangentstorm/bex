@@ -180,6 +180,16 @@ impl<J,H> VhlSwarm<J,H> where J:JobKey, H:VhlJobHandler<J,W=VhlWorker<J,H>> {
 
   pub fn tup(&self, n:NID)->(NID,NID) { self.state.tup(n) }
 
+  /// Check the computed cache for a previously solved job.
+  /// This allows callers to avoid the swarm dispatch overhead on cache hits.
+  pub fn get_done(&self, job:&J)->Option<NID> { self.state.get_done(job) }
+
+  /// Store a computed result in the cache.
+  pub fn put_done(&self, job:J, nid:NID) { self.state.put_done(job, nid) }
+
+  /// Get or create a BDD node for the given (variable, hi, lo) triple.
+  pub fn vhl_to_nid(&self, v:VID, hi:NID, lo:NID)->NID { self.state.vhl_to_nid(v, hi, lo) }
+
   pub fn len(&self)->usize { self.state.len() }
   #[must_use] pub fn is_empty(&self) -> bool { self.len() == 0 }
 

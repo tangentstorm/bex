@@ -97,14 +97,16 @@ impl ITE {
 pub struct BddBase {
   /// allows us to give user-friendly names to specific nodes in the base.
   pub tags: HashMap<String, NID>,
-  pub swarm: BddSwarm} // TODO: nopub
+  pub swarm: BddSwarm, // TODO: nopub
+  /// fast single-threaded ITE cache, avoids DashMap overhead for direct recursion
+  ite_cache: fxhash::FxHashMap<NormIteKey, NID>}
 
 impl BddBase {
 
-  pub fn new()->BddBase { BddBase{swarm: BddSwarm::new(), tags:HashMap::new()}}
+  pub fn new()->BddBase { BddBase{swarm: BddSwarm::new(), tags:HashMap::new(), ite_cache:fxhash::FxHashMap::default()}}
 
   pub fn new_with_threads(n:usize)->BddBase {
-    BddBase{swarm: BddSwarm::new_with_threads(n), tags:HashMap::new()}}
+    BddBase{swarm: BddSwarm::new_with_threads(n), tags:HashMap::new(), ite_cache:fxhash::FxHashMap::default()}}
 
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)->(NID,NID) { self.swarm.tup(n) }
@@ -113,7 +115,7 @@ impl BddBase {
     let (hi, lo) = self.tup(n); (n.vid(), hi, lo) }
 
   // clear all data from the cache (mostly for benchmarks)
-  pub fn reset(&mut self) { self.swarm.reset(); }
+  pub fn reset(&mut self) { self.swarm.reset(); self.ite_cache = fxhash::FxHashMap::default(); }
 
   pub fn len(&self)->usize { self.swarm.len() }
   #[must_use] pub fn is_empty(&self) -> bool { self.len() == 0 }
@@ -124,16 +126,39 @@ impl BddBase {
   pub fn  gt(&mut self, x:NID, y:NID)->NID { self.ite(x, !y, O) }
   pub fn  lt(&mut self, x:NID, y:NID)->NID { self.ite(x, O, y) }
 
-  /// all-purpose node creation/lookup
+  /// all-purpose node creation/lookup.
+  /// Uses direct recursion with a fast local FxHashMap cache.
   #[inline] pub fn ite(&mut self, f:NID, g:NID, h:NID)->NID {
     match ITE::norm(f,g,h) {
       Norm::Nid(n) => n,
       Norm::Ite(ite) => {
         if let Some(r) = crate::tbl::table_ite(ite.0.i, ite.0.t, ite.0.e) { return r; }
-        self.swarm.run_swarm_job(ite) }
+        if let Some(&r) = self.ite_cache.get(&ite) { return r; }
+        let r = self.ite_direct(ite.0);
+        self.ite_cache.insert(ite, r);
+        r }
       Norm::Not(ite) => {
         if let Some(r) = crate::tbl::table_ite(ite.0.i, ite.0.t, ite.0.e) { return !r; }
-        !self.swarm.run_swarm_job(ite) }}}
+        if let Some(&r) = self.ite_cache.get(&ite) { return !r; }
+        let r = self.ite_direct(ite.0);
+        self.ite_cache.insert(ite, r);
+        !r }}}
+
+  /// Direct recursive ITE without swarm dispatch.
+  /// Shannon-decomposes on the top variable, recurses, then creates the node.
+  fn ite_direct(&mut self, ite:ITE)->NID {
+    let ITE { i, t, e } = ite;
+    let v = ite.top_vid();
+    let (hi_i, lo_i) = if v == i.vid() { self.tup(i) } else { (i, i) };
+    let (hi_t, lo_t) = if v == t.vid() { self.tup(t) } else { (t, t) };
+    let (hi_e, lo_e) = if v == e.vid() { self.tup(e) } else { (e, e) };
+    let hi = self.ite(hi_i, hi_t, hi_e);
+    let lo = self.ite(lo_i, lo_t, lo_e);
+    // Create/lookup the node for (v, hi, lo) via normalization
+    match ITE::norm(NID::from_vid(v), hi, lo) {
+      Norm::Nid(n) => n,
+      Norm::Ite(ite2) => self.swarm.vhl_to_nid(ite2.0.i.vid(), ite2.0.t, ite2.0.e),
+      Norm::Not(ite2) => !self.swarm.vhl_to_nid(ite2.0.i.vid(), ite2.0.t, ite2.0.e) }}
 
 
   /// swap input variables x and y within bdd n
@@ -342,7 +367,7 @@ impl Default for BddBase { fn default() -> Self { Self::new() }}
 
 impl Base for BddBase {
 
-  fn new()->BddBase { BddBase{swarm: BddSwarm::new(), tags:HashMap::new()}}
+  fn new()->BddBase { BddBase{swarm: BddSwarm::new(), tags:HashMap::new(), ite_cache:fxhash::FxHashMap::default()}}
 
   /// nid of y when x is high
   fn when_hi(&mut self, x:VID, y:NID)->NID {
