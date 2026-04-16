@@ -29,6 +29,16 @@ name = "bex-sdb"
 path = "src/bin/bex-sdb.rs"
 required-features = ["sql"]
 
+[[bin]]
+name = "bex-mkproblem"
+path = "src/bin/bex-mkproblem.rs"
+required-features = ["sql"]
+
+[[bin]]
+name = "bex-solve"
+path = "src/bin/bex-solve.rs"
+required-features = ["sql"]
+
 [[example]]
 name = "bdd-solve"
 path = "examples/solve/bdd-solve.rs"
