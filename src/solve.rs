@@ -153,7 +153,7 @@ pub fn convert_nid(sn:SrcNid)->DstNid {
   DstNid{ n: r } }
 
 /// replace node in destination with its definition form source
-fn refine_one(dst: &mut dyn SubSolver, v:VID, src:&RawASTBase, d:DstNid)->DstNid {
+pub fn refine_one(dst: &mut dyn SubSolver, v:VID, src:&RawASTBase, d:DstNid)->DstNid {
   // println!("refine_one({:?})", d)
   let ctx = d.n;
   let ops = src.get_ops(NID::ixn(v.vir_ix()));

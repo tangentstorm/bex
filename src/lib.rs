@@ -28,6 +28,8 @@ pub mod apl;
 pub mod int;
 #[cfg(feature = "sql")]
 pub mod sql;
+#[cfg(feature = "sql")]
+pub mod sql_snap;
 pub mod anf;
 pub mod anf_swarm;
 pub mod swap;

@@ -76,7 +76,10 @@ const VHL_NEW:Vhl = Vhl{ v: VID::top(), hi:nid::O, lo:nid::O };
 pub struct IxRc { ix:NID, irc: usize, erc: usize }
 impl IxRc {
   fn rc(&self)->usize { self.irc + self.erc }
-  fn add(&mut self, count:i64) { self.irc = (self.irc as i64 + count) as usize; }}
+  fn add(&mut self, count:i64) { self.irc = (self.irc as i64 + count) as usize; }
+  pub fn ix(&self)->NID { self.ix }
+  pub fn irc(&self)->usize { self.irc }
+  pub fn erc(&self)->usize { self.erc }}
 
 /**
 We need to map:
@@ -252,6 +255,62 @@ impl VhlScaffold {
   /// have to walk from a specific root.
   pub fn num_nodes(&self)->usize {
     self.rows.values().map(|r| r.hm.len()).sum()
+  }
+
+  /// Is the scaffold in a mid-regroup state? If true, callers should not
+  /// attempt to serialize it — refcount deltas are held in `drcd` and the
+  /// next valid snapshot point is after the regroup finishes.
+  pub fn is_mid_regroup(&self)->bool { !self.locked.is_empty() }
+
+  /// Iterate over every allocated node in the scaffold in scaffold-row
+  /// order (bottom to top). Each item is `(ix, vhl, irc, erc)` where
+  /// `ix` is the slot inside `vhls` (so `NID::ixn(ix)` refers to the
+  /// node), and `irc` / `erc` are the internal and external refcounts.
+  /// Skips the sentinel slot 0 and any garbage-collected rows. Panics if
+  /// the scaffold is mid-regroup.
+  pub fn iter_nodes(&self)->Vec<(usize, Vhl, usize, usize)> {
+    assert!(
+      !self.is_mid_regroup(),
+      "iter_nodes called on a mid-regroup scaffold: locked={:?}",
+      self.locked);
+    let mut out: Vec<(usize, Vhl, usize, usize)> = Vec::new();
+    for (ri, rv) in self.vids.iter().enumerate() {
+      let Some(row) = self.rows.get(rv) else { continue };
+      for (hl, ixrc) in row.hm.iter() {
+        let ix = ixrc.ix.idx();
+        let vhl = Vhl{ v:*rv, hi: hl.hi, lo: hl.lo };
+        let _ = ri; // row order is implicit in vid order; we ship rows in vid order
+        out.push((ix, vhl, ixrc.irc, ixrc.erc));
+      }
+    }
+    // order by scaffold index so downstream consumers can reconstruct
+    // vhls[] by ix position directly.
+    out.sort_by_key(|(ix, _, _, _)| *ix);
+    out
+  }
+
+  /// Rebuild a `VhlScaffold` from raw data: a bottom-to-top vid list
+  /// plus node tuples `(ix, vhl, irc, erc)` where `ix` is the slot
+  /// inside `vhls` and refcounts are stored verbatim (no recursive
+  /// propagation). Used by the SQL snapshot loader.
+  ///
+  /// This does not validate the input; the caller is responsible for
+  /// ensuring refcounts are consistent. For a stricter mode, run
+  /// `validate` on the result in tests.
+  pub fn from_raw(vids: Vec<VID>, nodes: &[(usize, Vhl, usize, usize)]) -> Self {
+    let mut sc = VhlScaffold::new();
+    for v in vids { sc.push(v); }
+    // Size `vhls` to hold every stored ix, filling unused slots with the
+    // VHL_O sentinel so `get(ixn(k))` returns None for unallocated nodes.
+    let max_ix = nodes.iter().map(|(ix, _, _, _)| *ix).max().unwrap_or(0);
+    while sc.vhls.len() <= max_ix { sc.vhls.push(VHL_O); }
+    for &(ix, vhl, irc, erc) in nodes {
+      assert!(ix > 0, "slot 0 is reserved for VHL_O sentinel");
+      sc.vhls[ix] = vhl;
+      let row = sc.rows.entry(vhl.v).or_insert_with(VhlRow::new);
+      row.hm.insert(vhl.hilo(), IxRc{ ix: NID::ixn(ix), irc, erc });
+    }
+    sc
   }
 
   /// return the vid immediately above v in the scaffold, or None
@@ -1343,6 +1402,20 @@ impl SwapSolver {
   /// need to copy this solver's BDD into another base alongside BDDs from
   /// other scaffolds (e.g. `scaffold().copy_to_bdd_keep_vids(...)`).
   pub fn scaffold(&self) -> &VhlScaffold { &self.dst }
+
+  /// Current top node in the destination scaffold.
+  pub fn dx(&self) -> NID { self.dx }
+
+  /// The variable most recently substituted (or NOV if none).
+  pub fn rv(&self) -> VID { self.rv }
+
+  /// Construct a `SwapSolver` whose destination is an already-built
+  /// scaffold with its top node at `dx`. The source scaffold is empty
+  /// and `rv` is unset. Used by the SQL snapshot loader to resume a
+  /// solver between substitution steps.
+  pub fn from_parts(dst: VhlScaffold, dx: NID) -> Self {
+    SwapSolver{ dst, dx, rv: NOV, src: VhlScaffold::new(), sx: nid::O }
+  }
 
   /// Arrange the two scaffolds so that their variable orders match.
   ///  1. vids shared between src and dst (set n) are above rv

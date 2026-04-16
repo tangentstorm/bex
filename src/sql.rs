@@ -53,6 +53,21 @@ fn ensure_schema(tx: &Transaction<'_>) -> Result<()> {
   Ok(())
 }
 
+/// Public version of `ensure_schema` for use by `sql_snap` path wrappers
+/// that need to guarantee the `meta` table exists before writing
+/// `snap.fmt.version`.
+pub fn ensure_schema_pub(conn: &Connection) -> Result<()> {
+  let tx = conn.unchecked_transaction()?;
+  ensure_schema(&tx)?;
+  tx.commit()
+}
+
+/// Public version of `ensure_schema` that takes a `Transaction` directly,
+/// for callers already inside a transaction.
+pub fn ensure_schema_tx(tx: &Transaction<'_>) -> Result<()> {
+  ensure_schema(tx)
+}
+
 
 fn clear_schema(tx: &Transaction<'_>) -> Result<()> {
   tx.execute("DELETE FROM ast_edge", [])?;

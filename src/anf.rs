@@ -151,6 +151,25 @@ impl Base for ANFBase {
 
 impl ANFBase {
 
+  /// Read-only view of the packed node array. `nodes()[k]` is the `Vhl`
+  /// for the node at index `k`, interpreted as `(v AND hi) XOR lo`.
+  pub fn nodes(&self) -> &[Vhl] { &self.nodes }
+
+  /// Read-only view of the tag table.
+  pub fn tags(&self) -> &HashMap<String, NID> { &self.tags }
+
+  /// Mutable access to the tag table. (Primarily for snapshot loaders
+  /// that need to re-register root names after rebuilding nodes.)
+  pub fn tags_mut(&mut self) -> &mut HashMap<String, NID> { &mut self.tags }
+
+  /// Insert an already-normalized `(v AND hi) XOR lo` node, returning
+  /// its NID. Same semantics as the private `vhl()` helper used by
+  /// `and`/`xor`; exposed for external loaders that need to rebuild an
+  /// ANF graph bottom-up from previously-emitted node data.
+  pub fn insert_vhl(&mut self, v:VID, hi:NID, lo:NID)->NID {
+    self.vhl(v, hi, lo)
+  }
+
   fn fetch(&self, n:NID)->Vhl {
     if n.is_vid() { // variables are (v*I)+O if normal, (v*I)+I if inverted.
       Vhl{v:n.vid(), hi:I, lo: if n.is_inv() { I } else { O } }}
