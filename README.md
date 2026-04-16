@@ -31,6 +31,14 @@ search space of a problem. See [doc/time-to-cover.md](doc/time-to-cover.md)
 for the definition, formula, and how it applies to both branching and
 top-down (BDD/swap) solvers.
 
+## Profiling
+
+Bex has optional [coz][coz] causal-profiler integration behind the `coz`
+cargo feature. See [doc/coz-profiling.md](doc/coz-profiling.md) for
+instructions.
+
+[coz]: https://github.com/plasma-umass/coz
+
 ## Changes in main branch (upcoming version)
 
 - **Table NIDs with named variables:** truth tables of up to 5 inputs are now stored directly in the NID, with the variable set encoded via a combinadic index. `BddBase::ite()` automatically uses truth table operations for small subexpressions before entering the BDD swarm. New modules: `comb` (combinadic encoding), `tbl` (table alignment and operations). New display format: `T{x3,x7:1110}`.

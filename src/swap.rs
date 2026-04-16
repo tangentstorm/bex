@@ -471,7 +471,9 @@ impl VhlScaffold {
     println!("%stats: dnews:{} unews:{} dels:{}", dnews, unews, dels);
     println!("%vids: {:?}", self.vids);
     println!("%counts: {:?}", counts);
-    #[cfg(test)] { self.validate(format!("after swapping vu:{:?} and vd:{:?}.",vu,vd).as_str()); }}
+    #[cfg(test)] { self.validate(format!("after swapping vu:{:?} and vd:{:?}.",vu,vd).as_str()); }
+    // Causal-profiler progress point: one row-swap completed.
+    crate::coz_progress!("row-swap"); }
 
   /// Reclaim the records for a list of garbage collected nodes.
   /// note: this should ONLY be called from swap() or regroup() because
@@ -847,6 +849,9 @@ impl VhlScaffold {
     let old_uix = self.vix(vu).unwrap();
     let new_uix = old_uix + 1;
     self.vids.swap(old_uix, new_uix);
+
+    // Causal-profiler progress point: one parallel row-swap committed.
+    crate::coz_progress!("row-swap");
 
     //println!("\x1b[36mswapped vu:{} -> vd:{} => {:?}\x1b[0m", vu, vd, self.vids);
     //self.validate(format!("after swapping vd:{:?} with vu:{:?}", vd, vu).as_str());
