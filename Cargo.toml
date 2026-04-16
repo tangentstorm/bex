@@ -68,7 +68,7 @@ json = "0.12.4"
 rusqlite = { version = "0.31", features = ["bundled"] }
 
 [dev-dependencies]
-bencher = "0.1.5"
+divan = "0.1.21"
 
 [[bench]]
 name = "bench-solve"

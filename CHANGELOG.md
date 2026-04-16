@@ -29,6 +29,15 @@ Older upcoming changes for 0.4.0 live in the README section titled \"Changes in 
   - Added `bench-small` example for quick single-run benchmarking
   - Added [doc/optimization-ideas.md](doc/optimization-ideas.md) with 24 profiling-driven ideas (3 applied, 12 tested/rejected with rationale)
 
+### Tooling
+- Migrated `benches/bench-solve.rs` from [`bencher`](https://crates.io/crates/bencher)
+  to [`divan`](https://crates.io/crates/divan) (bex#4). Benchmark output now
+  includes median / mean / stddev on a tree-structured terminal report, plus
+  per-iteration allocation byte and count statistics (via
+  `divan::AllocProfiler`) — useful for catching silent allocation regressions
+  in `ite` / `and` / `xor` on `BddBase`. Filtering and sample-count control
+  work via the standard `cargo bench -- <filter> --sample-count N` CLI.
+
 
 ## 0.3.0 (2025-02-16)
 
