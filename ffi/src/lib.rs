@@ -310,6 +310,31 @@ pub extern "C" fn bex_swapsolve(ast: *mut bex_ast_t, swap: *mut bex_swap_t, n: b
     })
 }
 
+/// Copy the swap solver's result into the given BddBase and return the
+/// translated NID.  Needed before calling bex_bdd_node_count /
+/// bex_bdd_solution_count on a swap-solver result, because those
+/// functions index into `bdd`'s storage rather than the swap solver's.
+#[no_mangle]
+pub extern "C" fn bex_swap_copy_to_bdd(
+    swap: *mut bex_swap_t,
+    bdd: *mut bex_bdd_t,
+    n: bex_nid_t,
+) -> bex_nid_t {
+    ffi_guard(ffi_nid_default(), move || unsafe {
+        let Some(swap_ref) = swap.as_ref() else { return ffi_nid_default() };
+        let Some(bdd_ref)  = bdd.as_ref()  else { return ffi_nid_default() };
+        let swap_ptr = swap_ref.base as *mut Arc<Mutex<SwapSolver>>;
+        let bdd_ptr  = bdd_ref.base  as *mut Arc<Mutex<BddBase>>;
+        let Some(swap_arc) = swap_ptr.as_ref() else { return ffi_nid_default() };
+        let Some(bdd_arc)  = bdd_ptr.as_ref()  else { return ffi_nid_default() };
+        let Ok(swap_solver) = swap_arc.lock() else { return ffi_nid_default() };
+        let Ok(mut bdd_base) = bdd_arc.lock() else { return ffi_nid_default() };
+        let nid = NID::_from_u64(n.nid);
+        let out = swap_solver.scaffold().copy_to_bdd(&mut bdd_base, &[nid]);
+        bex_nid_t { nid: out[0]._to_u64() }
+    })
+}
+
 #[no_mangle]
 pub extern "C" fn bex_is_vid(n: bex_nid_t) -> bool {
     ffi_guard(ffi_bool_default(), move || {

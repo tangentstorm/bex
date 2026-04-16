@@ -106,15 +106,15 @@ fn expand_table(tbl: u32, src_vars: &[u32], dst_vars: &[u32]) -> u32 {
   let mut len = 0u8;
   let (mut ia, mut ib) = (0, 0);
   while ia < va.len() && ib < vb.len() {
-    if len >= 5 && va[ia] != vb[ib] { return None; }
+    if len >= 5 { return None; }
     if va[ia] < vb[ib] { out[len as usize] = va[ia]; ia += 1; }
     else if va[ia] > vb[ib] { out[len as usize] = vb[ib]; ib += 1; }
     else { out[len as usize] = va[ia]; ia += 1; ib += 1; }
     len += 1;
   }
-  while ia < va.len() { if len > 5 { return None; } out[len as usize] = va[ia]; ia += 1; len += 1; }
-  while ib < vb.len() { if len > 5 { return None; } out[len as usize] = vb[ib]; ib += 1; len += 1; }
-  if len > 5 { None } else { Some((out, len)) }
+  while ia < va.len() { if len >= 5 { return None; } out[len as usize] = va[ia]; ia += 1; len += 1; }
+  while ib < vb.len() { if len >= 5 { return None; } out[len as usize] = vb[ib]; ib += 1; len += 1; }
+  Some((out, len))
 }
 
 /// Align two SmallTbls to a common variable set.
