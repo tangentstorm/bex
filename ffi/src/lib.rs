@@ -129,6 +129,19 @@ pub extern "C" fn bex_bdd_new() -> *mut bex_bdd_t {
     }))
 }
 
+/// Opt into direct single-threaded ITE recursion for this BDD base.
+/// Best for bottom-up workloads; avoids swarm dispatch overhead.
+#[no_mangle]
+pub extern "C" fn bex_bdd_set_direct_ite(bdd: *mut bex_bdd_t, on: bool) {
+    ffi_guard((), move || unsafe {
+        let Some(bdd_ref) = bdd.as_ref() else { return };
+        let base_ptr = bdd_ref.base as *mut Arc<Mutex<BddBase>>;
+        let Some(base_arc) = base_ptr.as_ref() else { return };
+        let Ok(mut base) = base_arc.lock() else { return };
+        base.set_direct_ite(on);
+    })
+}
+
 #[no_mangle]
 pub extern "C" fn bex_bdd_free(bdd: *mut bex_bdd_t) {
     if !bdd.is_null() {
