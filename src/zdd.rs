@@ -28,6 +28,9 @@ pub struct ZddBase {
   tags: HashMap<String,NID>,
 }
 
+impl Default for ZddBase {
+  fn default()->Self { Self::new() }}
+
 // -- core helpers --
 impl ZddBase {
 
@@ -432,7 +435,19 @@ impl ZddBase {
       i_val = dest.and(i_val, not_v); // AND NOT v
     }
     memo.insert(I, i_val);
-    self.to_base_rec(n, dest, &mut memo) }
+    let root = self.to_base_rec(n, dest, &mut memo);
+    // force absent any universe vars above the ZDD root
+    if n.is_const() { return root; }
+    let root_v = n.vid();
+    let mut r = root;
+    for &uv in self.universe.iter() {
+      if uv.is_above(&root_v) {
+        let vn = NID::from_vid(uv);
+        let not_uv = dest.xor(vn, I);
+        r = dest.and(r, not_uv);
+      }
+    }
+    r }
 
   fn to_base_rec(&self, n:NID, dest:&mut dyn Base, memo:&mut HashMap<NID,NID>)->NID {
     if let Some(&r) = memo.get(&n) { return r; }
@@ -440,13 +455,11 @@ impl ZddBase {
     // recursively convert children
     let hi_d = self.to_base_rec(hi, dest, memo);
     let lo_d = self.to_base_rec(lo, dest, memo);
-    // force skipped universe vars to 0 between v and hi's level
+    // force skipped universe vars to 0 between v and each child's level
     let hi_forced = self.force_absent(v, hi.vid(), hi_d, dest);
     let lo_forced = self.force_absent(v, lo.vid(), lo_d, dest);
     let vn = NID::from_vid(v);
     let r = dest.ite(vn, hi_forced, lo_forced);
-    // force skipped vars above v (between top of universe and v)
-    let r = self.force_above(v, r, dest);
     memo.insert(n, r);
     r }
 
@@ -465,12 +478,6 @@ impl ZddBase {
       }
     }
     r }
-
-  /// Force absent universe vars above node_v (for root-level gaps)
-  fn force_above(&self, _node_v:VID, dest_nid:NID, _dest:&mut dyn Base)->NID {
-    // Only needed at the very top call. We handle this in to_base by
-    // wrapping the root result. For recursive calls this is identity.
-    dest_nid }
 
   pub fn solutions_pad(&self, n:NID, nvars:usize)->ZddSolIterator<'_> {
     ZddSolIterator::from_zdd_base(self, n, nvars) }

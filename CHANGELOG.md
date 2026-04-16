@@ -4,6 +4,18 @@ Bex is a rust crate for working with binary expressions.
 
 ## 0.4.0 (upcoming)
 
+- **ZDD (Zero-suppressed Decision Diagram) module.** New `src/zdd.rs` adds
+  `ZddBase`, implementing both a family-of-sets API and the `Base` trait
+  for Boolean-function compatibility with the swap solver and other tooling.
+  - Family-of-sets ops: `union`, `intersect`, `diff`, `product`, `quotient`,
+    `remainder` (Minato's unate cube set algebra), plus `change`, `onset`,
+    `offset`, `subset0`, `subset1`, `count`, `complement`, `power_set`.
+  - `Base` trait: `and`/`or`/`xor`/`ite` mapped to family ops with lazy
+    universe tracking for complement semantics.
+  - `ZddSetIterator` for native family enumeration; `ZddSolIterator` for
+    Boolean solution enumeration via BDD conversion.
+  - Graphviz rendering via `dot`.
+
 - **Table NIDs with named variables.** Functions of up to 5 input variables are now stored
   directly in the NID as a truth table, with the variable set encoded using a combinatorial
   number system (combinadic). This avoids allocating BDD nodes for small subexpressions.
