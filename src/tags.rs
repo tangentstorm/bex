@@ -14,4 +14,7 @@ impl Names {
   pub fn def(&mut self, s: String, v: VID) -> NID {
     let n = NID::from_vid(v);
     self.tag(n, format!("{}{:?}", s, v)) }
+  /// Iterate over all registered `(name, nid)` pairs.
+  pub fn iter(&self) -> impl Iterator<Item = (&str, NID)> {
+    self.by_name.iter().map(|(k, &v)| (k.as_str(), v)) }
 }

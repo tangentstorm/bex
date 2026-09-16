@@ -11,6 +11,7 @@ use std::process;
 
 use bex::int::{GBASE, BInt, X8, X16};
 use bex::ast::ASTBase;
+use bex::base::Tagged;
 use bex::sql;
 
 const PRIMES: &[usize] = &[2, 3, 5, 7, 11, 13, 17, 19, 23];
@@ -43,7 +44,7 @@ fn main() {
   println!("generating AST for: find x,y (8-bit) where x<y and x*y == {}", k);
 
   // Build the AST using the thread-local GBASE
-  GBASE.with(|gb| gb.replace(ASTBase::empty()));
+  GBASE.with(|gb| gb.replace(Tagged::new(ASTBase::empty())));
   let (y, x) = (X8::def("y", 0), X8::def("x", X8::n()));
   let lt = x.lt(&y);
   let xy: X16 = x.times(&y);
@@ -52,13 +53,13 @@ fn main() {
   let top = lt & eq;
 
   // Swap out the global base and get the raw AST
-  let mut gb = GBASE.with(|gb| gb.replace(ASTBase::empty()));
-  gb.raw_ast_mut().tags.insert("top".to_string(), top.n);
-  let src = gb.raw_ast();
+  let mut gb = GBASE.with(|gb| gb.replace(Tagged::new(ASTBase::empty())));
+  gb.tag(top.n, "top".to_string());
+  let src = gb.base.raw_ast();
 
   // Export to .sdb
   let keep = vec![top.n];
-  sql::export_raw_ast_to_path(src, &outpath, &keep)
+  sql::export_raw_ast_to_path(src, &gb.names, &outpath, &keep)
     .unwrap_or_else(|e| { eprintln!("failed to write {}: {}", outpath, e); process::exit(1); });
 
   println!("wrote {} ({} AST nodes)", outpath, src.len());

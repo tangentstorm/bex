@@ -25,7 +25,6 @@ pub struct ZddBase {
   universe_set: HashSet<VID>,
   memo: HashMap<(u8,NID,NID),NID>,
   power_set_cache: Option<NID>,
-  tags: HashMap<String,NID>,
 }
 
 impl Default for ZddBase {
@@ -40,8 +39,7 @@ impl ZddBase {
       universe: vec![],
       universe_set: HashSet::new(),
       memo: HashMap::new(),
-      power_set_cache: None,
-      tags: HashMap::new() }}
+      power_set_cache: None }}
 
   /// Canonical node constructor. Enforces ZDD reduction: hi==O => lo.
   fn mk(&self, v:VID, hi:NID, lo:NID)->NID {
@@ -297,12 +295,6 @@ impl ZddBase {
     self.power_set_cache = Some(r);
     r }
 
-  fn power_set_without(&mut self, exclude:VID)->NID {
-    let mut r = I;
-    for &v in self.universe.iter().rev() {
-      if v != exclude { r = self.mk(v, r, r); }}
-    r }
-
   pub fn complement(&mut self, n:NID)->NID {
     let u = self.power_set();
     self.diff(u, n) }
@@ -381,15 +373,6 @@ impl Base for ZddBase {
     let ni = !i;
     let ne = self.and(ni, e);
     self.or(it, ne) }
-
-  fn def(&mut self, s:String, v:VID)->NID {
-    self.register_vid(v);
-    let ps = self.power_set_without(v);
-    let n = self.mk(v, ps, O);
-    self.tag(n, s) }
-
-  fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
-  fn get(&self, s:&str)->Option<NID> { self.tags.get(s).copied() }
 
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID {
     if !ctx.might_depend_on(v) { return ctx; }

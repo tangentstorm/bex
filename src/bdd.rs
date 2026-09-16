@@ -95,8 +95,6 @@ impl ITE {
 /// Finally, we put everything together. This is the top-level type for this crate.
 #[derive(Debug)]
 pub struct BddBase {
-  /// allows us to give user-friendly names to specific nodes in the base.
-  pub tags: HashMap<String, NID>,
   pub swarm: BddSwarm, // TODO: nopub
   /// when true, use direct single-threaded recursion for ITE with a local
   /// FxHashMap cache, bypassing swarm dispatch overhead. Best for workloads
@@ -109,11 +107,11 @@ pub struct BddBase {
 impl BddBase {
 
   pub fn new()->BddBase {
-    BddBase{swarm: BddSwarm::new(), tags:HashMap::new(),
+    BddBase{swarm: BddSwarm::new(),
       direct_ite:false, ite_cache:fxhash::FxHashMap::default()}}
 
   pub fn new_with_threads(n:usize)->BddBase {
-    BddBase{swarm: BddSwarm::new_with_threads(n), tags:HashMap::new(),
+    BddBase{swarm: BddSwarm::new_with_threads(n),
       direct_ite:false, ite_cache:fxhash::FxHashMap::default()}}
 
   /// Opt into direct single-threaded ITE recursion. This avoids the swarm
@@ -394,7 +392,7 @@ impl Default for BddBase { fn default() -> Self { Self::new() }}
 impl Base for BddBase {
 
   fn new()->BddBase {
-    BddBase{swarm: BddSwarm::new(), tags:HashMap::new(),
+    BddBase{swarm: BddSwarm::new(),
       direct_ite:false, ite_cache:fxhash::FxHashMap::default()}}
 
   /// nid of y when x is high
@@ -438,11 +436,6 @@ impl Base for BddBase {
         let (yt, ye) = self.tup(y);
         let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
         self.ite(NID::from_vid(yv), th, el) }}}
-
-  // TODO: these should be moved into seperate struct
-  fn def(&mut self, _s:String, _i:VID)->NID { todo!("BddBase::def()") }
-  fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
-  fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 
   fn and(&mut self, x:NID, y:NID)->NID { self.ite(x, y, O) }
   fn xor(&mut self, x:NID, y:NID)->NID { self.ite(x, !y, y) }

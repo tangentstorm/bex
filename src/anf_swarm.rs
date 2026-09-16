@@ -589,19 +589,18 @@ impl AnfSwarm {
 
 #[derive(Debug)]
 pub struct AnfSwarmBase {
-  pub tags: HashMap<String, NID>,
   pub swarm: AnfSwarm,
 }
 
 impl Default for AnfSwarmBase {
   fn default() -> Self {
-    Self { tags: HashMap::new(), swarm: AnfSwarm::new() }
+    Self { swarm: AnfSwarm::new() }
   }
 }
 
 impl AnfSwarmBase {
   pub fn new()->Self { Self::default() }
-  pub fn new_with_threads(n:usize)->Self { Self { tags: HashMap::new(), swarm: AnfSwarm::new_with_threads(n) } }
+  pub fn new_with_threads(n:usize)->Self { Self { swarm: AnfSwarm::new_with_threads(n) } }
   fn fetch(&self, n:NID)->Vhl { self.swarm.state.base.fetch(n) }
 
   pub fn first_term(&self, n:NID)->Option<Cursor> {
@@ -690,10 +689,6 @@ impl Base for AnfSwarmBase {
     self.walk_dn(n, &mut |n,_,__,lo| w!("  \"{:?}\"->\"{:?}\";", n, lo));
     w!("}}");
   }
-
-  fn def(&mut self, _s:String, _v:VID)->NID { todo!("anf_swarm::def") }
-  fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
-  fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 
   fn when_lo(&mut self, v:VID, n:NID)->NID { self.swarm.state.base.when_lo(v, n) }
   fn when_hi(&mut self, v:VID, n:NID)->NID { self.swarm.state.base.when_hi(v, n) }

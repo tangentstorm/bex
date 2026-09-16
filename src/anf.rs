@@ -28,8 +28,7 @@ use crate::bdd::BddBase; // for solutions
 // TODO: /// The v0..v1 thing is used to collapse long chains of nodes where lo=O.
 pub struct ANFBase {
   nodes:Vec<Vhl>,
-  cache:HashMap<Vhl,NID>,
-  tags:HashMap<String,NID>}
+  cache:HashMap<Vhl,NID>}
 
 
 impl Walkable for ANFBase {
@@ -45,7 +44,7 @@ impl Walkable for ANFBase {
 
 impl Base for ANFBase {
 
-  fn new()->Self { ANFBase { nodes:vec![], cache: HashMap::new(), tags:HashMap::new() }}
+  fn new()->Self { ANFBase { nodes:vec![], cache: HashMap::new() }}
 
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {
     macro_rules! w {
@@ -64,11 +63,6 @@ impl Base for ANFBase {
     w!("edge[style=dashed];");
     self.walk_dn(n, &mut |n,_,__,lo| w!("  \"{:?}\"->\"{:?}\";", n, lo));
     w!("}}"); }
-
-  fn def(&mut self, _s:String, _v:VID)->NID { todo!("anf::def"); }
-  // TODO: tag and get are copied verbatim from bdd
-  fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
-  fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 
   fn when_lo(&mut self, v:VID, n:NID)->NID {
     let nv = n.vid();
@@ -154,13 +148,6 @@ impl ANFBase {
   /// Read-only view of the packed node array. `nodes()[k]` is the `Vhl`
   /// for the node at index `k`, interpreted as `(v AND hi) XOR lo`.
   pub fn nodes(&self) -> &[Vhl] { &self.nodes }
-
-  /// Read-only view of the tag table.
-  pub fn tags(&self) -> &HashMap<String, NID> { &self.tags }
-
-  /// Mutable access to the tag table. (Primarily for snapshot loaders
-  /// that need to re-register root names after rebuilding nodes.)
-  pub fn tags_mut(&mut self) -> &mut HashMap<String, NID> { &mut self.tags }
 
   /// Insert an already-normalized `(v AND hi) XOR lo` node, returning
   /// its NID. Same semantics as the private `vhl()` helper used by

@@ -74,9 +74,9 @@ fn main() {
   let db_path = cfg.output.as_deref().unwrap_or(&cfg.input);
 
   // Load AST
-  let (src0, _keep) = sql::import_raw_ast_from_path(&cfg.input)
+  let (src0, names, _keep) = sql::import_raw_ast_from_path(&cfg.input)
     .unwrap_or_else(|e| { eprintln!("failed to load {}: {}", cfg.input, e); process::exit(1); });
-  let top_nid = *src0.tags.get("top")
+  let top_nid = names.get("top")
     .unwrap_or_else(|| { eprintln!("no 'top' tag in AST"); process::exit(1); });
   println!("loaded AST: {} nodes, top={:?}", src0.len(), top_nid);
 
