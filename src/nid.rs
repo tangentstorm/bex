@@ -185,7 +185,8 @@ impl FromStr for NID {
           }
         't' =>
             {
-              let bits = ch.collect::<String>();
+              // O/I are accepted as alternate spellings for 0/1 (per issue #10).
+              let bits:String = ch.map(|c| match c { 'O'=>'0', 'I'=>'1', c=>c }).collect();
               let len = bits.len();
               if !(len == 2 || len == 4 || len == 8 || len == 16 || len == 32) {
                 return Err(format!("bad length for table (expect 2,4,8,16,32 bits): {}", word));
@@ -352,6 +353,12 @@ impl NID {
   // named-variable format
   assert_eq!("T{x3,x7:1110}", format!("{}", NID::fun_with_vars(&[3, 7], 0b1110).to_nid()));
   assert_eq!("T{x1,x3,x5:FC}", format!("{}", NID::fun_with_vars(&[1, 3, 5], 0xFC).to_nid()));
+}
+
+#[test] fn test_tbl_oi_alternates() {
+  // O/I are accepted as alternates for 0/1 in t-notation (issue #10).
+  assert_eq!("tOIIO".parse::<NID>().unwrap(), "t0110".parse::<NID>().unwrap());
+  assert_eq!("tOOOI".parse::<NID>().unwrap(), NID::fun(2, 0b0001).to_nid());
 }
 
 #[test] fn test_named_tbl_parse() {
