@@ -93,3 +93,24 @@ impl BddSwarm {
   let n1 = swarm.ite(ite.0.i, ite.0.t, ite.0.e);
   let n2 = swarm.ite(ite.0.i, ite.0.t, ite.0.e);
   assert_eq!(n1, n2); }
+
+#[test] fn test_swarm_save_load_json() {
+  // populate the cache with a couple of jobs, save to json, and load it
+  // into a fresh swarm; the fresh swarm should agree on already-computed
+  // answers, and reproduce the same answers if asked to redo the work.
+  let mut swarm = BddSwarm::new_with_threads(2);
+  let ite1 = NormIteKey(ITE{i:NID::var(1), t:NID::var(2), e:NID::var(3)});
+  let ite2 = NormIteKey(ITE{i:NID::var(2), t:NID::var(3), e:NID::var(1)});
+  let n1 = swarm.run_swarm_job(ite1);
+  let n2 = swarm.run_swarm_job(ite2);
+
+  let json = swarm.save_json().expect("save_json failed");
+  let mut loaded = BddSwarm::load_json(&json).expect("load_json failed");
+
+  assert_eq!(loaded.get_done(&ite1), Some(n1));
+  assert_eq!(loaded.get_done(&ite2), Some(n2));
+
+  // re-running the same jobs on the loaded swarm should hit the restored
+  // cache and reproduce the same nids.
+  assert_eq!(loaded.run_swarm_job(ite1), n1);
+  assert_eq!(loaded.run_swarm_job(ite2), n2); }

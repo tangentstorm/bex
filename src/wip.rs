@@ -37,6 +37,7 @@ use crate::vid::VID;
 use crate::vhl::{HiLo, VhlBase, VhlSlots, VhlParts};
 use crate::bdd::{Norm, NormIteKey};
 use dashmap::DashMap;
+use serde::{Serialize, Deserialize, Serializer, Deserializer};
 
 // cache lookup counters:
 thread_local!{
@@ -73,13 +74,13 @@ pub trait WipBase<K, P:Parts> : Debug + Default + Send + Sync {
   fn resolve_job(&self, parts:P)->JobResult<K>;
 }
 
-#[derive(Debug,Copy,Clone,PartialEq,Eq)]
+#[derive(Debug,Copy,Clone,PartialEq,Eq,Serialize,Deserialize)]
 pub enum DepTarget<S> {
   Slot(S),
   Result,
 }
 
-#[derive(Debug,Copy,Clone)]
+#[derive(Debug,Copy,Clone,Serialize,Deserialize)]
 pub struct Dep<K, S> { pub dep: K, pub target: DepTarget<S>, pub invert: bool }
 impl<K,S> Dep<K,S>{
   pub fn new(dep: K, slot: S, invert: bool)->Dep<K,S> {
@@ -87,7 +88,9 @@ impl<K,S> Dep<K,S>{
   pub fn result(dep:K)->Dep<K,S> {
     Dep{dep, target:DepTarget::Result, invert:false} }}
 
-#[derive(Debug)]
+#[derive(Debug,Serialize,Deserialize)]
+#[serde(bound(serialize = "K: Serialize, P: Serialize, P::Slot: Serialize"))]
+#[serde(bound(deserialize = "K: Deserialize<'de>, P: Deserialize<'de>, P::Slot: Deserialize<'de>"))]
 pub struct Wip<K=NormIteKey, P=VhlParts> where P:Parts {
   pub parts : P,
   pub deps : Vec<Dep<K, P::Slot>>
@@ -102,7 +105,9 @@ impl<K, P> Default for Wip<K, P> where P:Parts {
 // TODO: wrap this with a smart pointer so Work::Done and Work::Todo are both usizes.
 type WipRef<K=NormIteKey, P=VhlParts> = Wip<K, P>;
 
-#[derive(Debug)]
+#[derive(Debug,Serialize,Deserialize)]
+#[serde(bound(serialize = "V: Serialize, W: Serialize"))]
+#[serde(bound(deserialize = "V: Deserialize<'de>, W: Deserialize<'de>"))]
 pub enum Work<V, W=WipRef> { Todo(W), Done(V) }
 
 impl<V,W> Default for Work<V, W> where W:Default {
@@ -169,6 +174,38 @@ where K:Eq+Hash+Debug, P:Parts, B:WipBase<K,P> {
   pub base: B,
   // TODO: make .cache private
   pub cache: DashMap<K, Work<NID, WipRef<K,P>>, fxhash::FxBuildHasher> }
+
+/// Serializes `WorkState.cache` as a JSON-friendly sequence of `(key, value)`
+/// pairs, since keys (e.g. `NormIteKey`) aren't strings, and `DashMap`'s own
+/// `Serialize` impl emits a map (which `serde_json` requires string keys for).
+struct CacheSeq<'a, K, P>(&'a DashMap<K, Work<NID, WipRef<K,P>>, fxhash::FxBuildHasher>)
+where K:Eq+Hash, P:Parts;
+
+impl<'a, K, P> Serialize for CacheSeq<'a, K, P>
+where K:Eq+Hash+Serialize, P:Parts+Serialize, P::Slot:Serialize {
+  fn serialize<S>(&self, serializer:S)->Result<S::Ok, S::Error> where S:Serializer {
+    use serde::ser::SerializeSeq;
+    let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
+    for r in self.0.iter() {
+      let (k, v) = r.pair();
+      seq.serialize_element(&(k, v))?; }
+    seq.end() }}
+
+impl<K,P,B> Serialize for WorkState<K,P,B>
+where K:Eq+Hash+Debug+Serialize, P:Parts+Serialize, P::Slot:Serialize, B:WipBase<K,P>+Serialize {
+  fn serialize<S>(&self, serializer:S)->Result<S::Ok, S::Error> where S:Serializer {
+    let qid = *self.qid.lock().unwrap();
+    (qid, &self.base, CacheSeq(&self.cache)).serialize(serializer) }}
+
+impl<'de, K,P,B> Deserialize<'de> for WorkState<K,P,B>
+where K:Eq+Hash+Debug+Deserialize<'de>, P:Parts+Deserialize<'de>, P::Slot:Deserialize<'de>, B:WipBase<K,P>+Deserialize<'de> {
+  fn deserialize<D>(deserializer:D)->Result<Self, D::Error> where D:Deserializer<'de> {
+    let (qid, base, entries): (Option<crate::swarm::QID>, B, Vec<(K, Work<NID, WipRef<K,P>>)>)
+      = Deserialize::deserialize(deserializer)?;
+    let cache = DashMap::with_capacity_and_hasher_and_shard_amount(
+      entries.len(), fxhash::FxBuildHasher::default(), 128);
+    for (k, v) in entries { cache.insert(k, v); }
+    Ok(WorkState { _kvp: PhantomData, qid: Mutex::new(qid), base, cache }) }}
 
 impl<K,P,B> Default for WorkState<K,P,B>
 where K:Eq+Hash+Debug, P:Parts, B:WipBase<K,P> {

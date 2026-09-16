@@ -1,9 +1,10 @@
 //! Variable IDs (used interally by Base implementations)
 use std::cmp::Ordering;
 use std::fmt;
+use serde::{Serialize, Deserialize};
 
 /// this will probably go away in favor of a bitmask at some point
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Serialize, Deserialize)]
 enum VidEnum {
   // How I (eventually) want the ordering, to be (once biggest vars go on top:)
   T,        // Special meta-constant on which I and O branch.
@@ -21,7 +22,7 @@ pub enum VidOrdering {
 use self::VidEnum::*;
 
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct VID { v:VidEnum }
 pub const NOV:VID = VID::nov();
 pub const TOP:VID = VID::top();

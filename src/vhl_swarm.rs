@@ -10,6 +10,7 @@
 use std::{fmt, hash::Hash};
 use std::sync::Arc;
 use crossbeam_channel::{Receiver, Sender, RecvError, select, unbounded};
+use serde::{Serialize, Deserialize, Serializer, Deserializer};
 use crate::vhl::{VhlBase, VhlParts, VhlSlots};
 use crate::vid::VID;
 use crate::NID;
@@ -215,3 +216,41 @@ impl<J,H> VhlSwarm<J,H> where J:JobKey, H:VhlJobHandler<J,W=VhlWorker<J,H>> {
         else { println!("extraneous rmsg from swarm after Q::Stats: {:?}", r) }}
     COUNT_CACHE_TESTS.with(|c| *c.borrow_mut() += tests);
     COUNT_CACHE_HITS.with(|c| *c.borrow_mut() += hits); }}
+
+/// Serializes only the shared `state` (node base + computed cache, including
+/// in-progress WIPs). The worker threads and job queue are not serializable
+/// (channels), and are rebuilt fresh on deserialize.
+impl<J,H> Serialize for VhlSwarm<J,H>
+where J:JobKey+Serialize, H:VhlJobHandler<J,W=VhlWorker<J,H>> {
+  fn serialize<S>(&self, serializer:S)->Result<S::Ok, S::Error> where S:Serializer {
+    self.state.serialize(serializer) }}
+
+impl<'de, J,H> Deserialize<'de> for VhlSwarm<J,H>
+where J:JobKey+Deserialize<'de>, H:VhlJobHandler<J,W=VhlWorker<J,H>> {
+  fn deserialize<D>(deserializer:D)->Result<Self, D::Error> where D:Deserializer<'de> {
+    let state = Arc::new(WorkState::<J, VhlParts, VhlBase>::deserialize(deserializer)?);
+    let mut me = Self { swarm: Swarm::default(), state, queue: Arc::default() };
+    me.swarm.send_to_all(&VhlQ::Init(me.state.clone(), me.queue.clone()));
+    Ok(me) }}
+
+impl<J,H> VhlSwarm<J,H> where J:JobKey, H:VhlJobHandler<J,W=VhlWorker<J,H>> {
+  /// Serialize the shared work state (node base + computed cache, including
+  /// in-progress WIPs) to a JSON string. Worker threads and the job queue
+  /// are not included; `load_json` rebuilds them fresh.
+  pub fn save_json(&self)->Result<String, serde_json::Error> where J:Serialize {
+    serde_json::to_string(self) }
+
+  /// Load a swarm from JSON previously produced by `save_json`, spinning up
+  /// a fresh pool of worker threads initialized with the restored state.
+  pub fn load_json(s:&str)->Result<Self, serde_json::Error> where J:for<'de> Deserialize<'de> {
+    serde_json::from_str(s) }
+
+  /// Save the shared work state to a file. See `save_json`.
+  pub fn save_to_file(&self, path:impl AsRef<std::path::Path>)->std::io::Result<()> where J:Serialize {
+    let s = self.save_json().map_err(std::io::Error::other)?;
+    std::fs::write(path, s) }
+
+  /// Load a swarm from a file previously written by `save_to_file`.
+  pub fn load_from_file(path:impl AsRef<std::path::Path>)->std::io::Result<Self> where J:for<'de> Deserialize<'de> {
+    let s = std::fs::read_to_string(path)?;
+    Self::load_json(&s).map_err(std::io::Error::other) }}

@@ -5,6 +5,7 @@ use std::sync::RwLock;
 use crate::nid::NID;
 use crate::vid::VID;
 use crate::wip::{JobResult, WipBase};
+use serde::{Serialize, Deserialize, Serializer, Deserializer};
 
 #[derive(Debug,Default)]
 struct VhlVec<T>{ pub vec: boxcar::Vec<T> }
@@ -13,7 +14,7 @@ struct VhlVec<T>{ pub vec: boxcar::Vec<T> }
 /// Simple Hi/Lo pair stored internally when representing nodes.
 /// All nodes with the same branching variable go in the same array, so there's
 /// no point duplicating it.
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Default)]
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug, Default, Serialize, Deserialize)]
 pub struct HiLo {pub hi:NID, pub lo:NID}
 
 impl HiLo {
@@ -45,11 +46,11 @@ impl std::ops::Not for Vhl {
 
 
 /// Enum for referring to the parts of a HiLo (for WIP).
-#[derive(PartialEq, Eq, Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum VhlSlots { Hi, Lo }
 
 /// a deconstructed Vhl (for WIP)
-#[derive(Default,PartialEq,Debug,Copy,Clone)]
+#[derive(Default,PartialEq,Debug,Copy,Clone, Serialize, Deserialize)]
 pub struct VhlParts{
   pub v:VID,
   pub hi:Option<NID>,
@@ -105,7 +106,7 @@ pub trait HiLoBase {
   fn get_hilo(&self, n:NID)->Option<HiLo>; }
 
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct VhlBase {
   hilos: HiLoCache,
 }
@@ -221,6 +222,28 @@ impl HiLoCache {
         ix };
     let res = NID::from_vid_idx(v, ix);
     if inv { !res } else { res } }}
+
+/// `HiLoCacheInner.index` is fully derivable from `HiLoCacheInner.hilos` (it's just
+/// hilos' contents mapped to their own position), so we serialize/deserialize the
+/// ordered `HiLo` vec only, and rebuild the reverse-lookup index on load. Node
+/// indices (used inside NIDs) are the position in this vec, so order must be
+/// preserved exactly.
+impl Serialize for HiLoCache {
+  fn serialize<S>(&self, serializer: S)->Result<S::Ok, S::Error> where S: Serializer {
+    let inner = self.inner.read().unwrap();
+    let items: Vec<HiLo> = inner.hilos.vec.iter().copied().collect();
+    items.serialize(serializer) }}
+
+impl<'de> Deserialize<'de> for HiLoCache {
+  fn deserialize<D>(deserializer: D)->Result<Self, D::Error> where D: Deserializer<'de> {
+    let items = Vec::<HiLo>::deserialize(deserializer)?;
+    let mut index = std::collections::HashMap::with_capacity_and_hasher(
+      items.len(), fxhash::FxBuildHasher::default());
+    let hilos = VhlVec::default();
+    for hilo in items {
+      let ix = hilos.vec.push(hilo);
+      index.insert(hilo, ix); }
+    Ok(HiLoCache { inner: RwLock::new(HiLoCacheInner{ hilos, index }) }) }}
 
 impl<K> WipBase<K, VhlParts> for VhlBase {
   fn resolve_job(&self, parts:VhlParts)->JobResult<K> {
