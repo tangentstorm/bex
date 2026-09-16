@@ -7,6 +7,7 @@ use std::process::Command;      // for creating and viewing digarams
 use crate::{simp, nid::NID};
 use crate::vid::VID;
 use crate::reg::Reg;
+use crate::tags::Names;
 
 /// Functions common to all expression databases.
 pub trait Base {
@@ -29,15 +30,6 @@ pub trait Base {
 
   /// Return a `NID` representing IF `i` THEN `t` ELSE `e`.
   fn ite(&mut self, i:NID, t:NID, e:NID)->NID;
-
-  /// Assign a name to variable `v`, and return its `NID`.
-  fn def(&mut self, s:String, v:VID)->NID;
-
-  /// Assign a name to node `n` and return `n`.
-  fn tag(&mut self, n:NID, s:String)->NID;
-
-  /// Fetch a node by name.
-  fn get(&self, s:&str)->Option<NID>;
 
   /// substitute node for variable in context.
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID;
@@ -108,7 +100,7 @@ impl<T:Base> GraphViz for T {
 /// // example do-nothing decorator
 /// pub struct Decorated<T:Base> { base: T }
 /// impl<T:Base> Base for Decorated<T> {
-///   inherit![ new, when_hi, when_lo, and, xor, or, ite, def, tag, get, sub, dot ]; }
+///   inherit![ new, when_hi, when_lo, and, xor, or, ite, sub, dot ]; }
 /// ```
 #[macro_export] macro_rules! inherit {
   ( $($i:ident),* ) => { $( inherit!(@fn $i); )* };
