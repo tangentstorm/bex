@@ -51,6 +51,11 @@ pub trait Base {
   /// Render node `n` (and its descendents) in graphviz *.dot format.
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write);
 
+  /// Construct (and register, if needed) a variable node for `v`.
+  /// Default: raw `NID::from_vid(v)`. ZDD overrides this to build the
+  /// don't-care family over the current universe (former `ZddBase::def` body).
+  fn var(&mut self, v:VID)->NID { NID::from_vid(v) }
+
   /// generate ALL solutions.
   // !! This is a terrible idea, but it's the best I can do right now.
   // TODO: figure out the right way to return an iterator in a trait.
@@ -112,7 +117,8 @@ impl<T:Base> GraphViz for T {
   (@fn or) =>       { #[inline] fn or(&mut self, x:NID, y:NID)->NID  { self.base.or(x, y) }};
   (@fn ite) =>      { #[inline] fn ite(&mut self, i:NID, t:NID, e:NID)->NID { self.base.ite(i, t, e) }};
   (@fn sub) =>      { #[inline] fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID { self.base.sub(v, n, ctx) }};
-  (@fn dot) =>      { #[inline] fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) { self.base.dot(n, wr) }}; }
+  (@fn dot) =>      { #[inline] fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) { self.base.dot(n, wr) }};
+  (@fn var) =>      { #[inline] fn var(&mut self, v:VID)->NID { self.base.var(v) }}; }
 
 
 
@@ -120,7 +126,7 @@ impl<T:Base> GraphViz for T {
 pub struct Simplify<T:Base> { pub base: T }
 
 impl<T:Base> Base for Simplify<T> {
-  inherit![ new, when_hi, when_lo, xor, or, ite, sub, dot ];
+  inherit![ new, when_hi, when_lo, xor, or, ite, sub, dot, var ];
   fn and(&mut self, x:NID, y:NID)->NID {
     if let Some(nid) = simp::and(x,y) { nid }
     else {
@@ -134,12 +140,17 @@ impl<B: Base> Tagged<B> {
   pub fn new(base: B) -> Self { Self { base, names: Names::new() } }
   pub fn tag(&mut self, n: NID, s: impl Into<String>) -> NID { self.names.tag(n, s) }
   pub fn get(&self, s: &str) -> Option<NID> { self.names.get(s) }
-  pub fn def(&mut self, s: String, v: VID) -> NID { self.names.def(s, v) }
+  /// Define a named variable via the backend's `Base::var` hook, then register the name.
+  /// For most bases this is `NID::from_vid(v)`; for `ZddBase` it builds the ZDD family
+  /// over the existing universe (preserving pre-issue-#8 semantics).
+  pub fn def(&mut self, s: String, v: VID) -> NID {
+    let n = self.base.var(v);
+    self.names.tag(n, format!("{}{:?}", s, v)) }
 }
 
 impl<B: Base> Base for Tagged<B> {
   fn new()->Self where Self:Sized { Tagged::new(B::new()) }
-  inherit![ when_hi, when_lo, and, xor, or, ite, sub, dot ];
+  inherit![ when_hi, when_lo, and, xor, or, ite, sub, dot, var ];
 }
 
 

@@ -295,6 +295,12 @@ impl ZddBase {
     self.power_set_cache = Some(r);
     r }
 
+  fn power_set_without(&mut self, exclude:VID)->NID {
+    let mut r = I;
+    for &v in self.universe.iter().rev() {
+      if v != exclude { r = self.mk(v, r, r); }}
+    r }
+
   pub fn complement(&mut self, n:NID)->NID {
     let u = self.power_set();
     self.diff(u, n) }
@@ -331,6 +337,13 @@ impl CursorPlan for ZddBase {}
 
 impl Base for ZddBase {
   fn new()->Self { ZddBase::new() }
+
+  /// Register `v` and return the ZDD for "v is true; other universe vars don't-care".
+  /// After defining x then y, y represents both {y} and {x,y} (not just {y}).
+  fn var(&mut self, v:VID)->NID {
+    self.register_vid(v);
+    let ps = self.power_set_without(v);
+    self.mk(v, ps, O) }
 
   fn when_hi(&mut self, v:VID, n:NID)->NID {
     self.register_vid(v); self.register_nid(n);
@@ -634,6 +647,22 @@ test_base_when!(ZddBase);
   assert_eq!(z.count(c), 3); // 4 - 1
   let all = z.union(s0, c);
   assert_eq!(all, ps); }
+
+#[test] fn test_tagged_zdd_def_preserves_universe_family() {
+  // Regression for PR #32 review (Memnar #1543): Tagged::def must use ZddBase::var,
+  // not raw NID::from_vid. After def(x) then def(y), y must represent {{y},{x,y}}
+  // so that x OR y includes the both-true assignment.
+  use crate::base::{Base, Tagged};
+  let mut z = Tagged::new(ZddBase::new());
+  let x = z.def("x".into(), VID::var(0));
+  let y = z.def("y".into(), VID::var(1));
+  assert_eq!(z.base.count(y), 2, "y should be {{y}} and {{x,y}} after x was defined");
+  let xy = z.or(x, y);
+  assert_eq!(z.base.count(xy), 3, "x OR y should be {{x}}, {{y}}, and {{x,y}}");
+  // Names still registered
+  // Names::def tags as "{name}{vid:?}" — VID::var(0) Debug is "x0"
+  assert_eq!(z.get("xx0"), Some(x));
+  assert_eq!(z.get("yx1"), Some(y)); }
 
 #[test] fn test_zdd_quotient_remainder() {
   let mut z = ZddBase::new();
