@@ -25,7 +25,6 @@ pub struct ZddBase {
   universe_set: HashSet<VID>,
   memo: HashMap<(u8,NID,NID),NID>,
   power_set_cache: Option<NID>,
-  tags: HashMap<String,NID>,
 }
 
 impl Default for ZddBase {
@@ -40,8 +39,7 @@ impl ZddBase {
       universe: vec![],
       universe_set: HashSet::new(),
       memo: HashMap::new(),
-      power_set_cache: None,
-      tags: HashMap::new() }}
+      power_set_cache: None }}
 
   /// Canonical node constructor. Enforces ZDD reduction: hi==O => lo.
   fn mk(&self, v:VID, hi:NID, lo:NID)->NID {
@@ -340,6 +338,13 @@ impl CursorPlan for ZddBase {}
 impl Base for ZddBase {
   fn new()->Self { ZddBase::new() }
 
+  /// Register `v` and return the ZDD for "v is true; other universe vars don't-care".
+  /// After defining x then y, y represents both {y} and {x,y} (not just {y}).
+  fn var(&mut self, v:VID)->NID {
+    self.register_vid(v);
+    let ps = self.power_set_without(v);
+    self.mk(v, ps, O) }
+
   fn when_hi(&mut self, v:VID, n:NID)->NID {
     self.register_vid(v); self.register_nid(n);
     let n = self.resolve_inv(n);
@@ -381,15 +386,6 @@ impl Base for ZddBase {
     let ni = !i;
     let ne = self.and(ni, e);
     self.or(it, ne) }
-
-  fn def(&mut self, s:String, v:VID)->NID {
-    self.register_vid(v);
-    let ps = self.power_set_without(v);
-    let n = self.mk(v, ps, O);
-    self.tag(n, s) }
-
-  fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
-  fn get(&self, s:&str)->Option<NID> { self.tags.get(s).copied() }
 
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID {
     if !ctx.might_depend_on(v) { return ctx; }
@@ -651,6 +647,22 @@ test_base_when!(ZddBase);
   assert_eq!(z.count(c), 3); // 4 - 1
   let all = z.union(s0, c);
   assert_eq!(all, ps); }
+
+#[test] fn test_tagged_zdd_def_preserves_universe_family() {
+  // Regression for PR #32 review (Memnar #1543): Tagged::def must use ZddBase::var,
+  // not raw NID::from_vid. After def(x) then def(y), y must represent {{y},{x,y}}
+  // so that x OR y includes the both-true assignment.
+  use crate::base::{Base, Tagged};
+  let mut z = Tagged::new(ZddBase::new());
+  let x = z.def("x".into(), VID::var(0));
+  let y = z.def("y".into(), VID::var(1));
+  assert_eq!(z.base.count(y), 2, "y should be {{y}} and {{x,y}} after x was defined");
+  let xy = z.or(x, y);
+  assert_eq!(z.base.count(xy), 3, "x OR y should be {{x}}, {{y}}, and {{x,y}}");
+  // Names still registered
+  // Names::def tags as "{name}{vid:?}" — VID::var(0) Debug is "x0"
+  assert_eq!(z.get("xx0"), Some(x));
+  assert_eq!(z.get("yx1"), Some(y)); }
 
 #[test] fn test_zdd_quotient_remainder() {
   let mut z = ZddBase::new();

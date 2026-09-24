@@ -13,8 +13,6 @@ use crate::simp;
 #[derive(Debug)]
 pub struct RawASTBase {
   pub bits: Vec<Ops>,               // all known bits (simplified)
-  // TODO: redesign tags. (only used externally)
-  pub tags: HashMap<String, NID>,   // support for naming/tagging bits.
   hash: HashMap<Ops, NID>,          // expression cache (simple+complex)
   costs: Vec<u64>,                  // cached per-node costs (aligned with bits)
 }
@@ -25,7 +23,7 @@ type VarMaskFn = fn(&RawASTBase,vid::VID)->u64;
 impl RawASTBase {
 
   pub fn empty()->RawASTBase {
-    RawASTBase{ bits:vec![], tags:HashMap::new(), hash:HashMap::new(), costs:vec![] }}
+    RawASTBase{ bits:vec![], hash:HashMap::new(), costs:vec![] }}
   pub fn len(&self)->usize { self.bits.len() }
   pub fn is_empty(&self)->bool { self.bits.is_empty() }
 
@@ -162,11 +160,7 @@ impl RawASTBase {
     let bits = pv.iter().map(|&old| {
       let res:Vec<NID> = self.bits[old].to_rpn().map(|&x|nnix(x)).collect();
       ops::rpn(&res) }).collect();
-    let mut tags = HashMap::new();
-    for (key, &nid) in &self.tags {
-      if nid.is_ixn() && new[nid.idx()].is_none() { continue }
-      else { tags.insert(key.clone(), nnix(nid)); }}
-    let mut base = RawASTBase{ bits, tags, hash:HashMap::new(), costs:vec![] };
+    let mut base = RawASTBase{ bits, hash:HashMap::new(), costs:vec![] };
     base.rebuild_metadata();
     base }
 
@@ -244,12 +238,6 @@ impl Base for RawASTBase {
   fn when_hi(&mut self, v:vid::VID, n:NID)->NID { self.when(v, nid::I, n) }
   fn when_lo(&mut self, v:vid::VID, n:NID)->NID { self.when(v, nid::O, n) }
 
-  fn def(&mut self, s:String, v:vid::VID)->NID {
-    let nid = NID::from_vid(v);
-    self.tag(nid, format!("{}{:?}", s, v)) }
-
-  fn tag(&mut self, n:NID, s:String)->NID {
-    self.tags.insert(s, n); n }
 
   fn and(&mut self, x:NID, y:NID)->NID {
     if let Some(nid) = simp::and(x,y) { nid }
@@ -288,8 +276,6 @@ impl Base for RawASTBase {
     self.nid(ops::ite(i, t, e)) }
 
   fn sub(&mut self, _v:vid::VID, _n:NID, _ctx:NID)->NID { todo!("ast::sub") }
-
-  fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 
   // generate dot file (graphviz)
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) {
@@ -362,7 +348,7 @@ impl Default for ASTBase {
     fn default() -> Self {Self::new()}}
 
 impl Base for ASTBase {
-  inherit![when_hi, when_lo, and, xor, or, ite, def, tag, get, sub, dot ];
+  inherit![when_hi, when_lo, and, xor, or, ite, sub, dot ];
   fn new()->Self { ASTBase::new() }}
 
 impl ASTBase {
@@ -401,14 +387,14 @@ test_base_when!(ASTBase);
 //   assert_eq!(b.eval(and, &vid_map![x1: x0]), x0, "expect  x0 & x0 == x0"); }
 
 #[test] fn test_repack() {
-  let mut b = RawASTBase::empty();
+  let mut b = Tagged::new(RawASTBase::empty());
   use crate::nid::named::{x0, x1, x2, x3, x4};
   let and = b.and(x0, x1);
   let or = b.or(x2, x3);
   b.tag(or, "or".to_string());
   let xor = b.xor(x4, and);
-  let (b2, keep) = b.repack(vec![xor]);
+  let (b2, keep) = b.base.repack(vec![xor]);
   assert_eq!(b2.len(), 2);
   assert_eq!(keep, vec![NID::ixn(1)]);
   assert_eq!(b2.node_costs().len(), b2.len());
-  assert_eq!(b2.get_ops(keep[0]), b.get_ops(xor)); }
+  assert_eq!(b2.get_ops(keep[0]), b.base.get_ops(xor)); }

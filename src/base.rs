@@ -7,6 +7,7 @@ use std::process::Command;      // for creating and viewing digarams
 use crate::{simp, nid::NID};
 use crate::vid::VID;
 use crate::reg::Reg;
+use crate::tags::Names;
 
 /// Functions common to all expression databases.
 pub trait Base {
@@ -30,15 +31,6 @@ pub trait Base {
   /// Return a `NID` representing IF `i` THEN `t` ELSE `e`.
   fn ite(&mut self, i:NID, t:NID, e:NID)->NID;
 
-  /// Assign a name to variable `v`, and return its `NID`.
-  fn def(&mut self, s:String, v:VID)->NID;
-
-  /// Assign a name to node `n` and return `n`.
-  fn tag(&mut self, n:NID, s:String)->NID;
-
-  /// Fetch a node by name.
-  fn get(&self, s:&str)->Option<NID>;
-
   /// substitute node for variable in context.
   fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID;
 
@@ -58,6 +50,11 @@ pub trait Base {
 
   /// Render node `n` (and its descendents) in graphviz *.dot format.
   fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write);
+
+  /// Construct (and register, if needed) a variable node for `v`.
+  /// Default: raw `NID::from_vid(v)`. ZDD overrides this to build the
+  /// don't-care family over the current universe (former `ZddBase::def` body).
+  fn var(&mut self, v:VID)->NID { NID::from_vid(v) }
 
   /// generate ALL solutions.
   // !! This is a terrible idea, but it's the best I can do right now.
@@ -108,7 +105,7 @@ impl<T:Base> GraphViz for T {
 /// // example do-nothing decorator
 /// pub struct Decorated<T:Base> { base: T }
 /// impl<T:Base> Base for Decorated<T> {
-///   inherit![ new, when_hi, when_lo, and, xor, or, ite, def, tag, get, sub, dot ]; }
+///   inherit![ new, when_hi, when_lo, and, xor, or, ite, sub, dot ]; }
 /// ```
 #[macro_export] macro_rules! inherit {
   ( $($i:ident),* ) => { $( inherit!(@fn $i); )* };
@@ -119,11 +116,9 @@ impl<T:Base> GraphViz for T {
   (@fn xor) =>      { #[inline] fn xor(&mut self, x:NID, y:NID)->NID { self.base.xor(x, y) }};
   (@fn or) =>       { #[inline] fn or(&mut self, x:NID, y:NID)->NID  { self.base.or(x, y) }};
   (@fn ite) =>      { #[inline] fn ite(&mut self, i:NID, t:NID, e:NID)->NID { self.base.ite(i, t, e) }};
-  (@fn def) =>      { #[inline] fn def(&mut self, s:String, i:VID)->NID { self.base.def(s, i) }};
-  (@fn tag) =>      { #[inline] fn tag(&mut self, n:NID, s:String)->NID { self.base.tag(n, s) }};
-  (@fn get) =>      { #[inline] fn get(&self, s:&str)->Option<NID> { self.base.get(s) }};
   (@fn sub) =>      { #[inline] fn sub(&mut self, v:VID, n:NID, ctx:NID)->NID { self.base.sub(v, n, ctx) }};
-  (@fn dot) =>      { #[inline] fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) { self.base.dot(n, wr) }}; }
+  (@fn dot) =>      { #[inline] fn dot(&self, n:NID, wr: &mut dyn std::fmt::Write) { self.base.dot(n, wr) }};
+  (@fn var) =>      { #[inline] fn var(&mut self, v:VID)->NID { self.base.var(v) }}; }
 
 
 
@@ -131,12 +126,32 @@ impl<T:Base> GraphViz for T {
 pub struct Simplify<T:Base> { pub base: T }
 
 impl<T:Base> Base for Simplify<T> {
-  inherit![ new, when_hi, when_lo, xor, or, ite, def, tag, get, sub, dot ];
+  inherit![ new, when_hi, when_lo, xor, or, ite, sub, dot, var ];
   fn and(&mut self, x:NID, y:NID)->NID {
     if let Some(nid) = simp::and(x,y) { nid }
     else {
       let (a, b) = if x < y { (x,y) } else { (y,x) };
       self.base.and(a, b) }}}
+
+
+pub struct Tagged<B: Base> { pub base: B, pub names: Names }
+
+impl<B: Base> Tagged<B> {
+  pub fn new(base: B) -> Self { Self { base, names: Names::new() } }
+  pub fn tag(&mut self, n: NID, s: impl Into<String>) -> NID { self.names.tag(n, s) }
+  pub fn get(&self, s: &str) -> Option<NID> { self.names.get(s) }
+  /// Define a named variable via the backend's `Base::var` hook, then register the name.
+  /// For most bases this is `NID::from_vid(v)`; for `ZddBase` it builds the ZDD family
+  /// over the existing universe (preserving pre-issue-#8 semantics).
+  pub fn def(&mut self, s: String, v: VID) -> NID {
+    let n = self.base.var(v);
+    self.names.tag(n, format!("{}{:?}", s, v)) }
+}
+
+impl<B: Base> Base for Tagged<B> {
+  fn new()->Self where Self:Sized { Tagged::new(B::new()) }
+  inherit![ when_hi, when_lo, and, xor, or, ite, sub, dot, var ];
+}
 
 
 // macros for building and testing expressions
@@ -160,17 +175,6 @@ impl<T:Base> Base for Simplify<T> {
      vec![$(($x, $y)),*].iter().copied().collect::<HashMap<VID,NID>>() }}
 
 
-/*
-/// TODO: Generic tagging support for any base type.
-pub struct Tagged<B:Base> {
-  base: B,
-  tags: HashMap<String,B::N> }
-
-impl<B:Base> Tagged<B> {
-  pub fn def(&mut self, s:String, v:B::V)->B::N { self.base.var(v) }
-  pub fn tag(&mut self, n:B::N, s:String)->B::N { n }}
-
- */
 
 // Meta-macro that generates a macro for testing any base implementation.
 macro_rules! base_test {

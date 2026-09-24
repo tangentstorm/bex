@@ -22,7 +22,7 @@ use crate::nid::NID;
 use crate::vid::VID;
 use crate::ops::Ops;
 use crate::reg::Reg;
-use crate::{GraphViz, ast::{ASTBase, RawASTBase}, int::{GBASE,BInt,BaseBit}};
+use crate::{GraphViz, ast::{ASTBase, RawASTBase}, base::Tagged, int::{GBASE,BInt,BaseBit}};
 
 
 /// protocol used by solve.rs. These allow the base to prepare itself for different steps
@@ -133,9 +133,8 @@ impl<S:SubSolver> Progress<S> for ProgressReport<'_> {
 /// Sorting your AST this way dramatically reduces the cost of converting to
 /// another form. (For example, the test_tiny benchmark drops from 5282 steps to 111 for BddBase)
 pub fn sort_by_cost(src:&RawASTBase, top:SrcNid)->(RawASTBase,SrcNid) {
-  let (mut ast, kept) = src.repack(vec![top.n]);
+  let (ast, kept) = src.repack(vec![top.n]);
   let top_nid = kept[0];
-  ast.tag(top_nid, "-top-".to_string());
   (ast, SrcNid{ n: top_nid }) }
 
 
@@ -233,7 +232,7 @@ pub fn solve<S:SubSolver>(dst:&mut S, src0:&RawASTBase, sn:NID)->DstNid {
 
 
 fn multiplication_bits<T0:BInt, T1:BInt>(k:usize)->(BaseBit, BaseBit) {
-  GBASE.with(|gb| gb.replace(ASTBase::empty()));   // reset on each test
+  GBASE.with(|gb| gb.replace(Tagged::new(ASTBase::empty())));   // reset on each test
   let (y, x) = (T0::def("y", 0), T0::def("x", T0::n())); let lt = x.lt(&y);
   let xy:T1 = x.times(&y); let k = T1::new(k); let eq = xy.eq(&k);
   (lt,eq) }
@@ -253,8 +252,8 @@ pub fn find_factors<T0:BInt, T1:BInt, S:SubSolver>(dest:&mut S, k:usize, expecte
       GBASE.with(|gb| { gb.borrow().show_named(eq.clone().n, "eq") }); }
     let top:BaseBit = lt & eq;
     assert!(top.n.is_ixn(), "top nid seems to be a literal. (TODO: handle these already solved cases)");
-    let gb = GBASE.with(|gb| gb.replace(ASTBase::empty())); // swap out the thread-local one
-    let src = gb.raw_ast();
+    let gb = GBASE.with(|gb| gb.replace(Tagged::new(ASTBase::empty()))); // swap out the thread-local one
+    let src = gb.base.raw_ast();
     if show_ast { src.show_named(top.n, "ast"); }
     // --- now we have the ast, so solve ----
     dest.init_stats();
@@ -334,7 +333,7 @@ pub fn find_factors<T0:BInt, T1:BInt, S:SubSolver>(dest:&mut S, k:usize, expecte
   find_factors::<X4, X8, ANFBase>(&mut ANFBase::new(), 30, vec![(2,15), (3,10), (5,6)]); }
 
 #[test] pub fn test_solve_calls_init_once() {
-  use crate::{ast::ASTBase, base::Base, vid::VID};
+  use crate::{ast::ASTBase, base::{Base, Tagged}, vid::VID};
 
   #[derive(Default)]
   struct CountingSolver { init_calls: usize, init_arg: Option<VID> }
@@ -351,11 +350,11 @@ pub fn find_factors<T0:BInt, T1:BInt, S:SubSolver>(dest:&mut S, k:usize, expecte
     fn get_all(&self, _ctx:NID, _nvars:usize)->HashSet<Reg> { HashSet::new() }
   }
 
-  let mut ast = ASTBase::empty();
+  let mut ast = Tagged::new(ASTBase::empty());
   let x = ast.def("x".to_string(), VID::var(0));
   let y = ast.def("y".to_string(), VID::var(1));
   let top = ast.and(x, y);
-  let raw = ast.raw_ast();
+  let raw = ast.base.raw_ast();
 
   let mut solver = CountingSolver::default();
   let answer = solve(&mut solver, raw, top);
