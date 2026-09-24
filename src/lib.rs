@@ -12,6 +12,7 @@ extern crate concurrent_queue;
 pub mod base;   pub use crate::base::{Base, GraphViz};
 pub mod vid;
 pub mod nid;    pub use crate::nid::{NID,I,O};
+pub mod notation;
 pub mod fun;    pub use crate::fun::Fun;
 pub mod comb;
 pub mod tbl;
