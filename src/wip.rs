@@ -176,36 +176,44 @@ where K:Eq+Hash+Debug, P:Parts, B:WipBase<K,P> {
   pub cache: DashMap<K, Work<NID, WipRef<K,P>>, fxhash::FxBuildHasher> }
 
 /// Serializes `WorkState.cache` as a JSON-friendly sequence of `(key, value)`
-/// pairs, since keys (e.g. `NormIteKey`) aren't strings, and `DashMap`'s own
-/// `Serialize` impl emits a map (which `serde_json` requires string keys for).
-struct CacheSeq<'a, K, P>(&'a DashMap<K, Work<NID, WipRef<K,P>>, fxhash::FxBuildHasher>)
-where K:Eq+Hash, P:Parts;
+/// pairs (via an owned `Vec` snapshot), since keys (e.g. `NormIteKey`) aren't
+/// strings, and `DashMap`'s own `Serialize` impl emits a map (which
+/// `serde_json` requires string keys for).
 
-impl<'a, K, P> Serialize for CacheSeq<'a, K, P>
-where K:Eq+Hash+Serialize, P:Parts+Serialize, P::Slot:Serialize {
-  fn serialize<S>(&self, serializer:S)->Result<S::Ok, S::Error> where S:Serializer {
-    use serde::ser::SerializeSeq;
-    let mut seq = serializer.serialize_seq(Some(self.0.len()))?;
-    for r in self.0.iter() {
-      let (k, v) = r.pair();
-      seq.serialize_element(&(k, v))?; }
-    seq.end() }}
+fn clone_work<K,P>(w:&Work<NID, WipRef<K,P>>)->Work<NID, WipRef<K,P>>
+where K:Clone, P:Parts+Copy, P::Slot:Clone {
+  match w {
+    Work::Done(n) => Work::Done(*n),
+    Work::Todo(wip) => Work::Todo(Wip { parts: wip.parts, deps: wip.deps.clone() }) }}
 
-impl<K,P,B> Serialize for WorkState<K,P,B>
-where K:Eq+Hash+Debug+Serialize, P:Parts+Serialize, P::Slot:Serialize, B:WipBase<K,P>+Serialize {
+/// Checkpoint serialization specialized on `VhlBase`: freeze the HiLo store
+/// (write lock) while copying both base rows and cache entries, so a worker
+/// cannot publish a `Done(nid)` that refers to a HiLo row inserted after the
+/// base snapshot was taken.
+impl<K> Serialize for WorkState<K,VhlParts,VhlBase>
+where K:Eq+Hash+Debug+Serialize+Clone {
   fn serialize<S>(&self, serializer:S)->Result<S::Ok, S::Error> where S:Serializer {
     let qid = *self.qid.lock().unwrap();
-    (qid, &self.base, CacheSeq(&self.cache)).serialize(serializer) }}
+    let (base, cache_entries) = self.base.with_hilos_frozen(|hilos| {
+      let base = VhlBase::from_hilos(hilos.to_vec());
+      let cache_entries: Vec<(K, Work<NID, WipRef<K,VhlParts>>)> = self.cache.iter().map(|r| {
+        let (k, v) = r.pair();
+        (k.clone(), clone_work(v)) }).collect();
+      (base, cache_entries) });
+    (qid, base, cache_entries).serialize(serializer) }}
 
 impl<'de, K,P,B> Deserialize<'de> for WorkState<K,P,B>
 where K:Eq+Hash+Debug+Deserialize<'de>, P:Parts+Deserialize<'de>, P::Slot:Deserialize<'de>, B:WipBase<K,P>+Deserialize<'de> {
   fn deserialize<D>(deserializer:D)->Result<Self, D::Error> where D:Deserializer<'de> {
-    let (qid, base, entries): (Option<crate::swarm::QID>, B, Vec<(K, Work<NID, WipRef<K,P>>)>)
+    // `qid` is live swarm bookkeeping tied to an in-flight query slot and an
+    // empty rebuilt job queue. Always reset it; callers re-establish a qid
+    // when they submit (or resume) a top-level job.
+    let (_qid, base, entries): (Option<crate::swarm::QID>, B, Vec<(K, Work<NID, WipRef<K,P>>)>)
       = Deserialize::deserialize(deserializer)?;
     let cache = DashMap::with_capacity_and_hasher_and_shard_amount(
       entries.len(), fxhash::FxBuildHasher::default(), 128);
     for (k, v) in entries { cache.insert(k, v); }
-    Ok(WorkState { _kvp: PhantomData, qid: Mutex::new(qid), base, cache }) }}
+    Ok(WorkState { _kvp: PhantomData, qid: Mutex::new(None), base, cache }) }}
 
 impl<K,P,B> Default for WorkState<K,P,B>
 where K:Eq+Hash+Debug, P:Parts, B:WipBase<K,P> {
@@ -382,3 +390,20 @@ pub enum RMsg {
   Ret(NID),
   /// return stats about the memo cache
   CacheStats { tests: u64, hits: u64 }}
+
+
+#[cfg(test)]
+mod checkpoint_tests {
+  use super::*;
+  use crate::bdd::NormIteKey;
+  use crate::swarm::QID;
+  use crate::vhl::{VhlBase, VhlParts};
+
+  #[test] fn test_workstate_load_clears_qid() {
+    let ws = WorkState::<NormIteKey, VhlParts, VhlBase>::default();
+    *ws.qid.lock().unwrap() = Some(QID::STEP(123));
+    let json = serde_json::to_string(&ws).unwrap();
+    let loaded: WorkState<NormIteKey, VhlParts, VhlBase> = serde_json::from_str(&json).unwrap();
+    assert!(loaded.qid.lock().unwrap().is_none(),
+      "stale qid must not survive deserialize"); }
+}

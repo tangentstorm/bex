@@ -143,7 +143,16 @@ impl<J,H> Worker<VhlQ<J>, R, J> for VhlWorker<J,H> where J:JobKey, H:VhlJobHandl
         { let mut m = s.qid.lock().unwrap();
           assert!((*m).is_none(), "already working on a top-level query");
           *m = Some(*qid); }
-        self.queue_push(job); None }
+        // Re-seed unfinished Todos (e.g. after loading a mid-flight checkpoint
+        // whose job queue was discarded). Existing deps make sub-jobs non-new,
+        // so without this the graph can stall.
+        let unfinished: Vec<J> = s.cache.iter()
+          .filter(|e| e.value().is_todo())
+          .map(|e| *e.key())
+          .collect();
+        if unfinished.is_empty() { self.queue_push(job); }
+        else { for j in unfinished { self.queue_push(j); } }
+        None }
       VhlQ::Stats => {
         let tests = COUNT_CACHE_TESTS.with(|c| c.replace(0));
         let hits = COUNT_CACHE_HITS.with(|c| c.replace(0));

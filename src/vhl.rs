@@ -123,6 +123,16 @@ impl VhlBase {
 
   pub fn get_hilo(&self, n:NID)->HiLo { self.hilos.get_hilo(n) }
 
+  /// Rebuild from an ordered HiLo list (same order as NID indices).
+  pub fn from_hilos(items: Vec<HiLo>)->Self {
+    Self { hilos: HiLoCache::from_items(items) }}
+
+  /// Hold the HiLo write lock (blocking inserts) while `f` runs with a
+  /// snapshot of the current HiLo rows. Used to take a consistent
+  /// (base, cache) checkpoint without torn NID references.
+  pub fn with_hilos_frozen<R>(&self, f: impl FnOnce(&[HiLo])->R)->R {
+    self.hilos.with_frozen(f) }
+
   #[inline] pub fn tup(&self, n:NID)-> (NID, NID) {
     use crate::nid::{I,O};
     use crate::Fun;
@@ -223,6 +233,23 @@ impl HiLoCache {
     let res = NID::from_vid_idx(v, ix);
     if inv { !res } else { res } }}
 
+impl HiLoCache {
+  /// Rebuild cache from an ordered HiLo list. NID indices are positions in this list.
+  pub fn from_items(items: Vec<HiLo>)->Self {
+    let mut index = std::collections::HashMap::with_capacity_and_hasher(
+      items.len(), fxhash::FxBuildHasher::default());
+    let hilos = VhlVec::default();
+    for hilo in items {
+      let ix = hilos.vec.push(hilo);
+      index.insert(hilo, ix); }
+    HiLoCache { inner: RwLock::new(HiLoCacheInner{ hilos, index }) }}
+
+  /// Freeze HiLo inserts while `f` observes a stable snapshot of the rows.
+  pub fn with_frozen<R>(&self, f: impl FnOnce(&[HiLo])->R)->R {
+    let inner = self.inner.write().unwrap();
+    let items: Vec<HiLo> = inner.hilos.vec.iter().copied().collect();
+    f(&items) }}
+
 /// `HiLoCacheInner.index` is fully derivable from `HiLoCacheInner.hilos` (it's just
 /// hilos' contents mapped to their own position), so we serialize/deserialize the
 /// ordered `HiLo` vec only, and rebuild the reverse-lookup index on load. Node
@@ -237,13 +264,7 @@ impl Serialize for HiLoCache {
 impl<'de> Deserialize<'de> for HiLoCache {
   fn deserialize<D>(deserializer: D)->Result<Self, D::Error> where D: Deserializer<'de> {
     let items = Vec::<HiLo>::deserialize(deserializer)?;
-    let mut index = std::collections::HashMap::with_capacity_and_hasher(
-      items.len(), fxhash::FxBuildHasher::default());
-    let hilos = VhlVec::default();
-    for hilo in items {
-      let ix = hilos.vec.push(hilo);
-      index.insert(hilo, ix); }
-    Ok(HiLoCache { inner: RwLock::new(HiLoCacheInner{ hilos, index }) }) }}
+    Ok(HiLoCache::from_items(items)) }}
 
 impl<K> WipBase<K, VhlParts> for VhlBase {
   fn resolve_job(&self, parts:VhlParts)->JobResult<K> {
