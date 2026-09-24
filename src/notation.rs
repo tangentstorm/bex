@@ -42,9 +42,15 @@ impl FromStr for ParsedNid {
       let (a, b) = s.split_at(ix);
       if !a.is_empty() && a.chars().all(|c| c.is_ascii_digit()) {
         let ns:u32 = a.parse().map_err(|_| format!("bad namespace prefix: {}", s))?;
-        let nid:NID = b[1..].parse()?;
+        let nid_txt = &b[1..];
+        // Reject empty / bang-only before NID::from_str (which historically panicked).
+        if nid_txt.is_empty() || nid_txt == "!" {
+          return Err(format!("empty nid after namespace: {}", s)); }
+        let nid:NID = nid_txt.parse()?;
         return Ok(ParsedNid::with_ns(ns, nid));
       }}
+    if s.is_empty() || s == "!" {
+      return Err(format!("empty nid: {:?}", s)); }
     let nid:NID = s.parse()?;
     Ok(ParsedNid::new(nid)) }}
 
@@ -279,7 +285,8 @@ pub fn apply_bracket<B:Base>(base:&mut B, n:NID, args:&[NID])->Result<NID, Strin
   if let Some(f) = n.to_fun() {
     if f.arity() as usize != args.len() {
       return Err(format!("table nid {} has arity {} but {} arg(s) were given", n, f.arity(), args.len())); }
-    Ok(apply_table(base, f, args))
+    // NidFun::tbl() reads raw() (drops INV); invert the evaluated result when n is inverted.
+    Ok(apply_table(base, f, args).inv_if(n.is_inv()))
   } else if n.is_ixn() {
     Err("bracket substitution on AST nids is not supported yet".to_string())
   } else if n.is_lit() {

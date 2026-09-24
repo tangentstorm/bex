@@ -97,6 +97,7 @@ impl fmt::Display for NID {
   fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
     if self.is_const() { if self.is_inv() { write!(f, "I") } else { write!(f, "O") } }
     else if self.is_fun() {
+      if self.is_inv() { write!(f, "!")?; }
       let fnid = self.to_fun().unwrap();
       let ar:u8 = fnid.arity();
       let ft:u32 = fnid.tbl();
@@ -137,11 +138,18 @@ impl FromStr for NID {
       let (a, b) = if let Some(ix) = word.find('.') { word.split_at(ix) } else { (word, "") };
       let mut ch = a.chars().peekable();
       let mut inv: bool = false;
-      if ch.peek().unwrap() == &'!' { ch.next(); inv = true }
+      match ch.peek() {
+        None => return Err(format!("empty nid: {:?}", word)),
+        Some('!') => { ch.next(); inv = true; }
+        Some(_) => {}
+      }
       macro_rules! num_suffix {
         ($radix:expr, $ch:expr) => { usize::from_str_radix(&$ch.collect::<String>(), $radix) }}
       let is_upper_hex = |s: &str| s.chars().all(|c| c.is_ascii_digit() || ('A'..='F').contains(&c));
-      let c = ch.next().unwrap();
+      let c = match ch.next() {
+        Some(c) => c,
+        None => return Err(format!("empty nid after inversion: {:?}", word)),
+      };
       // literals or VHL NIDS:
       if c == 'x' || c == 'v'  {
         let tail = ch.collect::<String>();

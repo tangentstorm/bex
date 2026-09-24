@@ -20,7 +20,8 @@ mod notation_tests {
               "t0001", "t0110", "t01101001", "f2.6", "f3.33", "fA",
               "x2.A3", "v2.A3", "!x2.A3", "@1A", "!@1A",
               "T{x3,x7:1110}", "T{x1,x3,x5:FC}",
-              "2:x0", "5:x5.234", "3:@FF", "7:O"] {
+              "!t0001", "!T{x3,x7:1110}",
+              "2:x0", "5:x5.234", "3:@FF", "7:O", "3:!t0001"] {
       roundtrip(s); }}
 
   #[test] fn test_tbl_oi_alternates_via_parsed_nid() {
@@ -214,4 +215,59 @@ mod notation_tests {
   #[test] fn test_json_assignment_has_no_representation() {
     let e = parse_expr("a : x0").unwrap();
     assert!(to_json(&e).is_err()); }
+
+  // ---- PR #34 review regressions (Memnar #1538) ----
+
+  /// Claim 1: inverted table NIDs must keep `!` through Display / ParsedNid round-trip.
+  #[test] fn test_inverted_table_nid_roundtrip() {
+    for s in ["!t0001", "3:!t0001", "!T{x3,x7:1110}", "5:!t0110", "!fA"] {
+      let pn:ParsedNid = s.parse().unwrap_or_else(|e| panic!("parse {}: {}", s, e));
+      assert!(pn.nid.is_inv(), "{} should parse as inverted", s);
+      let printed = pn.to_string();
+      assert!(printed.contains('!'),
+        "{} printed as {} (lost inversion)", s, printed);
+      let pn2:ParsedNid = printed.parse().unwrap_or_else(|e| panic!("reparse {} from {}: {}", printed, s, e));
+      assert_eq!(pn, pn2, "round-trip for {}", s);
+      // to_json uses NID::Display directly (no namespace)
+      let j = to_json(&Expr::Nid(pn.nid)).unwrap();
+      let js = j.as_str().unwrap();
+      assert!(js.starts_with('!'), "to_json lost inversion for {} -> {}", s, js);
+    }
+  }
+
+  /// Claim 2: `!t0001[x0 x1]` must evaluate as NAND, not AND.
+  #[test] fn test_inverted_table_bracket_apply() {
+    let mut base = BddBase::new();
+    let mut scope = HashMap::new();
+    let n = eval_expr(&mut base, &parse_expr("!t0001[x0 x1]").unwrap(), &mut scope).unwrap();
+    let expected = !base.and(x0, x1);
+    assert!(n.is_inv(), "!t0001[x0 x1] result should be inverted, got {}", n);
+    assert_eq!(n, expected, "!t0001[x0 x1] should be NAND");
+    // also via apply_bracket directly
+    let inv_and:NID = "!t0001".parse().unwrap();
+    assert!(inv_and.is_inv());
+    let n2 = apply_bracket(&mut base, inv_and, &[x0, x1]).unwrap();
+    assert!(n2.is_inv());
+    assert_eq!(n2, expected);
+    // non-inverted still AND
+    let and_n = apply_bracket(&mut base, "t0001".parse().unwrap(), &[x0, x1]).unwrap();
+    assert_eq!(and_n, base.and(x0, x1));
+  }
+
+  /// Claim 3: empty / bang-only NID text must return Err, not panic.
+  #[test] fn test_empty_nid_text_is_err_not_panic() {
+    for s in ["", "!", "3:", "3:!"] {
+      let r = s.parse::<ParsedNid>();
+      assert!(r.is_err(), "expected Err for {:?}, got {:?}", s, r);
+    }
+    // from_json must not panic on empty / bang-only strings either
+    for s in ["", "!"] {
+      let v = JsonValue::from(s);
+      let r = from_json(&v);
+      // empty/"!" are not valid nids; they become Var names (or Err if we reject).
+      // Either Err or Var is fine — just must not panic.
+      let _ = r;
+    }
+  }
 }
+
