@@ -2,13 +2,14 @@
 use std::fmt;
 use std::str::FromStr;
 use crate::vid;
+use serde::{Serialize, Deserialize};
 
 // -- core data types ---
 
 /// A NID represents a node in a Base. Essentially, this acts like a tuple
 /// containing a VID and index, but for performance reasons, it is packed into a u64.
 /// See below for helper functions that manipulate and analyze the packed bits.
-#[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
+#[derive(Default, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, Serialize, Deserialize)]
 pub struct NID { n: u64 }
 
 /// A truth table stored directly in a nid for functions of up to 5 inputs.

@@ -15,7 +15,7 @@ pub mod bdd_swarm; use self::bdd_swarm::*;
 
 
 /// An if/then/else triple. Like VHL, but all three slots are NIDs.
-#[derive(Debug, Default, PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(Debug, Default, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct ITE {pub i:NID, pub t:NID, pub e:NID}  // nopub!! only public for WorkState
 impl ITE {
   pub fn top_vid(&self)->VID {
@@ -45,7 +45,7 @@ impl Norm {
       Norm::Ite(_) => false}}}
 
 /// a normalized ITE suitable for use as a key in the computed cache
-#[derive(Eq,PartialEq,Hash,Debug,Default,Clone,Copy)]
+#[derive(Eq,PartialEq,Hash,Debug,Default,Clone,Copy,serde::Serialize,serde::Deserialize)]
 pub struct NormIteKey(pub ITE); // nopub
 
 
@@ -120,6 +120,19 @@ impl BddBase {
   /// channel-dispatch overhead at the cost of giving up intra-operation
   /// parallelism. Useful for bottom-up BDD construction workloads.
   pub fn set_direct_ite(&mut self, on:bool) { self.direct_ite = on; }
+
+  /// Save the swarm's intermediate state (node base + computed cache,
+  /// including in-progress WIPs) to a JSON string. See `BddSwarm::save_json`.
+  /// (Named `save_swarm_json` to avoid clashing with the subgraph-exporting
+  /// `to_json`/`load_json`/`from_json` methods below.)
+  pub fn save_swarm_json(&self)->Result<String, serde_json::Error> { self.swarm.save_json() }
+
+  /// Load a `BddBase` from JSON previously produced by `save_swarm_json`.
+  /// Tags and the direct-ITE cache are not part of the swarm state, so
+  /// they start out empty/disabled, as in `BddBase::new()`.
+  pub fn load_swarm_json(s:&str)->Result<BddBase, serde_json::Error> {
+    Ok(BddBase{ swarm: BddSwarm::load_json(s)?, tags:HashMap::new(),
+      direct_ite:false, ite_cache:fxhash::FxHashMap::default() }) }
 
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)->(NID,NID) { self.swarm.tup(n) }
