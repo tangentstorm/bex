@@ -58,11 +58,14 @@ impl Base for ANFBase {
     w!("  I[label=⊤, shape=square, fillcolor=white]");
     w!("  O[label=⊥, shape=square, fontcolor=white, fillcolor=\"#333333\"]");
     w!("{{rank = same; I; O;}}");
-    self.walk_dn(n, &mut |n,_,_h,_l| w!("  \"{}\"[label=\"{:?}\"];", n, n.vid()));
-    w!("edge[style=solid];");
-    self.walk_dn(n, &mut |n,_,hi,_l| w!("  \"{:?}\"->\"{:?}\";", n, hi));
-    w!("edge[style=dashed];");
-    self.walk_dn(n, &mut |n,_,__,lo| w!("  \"{:?}\"->\"{:?}\";", n, lo));
+    // constants have no rows in self.nodes, so there is nothing to walk;
+    // the I/O nodes declared above are the whole graph.
+    if !n.is_const() {
+      self.walk_dn(n, &mut |n,_,_h,_l| w!("  \"{}\"[label=\"{:?}\"];", n, n.vid()));
+      w!("edge[style=solid];");
+      self.walk_dn(n, &mut |n,_,hi,_l| w!("  \"{:?}\"->\"{:?}\";", n, hi));
+      w!("edge[style=dashed];");
+      self.walk_dn(n, &mut |n,_,__,lo| w!("  \"{:?}\"->\"{:?}\";", n, lo)); }
     w!("}}"); }
 
   fn def(&mut self, _s:String, _v:VID)->NID { todo!("anf::def"); }
