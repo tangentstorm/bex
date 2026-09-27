@@ -80,11 +80,20 @@ pub trait Progress<S:SubSolver> {
   fn on_done(&mut self, src:&RawASTBase, dest: &mut S, newtop:DstNid); }
 
 pub struct ProgressReport<'a> {
-  pub start: std::time::SystemTime,
+  pub start: u128, // millis since the unix epoch (see now_millis)
   pub millis: u128,
   pub save_dot: bool,
   pub save_dest: bool,
   pub prefix: &'a str }
+
+/// wall-clock milliseconds since the unix epoch, for progress reports.
+/// SystemTime::now() panics on wasm32 (no system clock), so timing
+/// is disabled there and this always returns 0.
+#[cfg(not(target_arch = "wasm32"))]
+fn now_millis()->u128 {
+  SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_millis() }
+#[cfg(target_arch = "wasm32")]
+fn now_millis()->u128 { 0 }
 
 /// these are wrappers so the type system can help us keep the src and dest nids separate
 #[derive(Clone, Copy, Debug, PartialEq)] pub struct SrcNid { pub n: NID }
@@ -92,7 +101,7 @@ pub struct ProgressReport<'a> {
 
 
 impl<S:SubSolver> Progress<S> for ProgressReport<'_> {
-  fn on_start(&mut self, _ctx:&DstNid) { self.start = std::time::SystemTime::now(); }
+  fn on_start(&mut self, _ctx:&DstNid) { self.start = now_millis(); }
   fn on_step(&mut self, _src:&RawASTBase, _dest: &mut S, _step:usize, _millis:u128, _oldtop:DstNid, _newtop:DstNid) { }
     /*
     self.millis += millis;
@@ -126,7 +135,7 @@ impl<S:SubSolver> Progress<S> for ProgressReport<'_> {
   */
 
   fn on_done(&mut self, _src:&RawASTBase, _dest: &mut S, _newtop:DstNid) {
-    println!("total time: {} ms", self.start.elapsed().unwrap().as_millis() ) }}
+    println!("total time: {} ms", now_millis() - self.start) }}
 
 
 /// This function renumbers the NIDs so that nodes with higher IDs "cost" more.
@@ -218,14 +227,14 @@ pub fn solve<S:SubSolver>(dst:&mut S, src0:&RawASTBase, sn:NID)->DstNid {
     let mut ctx = DstNid{n: dst.init(v)};
 
     // This just lets us record timing info. TODO: pr probably should be an input parameter.
-    let mut pr = ProgressReport{ start: SystemTime::now(), save_dot: false, save_dest: false, prefix:"x", millis: 0 };
+    let mut pr = ProgressReport{ start: now_millis(), save_dot: false, save_dest: false, prefix:"x", millis: 0 };
     <dyn Progress<S>>::on_start(&mut pr, &ctx);
 
     // main loop:
     while !(ctx.n.is_var() || ctx.n.is_const()) {
-      let now = std::time::SystemTime::now();
+      let t0 = now_millis();
       let old = ctx; ctx = refine_one(dst, v, &src, ctx);
-      let millis = now.elapsed().expect("elapsed?").as_millis();
+      let millis = now_millis() - t0;
       pr.on_step(&src, dst, step, millis, old, ctx);
       if step == 0 { break } else { step -= 1; v=VID::vir(step as u32) }}
     pr.on_done(&src, dst, ctx);

@@ -115,6 +115,7 @@ pub struct Swarm<Q,R,W,I=()> where W:Worker<Q,R,I>, Q:Debug+Clone, R:Debug {
   /// handles for sending messages to the workers
   whs: HashMap<WID, Sender<Option<QMsg<Q>>>>,
   /// next unique id for new worker
+  #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
   nw: usize,
   /// phantom reference to the Worker class. In practice, the workers are owned
   /// by their threads, so we don't actually touch them directly.
@@ -155,10 +156,16 @@ impl<Q,R,W,I> Swarm<Q,R,W,I> where Q:'static+Send+Debug+Clone, R:'static+Send+De
     me.start(n); me }
 
   pub fn start(&mut self, num_workers:usize) {
-    // leave one core free for the main thread
-    let n = if num_workers==0 { num_cpus::get()-1 } else { num_workers };
-    for _ in 0..n { self.spawn(); }}
+    // wasm32 has no os threads, so the swarm stays threadless here.
+    // callers on wasm32 must use single-threaded paths instead of
+    // dispatching queries to workers (e.g. BddBase with direct_ite).
+    #[cfg(target_arch = "wasm32")] let _ = num_workers;
+    #[cfg(not(target_arch = "wasm32"))]
+    { // leave one core free for the main thread
+      let n = if num_workers==0 { num_cpus::get()-1 } else { num_workers };
+      for _ in 0..n { self.spawn(); }}}
 
+  #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
   fn spawn(&mut self)->WID {
     let wid = WID{ n: self.nw }; self.nw+=1;
     let me2 = self.me.clone();

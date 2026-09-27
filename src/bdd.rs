@@ -109,10 +109,19 @@ pub struct BddBase {
 impl BddBase {
 
   pub fn new()->BddBase {
-    BddBase{swarm: BddSwarm::new(), tags:HashMap::new(),
-      direct_ite:false, ite_cache:fxhash::FxHashMap::default()}}
+    // (mut is only needed on wasm32, where set_direct_ite runs below.)
+    #[allow(unused_mut)]
+    let mut bdd = BddBase{swarm: BddSwarm::new(), tags:HashMap::new(),
+      direct_ite:false, ite_cache:fxhash::FxHashMap::default()};
+    // wasm32 has no threads, so the swarm can't run workers; use the
+    // direct single-threaded ite instead (same results, no parallelism).
+    #[cfg(target_arch = "wasm32")] bdd.set_direct_ite(true);
+    bdd }
 
   pub fn new_with_threads(n:usize)->BddBase {
+    // no worker threads on wasm32; fall back to the threadless default.
+    #[cfg(target_arch = "wasm32")] { let _ = n; Self::new() }
+    #[cfg(not(target_arch = "wasm32"))]
     BddBase{swarm: BddSwarm::new_with_threads(n), tags:HashMap::new(),
       direct_ite:false, ite_cache:fxhash::FxHashMap::default()}}
 
@@ -394,8 +403,13 @@ impl Default for BddBase { fn default() -> Self { Self::new() }}
 impl Base for BddBase {
 
   fn new()->BddBase {
-    BddBase{swarm: BddSwarm::new(), tags:HashMap::new(),
-      direct_ite:false, ite_cache:fxhash::FxHashMap::default()}}
+    // (mut is only needed on wasm32, where set_direct_ite runs below.)
+    #[allow(unused_mut)]
+    let mut bdd = BddBase{swarm: BddSwarm::new(), tags:HashMap::new(),
+      direct_ite:false, ite_cache:fxhash::FxHashMap::default()};
+    // wasm32 has no threads; see the inherent new() above.
+    #[cfg(target_arch = "wasm32")] bdd.set_direct_ite(true);
+    bdd }
 
   /// nid of y when x is high
   fn when_hi(&mut self, x:VID, y:NID)->NID {
