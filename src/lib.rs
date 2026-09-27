@@ -3,7 +3,6 @@
 #![allow(clippy::many_single_char_names)]
 
 #[macro_use] extern crate log;
-extern crate simplelog;
 extern crate dashmap;
 extern crate boxcar;
 extern crate fxhash;
@@ -38,3 +37,6 @@ pub mod vhl_swarm;
 pub mod naf;
 pub mod zdd;    pub use crate::zdd::ZddBase;
 pub mod coz_profile;
+pub mod shell;
+#[cfg(feature = "wasm")]
+pub mod wasm;

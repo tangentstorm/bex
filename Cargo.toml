@@ -15,6 +15,7 @@ default-run = "bex-shell"
 [lib]
 name = "bex"
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
 
 [[bin]]
 name = "bex-shell"
@@ -57,8 +58,11 @@ path = "examples/solve/bench-small.rs"
 
 [features]
 default = ["sql"]
-sql = []
+sql = ["dep:rusqlite"]
 slowtests = []
+# wasm-bindgen bindings for the web demo. build with:
+#   wasm-pack build --target web --no-default-features --features wasm
+wasm = ["dep:wasm-bindgen"]
 # Enable causal profiling via the `coz` crate. See src/coz_profile.rs
 # and doc/coz-profiling.md for usage. Linux-only; 2-5x slowdown while
 # profiling. Off by default.
@@ -76,7 +80,6 @@ debug = "line-tables-only"
 
 [dependencies]
 log = { version = "0.4", features = ["max_level_debug"]}
-simplelog = "0.5"
 num_cpus = "1.0"
 dashmap = { version="5.4.0"}
 boxcar = "0.1.0"
@@ -84,7 +87,8 @@ fxhash = "0.2.1"
 concurrent-queue = "2.1.0"
 crossbeam-channel = "0.5"
 json = "0.12.4"
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.31", features = ["bundled"], optional = true }
+wasm-bindgen = { version = "0.2", optional = true }
 coz = { version = "0.1", optional = true }
 
 [dev-dependencies]

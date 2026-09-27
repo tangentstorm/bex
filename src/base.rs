@@ -1,8 +1,11 @@
 #![macro_use]
 //! Standard trait for databases of boolean expressions.
 use std::collections::{HashSet, HashMap};
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs::File;
+#[cfg(not(target_arch = "wasm32"))]
 use std::io::Write;
+#[cfg(not(target_arch = "wasm32"))]
 use std::process::Command;      // for creating and viewing digarams
 use crate::{simp, nid::NID};
 use crate::vid::VID;
@@ -75,19 +78,27 @@ pub trait GraphViz {
 
   /// render to graphviz *.dot file
   fn save_dot(&self, n:NID, path:&str) {
+    #[cfg(target_arch = "wasm32")]
+    { let _ = (n, path); panic!("save_dot is not supported on wasm"); }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
     let mut s = String::new(); self.write_dot(n, &mut s);
     let mut txt = File::create(path).expect("couldn't create dot file");
-    txt.write_all(s.as_bytes()).expect("failed to write text to dot file"); }
+    txt.write_all(s.as_bytes()).expect("failed to write text to dot file"); }}
 
   /// call save_dot, use graphviz to convert to svg, and open result in firefox
   fn show_named(&self, n:NID, s:&str) {
+    #[cfg(target_arch = "wasm32")]
+    { let _ = (n, s); panic!("show_named is not supported on wasm"); }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
     self.save_dot(n, format!("{}.dot", s).as_str());
     let out = Command::new("dot").args(["-Tsvg",format!("{}.dot",s).as_str()])
       .output().expect("failed to run 'dot' command");
     let mut svg = File::create(format!("{}.svg",s).as_str()).expect("couldn't create svg");
     svg.write_all(&out.stdout).expect("couldn't write svg");
     let _ = Command::new("firefox").args([format!("{}.svg",s).as_str()])
-      .spawn().expect("failed to launch firefox").wait(); }
+      .spawn().expect("failed to launch firefox").wait(); }}
 
   fn show(&self, n:NID) { self.show_named(n, "+bdd") }
 }
