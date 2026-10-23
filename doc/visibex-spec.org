@@ -11,7 +11,7 @@ Provide a visual environment for inspecting and debugging bex.
 
 * restful http api
 
-** =GET /n/{id}:= basic node information
+** =GET /n/{id}=: basic node information
 
 Returns basic information about the
 node. Responds with a 404 status code for invalid or non-existent NID.
@@ -54,7 +54,7 @@ Example output:
 #+begin_src json
 [ { "n": 0, "in":"x0 x1 and", "out": [], "stack":["n0"] },
   { "n": 1, "in":"x2 xor", "out": [], "stack":["n1"] },
-  { "n": "2", "in": "sho", "out": [{"graph":"/n/1/sho"}, "stack": [ ]}]
+  { "n": 2, "in": "sho", "out": [{"graph":"/n/1/sho"}], "stack": [] } ]
 #+end_src
 
 
