@@ -10,6 +10,7 @@ extern crate fxhash;
 extern crate concurrent_queue;
 
 pub mod base;   pub use crate::base::{Base, GraphViz};
+pub mod tags;   pub use crate::tags::Names;
 pub mod vid;
 pub mod nid;    pub use crate::nid::{NID,I,O};
 pub mod fun;    pub use crate::fun::Fun;
