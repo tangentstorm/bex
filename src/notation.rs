@@ -9,7 +9,8 @@ use std::fmt;
 use std::str::FromStr;
 use json::JsonValue;
 
-use crate::base::Base;
+use crate::base::{Base, Tagged};
+use crate::tags::Names;
 use crate::nid::{NID, NidFun};
 use crate::Fun;
 
@@ -248,25 +249,33 @@ pub fn parse_expr(s:&str)->Result<Expr, String> {
 /// per the definitions in the issue (`x=y` is `!(x^y)`, `x<y` is `y&!x`,
 /// `x/y` is `!x|y`).
 pub fn eval_expr<B:Base>(base:&mut B, expr:&Expr, scope:&mut HashMap<String, NID>)->Result<NID, String> {
+  eval_in(base, None, expr, scope) }
+
+/// Like `eval_expr`, but names not bound in `scope` fall back to the
+/// `Tagged` base's `Names` registry.
+pub fn eval_tagged<B:Base>(t:&mut Tagged<B>, expr:&Expr, scope:&mut HashMap<String, NID>)->Result<NID, String> {
+  eval_in(&mut t.base, Some(&t.names), expr, scope) }
+
+fn eval_in<B:Base>(base:&mut B, names:Option<&Names>, expr:&Expr, scope:&mut HashMap<String, NID>)->Result<NID, String> {
   match expr {
     Expr::Nid(n) => Ok(*n),
     Expr::Var(name) => scope.get(name).copied()
-      .or_else(|| base.get(name))
+      .or_else(|| names.and_then(|ns| ns.get(name)))
       .ok_or_else(|| format!("undefined variable: {}", name)),
-    Expr::Not(x) => Ok(!eval_expr(base, x, scope)?),
-    Expr::And(a,b) => { let (x,y) = (eval_expr(base,a,scope)?, eval_expr(base,b,scope)?); Ok(base.and(x,y)) }
-    Expr::Xor(a,b) => { let (x,y) = (eval_expr(base,a,scope)?, eval_expr(base,b,scope)?); Ok(base.xor(x,y)) }
-    Expr::Or(a,b)  => { let (x,y) = (eval_expr(base,a,scope)?, eval_expr(base,b,scope)?); Ok(base.or(x,y)) }
-    Expr::Lt(a,b)  => { let (x,y) = (eval_expr(base,a,scope)?, eval_expr(base,b,scope)?); let nx = !x; Ok(base.and(nx,y)) }
-    Expr::Le(a,b)  => { let (x,y) = (eval_expr(base,a,scope)?, eval_expr(base,b,scope)?); let nx = !x; Ok(base.or(nx,y)) }
-    Expr::Eq(a,b)  => { let (x,y) = (eval_expr(base,a,scope)?, eval_expr(base,b,scope)?); Ok(!base.xor(x,y)) }
+    Expr::Not(x) => Ok(!eval_in(base, names, x, scope)?),
+    Expr::And(a,b) => { let (x,y) = (eval_in(base, names, a, scope)?, eval_in(base, names, b, scope)?); Ok(base.and(x,y)) }
+    Expr::Xor(a,b) => { let (x,y) = (eval_in(base, names, a, scope)?, eval_in(base, names, b, scope)?); Ok(base.xor(x,y)) }
+    Expr::Or(a,b)  => { let (x,y) = (eval_in(base, names, a, scope)?, eval_in(base, names, b, scope)?); Ok(base.or(x,y)) }
+    Expr::Lt(a,b)  => { let (x,y) = (eval_in(base, names, a, scope)?, eval_in(base, names, b, scope)?); let nx = !x; Ok(base.and(nx,y)) }
+    Expr::Le(a,b)  => { let (x,y) = (eval_in(base, names, a, scope)?, eval_in(base, names, b, scope)?); let nx = !x; Ok(base.or(nx,y)) }
+    Expr::Eq(a,b)  => { let (x,y) = (eval_in(base, names, a, scope)?, eval_in(base, names, b, scope)?); Ok(!base.xor(x,y)) }
     Expr::Ite(i,t,e) => {
-      let (iv,tv,ev) = (eval_expr(base,i,scope)?, eval_expr(base,t,scope)?, eval_expr(base,e,scope)?);
+      let (iv,tv,ev) = (eval_in(base, names, i, scope)?, eval_in(base, names, t, scope)?, eval_in(base, names, e, scope)?);
       Ok(base.ite(iv,tv,ev)) }
-    Expr::Assign(name, rhs) => { let v = eval_expr(base, rhs, scope)?; scope.insert(name.clone(), v); Ok(v) }
+    Expr::Assign(name, rhs) => { let v = eval_in(base, names, rhs, scope)?; scope.insert(name.clone(), v); Ok(v) }
     Expr::Apply(f, args) => {
-      let fv = eval_expr(base, f, scope)?;
-      let argv:Vec<NID> = args.iter().map(|a| eval_expr(base, a, scope)).collect::<Result<_,_>>()?;
+      let fv = eval_in(base, names, f, scope)?;
+      let argv:Vec<NID> = args.iter().map(|a| eval_in(base, names, a, scope)).collect::<Result<_,_>>()?;
       apply_bracket(base, fv, &argv) }}}
 
 

@@ -123,8 +123,9 @@ implemented, and why:
   the assignment target to not already parse as a nid means you can't shadow
   `x0`, `O`, etc. as a variable name — this seemed safer than allowing it.
   Assignments live in a caller-supplied `scope: HashMap<String, NID>` passed
-  to `eval_expr`, not in the `Base`'s own tag table; call `Base::tag`/`get`
-  separately if you want a binding to persist in the base itself.
+  to `eval_expr`, not in a `Names` registry. `eval_tagged` takes a
+  `Tagged<B>` and resolves names missing from `scope` via its `Names`
+  (scope bindings win).
 
 - **`=` non-associativity.** `x0 = x1 = x2` is rejected with an explicit
   error ("`'=' is non-associative; use parentheses to chain comparisons`");

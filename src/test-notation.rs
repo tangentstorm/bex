@@ -128,6 +128,20 @@ mod notation_tests {
     let mut scope = HashMap::new();
     assert!(eval_expr(&mut base, &parse_expr("undefined_name").unwrap(), &mut scope).is_err()); }
 
+  #[test] fn test_tagged_names_fallback() {
+    use crate::base::Tagged;
+    let mut t = Tagged::new(BddBase::new());
+    let a = t.base.and(x0, x1);
+    t.tag(a, "a");
+    let mut scope = HashMap::new();
+    assert_eq!(eval_tagged(&mut t, &parse_expr("a").unwrap(), &mut scope).unwrap(), a);
+    let n = eval_tagged(&mut t, &parse_expr("a | x2").unwrap(), &mut scope).unwrap();
+    assert_eq!(n, t.base.or(a, x2));
+    // scope bindings shadow registry names
+    let b = eval_tagged(&mut t, &parse_expr("a : x2").unwrap(), &mut scope).unwrap();
+    assert_eq!(eval_tagged(&mut t, &parse_expr("a").unwrap(), &mut scope).unwrap(), b);
+    assert!(eval_tagged(&mut t, &parse_expr("undefined_name").unwrap(), &mut scope).is_err()); }
+
   // ---- bracket notation ----
 
   #[test] fn test_bracket_table_apply() {
