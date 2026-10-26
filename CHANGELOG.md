@@ -27,6 +27,20 @@ Bex is a rust crate for working with binary expressions.
   `bex_bdd_node_count` / `bex_bdd_solution_count` on it.
 - `VhlSwarm` now exposes `get_done` / `put_done` / `vhl_to_nid` so callers can
   check the shared computed table or construct nodes without dispatching a job.
+- **Tagging moved out of `Base`** (#32, bex#8). `def`/`tag`/`get` are no
+  longer `Base` methods; wrap a base in `base::Tagged<B>`, which holds a
+  `tags::Names` registry. New `Base::var` hook builds variable nodes.
+  `sql` import/export now take/return `Names`.
+- **`VhlSwarm` save/load** (#33, bex#6). `save_json`/`load_json` and
+  `save_to_file`/`load_from_file`; unfinished jobs are re-queued on load.
+  `BddBase::save_swarm_json`/`load_swarm_json` wrap them.
+- **Standard notation** (#34, bex#10). New `notation` module: `ParsedNid`
+  (optional `N:` namespace prefix), infix `parse_expr`, `eval_expr` /
+  `eval_tagged` (falls back to `Tagged`'s `Names`), bracket application
+  (`apply_bracket`), and JSON `to_json`/`from_json`. Inverted table NIDs
+  print with `!`. See `doc/NOTATION.md`.
+- Added `doc/visibex-spec.org`, the design spec from the archived visibex
+  repo (#35).
 
 ### Bug fixes
 - **ZDD `Tagged::def` universe family (PR #32 / Memnar #1543).** Restored
