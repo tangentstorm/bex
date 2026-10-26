@@ -126,10 +126,10 @@ impl BddBase {
   pub fn save_swarm_json(&self)->Result<String, serde_json::Error> { self.swarm.save_json() }
 
   /// Load a `BddBase` from JSON previously produced by `save_swarm_json`.
-  /// Tags and the direct-ITE cache are not part of the swarm state, so
-  /// they start out empty/disabled, as in `BddBase::new()`.
+  /// The direct-ITE cache is not part of the swarm state, so it starts
+  /// out empty/disabled, as in `BddBase::new()`.
   pub fn load_swarm_json(s:&str)->Result<BddBase, serde_json::Error> {
-    Ok(BddBase{ swarm: BddSwarm::load_json(s)?, tags:HashMap::new(),
+    Ok(BddBase{ swarm: BddSwarm::load_json(s)?,
       direct_ite:false, ite_cache:fxhash::FxHashMap::default() }) }
 
   /// return (hi, lo) pair for the given nid. used internally
