@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::cmp::min;
 use crate::ast::ASTBase;
-use crate::base::Base;
+use crate::base::{Base, Tagged};
 use crate::{nid, nid::NID};
 use crate::vid::VID;
 
@@ -22,7 +22,7 @@ fn bitmaj<T:TBit>(x:T, y:T, z:T) -> T {
 
 
 // BaseBit implementation (u32 references into a Base)
-pub type BaseRef = Rc<RefCell<ASTBase>>;
+pub type BaseRef = Rc<RefCell<Tagged<ASTBase>>>;
 
 // -- basebit --
 #[derive(Clone)]
@@ -30,7 +30,7 @@ pub struct BaseBit {pub base:BaseRef, pub n:NID}
 
 impl BaseBit {
   /// perform an arbitrary operation using the base
-  fn op<F:FnMut(&mut ASTBase)->NID>(&self, mut op:F)->BaseBit {
+  fn op<F:FnMut(&mut Tagged<ASTBase>)->NID>(&self, mut op:F)->BaseBit {
     let r = op(&mut self.base.borrow_mut());
     BaseBit{base:self.base.clone(), n:r} }}
 
@@ -66,7 +66,7 @@ impl std::fmt::Debug for BaseBit {
 
 // -- thread - global base --
 
-thread_local!{ pub static GBASE:BaseRef = Rc::new(RefCell::new(ASTBase::empty())); }
+thread_local!{ pub static GBASE:BaseRef = Rc::new(RefCell::new(Tagged::new(ASTBase::empty()))); }
 pub fn gbase_ref()->BaseRef {
   GBASE.with(|gb| gb.clone()) }
 

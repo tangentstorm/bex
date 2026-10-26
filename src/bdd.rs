@@ -15,7 +15,7 @@ pub mod bdd_swarm; use self::bdd_swarm::*;
 
 
 /// An if/then/else triple. Like VHL, but all three slots are NIDs.
-#[derive(Debug, Default, PartialEq, Eq, Hash, Clone, Copy)]
+#[derive(Debug, Default, PartialEq, Eq, Hash, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct ITE {pub i:NID, pub t:NID, pub e:NID}  // nopub!! only public for WorkState
 impl ITE {
   pub fn top_vid(&self)->VID {
@@ -45,7 +45,7 @@ impl Norm {
       Norm::Ite(_) => false}}}
 
 /// a normalized ITE suitable for use as a key in the computed cache
-#[derive(Eq,PartialEq,Hash,Debug,Default,Clone,Copy)]
+#[derive(Eq,PartialEq,Hash,Debug,Default,Clone,Copy,serde::Serialize,serde::Deserialize)]
 pub struct NormIteKey(pub ITE); // nopub
 
 
@@ -95,8 +95,6 @@ impl ITE {
 /// Finally, we put everything together. This is the top-level type for this crate.
 #[derive(Debug)]
 pub struct BddBase {
-  /// allows us to give user-friendly names to specific nodes in the base.
-  pub tags: HashMap<String, NID>,
   pub swarm: BddSwarm, // TODO: nopub
   /// when true, use direct single-threaded recursion for ITE with a local
   /// FxHashMap cache, bypassing swarm dispatch overhead. Best for workloads
@@ -109,17 +107,30 @@ pub struct BddBase {
 impl BddBase {
 
   pub fn new()->BddBase {
-    BddBase{swarm: BddSwarm::new(), tags:HashMap::new(),
+    BddBase{swarm: BddSwarm::new(),
       direct_ite:false, ite_cache:fxhash::FxHashMap::default()}}
 
   pub fn new_with_threads(n:usize)->BddBase {
-    BddBase{swarm: BddSwarm::new_with_threads(n), tags:HashMap::new(),
+    BddBase{swarm: BddSwarm::new_with_threads(n),
       direct_ite:false, ite_cache:fxhash::FxHashMap::default()}}
 
   /// Opt into direct single-threaded ITE recursion. This avoids the swarm
   /// channel-dispatch overhead at the cost of giving up intra-operation
   /// parallelism. Useful for bottom-up BDD construction workloads.
   pub fn set_direct_ite(&mut self, on:bool) { self.direct_ite = on; }
+
+  /// Save the swarm's intermediate state (node base + computed cache,
+  /// including in-progress WIPs) to a JSON string. See `BddSwarm::save_json`.
+  /// (Named `save_swarm_json` to avoid clashing with the subgraph-exporting
+  /// `to_json`/`load_json`/`from_json` methods below.)
+  pub fn save_swarm_json(&self)->Result<String, serde_json::Error> { self.swarm.save_json() }
+
+  /// Load a `BddBase` from JSON previously produced by `save_swarm_json`.
+  /// The direct-ITE cache is not part of the swarm state, so it starts
+  /// out empty/disabled, as in `BddBase::new()`.
+  pub fn load_swarm_json(s:&str)->Result<BddBase, serde_json::Error> {
+    Ok(BddBase{ swarm: BddSwarm::load_json(s)?,
+      direct_ite:false, ite_cache:fxhash::FxHashMap::default() }) }
 
   /// return (hi, lo) pair for the given nid. used internally
   #[inline] fn tup(&self, n:NID)->(NID,NID) { self.swarm.tup(n) }
@@ -394,7 +405,7 @@ impl Default for BddBase { fn default() -> Self { Self::new() }}
 impl Base for BddBase {
 
   fn new()->BddBase {
-    BddBase{swarm: BddSwarm::new(), tags:HashMap::new(),
+    BddBase{swarm: BddSwarm::new(),
       direct_ite:false, ite_cache:fxhash::FxHashMap::default()}}
 
   /// nid of y when x is high
@@ -438,11 +449,6 @@ impl Base for BddBase {
         let (yt, ye) = self.tup(y);
         let (th,el) = (self.when_lo(x,yt), self.when_lo(x,ye));
         self.ite(NID::from_vid(yv), th, el) }}}
-
-  // TODO: these should be moved into seperate struct
-  fn def(&mut self, _s:String, _i:VID)->NID { todo!("BddBase::def()") }
-  fn tag(&mut self, n:NID, s:String)->NID { self.tags.insert(s, n); n }
-  fn get(&self, s:&str)->Option<NID> { Some(*self.tags.get(s)?) }
 
   fn and(&mut self, x:NID, y:NID)->NID { self.ite(x, y, O) }
   fn xor(&mut self, x:NID, y:NID)->NID { self.ite(x, !y, y) }

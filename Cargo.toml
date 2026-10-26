@@ -78,7 +78,7 @@ debug = "line-tables-only"
 log = { version = "0.4", features = ["max_level_debug"]}
 simplelog = "0.5"
 num_cpus = "1.0"
-dashmap = { version="5.4.0"}
+dashmap = { version="5.4.0" }
 boxcar = "0.1.0"
 fxhash = "0.2.1"
 concurrent-queue = "2.1.0"
@@ -86,6 +86,8 @@ crossbeam-channel = "0.5"
 json = "0.12.4"
 rusqlite = { version = "0.31", features = ["bundled"] }
 coz = { version = "0.1", optional = true }
+serde = { version = "1", features = ["derive", "rc"] }
+serde_json = "1"
 
 [dev-dependencies]
 divan = "0.1.21"

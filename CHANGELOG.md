@@ -29,6 +29,13 @@ Bex is a rust crate for working with binary expressions.
   check the shared computed table or construct nodes without dispatching a job.
 
 ### Bug fixes
+- **ZDD `Tagged::def` universe family (PR #32 / Memnar #1543).** Restored
+  ZDD-specific variable construction when defining named vars via `Tagged<ZddBase>`.
+  `Base::var` is the backend hook (default `NID::from_vid`); `ZddBase::var`
+  registers the VID and builds the don't-care family over the existing universe
+  (former `ZddBase::def` body). Without this, defining x then y left y as only
+  `{y}`, so `x OR y` silently omitted the both-true assignment `{x,y}`.
+
 - `tbl::merge_small` wrote past the end of a 5-element array before returning
   `None` on 6-variable ITEs, causing panics in the truth-table fast path. The
   `len > 5` guards are now `len >= 5`.

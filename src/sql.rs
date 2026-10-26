@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 use rusqlite::{params, Connection, OptionalExtension, Result, Transaction};
 
-use crate::{ast::RawASTBase, nid::NID, ops};
+use crate::{ast::RawASTBase, nid::NID, ops, tags::Names};
 
 const CREATE_SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS ast_node(
@@ -117,11 +117,11 @@ fn insert_edges(tx: &Transaction<'_>, base: &RawASTBase) -> Result<()> {
   Ok(())
 }
 
-fn insert_tags(tx: &Transaction<'_>, base: &RawASTBase) -> Result<()> {
+fn insert_tags(tx: &Transaction<'_>, names: &Names) -> Result<()> {
   let mut stmt = tx.prepare(
     "INSERT OR REPLACE INTO tag(name, nid, aid) VALUES(?1, ?2, ?3)"
   )?;
-  for (name, nid) in base.tags.iter() {
+  for (name, nid) in names.iter() {
     let node_id = if nid.is_ixn() { Some(nid.raw().idx() as i64) } else { None };
     stmt.execute(params![
       name,
@@ -159,14 +159,15 @@ fn insert_meta(tx: &Transaction<'_>) -> Result<()> {
   Ok(())
 }
 
-/// Write the contents of a [`RawASTBase`] into the provided SQLite connection.
-pub fn export_raw_ast_to_conn(conn: &mut Connection, base: &RawASTBase, keep: &[NID]) -> Result<()> {
+/// Write the contents of a [`RawASTBase`] (and its associated tag names)
+/// into the provided SQLite connection.
+pub fn export_raw_ast_to_conn(conn: &mut Connection, base: &RawASTBase, names: &Names, keep: &[NID]) -> Result<()> {
   let tx = conn.transaction()?;
   ensure_schema(&tx)?;
   clear_schema(&tx)?;
   insert_nodes(&tx, base)?;
   insert_edges(&tx, base)?;
-  insert_tags(&tx, base)?;
+  insert_tags(&tx, names)?;
   insert_keep(&tx, keep)?;
   insert_meta(&tx)?;
   tx.commit()
@@ -174,13 +175,14 @@ pub fn export_raw_ast_to_conn(conn: &mut Connection, base: &RawASTBase, keep: &[
 
 /// Convenience helper that opens or creates a SQLite file on disk and exports
 /// a [`RawASTBase`] into it.
-pub fn export_raw_ast_to_path<P: AsRef<Path>>(base: &RawASTBase, path: P, keep: &[NID]) -> Result<()> {
+pub fn export_raw_ast_to_path<P: AsRef<Path>>(base: &RawASTBase, names: &Names, path: P, keep: &[NID]) -> Result<()> {
   let mut conn = Connection::open(path)?;
-  export_raw_ast_to_conn(&mut conn, base, keep)
+  export_raw_ast_to_conn(&mut conn, base, names, keep)
 }
 
-pub fn import_raw_ast_from_conn(conn: &Connection) -> Result<(RawASTBase, Vec<NID>)> {
+pub fn import_raw_ast_from_conn(conn: &Connection) -> Result<(RawASTBase, Names, Vec<NID>)> {
   let mut base = RawASTBase::empty();
+  let mut names = Names::new();
 
   {
     let version: Option<String> =
@@ -251,7 +253,7 @@ pub fn import_raw_ast_from_conn(conn: &Connection) -> Result<(RawASTBase, Vec<NI
       let aid: Option<i64> = row.get(2)?;
       let nid = NID::from_str(&nid_str)
         .map_err(|err| rusqlite::Error::InvalidParameterName(format!("invalid nid '{}': {}", nid_str, err)))?;
-      base.tags.insert(name.clone(), nid);
+      names.tag(nid, name.clone());
       if let Some(aid) = aid {
         debug_assert_eq!(nid.raw(), NID::ixn(aid as usize));
       }
@@ -270,10 +272,10 @@ pub fn import_raw_ast_from_conn(conn: &Connection) -> Result<(RawASTBase, Vec<NI
     }
   }
 
-  Ok((base, keep))
+  Ok((base, names, keep))
 }
 
-pub fn import_raw_ast_from_path<P: AsRef<Path>>(path: P) -> Result<(RawASTBase, Vec<NID>)> {
+pub fn import_raw_ast_from_path<P: AsRef<Path>>(path: P) -> Result<(RawASTBase, Names, Vec<NID>)> {
   let conn = Connection::open(path)?;
   import_raw_ast_from_conn(&conn)
 }
@@ -281,27 +283,27 @@ pub fn import_raw_ast_from_path<P: AsRef<Path>>(path: P) -> Result<(RawASTBase, 
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::{base::Base, ops, vid::VID};
+  use crate::{base::{Base, Tagged}, ops, vid::VID};
 
   #[test]
   fn test_save() -> Result<()> {
-    let mut base = RawASTBase::empty();
+    let mut base = Tagged::new(RawASTBase::empty());
     let x = base.def("x".into(), VID::var(0));
     let y = base.def("y".into(), VID::var(1));
     let and = base.and(x, y);
-    base.tag(and, "and".into());
+    base.tag(and, "and");
     let inv_and = !and;
     let inv_x = !x;
-    base.tag(x, "var_x".into());
-    base.tag(inv_x, "not_var_x".into());
+    base.tag(x, "var_x");
+    base.tag(inv_x, "not_var_x");
 
     let mut conn = Connection::open_in_memory()?;
-    export_raw_ast_to_conn(&mut conn, &base, &[and, inv_and, x, inv_x])?;
+    export_raw_ast_to_conn(&mut conn, &base.base, &base.names, &[and, inv_and, x, inv_x])?;
 
     let node_count: i64 = conn.query_row("SELECT COUNT(*) FROM ast_node", [], |row| row.get(0))?;
-    assert_eq!(node_count, base.len() as i64);
+    assert_eq!(node_count, base.base.len() as i64);
 
-    let costs = base.node_costs();
+    let costs = base.base.node_costs();
     let (op, cost): (String, i64) =
       conn.query_row("SELECT op, cost FROM ast_node WHERE id = 0", [], |row| Ok((row.get(0)?, row.get(1)?)))?;
     assert_eq!(op, format!("{}", ops::AND.to_nid()));
@@ -334,12 +336,12 @@ mod tests {
       let nid = NID::from_str(&nid_str).unwrap();
       observed_tags.push((name, nid, aid_val));
     }
-    assert_eq!(observed_tags.len(), base.tags.len());
-    for (name, nid) in base.tags.iter() {
+    assert_eq!(observed_tags.len(), base.names.iter().count());
+    for (name, nid) in base.names.iter() {
       let Some((_, observed_nid, observed_aid)) = observed_tags.iter().find(|(n, _, _)| n == name) else {
         panic!("missing tag {}", name);
       };
-      assert_eq!(observed_nid, nid);
+      assert_eq!(*observed_nid, nid);
       let expected_aid = if nid.is_ixn() { Some(nid.raw().idx() as i64) } else { None };
       assert_eq!(*observed_aid, expected_aid);
     }
@@ -369,22 +371,26 @@ mod tests {
 
   #[test]
   fn test_roundtrip() -> Result<()> {
-    let mut base = RawASTBase::empty();
+    let mut base = Tagged::new(RawASTBase::empty());
     let x = base.def("x".into(), VID::var(0));
     let y = base.def("y".into(), VID::var(1));
     let and = base.and(x, y);
-    base.tag(and, "and".into());
+    base.tag(and, "and");
     let inv_and = !and;
     let inv_x = !x;
-    base.tag(x, "var_x".into());
-    base.tag(inv_x, "not_var_x".into());
+    base.tag(x, "var_x");
+    base.tag(inv_x, "not_var_x");
 
     let mut conn = Connection::open_in_memory()?;
-    export_raw_ast_to_conn(&mut conn, &base, &[and, inv_and, x, inv_x])?;
+    export_raw_ast_to_conn(&mut conn, &base.base, &base.names, &[and, inv_and, x, inv_x])?;
 
-    let (loaded, keep) = import_raw_ast_from_conn(&conn)?;
-    assert_eq!(loaded.bits, base.bits);
-    assert_eq!(loaded.tags, base.tags);
+    let (loaded, loaded_names, keep) = import_raw_ast_from_conn(&conn)?;
+    assert_eq!(loaded.bits, base.base.bits);
+    let mut observed: Vec<(&str, NID)> = loaded_names.iter().collect();
+    let mut expected: Vec<(&str, NID)> = base.names.iter().collect();
+    observed.sort();
+    expected.sort();
+    assert_eq!(observed, expected);
     // Only ixn nodes are stored in keep table
     // and and inv_and share the same aid (0), so only one entry is stored
     let expected_keep = vec![and];

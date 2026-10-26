@@ -3,10 +3,11 @@ use std::{marker::PhantomData, thread};
 use std::fmt::Debug;
 use std::collections::HashMap;
 use crossbeam_channel::{Receiver, RecvError, SendError, Sender, select, unbounded};
+use serde::{Serialize, Deserialize};
 
 
 /// query id
-#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Default, Copy, Clone, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum QID { #[default] INIT, STEP(usize), DONE }
 
 pub struct QMsg<Q> { qid:QID, q: Q }
