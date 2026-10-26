@@ -52,9 +52,17 @@ fn repl(base:&mut ASTBase) {
     for word in line.split_whitespace() {
       match word {
         "!" => { let x = pop(&mut data); data.push(!x) }
-        "and" => { let (x,y)=pop2(&mut data); data.push(base.and(x,y)) }
-        "xor" => { let (x,y)=pop2(&mut data); data.push(base.xor(x,y)) }
-        "or"  => { let (x,y)=pop2(&mut data); data.push(base.or(x,y)) }
+        "and" | "&" => { let (x,y)=pop2(&mut data); data.push(base.and(x,y)) }
+        "xor" | "%" => { let (x,y)=pop2(&mut data); data.push(base.xor(x,y)) }
+        "or"  | "|" => { let (x,y)=pop2(&mut data); data.push(base.or(x,y)) }
+        // "=" : equal (x = y is !(x xor y))
+        "=" => { let (x,y)=pop2(&mut data); let n = base.xor(x,y); data.push(!n) }
+        // "<" : less than (x < y means "y and not x")
+        "<" => { let (x,y)=pop2(&mut data); let nx = !x; data.push(base.and(nx,y)) }
+        // "/" : less than or equal to (x / y means "x implies y", i.e. "!x or y")
+        "/" => { let (x,y)=pop2(&mut data); let nx = !x; data.push(base.or(nx,y)) }
+        // "?:" : if/then/else (f g h ?: means "if f then g else h")
+        "?:" => { let (x,y,z)=pop3(&mut data); data.push(base.ite(x,y,z)); }
         "'and" => { data.push(ops::AND.to_nid()) }
         "'or" |
         "'vel" => { data.push(ops::VEL.to_nid()) }
